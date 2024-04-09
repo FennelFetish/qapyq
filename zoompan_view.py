@@ -9,7 +9,7 @@ class ZoomPanView(QGraphicsView):
     def __init__(self, scene):
         super().__init__(scene)
         self._zoom = 1.0
-        self._zoomFactor = 1.15
+        self.zoomFactor = 1.15
         self._pan = QPointF(0, 0)
         self._eventState = None
 
@@ -22,8 +22,6 @@ class ZoomPanView(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.NoAnchor)
         self.setResizeAnchor(QGraphicsView.NoAnchor)
         self.setMouseTracking(True)
-
-        self.updateScene()
 
     def updateScene(self):
         w = self.viewport().width()
@@ -68,7 +66,7 @@ class ZoomPanView(QGraphicsView):
         super().wheelEvent(event)
 
         zoomSteps = event.angleDelta().y() / 120.0 # 8*15° standard
-        self._zoom *= self._zoomFactor ** zoomSteps
+        self._zoom *= self.zoomFactor ** zoomSteps
         self._zoom = max(self._zoom, 1.0)
         
         oldPos = self.mapToScene(event.position().x(), event.position().y())

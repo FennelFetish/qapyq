@@ -6,21 +6,8 @@ from PySide6.QtCore import QRectF, QPointF, Qt
 
 class ImgView(ZoomPanView):
     def __init__(self):
-        self._dropZones = [ DropZone(), DropZone() ]
-        self._dropZones[0].setRect(-5, -5, 10, 10)
-        self._dropZones[0].setZValue(900)
-        self._dropZones[1].setRect(-10, -10, 20, 20)
-        self._dropZones[1].setZValue(900)
-
-        self._images = [ ImgItem(), ImgItem() ]
-
-        self._dividerLine = QGraphicsLineItem(0, 0, 0, 0)
-        self._dividerLine.setZValue(1000)
-        self._dividerLine.setPen( QPen(QColor(180, 180, 180, 140)) )
-        self._dividerLine.setVisible(False)
-
+        super().__init__(None)
         scene = DropScene()
-        super().__init__(scene)
         self.setScene(scene)
 
         self.setBackgroundBrush(QBrush(QColor(0, 0, 0)))
@@ -31,13 +18,20 @@ class ImgView(ZoomPanView):
 
         self.setAcceptDrops(True)
 
+        self._dropZones = [ DropZone(), DropZone() ]
+        self._images = [ ImgItem(), ImgItem() ]
+
+        self._dividerLine = QGraphicsLineItem(0, 0, 0, 0)
+        self._dividerLine.setZValue(1000)
+        self._dividerLine.setPen( QPen(QColor(180, 180, 180, 140)) )
+        self._dividerLine.setVisible(False)
+
         self._guiScene.addItem(self._dropZones[0])
         self._guiScene.addItem(self._dropZones[1])
         self._guiScene.addItem(self._dividerLine)
 
         scene.addItem(self._images[0])
         scene.addItem(self._images[1])
-        
     
     def updateScene(self):
         super().updateScene()
@@ -139,6 +133,7 @@ class DropZone(QGraphicsRectItem):
         super().__init__(None)
         self.setPen( QPen(QColor(180, 180, 180, 140)))
         self.setBrush( QBrush(QColor(180, 180, 180, 80)) )
+        self.setZValue(900)
         self.setVisible(False)
 
 
@@ -162,7 +157,7 @@ class ImgItem(QGraphicsPixmapItem):
             return super().shape()
         return self.clipPath
 
-    def updateTransform(self, vpRect: QRectF):
+    def updateTransform(self, vpRect: QRectF, rotation=0.0):
         imgRect = self.boundingRect()
         if imgRect.width() == 0 or imgRect.height() == 0:
             return
@@ -174,6 +169,8 @@ class ImgItem(QGraphicsPixmapItem):
         x = (-img_w * scale) / 2
         y = (-img_h * scale) / 2
 
-        transform = QTransform.fromTranslate(x, y)
+        transform = QTransform()
+        transform = transform.rotate(rotation)
+        transform = transform.translate(x, y)
         transform = transform.scale(scale, scale)
         self.setTransform(transform)
