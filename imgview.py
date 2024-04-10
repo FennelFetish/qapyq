@@ -1,14 +1,12 @@
-from zoompan_view import ZoomPanView
-from PySide6.QtWidgets import QGraphicsScene, QGraphicsView, QGraphicsItem, QGraphicsRectItem, QGraphicsPixmapItem, QGraphicsLineItem
+from dropview import DropView, DropZone
+from PySide6.QtWidgets import QGraphicsView, QGraphicsPixmapItem, QGraphicsLineItem, QGraphicsItem
 from PySide6.QtGui import QPen, QBrush, QColor, QPainter, QPainterPath, QPixmap, QTransform
-from PySide6.QtCore import QRectF, QPointF, Qt
+from PySide6.QtCore import QRectF
 
 
-class ImgView(ZoomPanView):
+class ImgView(DropView):
     def __init__(self):
-        super().__init__(None)
-        scene = DropScene()
-        self.setScene(scene)
+        super().__init__()
 
         self.setBackgroundBrush(QBrush(QColor(0, 0, 0)))
         self.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
@@ -16,31 +14,21 @@ class ImgView(ZoomPanView):
         self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
         self.setFrameStyle(0)
 
-        self.setAcceptDrops(True)
+        self.addDropZone( DropZone(0, 0, 0.5, 1) )
+        self.addDropZone( DropZone(0.5, 0, 1, 1) )
 
-        self._dropZones = [ DropZone(), DropZone() ]
         self._images = [ ImgItem(), ImgItem() ]
+        self.scene().addItem(self._images[0])
+        self.scene().addItem(self._images[1])
 
         self._dividerLine = QGraphicsLineItem(0, 0, 0, 0)
         self._dividerLine.setZValue(1000)
         self._dividerLine.setPen( QPen(QColor(180, 180, 180, 140)) )
         self._dividerLine.setVisible(False)
-
-        self._guiScene.addItem(self._dropZones[0])
-        self._guiScene.addItem(self._dropZones[1])
         self._guiScene.addItem(self._dividerLine)
 
-        scene.addItem(self._images[0])
-        scene.addItem(self._images[1])
-    
     def updateScene(self):
         super().updateScene()
-        vpRect = self.viewport().rect()
-        w_half = vpRect.width() / 2.0
-        h = vpRect.height()
-
-        self._dropZones[0].setRect(0, 0, w_half, h)
-        self._dropZones[1].setRect(w_half, 0, w_half, h)
 
     def loadImage(self, path, imgIndex):
         print("Load image:", path)
@@ -58,45 +46,16 @@ class ImgView(ZoomPanView):
 
         self.updateScene()
 
+    def onDrop(self, event, zoneIndex) -> None:
+        firstUrl = event.mimeData().urls()[0]
+        self.loadImage(firstUrl.toLocalFile(), zoneIndex)
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         vp_rect = self.viewport().rect()
         self._images[0].updateTransform(vp_rect)
         self._images[1].updateTransform(vp_rect)
 
-
-    # ===== Drag n Drop =====
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-
-    def dragMoveEvent(self, event):
-        w = self.viewport().width()
-        x = event.position().x()
-        left = (x < w/2)
-        self._dropZones[0].setVisible(left)
-        self._dropZones[1].setVisible(not left)
-        self.scene().update()
-
-    def dragLeaveEvent(self, event):
-        self._dropZones[0].setVisible(False)
-        self._dropZones[1].setVisible(False)
-        self.scene().update()
-
-    def dropEvent(self, event):
-        self._dropZones[0].setVisible(False)
-        self._dropZones[1].setVisible(False)
-        self.scene().update()
-
-        if event.mimeData().hasUrls():
-            w = self.viewport().width()
-            x = event.position().x()
-            imgIndex = 0 if x < w/2 else 1
-
-            firstUrl = event.mimeData().urls()[0]
-            self.loadImage(firstUrl.toLocalFile(), imgIndex)
-            event.acceptProposedAction()
-    
 
     # ===== Divider Line =====
     def enterEvent(self, event):
@@ -118,23 +77,6 @@ class ImgView(ZoomPanView):
         super().leaveEvent(event)
         self._images[1].setClipWidth(0)
         self._dividerLine.setVisible(False)
-        
-
-
-class DropScene(QGraphicsScene):
-    # Let event through
-    def dragMoveEvent(self, event):
-        pass
-
-
-
-class DropZone(QGraphicsRectItem):
-    def __init__(self):
-        super().__init__(None)
-        self.setPen( QPen(QColor(180, 180, 180, 140)))
-        self.setBrush( QBrush(QColor(180, 180, 180, 80)) )
-        self.setZValue(900)
-        self.setVisible(False)
 
 
 
@@ -144,7 +86,7 @@ class ImgItem(QGraphicsPixmapItem):
         self.setShapeMode(QGraphicsPixmapItem.BoundingRectShape)
         self.setFlag(QGraphicsItem.ItemClipsToShape, True)
         self.clipPath = None
-    
+
     def setClipWidth(self, x):
         w = self.pixmap().width()
         h = self.pixmap().height()
