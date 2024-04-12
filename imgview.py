@@ -1,11 +1,11 @@
-from dropview import DropView, DropZone
-from PySide6.QtWidgets import QGraphicsView, QGraphicsPixmapItem, QGraphicsLineItem, QGraphicsItem
-from PySide6.QtGui import QPen, QBrush, QColor, QPainter, QPainterPath, QPixmap, QTransform
 from PySide6.QtCore import QRectF
+from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPixmap, QTransform
+from PySide6.QtWidgets import QGraphicsItem, QGraphicsPixmapItem, QGraphicsView
+from dropview import DropView, DropZone
 
 
 class ImgView(DropView):
-    def __init__(self):
+    def __init__(self, tool):
         super().__init__()
 
         self.setBackgroundBrush(QBrush(QColor(0, 0, 0)))
@@ -14,70 +14,47 @@ class ImgView(DropView):
         self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
         self.setFrameStyle(0)
 
-        self.addDropZone( DropZone(0, 0, 0.5, 1) )
-        self.addDropZone( DropZone(0.5, 0, 1, 1) )
+        self._image = ImgItem()
+        self.scene().addItem(self._image)
 
-        self._images = [ ImgItem(), ImgItem() ]
-        self.scene().addItem(self._images[0])
-        self.scene().addItem(self._images[1])
+        self._tool = tool
+        tool.onEnabled(self)
 
-        self._dividerLine = QGraphicsLineItem(0, 0, 0, 0)
-        self._dividerLine.setZValue(1000)
-        self._dividerLine.setPen( QPen(QColor(180, 180, 180, 140)) )
-        self._dividerLine.setVisible(False)
-        self._guiScene.addItem(self._dividerLine)
 
-    def updateScene(self):
-        super().updateScene()
-
-    def loadImage(self, path, imgIndex):
-        print("Load image:", path)
-        pixmap = QPixmap(path)
-        if pixmap.isNull():
-            print("Failed to load image:", path)
+    @property
+    def tool(self):
+        return self._tool
+    
+    @tool.setter
+    def tool(self, tool):
+        if tool is self._tool:
             return
-
-        img = self._images[imgIndex]
-        img.setPixmap(pixmap)
-        img.updateTransform(self.viewport().rect())
-
-        if imgIndex == 0:
-            self.resetView()
-
+        
+        self._tool.onDisabled(self)
+        self._tool = tool
+        tool.onEnabled(self)
         self.updateScene()
 
+
     def onDrop(self, event, zoneIndex) -> None:
-        firstUrl = event.mimeData().urls()[0]
-        self.loadImage(firstUrl.toLocalFile(), zoneIndex)
+        self._tool.onDrop(event, zoneIndex)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        vp_rect = self.viewport().rect()
-        self._images[0].updateTransform(vp_rect)
-        self._images[1].updateTransform(vp_rect)
+        self._image.updateTransform( self.viewport().rect() )
+        self._tool.onResize(event)
 
-
-    # ===== Divider Line =====
     def enterEvent(self, event):
         super().enterEvent(event)
-        if not self._images[1].pixmap().isNull():
-            self._dividerLine.setVisible(True)
+        self._tool.onMouseEnter(event)
 
     def mouseMoveEvent(self, event):
         super().mouseMoveEvent(event)
-        imgpos = self.mapToScene(event.position().x(), event.position().y())
-        imgpos = self._images[1].mapFromParent(imgpos)
-        self._images[1].setClipWidth(imgpos.x())
-
-        x = event.position().x()
-        h = self.viewport().height()
-        self._dividerLine.setLine(x, 0, x, h)
+        self._tool.onMouseMove(event)
 
     def leaveEvent(self, event):
         super().leaveEvent(event)
-        self._images[1].setClipWidth(0)
-        self._dividerLine.setVisible(False)
-
+        self._tool.onMouseLeave(event)
 
 
 class ImgItem(QGraphicsPixmapItem):
@@ -86,6 +63,16 @@ class ImgItem(QGraphicsPixmapItem):
         self.setShapeMode(QGraphicsPixmapItem.BoundingRectShape)
         self.setFlag(QGraphicsItem.ItemClipsToShape, True)
         self.clipPath = None
+
+    def loadImage(self, path) -> bool:
+        print("Load image:", path)
+        pixmap = QPixmap(path)
+        if pixmap.isNull():
+            print("Failed to load image:", path)
+            return False
+
+        self.setPixmap(pixmap)
+        return True
 
     def setClipWidth(self, x):
         w = self.pixmap().width()

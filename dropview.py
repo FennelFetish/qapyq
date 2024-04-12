@@ -5,9 +5,9 @@ from PySide6.QtCore import QRectF
 
 
 class DropZone(QGraphicsRectItem):
-    def __init__(self, x, y, w, h):
+    def __init__(self, rectRelative: QRectF):
         super().__init__(None)
-        self.rectRelative = QRectF(x, y, w, h)
+        self.rectRelative = QRectF(rectRelative)
         self.setPen( QPen(QColor(180, 180, 180, 140)) )
         self.setBrush( QBrush(QColor(180, 180, 180, 80)) )
         self.setZValue(900)
@@ -26,6 +26,11 @@ class DropView(ZoomPanView):
         self._dropZones.append(dropZone)
         self._guiScene.addItem(dropZone)
     
+    def clearDropZones(self):
+        for dz in self._dropZones:
+            self._guiScene.removeItem(dz)
+        self._dropZones.clear()
+
     def updateScene(self):
         super().updateScene()
         vpRect = self.viewport().rect()

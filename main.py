@@ -1,8 +1,9 @@
-from imgview import ImgView
 import sys
-from PySide6 import QtWidgets
-from PySide6 import QtGui
-from PySide6.QtCore import Slot, Qt
+from PySide6 import QtGui, QtWidgets
+from PySide6.QtCore import Qt, Slot
+from imgview import ImgView
+from tools.compare import CompareTool
+from tools.view import ViewTool
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -14,6 +15,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.buildToolbar()
         self.addTab()
 
+        #self.setWindowState(Qt.WindowFullScreen)
+        #self.setWindowState(Qt::WindowMaximized);
+        #setWindowState(w.windowState() ^ Qt::WindowFullScreen);
+
     def buildTabs(self):
         btnAddTab = QtWidgets.QPushButton("Add Tab")
         btnAddTab.clicked.connect(self.addTab)
@@ -24,7 +29,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabWidget.setCornerWidget(btnAddTab)
         self.tabWidget.tabCloseRequested.connect(self.closeTab)
         self.setCentralWidget(self.tabWidget)
-    
+
     def buildMenu(self):
         actQuit = QtGui.QAction("&Quit", self)
         actQuit.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_Q))
@@ -37,17 +42,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def buildToolbar(self):
         toolbar = self.addToolBar("Tools")
-        toolbar.addAction("View")
-        toolbar.addAction("Compare")
+
+        actView = toolbar.addAction("View")
+        actView.triggered.connect(lambda: self.setTool("view"))
+
+        actCompare = toolbar.addAction("Compare")
+        actCompare.triggered.connect(lambda: self.setTool("compare"))
+
+        actCrop = toolbar.addAction("Crop")
+        actCrop.triggered.connect(lambda: self.setTool("crop"))
 
     @Slot()
     def addTab(self):
-        tab = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(ImgView())
-        tab.setLayout(layout)
-        index = self.tabWidget.addTab(tab, "Empty")
+        index = self.tabWidget.addTab(ImgTab(), "Empty")
         self.tabWidget.setCurrentIndex(index)
 
     @Slot()
@@ -55,6 +62,31 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabWidget.removeTab(index)
         if self.tabWidget.count() == 0:
             self.addTab()
+    
+    @Slot()
+    def setTool(self, toolName: str):
+        tab = self.tabWidget.currentWidget()
+        if toolName not in tab.tools:
+            tab.tools[toolName] = self.createTool(toolName)
+        tab.imgview.tool = tab.tools[toolName]
+
+    def createTool(self, toolName: str):
+        match toolName:
+            case "compare": return CompareTool()
+        return None
+
+
+
+class ImgTab(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.tools = { "view": ViewTool() }
+        self.imgview = ImgView(self.tools["view"])
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.imgview)
+        self.setLayout(layout)
 
 
 

@@ -1,5 +1,5 @@
-from PySide6 import QtCore, QtWidgets, QtGui
-from PySide6.QtCore import QRectF, QPointF, Qt, QCoreApplication
+from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6.QtCore import QCoreApplication, QPointF, QRectF, Qt
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsView
 
 
@@ -41,29 +41,29 @@ class ZoomPanView(QGraphicsView):
 
 
     def resizeEvent(self, event):
-        super().resizeEvent(event)
+        #super().resizeEvent(event)
         self.updateScene()
 
     def mouseMoveEvent(self, event):
-        super().mouseMoveEvent(event)
+        #super().mouseMoveEvent(event)
         if self._eventState is not None:
             self._eventState.onMove(event.position())
 
     def mousePressEvent(self, event):
-        super().mousePressEvent(event)
+        #super().mousePressEvent(event)
         if (self._eventState is None) and (event.button() == self.PAN_BUTTON):
             self._eventState = ViewPan(self, event.position())
 
     def mouseReleaseEvent(self, event):
-        super().mouseReleaseEvent(event)
+        #super().mouseReleaseEvent(event)
         self._eventState = None
 
     def leaveEvent(self, event):
-        super().leaveEvent(event)
+        #super().leaveEvent(event)
         self._eventState = None
 
     def wheelEvent(self, event):
-        super().wheelEvent(event)
+        #super().wheelEvent(event)
 
         zoomSteps = event.angleDelta().y() / 120.0 # 8*15° standard
         self._zoom *= self.zoomFactor ** zoomSteps
