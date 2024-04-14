@@ -5,7 +5,7 @@ from dropview import DropView, DropZone
 
 
 class ImgView(DropView):
-    def __init__(self, tool):
+    def __init__(self):
         super().__init__()
 
         self.setBackgroundBrush(QBrush(QColor(0, 0, 0)))
@@ -14,12 +14,10 @@ class ImgView(DropView):
         self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
         self.setFrameStyle(0)
 
+        self._tool = None
+
         self._image = ImgItem()
         self.scene().addItem(self._image)
-
-        self._tool = tool
-        tool.onEnabled(self)
-
 
     @property
     def tool(self):
@@ -30,7 +28,8 @@ class ImgView(DropView):
         if tool is self._tool:
             return
         
-        self._tool.onDisabled(self)
+        if self._tool is not None:
+            self._tool.onDisabled(self)
         self._tool = tool
         tool.onEnabled(self)
         self.updateScene()
@@ -61,8 +60,6 @@ class ImgItem(QGraphicsPixmapItem):
     def __init__(self):
         super().__init__(None)
         self.setShapeMode(QGraphicsPixmapItem.BoundingRectShape)
-        self.setFlag(QGraphicsItem.ItemClipsToShape, True)
-        self.clipPath = None
 
     def loadImage(self, path) -> bool:
         print("Load image:", path)
@@ -73,18 +70,6 @@ class ImgItem(QGraphicsPixmapItem):
 
         self.setPixmap(pixmap)
         return True
-
-    def setClipWidth(self, x):
-        w = self.pixmap().width()
-        h = self.pixmap().height()
-        self.clipPath = QPainterPath()
-        self.clipPath.addRect(x, 0, w-x, h)
-        self.update()
-
-    def shape(self) -> QPainterPath:
-        if self.clipPath is None:
-            return super().shape()
-        return self.clipPath
 
     def updateTransform(self, vpRect: QRectF, rotation=0.0):
         imgRect = self.boundingRect()
@@ -103,3 +88,21 @@ class ImgItem(QGraphicsPixmapItem):
         transform = transform.translate(x, y)
         transform = transform.scale(scale, scale)
         self.setTransform(transform)
+
+
+
+class ClipImgItem(ImgItem):
+    def __init__(self):
+        super().__init__()
+        self.setFlag(QGraphicsItem.ItemClipsToShape, True)
+        self.clipPath = QPainterPath()
+
+    def setClipWidth(self, x):
+        w = self.pixmap().width()
+        h = self.pixmap().height()
+        self.clipPath.clear()
+        self.clipPath.addRect(x, 0, w-x, h)
+        self.update()
+
+    def shape(self) -> QPainterPath:
+        return self.clipPath

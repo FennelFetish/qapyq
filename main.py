@@ -2,8 +2,7 @@ import sys
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Slot
 from imgview import ImgView
-from tools.compare import CompareTool
-from tools.view import ViewTool
+import tools
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -66,27 +65,33 @@ class MainWindow(QtWidgets.QMainWindow):
     @Slot()
     def setTool(self, toolName: str):
         tab = self.tabWidget.currentWidget()
-        if toolName not in tab.tools:
-            tab.tools[toolName] = self.createTool(toolName)
-        tab.imgview.tool = tab.tools[toolName]
-
-    def createTool(self, toolName: str):
-        match toolName:
-            case "compare": return CompareTool()
-        return None
+        tab.setTool(toolName)
 
 
 
 class ImgTab(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
-        self.tools = { "view": ViewTool() }
-        self.imgview = ImgView(self.tools["view"])
+        self.imgview = ImgView()
+        self.tools = {}
+        self.setTool("view")
 
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.imgview)
         self.setLayout(layout)
+    
+    def setTool(self, toolName: str):
+        if toolName not in self.tools:
+            self.tools[toolName] = self.createTool(toolName)
+        self.imgview.tool = self.tools[toolName]
+
+    def createTool(self, toolName: str):
+        match toolName:
+            case "view":    return tools.ViewTool()
+            case "compare": return tools.CompareTool()
+            case "crop":    return tools.CropTool()
+        return None
 
 
 

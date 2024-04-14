@@ -1,14 +1,14 @@
 from PySide6.QtCore import QRectF
 from PySide6.QtGui import QBrush, QColor, QPen
 from PySide6.QtWidgets import QGraphicsLineItem
-from imgview import ImgItem
+from imgview import ClipImgItem
 from .tool import Tool
 
 
 class CompareTool(Tool):
     def __init__(self):
         super().__init__()
-        self._image = ImgItem()
+        self._image = ClipImgItem()
 
         self._dividerLine = QGraphicsLineItem(0, 0, 0, 0)
         self._dividerLine.setZValue(1000)
@@ -34,11 +34,13 @@ class CompareTool(Tool):
 
         firstUrl = event.mimeData().urls()[0]
         img.loadImage(firstUrl.toLocalFile())
-        vpRect = self._imgview.viewport().rect()
-        img.updateTransform(vpRect, 0)
-
+        img.updateTransform(self._imgview.viewport().rect(), 0)
+        
         if zoneIndex == 0:
             self._imgview.resetView()
+        else:
+            img.setClipWidth(0)
+
         self._imgview.updateScene()
 
     def onResize(self, event):
