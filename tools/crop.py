@@ -1,9 +1,9 @@
-from PySide6.QtGui import QBrush, QColor, QPen, QPainterPath
-from PySide6.QtWidgets import QGraphicsRectItem, QGraphicsItem
-from .view import ViewTool
-from PySide6.QtCore import Qt, QRectF, QPointF, QBuffer
-from PIL import Image
 import io
+from PIL import Image  # https://pillow.readthedocs.io/en/stable/reference/Image.html
+from PySide6.QtCore import QBuffer, QPointF, QRect, QRectF, Qt
+from PySide6.QtGui import QBrush, QColor, QPainterPath, QPen
+from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem
+from .view import ViewTool
 
 
 def createPen(r, g, b):
@@ -33,13 +33,27 @@ class CropTool(ViewTool):
         self._mask.setBrush( QBrush(QColor(0, 0, 0, 100)))
 
     def updateCropSelection(self, mouseCoords: QPointF):
+        # Calculate image bounds in viewport coordinates
         img = self._imgview._image
         rect = QRectF(0, 0, img.pixmap().width(), img.pixmap().height())
         rect = img.mapRectToParent(rect)
         rect = self._imgview.mapFromScene(rect).boundingRect()
         
+        # Calculate crop size in viewport coordinates
         h = (self._cropHeight * self._imgview.viewport().height() * self._imgview._zoom) / img.pixmap().height()
         w = h * self._cropAspectRatio
+
+        # Constrain crop size
+        if w > rect.width():
+            w = rect.width()
+            h = w / self._cropAspectRatio
+            self._cropHeight = (h * img.pixmap().height()) / (self._imgview.viewport().height() * self._imgview._zoom)
+        if h > rect.height():
+            h = rect.height()
+            w = h * self._cropAspectRatio
+            self._cropHeight = (h * img.pixmap().height()) / (self._imgview.viewport().height() * self._imgview._zoom)
+
+        # Crop position
         x = mouseCoords.x() - w/2
         y = mouseCoords.y() - h/2
         
@@ -61,11 +75,10 @@ class CropTool(ViewTool):
         self._mask.clipPath.addRect(self._imgview.viewport().rect())
         self._mask.clipPath.addRect(self._cropRect.rect())
 
-        wCovered = w * img.pixmap().width() / rect.width()
-        if wCovered < self._targetWidth:
-            self._cropRect.setPen(self.PEN_UPSCALE)
-        else:
-            self._cropRect.setPen(self.PEN_DOWNSCALE)
+        # Change selection color depending on crop size
+        wSelected = w * img.pixmap().width() / rect.width()
+        pen = self.PEN_UPSCALE if wSelected < self._targetWidth else self.PEN_DOWNSCALE
+        self._cropRect.setPen(pen)
 
         self._imgview.scene().update()
 
@@ -75,18 +88,17 @@ class CropTool(ViewTool):
         qimg.save(buffer, "PNG")
         return Image.open(io.BytesIO(buffer.data()))
 
-    def exportImage(self, rect):
+    def exportImage(self, rect: QRect):
         # Crop and convert
         img = self._imgview._image.pixmap()
-        img = self.toPILImage( img.copy(rect.toRect()) )
+        img = self.toPILImage( img.copy(rect) )
 
-        # if img.width < self._targetWidth:
-        #     print("upscaling")
-        # else:
-        #     print("downscaling")
-
-        # Use reducing_gap=3 when downscaling?
-        img = img.resize((self._targetWidth, self._targetHeight), Image.Resampling.LANCZOS)
+        if img.width < self._targetWidth:
+            # Upscaling
+            img = img.resize((self._targetWidth, self._targetHeight), Image.Resampling.LANCZOS)
+        else:
+            # Downscaling: Use reducing_gap=3 when downscaling?
+            img = img.resize((self._targetWidth, self._targetHeight), Image.Resampling.LANCZOS)
 
         path = "/mnt/data/Pictures/SDOut/bla_pil.png"
         img.save(path)
@@ -128,13 +140,16 @@ class CropTool(ViewTool):
         rect = self._cropRect.rect()
         rect = self._imgview.mapToScene(rect.toRect()).boundingRect()
         rect = self._imgview._image.mapRectFromParent(rect)
-        self.exportImage(rect)
+        self.exportImage(rect.toRect())
         return True
 
     def onMouseWheel(self, event) -> bool:
         if (event.modifiers() & Qt.ControlModifier) == Qt.ControlModifier:
             return False
-        change = 1 if (event.modifiers() & Qt.ShiftModifier) == Qt.ShiftModifier else 10
+        
+        change = self._imgview._image.pixmap().height() * 0.03
+        if (event.modifiers() & Qt.ShiftModifier) == Qt.ShiftModifier:
+            change = 1
 
         wheelSteps = event.angleDelta().y() / 120.0 # 8*15° standard
         self._cropHeight += wheelSteps * change
