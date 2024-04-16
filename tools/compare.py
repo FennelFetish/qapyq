@@ -30,7 +30,7 @@ class CompareTool(Tool):
         return [QRectF(0, 0, 0.5, 1), QRectF(0.5, 0, 1, 1)]
 
     def onDrop(self, event, zoneIndex):
-        img = self._image if zoneIndex>0 else self._imgview._image
+        img = self._image if zoneIndex>0 else self._imgview.image
 
         firstUrl = event.mimeData().urls()[0]
         img.loadImage(firstUrl.toLocalFile())

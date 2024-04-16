@@ -16,12 +16,12 @@ class ImgView(DropView):
 
         self._tool = None
 
-        self._image = ImgItem()
-        self.scene().addItem(self._image)
+        self.image = ImgItem()
+        self.scene().addItem(self.image)
     
     def loadImage(self, path):
-        self._image.loadImage(path)
-        self._image.updateTransform(self.viewport().rect(), 0)
+        self.image.loadImage(path)
+        self.image.updateTransform(self.viewport().rect(), 0)
         self.resetView()
         self.updateScene()
 
@@ -50,7 +50,7 @@ class ImgView(DropView):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._image.updateTransform(self.viewport().rect())
+        self.image.updateTransform(self.viewport().rect())
         self._tool.onResize(event)
 
     def enterEvent(self, event):

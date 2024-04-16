@@ -34,7 +34,7 @@ class CropTool(ViewTool):
 
     def updateCropSelection(self, mouseCoords: QPointF):
         # Calculate image bounds in viewport coordinates
-        img = self._imgview._image
+        img = self._imgview.image
         rect = QRectF(0, 0, img.pixmap().width(), img.pixmap().height())
         rect = img.mapRectToParent(rect)
         rect = self._imgview.mapFromScene(rect).boundingRect()
@@ -90,7 +90,7 @@ class CropTool(ViewTool):
 
     def exportImage(self, rect: QRect):
         # Crop and convert
-        img = self._imgview._image.pixmap()
+        img = self._imgview.image.pixmap()
         img = self.toPILImage( img.copy(rect) )
 
         if img.width < self._targetWidth:
@@ -139,7 +139,7 @@ class CropTool(ViewTool):
 
         rect = self._cropRect.rect()
         rect = self._imgview.mapToScene(rect.toRect()).boundingRect()
-        rect = self._imgview._image.mapRectFromParent(rect)
+        rect = self._imgview.image.mapRectFromParent(rect)
         self.exportImage(rect.toRect())
         return True
 
@@ -147,7 +147,7 @@ class CropTool(ViewTool):
         if (event.modifiers() & Qt.ControlModifier) == Qt.ControlModifier:
             return False
         
-        change = self._imgview._image.pixmap().height() * 0.03
+        change = self._imgview.image.pixmap().height() * 0.03
         if (event.modifiers() & Qt.ShiftModifier) == Qt.ShiftModifier:
             change = 1
 
