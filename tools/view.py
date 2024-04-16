@@ -12,6 +12,3 @@ class ViewTool(Tool):
     def onDrop(self, event, zoneIndex):
         firstUrl = event.mimeData().urls()[0]
         self._imgview.loadImage(firstUrl.toLocalFile())
-        self._imgview._image.updateTransform(self._imgview.viewport().rect(), 0)
-        self._imgview.resetView()
-        self._imgview.updateScene()

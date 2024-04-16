@@ -21,6 +21,9 @@ class ImgView(DropView):
     
     def loadImage(self, path):
         self._image.loadImage(path)
+        self._image.updateTransform(self.viewport().rect(), 0)
+        self.resetView()
+        self.updateScene()
 
     @property
     def tool(self):
@@ -47,7 +50,7 @@ class ImgView(DropView):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._image.updateTransform( self.viewport().rect() )
+        self._image.updateTransform(self.viewport().rect())
         self._tool.onResize(event)
 
     def enterEvent(self, event):
@@ -61,6 +64,10 @@ class ImgView(DropView):
     def leaveEvent(self, event):
         super().leaveEvent(event)
         self._tool.onMouseLeave(event)
+
+    def mousePressEvent(self, event):
+        if not self._tool.onMousePress(event):
+            super().mousePressEvent(event)
 
     def wheelEvent(self, event):
         if not self._tool.onMouseWheel(event):

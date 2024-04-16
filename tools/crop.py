@@ -1,51 +1,59 @@
 from PySide6.QtGui import QBrush, QColor, QPen, QPainterPath
 from PySide6.QtWidgets import QGraphicsRectItem, QGraphicsItem
 from .view import ViewTool
-from PySide6.QtCore import Qt, QRectF, QPointF
+from PySide6.QtCore import Qt, QRectF, QPointF, QBuffer
+from PIL import Image
+import io
+
+
+def createPen(r, g, b):
+    pen = QPen( QColor(r, g, b, 180) )
+    pen.setDashPattern([5,5])
+    return pen
+
 
 class CropTool(ViewTool):
+    PEN_DOWNSCALE = createPen(0, 255, 255)
+    PEN_UPSCALE   = createPen(255, 0, 255)
+
     def __init__(self):
         super().__init__()
 
-        pen = QPen( QColor(255, 0, 255, 180) )
-        pen.setDashPattern([5,12])
+        self._targetWidth = 512
+        self._targetHeight = 768
 
         self._cropHeight = 100.0
-        self._cropAspectRatio = 2/3
+        self._cropAspectRatio = self._targetWidth / self._targetHeight
 
         self._cropRect = QGraphicsRectItem(-50, -50, 100, 100)
-        self._cropRect.setPen(pen)
+        self._cropRect.setPen(self.PEN_UPSCALE)
         self._cropRect.setVisible(False)
 
         self._mask = MaskRect()
         self._mask.setBrush( QBrush(QColor(0, 0, 0, 100)))
 
     def updateCropSelection(self, mouseCoords: QPointF):
-        rect = QRectF(0, 0, self._imgview._image.pixmap().width(), self._imgview._image.pixmap().height())
-        rect = self._imgview._image.mapRectToParent(rect)
-        imgMin = self._imgview.mapFromScene(rect.topLeft())
-        imgMax = self._imgview.mapFromScene(rect.bottomRight())
-        imgW = imgMax.x() - imgMin.x()
-        imgH = imgMax.y() - imgMin.y()
-
-        h = (self._cropHeight * self._imgview.viewport().height() * self._imgview._zoom) / self._imgview._image.pixmap().height()
+        img = self._imgview._image
+        rect = QRectF(0, 0, img.pixmap().width(), img.pixmap().height())
+        rect = img.mapRectToParent(rect)
+        rect = self._imgview.mapFromScene(rect).boundingRect()
+        
+        h = (self._cropHeight * self._imgview.viewport().height() * self._imgview._zoom) / img.pixmap().height()
         w = h * self._cropAspectRatio
         x = mouseCoords.x() - w/2
         y = mouseCoords.y() - h/2
         
-        # mxPerc = (mouseCoords.x()-imgMin.x()) / imgW
-        # myPerc = (mouseCoords.y()-imgMin.y()) / imgH
+        x = max(x, rect.x())
+        y = max(y, rect.y())
 
-        x = max(x, imgMin.x())
-        y = max(y, imgMin.y())
-
+        imgMax = rect.bottomRight()
         x = min(x, imgMax.x()-w)
         y = min(y, imgMax.y()-h)
         
-        if w > imgW:
-            x += (w-imgW) / 2
-        if h > imgH:
-            y += (h-imgH) / 2
+        if w > rect.width():
+            x += (w-rect.width()) / 2
+        if h > rect.height():
+            y += (h-rect.height()) / 2
 
         self._cropRect.setRect(x, y, w, h)
 
@@ -53,7 +61,36 @@ class CropTool(ViewTool):
         self._mask.clipPath.addRect(self._imgview.viewport().rect())
         self._mask.clipPath.addRect(self._cropRect.rect())
 
+        wCovered = w * img.pixmap().width() / rect.width()
+        if wCovered < self._targetWidth:
+            self._cropRect.setPen(self.PEN_UPSCALE)
+        else:
+            self._cropRect.setPen(self.PEN_DOWNSCALE)
+
         self._imgview.scene().update()
+
+    def toPILImage(self, qimg):
+        buffer = QBuffer()
+        buffer.open(QBuffer.ReadWrite)
+        qimg.save(buffer, "PNG")
+        return Image.open(io.BytesIO(buffer.data()))
+
+    def exportImage(self, rect):
+        # Crop and convert
+        img = self._imgview._image.pixmap()
+        img = self.toPILImage( img.copy(rect.toRect()) )
+
+        # if img.width < self._targetWidth:
+        #     print("upscaling")
+        # else:
+        #     print("downscaling")
+
+        # Use reducing_gap=3 when downscaling?
+        img = img.resize((self._targetWidth, self._targetHeight), Image.Resampling.LANCZOS)
+
+        path = "/mnt/data/Pictures/SDOut/bla_pil.png"
+        img.save(path)
+        print("Exported cropped image to", path)
 
     def onEnabled(self, imgview):
         super().onEnabled(imgview)
@@ -83,6 +120,16 @@ class CropTool(ViewTool):
         self._cropRect.setVisible(False)
         self._mask.setVisible(False)
         self._imgview.scene().update()
+
+    def onMousePress(self, event) -> bool:
+        if (event.modifiers() & Qt.ControlModifier) == Qt.ControlModifier:
+            return False
+
+        rect = self._cropRect.rect()
+        rect = self._imgview.mapToScene(rect.toRect()).boundingRect()
+        rect = self._imgview._image.mapRectFromParent(rect)
+        self.exportImage(rect)
+        return True
 
     def onMouseWheel(self, event) -> bool:
         if (event.modifiers() & Qt.ControlModifier) == Qt.ControlModifier:

@@ -53,7 +53,7 @@ class CompareTool(Tool):
             self._dividerLine.setVisible(True)
 
     def onMouseMove(self, event):
-        imgpos = self._imgview.mapToScene(event.position().x(), event.position().y())
+        imgpos = self._imgview.mapToScene(event.position().toPoint())
         imgpos = self._image.mapFromParent(imgpos)
         self._image.setClipWidth(imgpos.x())
 

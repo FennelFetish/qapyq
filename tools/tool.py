@@ -35,6 +35,9 @@ class Tool:
     def onMouseLeave(self, event):
         pass
 
+    def onMousePress(self, event) -> bool:
+        return False
+
     def onMouseWheel(self, event) -> bool:
         return False
 
