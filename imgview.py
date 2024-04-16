@@ -18,6 +18,9 @@ class ImgView(DropView):
 
         self._image = ImgItem()
         self.scene().addItem(self._image)
+    
+    def loadImage(self, path):
+        self._image.loadImage(path)
 
     @property
     def tool(self):
@@ -34,6 +37,10 @@ class ImgView(DropView):
         tool.onEnabled(self)
         self.updateScene()
 
+
+    def updateScene(self):
+        super().updateScene()
+        self._tool.onSceneUpdate()
 
     def onDrop(self, event, zoneIndex) -> None:
         self._tool.onDrop(event, zoneIndex)
@@ -54,6 +61,11 @@ class ImgView(DropView):
     def leaveEvent(self, event):
         super().leaveEvent(event)
         self._tool.onMouseLeave(event)
+
+    def wheelEvent(self, event):
+        if not self._tool.onMouseWheel(event):
+            super().wheelEvent(event)
+        
 
 
 class ImgItem(QGraphicsPixmapItem):

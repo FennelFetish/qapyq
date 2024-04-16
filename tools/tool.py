@@ -15,6 +15,9 @@ class Tool:
     def onDisabled(self, imgview: ImgView):
         self._imgview = None
 
+    def onSceneUpdate(self):
+        pass
+
 
     def getDropRects(self):
         return []
@@ -31,6 +34,9 @@ class Tool:
 
     def onMouseLeave(self, event):
         pass
+
+    def onMouseWheel(self, event) -> bool:
+        return False
 
 
     def onResize(self, event):
