@@ -1,4 +1,4 @@
-import io
+import io, os
 from PIL import Image  # https://pillow.readthedocs.io/en/stable/reference/Image.html
 from PySide6.QtCore import QBuffer, QPointF, QRect, QRectF, Qt, Slot
 from PySide6.QtGui import QBrush, QColor, QPainterPath, QPen
@@ -19,6 +19,7 @@ class CropTool(ViewTool):
 
     BUTTON_CROP   = Qt.LeftButton
 
+
     def __init__(self):
         super().__init__()
 
@@ -37,14 +38,17 @@ class CropTool(ViewTool):
 
         self._toolbar = CropToolBar(self)
 
+
     def getToolbar(self):
         return self._toolbar
+
 
     def setTargetSize(self, width, height):
         self._targetWidth = round(width)
         self._targetHeight = round(height)
         self._cropAspectRatio = self._targetWidth / self._targetHeight
         #self.updateCropSelection(self._cropRect.rect().center())
+
 
     def updateCropSelection(self, mouseCoords: QPointF):
         # Calculate image bounds in viewport coordinates
@@ -96,11 +100,25 @@ class CropTool(ViewTool):
 
         self._imgview.scene().update()
 
+
     def toPILImage(self, qimg):
         buffer = QBuffer()
         buffer.open(QBuffer.ReadWrite)
         qimg.save(buffer, "PNG")
         return Image.open(io.BytesIO(buffer.data()))
+
+    def getExportPath(self):
+        filename = os.path.basename(self._imgview.image.filepath)
+        filename = os.path.splitext(filename)[0] + f"_{self._targetWidth}x{self._targetHeight}"
+        prefix = "/mnt/data/Pictures/SDOut/" + filename
+
+        path = prefix + ".png"
+        suffix = 1
+        while os.path.exists(path):
+            path = prefix + f"_{suffix:02}.png"
+            suffix += 1
+        
+        return path
 
     def exportImage(self, rect: QRect):
         # Crop and convert
@@ -114,9 +132,10 @@ class CropTool(ViewTool):
             # Downscaling: Use reducing_gap=3 when downscaling?
             img = img.resize((self._targetWidth, self._targetHeight), Image.Resampling.LANCZOS)
 
-        path = "/mnt/data/Pictures/SDOut/bla_pil.png"
+        path = self.getExportPath()
         img.save(path)
         print("Exported cropped image to", path)
+
 
     def onEnabled(self, imgview):
         super().onEnabled(imgview)
@@ -129,11 +148,13 @@ class CropTool(ViewTool):
         imgview._guiScene.removeItem(self._mask)
         imgview._guiScene.removeItem(self._cropRect)
 
+
     def onSceneUpdate(self):
         self.updateCropSelection(self._cropRect.rect().center())
 
     def onResize(self, event):
         self._mask.setRect(self._imgview.viewport().rect())
+
 
     def onMouseEnter(self, event):
         self._cropRect.setVisible(True)
@@ -147,6 +168,7 @@ class CropTool(ViewTool):
         self._mask.setVisible(False)
         self._imgview.scene().update()
 
+
     def onMousePress(self, event) -> bool:
         if event.button() != self.BUTTON_CROP:
             return False
@@ -158,6 +180,7 @@ class CropTool(ViewTool):
         rect = self._imgview.image.mapRectFromParent(rect)
         self.exportImage(rect.toRect())
         return True
+
 
     def onMouseWheel(self, event) -> bool:
         if (event.modifiers() & Qt.ControlModifier) == Qt.ControlModifier:
@@ -217,7 +240,8 @@ class CropToolBar(QtWidgets.QToolBar):
         act = self.addWidget(widget)
 
         self.updateSize()
-    
+
+
     @Slot()
     def updateSize(self):
         self._cropTool.setTargetSize(self.spinW.value(), self.spinH.value())

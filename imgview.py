@@ -18,12 +18,12 @@ class ImgView(DropView):
 
         self.image = ImgItem()
         self.scene().addItem(self.image)
-    
+
     def loadImage(self, path):
-        self.image.loadImage(path)
-        self.image.updateTransform(self.viewport().rect(), 0)
-        self.resetView()
-        self.updateScene()
+        if self.image.loadImage(path):
+            self.image.updateTransform(self.viewport().rect(), 0)
+            self.resetView()
+            self.updateScene()
 
     @property
     def tool(self):
@@ -79,6 +79,7 @@ class ImgItem(QGraphicsPixmapItem):
     def __init__(self):
         super().__init__(None)
         self.setShapeMode(QGraphicsPixmapItem.BoundingRectShape)
+        self.filepath = ""
 
     def loadImage(self, path) -> bool:
         print("Load image:", path)
@@ -87,6 +88,7 @@ class ImgItem(QGraphicsPixmapItem):
             print("Failed to load image:", path)
             return False
 
+        self.filepath = path
         self.setPixmap(pixmap)
         return True
 
