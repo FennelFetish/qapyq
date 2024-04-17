@@ -1,8 +1,9 @@
 import io
 from PIL import Image  # https://pillow.readthedocs.io/en/stable/reference/Image.html
-from PySide6.QtCore import QBuffer, QPointF, QRect, QRectF, Qt
+from PySide6.QtCore import QBuffer, QPointF, QRect, QRectF, Qt, Slot
 from PySide6.QtGui import QBrush, QColor, QPainterPath, QPen
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem
+from PySide6 import QtWidgets
 from .view import ViewTool
 
 
@@ -16,11 +17,13 @@ class CropTool(ViewTool):
     PEN_DOWNSCALE = createPen(0, 255, 255)
     PEN_UPSCALE   = createPen(255, 0, 255)
 
+    BUTTON_CROP   = Qt.LeftButton
+
     def __init__(self):
         super().__init__()
 
         self._targetWidth = 512
-        self._targetHeight = 768
+        self._targetHeight = 512
 
         self._cropHeight = 100.0
         self._cropAspectRatio = self._targetWidth / self._targetHeight
@@ -31,6 +34,17 @@ class CropTool(ViewTool):
 
         self._mask = MaskRect()
         self._mask.setBrush( QBrush(QColor(0, 0, 0, 100)))
+
+        self._toolbar = CropToolBar(self)
+
+    def getToolbar(self):
+        return self._toolbar
+
+    def setTargetSize(self, width, height):
+        self._targetWidth = round(width)
+        self._targetHeight = round(height)
+        self._cropAspectRatio = self._targetWidth / self._targetHeight
+        #self.updateCropSelection(self._cropRect.rect().center())
 
     def updateCropSelection(self, mouseCoords: QPointF):
         # Calculate image bounds in viewport coordinates
@@ -134,6 +148,8 @@ class CropTool(ViewTool):
         self._imgview.scene().update()
 
     def onMousePress(self, event) -> bool:
+        if event.button() != self.BUTTON_CROP:
+            return False
         if (event.modifiers() & Qt.ControlModifier) == Qt.ControlModifier:
             return False
 
@@ -166,3 +182,49 @@ class MaskRect(QGraphicsRectItem):
 
     def shape(self) -> QPainterPath:
         return self.clipPath
+
+
+
+class CropToolBar(QtWidgets.QToolBar):
+    def __init__(self, cropTool):
+        super().__init__("Crop")
+        self._cropTool = cropTool
+
+        self.spinW = QtWidgets.QSpinBox()
+        self.spinW.setRange(1, 16384)
+        self.spinW.setSingleStep(64)
+        self.spinW.setValue(512)
+        self.spinW.valueChanged.connect(self.updateSize)
+
+        self.spinH = QtWidgets.QSpinBox()
+        self.spinH.setRange(1, 16384)
+        self.spinH.setSingleStep(64)
+        self.spinH.setValue(512)
+        self.spinH.valueChanged.connect(self.updateSize)
+
+        btnSwap  = QtWidgets.QPushButton("Swap")
+        btnSwap.clicked.connect(self.swapSize)
+
+        layout = QtWidgets.QFormLayout()
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.addRow(QtWidgets.QLabel("Target Size:"))
+        layout.addRow("W:", self.spinW)
+        layout.addRow("H:", self.spinH)
+        layout.addRow(btnSwap)
+
+        widget = QtWidgets.QWidget()
+        widget.setLayout(layout)
+        act = self.addWidget(widget)
+
+        self.updateSize()
+    
+    @Slot()
+    def updateSize(self):
+        self._cropTool.setTargetSize(self.spinW.value(), self.spinH.value())
+    
+    @Slot()
+    def swapSize(self):
+        w = self.spinW.value()
+        self.spinW.setValue(self.spinH.value())
+        self.spinH.setValue(w)
+        self.updateSize()

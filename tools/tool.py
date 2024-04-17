@@ -6,6 +6,9 @@ class Tool:
     def __init__(self):
         pass
 
+    def getToolbar(self):
+        return None
+
     def onEnabled(self, imgview: ImgView):
         self._imgview = imgview
         imgview.clearDropZones()

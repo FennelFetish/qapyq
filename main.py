@@ -69,22 +69,36 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 
-class ImgTab(QtWidgets.QWidget):
+class ImgTab(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.imgview = ImgView()
         self.tools = {}
+        self._toolbar = None
         self.setTool("view")
 
+        widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.imgview)
-        self.setLayout(layout)
-    
+        widget.setLayout(layout)
+        self.setCentralWidget(widget)
+
+        # For debugging
+        self.imgview.loadImage("/home/rem/Pictures/red-tree-with-eyes.jpeg")
+
     def setTool(self, toolName: str):
         if toolName not in self.tools:
             self.tools[toolName] = self.createTool(toolName)
         self.imgview.tool = self.tools[toolName]
+
+        # Replace toolbar
+        if self._toolbar is not None:
+            self.removeToolBar(self._toolbar)
+        self._toolbar = self.imgview.tool.getToolbar()
+        if self._toolbar is not None:
+            self.addToolBar(Qt.RightToolBarArea, self._toolbar)
+            self._toolbar.show()
 
     def createTool(self, toolName: str):
         match toolName:
