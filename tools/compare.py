@@ -34,7 +34,7 @@ class CompareTool(Tool):
 
         firstUrl = event.mimeData().urls()[0]
         img.loadImage(firstUrl.toLocalFile())
-        img.updateTransform(self._imgview.viewport().rect(), 0)
+        img.updateTransform(self._imgview.viewport().rect(), self._imgview.rotation)
         
         if zoneIndex == 0:
             self._imgview.resetView()
@@ -44,7 +44,8 @@ class CompareTool(Tool):
         self._imgview.updateScene()
 
     def onResize(self, event):
-        self._image.updateTransform( QRectF(0, 0, event.size().width(), event.size().height()) )
+        rect = QRectF(0, 0, event.size().width(), event.size().height())
+        self._image.updateTransform(rect, self._imgview.rotation)
 
 
     # ===== Divider Line =====

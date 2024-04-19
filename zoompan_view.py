@@ -8,9 +8,9 @@ class ZoomPanView(QGraphicsView):
 
     def __init__(self, scene):
         super().__init__(scene)
-        self._zoom = 1.0
+        self.zoom = 1.0
         self.zoomFactor = 1.15
-        self._pan = QPointF(0, 0)
+        self.pan = QPointF(0, 0)
         self._eventState = None
 
         self._guiScene = QGraphicsScene()
@@ -28,9 +28,9 @@ class ZoomPanView(QGraphicsView):
         h = self.viewport().height()
         self._guiScene.setSceneRect(0, 0, w, h)
 
-        wz = w / self._zoom
-        hz = h / self._zoom
-        pan = self._pan / self._zoom
+        wz = w / self.zoom
+        hz = h / self.zoom
+        pan = self.pan / self.zoom
 
         rect = QRectF(pan.x() - (wz/2), pan.y() - (hz/2), wz, hz)
         self.setSceneRect(rect)
@@ -59,19 +59,19 @@ class ZoomPanView(QGraphicsView):
 
     def wheelEvent(self, event):
         zoomSteps = event.angleDelta().y() / 120.0 # 8*15° standard
-        self._zoom *= self.zoomFactor ** zoomSteps
-        self._zoom = max(self._zoom, 1.0)
+        self.zoom *= self.zoomFactor ** zoomSteps
+        self.zoom = max(self.zoom, 1.0)
         
         oldPos = self.mapToScene(event.position().toPoint())
         self.updateScene()
 
         newPos = self.mapToScene(event.position().toPoint())
-        self._pan -= (newPos - oldPos) * self._zoom
+        self.pan -= (newPos - oldPos) * self.zoom
         self.updateScene()
 
     def resetView(self):
-        self._pan = QPointF(0, 0)
-        self._zoom = 1.0
+        self.pan = QPointF(0, 0)
+        self.zoom = 1.0
 
 
 class ViewPan:
@@ -80,6 +80,6 @@ class ViewPan:
         self._startPos = QPointF(startPos)
         
     def onMove(self, position: QPointF):
-        self._view._pan += self._startPos - position
+        self._view.pan += self._startPos - position
         self._view.updateScene()
         self._startPos = position

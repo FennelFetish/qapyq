@@ -58,18 +58,18 @@ class CropTool(ViewTool):
         rect = self._imgview.mapFromScene(rect).boundingRect()
         
         # Calculate crop size in viewport coordinates
-        h = (self._cropHeight * self._imgview.viewport().height() * self._imgview._zoom) / img.pixmap().height()
+        h = (self._cropHeight * self._imgview.viewport().height() * self._imgview.zoom) / img.pixmap().height()
         w = h * self._cropAspectRatio
 
         # Constrain crop size
         if w > rect.width():
             w = rect.width()
             h = w / self._cropAspectRatio
-            self._cropHeight = (h * img.pixmap().height()) / (self._imgview.viewport().height() * self._imgview._zoom)
+            self._cropHeight = (h * img.pixmap().height()) / (self._imgview.viewport().height() * self._imgview.zoom)
         if h > rect.height():
             h = rect.height()
             w = h * self._cropAspectRatio
-            self._cropHeight = (h * img.pixmap().height()) / (self._imgview.viewport().height() * self._imgview._zoom)
+            self._cropHeight = (h * img.pixmap().height()) / (self._imgview.viewport().height() * self._imgview.zoom)
 
         # Crop position
         x = mouseCoords.x() - w/2
@@ -99,6 +99,7 @@ class CropTool(ViewTool):
         self._cropRect.setPen(pen)
 
         self._imgview.scene().update()
+        self._toolbar.setSelectionSize(self._cropHeight * self._cropAspectRatio, self._cropHeight)
 
 
     def toPILImage(self, qimg):
@@ -143,14 +144,23 @@ class CropTool(ViewTool):
         imgview._guiScene.addItem(self._mask)
         imgview._guiScene.addItem(self._cropRect)
 
+        imgview.rotation = self._toolbar.slideRot.value() / 10
+        imgview.updateImageTransform()
+
     def onDisabled(self, imgview):
         super().onDisabled(imgview)
         imgview._guiScene.removeItem(self._mask)
         imgview._guiScene.removeItem(self._cropRect)
 
+        imgview.rotation = 0.0
+        imgview.updateImageTransform()
+
 
     def onSceneUpdate(self):
         self.updateCropSelection(self._cropRect.rect().center())
+
+    def onResetView(self):
+        self._toolbar.slideRot.setValue(self._imgview.rotation)
 
     def onResize(self, event):
         self._mask.setRect(self._imgview.viewport().rect())
@@ -213,6 +223,19 @@ class CropToolBar(QtWidgets.QToolBar):
         super().__init__("Crop")
         self._cropTool = cropTool
 
+        layout = QtWidgets.QVBoxLayout()
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.addWidget(self._buildTargetSize())
+        layout.addWidget(self._buildSelectionSize())
+        layout.addWidget(self._buildRotation())
+
+        widget = QtWidgets.QWidget()
+        widget.setLayout(layout)
+        act = self.addWidget(widget)
+
+        self.updateSize()
+
+    def _buildTargetSize(self):
         self.spinW = QtWidgets.QSpinBox()
         self.spinW.setRange(1, 16384)
         self.spinW.setSingleStep(64)
@@ -230,17 +253,53 @@ class CropToolBar(QtWidgets.QToolBar):
 
         layout = QtWidgets.QFormLayout()
         layout.setContentsMargins(1, 1, 1, 1)
-        layout.addRow(QtWidgets.QLabel("Target Size:"))
         layout.addRow("W:", self.spinW)
         layout.addRow("H:", self.spinH)
         layout.addRow(btnSwap)
 
-        widget = QtWidgets.QWidget()
-        widget.setLayout(layout)
-        act = self.addWidget(widget)
+        group = QtWidgets.QGroupBox("Target Size")
+        group.setLayout(layout)
+        return group
 
-        self.updateSize()
+    def _buildSelectionSize(self):
+        self.lblW = QtWidgets.QLabel("0 px")
+        self.lblH = QtWidgets.QLabel("0 px")
+        self.lblScale = QtWidgets.QLabel("1.0")
 
+        layout = QtWidgets.QFormLayout()
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.addRow("W:", self.lblW)
+        layout.addRow("H:", self.lblH)
+        layout.addRow(self.lblScale)
+
+        group = QtWidgets.QGroupBox("Selection")
+        group.setLayout(layout)
+        return group
+
+    def _buildRotation(self):
+        self.slideRot = QtWidgets.QSlider(Qt.Horizontal)
+        self.slideRot.setRange(-1, 3600)
+        self.slideRot.setTickPosition(QtWidgets.QSlider.TicksAbove)
+        self.slideRot.setTickInterval(900)
+        self.slideRot.setSingleStep(10)
+        self.slideRot.setPageStep(50)
+        self.slideRot.setValue(0)
+        self.slideRot.valueChanged.connect(self.updateRotationFromSlider)
+
+        self.spinRot = PrecisionSpinBox()
+        self.spinRot.setRange(-3600, 3600)
+        self.spinRot.setSingleStep(1)
+        self.spinRot.setValue(0)
+        self.spinRot.valueChanged.connect(self.updateRotationFromSpinner)
+
+        layout = QtWidgets.QFormLayout()
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.addRow(self.slideRot)
+        layout.addRow("Deg:", self.spinRot)
+
+        group = QtWidgets.QGroupBox("Rotation")
+        group.setLayout(layout)
+        return group
 
     @Slot()
     def updateSize(self):
@@ -252,3 +311,42 @@ class CropToolBar(QtWidgets.QToolBar):
         self.spinW.setValue(self.spinH.value())
         self.spinH.setValue(w)
         self.updateSize()
+    
+    @Slot()
+    def updateRotationFromSlider(self, rot: int):
+        self.spinRot.setValue(rot)
+        self._cropTool._imgview.rotation = rot / 10
+        self._cropTool._imgview.updateImageTransform()
+
+    @Slot()
+    def updateRotationFromSpinner(self, rot: int):
+        rot = rot % 3600
+        self.spinRot.setValue(rot)
+        self.slideRot.setValue(rot)
+        
+        self._cropTool._imgview.rotation = rot / 10
+        self._cropTool._imgview.updateImageTransform()
+
+    def setSelectionSize(self, w, h):
+        self.lblW.setText(f"{w:.1f} px")
+        self.lblH.setText(f"{h:.1f} px")
+
+        scale = self.spinH.value() / h
+        if scale >= 1.0:
+            self.lblScale.setStyleSheet("QLabel { color: #ff3030; }")
+            self.lblScale.setText(f"▲   {scale:.3f}")
+        else:
+            self.lblScale.setStyleSheet("QLabel { color: #30ff30; }")
+            self.lblScale.setText(f"▼   {scale:.3f}")
+
+
+
+class PrecisionSpinBox(QtWidgets.QSpinBox):
+    PRECISION = 10
+
+    def textFromValue(self, val: int) -> str:
+        return f"{val / self.PRECISION:.1f}"
+    
+    def valueFromText(self, text: str) -> int:
+        val = float(text) * self.PRECISION
+        return round(val)

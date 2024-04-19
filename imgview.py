@@ -14,6 +14,7 @@ class ImgView(DropView):
         self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
         self.setFrameStyle(0)
 
+        self.rotation = 0.0
         self._tool = None
 
         self.image = ImgItem()
@@ -21,9 +22,17 @@ class ImgView(DropView):
 
     def loadImage(self, path):
         if self.image.loadImage(path):
-            self.image.updateTransform(self.viewport().rect(), 0)
             self.resetView()
+            self.updateImageTransform()
             self.updateScene()
+
+    def updateImageTransform(self):
+        self.image.updateTransform(self.viewport().rect(), self.rotation)
+    
+    def resetView(self):
+        super().resetView()
+        self.rotation = 0.0
+        self._tool.onResetView()
 
     @property
     def tool(self):
@@ -50,7 +59,7 @@ class ImgView(DropView):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.image.updateTransform(self.viewport().rect())
+        self.updateImageTransform()
         self._tool.onResize(event)
 
     def enterEvent(self, event):
@@ -92,7 +101,7 @@ class ImgItem(QGraphicsPixmapItem):
         self.setPixmap(pixmap)
         return True
 
-    def updateTransform(self, vpRect: QRectF, rotation=0.0):
+    def updateTransform(self, vpRect: QRectF, rotation):
         imgRect = self.boundingRect()
         if imgRect.width() == 0 or imgRect.height() == 0:
             return

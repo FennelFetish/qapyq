@@ -21,6 +21,12 @@ class Tool:
     def onSceneUpdate(self):
         pass
 
+    def onResetView(self):
+        pass
+
+    def onResize(self, event):
+        pass
+
 
     def getDropRects(self):
         return []
@@ -43,7 +49,3 @@ class Tool:
 
     def onMouseWheel(self, event) -> bool:
         return False
-
-
-    def onResize(self, event):
-        pass
