@@ -1,7 +1,7 @@
 import io, os
 from PIL import Image  # https://pillow.readthedocs.io/en/stable/reference/Image.html
 from PySide6.QtCore import QBuffer, QPointF, QRect, QRectF, Qt, Slot
-from PySide6.QtGui import QBrush, QColor, QPainterPath, QPen
+from PySide6.QtGui import QBrush, QColor, QPainterPath, QPen, QPolygonF, QTransform
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem
 from PySide6 import QtWidgets
 from .view import ViewTool
@@ -34,7 +34,7 @@ class CropTool(ViewTool):
         self._cropRect.setVisible(False)
 
         self._mask = MaskRect()
-        self._mask.setBrush( QBrush(QColor(0, 0, 0, 100)))
+        self._mask.setBrush( QBrush(QColor(0, 0, 0, 100)) )
 
         self._toolbar = CropToolBar(self)
 
@@ -121,19 +121,72 @@ class CropTool(ViewTool):
         
         return path
 
-    def exportImage(self, rect: QRect):
+    def calcSourceBox(self, poly: QPolygonF, rect: QRectF) -> QRectF:
+        # Calc points inside cropped image
+        pivot = rect.center()
+        p0 = poly.at(0) - pivot
+        p1 = poly.at(1) - pivot
+        p2 = poly.at(2) - pivot
+        p3 = poly.at(3) - pivot
+        poly = QPolygonF([p0, p1, p2, p3])
+        #print("polyRel:", polyRel)
+
+        rotMatrix = QTransform().rotate(self._imgview.rotation)
+        polyRot = rotMatrix.map(poly) # is now axis oriented
+
+        rectCenter = rect.center()
+        rect = rect.translated(-rectCenter.x(), -rectCenter.y())
+        rectRot = rotMatrix.mapRect(rect)
+        rectRot.translate(rectCenter.x(), rectCenter.y())
+
+        origin = rectRot.topLeft()
+        p0 = polyRot.at(0) + pivot - origin
+        p1 = polyRot.at(1) + pivot - origin
+        p2 = polyRot.at(2) + pivot - origin
+        p3 = polyRot.at(3) + pivot - origin
+        polyRot = QPolygonF([p0, p1, p2, p3])
+        #print("poly:", polyRot)
+        return polyRot.boundingRect()
+
+    def exportImage(self, poly: QPolygonF):
+        # TODO: Adjust rect to rotation -> no? it should already include everything
+        # The selected region is inside the mapped boundingRect
+        # Region to be exported is a rectangle inside the rotated image
+        # Need the selection points relative to the boundingRect
+
+        print("===== exportImage =====")
+        #print("poly:", poly)
+        rect = poly.boundingRect()
+        #print("rect:", rect)
+
+        srcRect = self.calcSourceBox(poly, rect)
+
         # Crop and convert
         img = self._imgview.image.pixmap()
-        img = self.toPILImage( img.copy(rect) )
-
-        if img.width < self._targetWidth:
-            # Upscaling
-            img = img.resize((self._targetWidth, self._targetHeight), Image.Resampling.LANCZOS)
-        else:
-            # Downscaling: Use reducing_gap=3 when downscaling?
-            img = img.resize((self._targetWidth, self._targetHeight), Image.Resampling.LANCZOS)
-
+        img = self.toPILImage( img.copy(rect.toRect()) )
+        
         path = self.getExportPath()
+        if abs(self._imgview.rotation) > 0.01:
+            img = img.rotate(-self._imgview.rotation, Image.Resampling.BICUBIC, expand=1, fillcolor=(0,0,0))
+            img.save(path + "-rot.png")
+
+        srcBoxX = max(0, srcRect.x())
+        srcBoxY = max(0, srcRect.y())
+        srcBoxW = min(img.width, srcRect.width())
+        srcBoxH = min(img.height, srcRect.height())
+        srcBox = (srcBoxX, srcBoxY, srcBoxW, srcBoxH)
+        print("srcBox:", srcBox)
+
+        img = img.resize(size=(self._targetWidth, self._targetHeight), resample=Image.Resampling.LANCZOS, box=srcBox)
+
+        # if img.width < self._targetWidth:
+        #     # Upscaling
+        #     img = img.resize((self._targetWidth, self._targetHeight), Image.Resampling.LANCZOS, srcBox)
+        # else:
+        #     # Downscaling: Use reducing_gap=3 when downscaling?
+        #     img = img.resize((self._targetWidth, self._targetHeight), Image.Resampling.LANCZOS, srcBox)
+
+        #path = self.getExportPath()
         img.save(path)
         print("Exported cropped image to", path)
 
@@ -186,9 +239,9 @@ class CropTool(ViewTool):
             return False
 
         rect = self._cropRect.rect()
-        rect = self._imgview.mapToScene(rect.toRect()).boundingRect()
-        rect = self._imgview.image.mapRectFromParent(rect)
-        self.exportImage(rect.toRect())
+        poly = self._imgview.mapToScene(rect.toRect())
+        poly = self._imgview.image.mapFromParent(poly)
+        self.exportImage(poly)
         return True
 
 
