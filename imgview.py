@@ -1,4 +1,4 @@
-from PySide6.QtCore import QRectF
+from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPixmap, QTransform
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsPixmapItem, QGraphicsView
 from dropview import DropView, DropZone
@@ -8,7 +8,10 @@ class ImgView(DropView):
     def __init__(self):
         super().__init__()
 
-        self.setBackgroundBrush(QBrush(QColor(0, 0, 0)))
+        bgBrush = QBrush(QColor(0, 0, 0))
+        bgBrush.setStyle(Qt.Dense2Pattern)
+        self.setBackgroundBrush(bgBrush)
+
         self.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
         self.setOptimizationFlag(QGraphicsView.DontAdjustForAntialiasing, True)
         self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
