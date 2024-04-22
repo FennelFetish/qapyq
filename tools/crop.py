@@ -1,10 +1,12 @@
 import io, os
-from PIL import Image  # https://pillow.readthedocs.io/en/stable/reference/Image.html
-from PySide6.QtCore import QBuffer, QPointF, QRect, QRectF, Qt, Slot
-from PySide6.QtGui import QBrush, QColor, QPainterPath, QPen, QPolygonF, QTransform
+from PIL import Image, ImageOps  # https://pillow.readthedocs.io/en/stable/reference/Image.html
+from PySide6.QtCore import QBuffer, QPointF, QPoint, QRect, QRectF, Qt, Slot
+from PySide6.QtGui import QBrush, QColor, QPainterPath, QPen, QPolygonF, QTransform, QImage, QPixmap
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem
 from PySide6 import QtWidgets
 from .view import ViewTool
+import cv2 as cv   # https://docs.opencv.org/3.4/da/d6e/tutorial_py_geometric_transformations.html
+import numpy as np
 
 
 def createPen(r, g, b):
@@ -102,11 +104,33 @@ class CropTool(ViewTool):
         self._toolbar.setSelectionSize(self._cropHeight * self._cropAspectRatio, self._cropHeight)
 
 
-    def toPILImage(self, qimg):
+    def toPILImage(self, pixmap):
         buffer = QBuffer()
         buffer.open(QBuffer.ReadWrite)
-        qimg.save(buffer, "PNG")
+        pixmap.save(buffer, "PNG")
         return Image.open(io.BytesIO(buffer.data()))
+
+    def toCvMat(self, pixmap):
+        buffer = QBuffer()
+        buffer.open(QBuffer.ReadWrite)
+        pixmap.save(buffer, "PNG")
+
+        buf = np.frombuffer(buffer.data(), dtype=np.uint8)
+        return cv.imdecode(buf, cv.IMREAD_UNCHANGED) # IMREAD_COLOR -> Convert to 3 channel BGR format
+
+    def toCvMat_wrong(self, pixmap: QPixmap):
+        qimg = pixmap.toImage()
+        #qimg = qimg.convertToFormat(QImage.Format_RGB32)
+        qimg = qimg.convertToFormat(QImage.Format_BGR888)
+        w = qimg.width()
+        h = qimg.height()
+
+        # ptr = qimg.bits()
+        # ptr.setsize(qimg.byteCount())
+        # return np.array(ptr).reshape(h, w, 4)
+
+        mat = cv.Mat(h, w, cv.CV_8UC3, qimg.bits(), qimg.bytesPerLine())
+        return mat
 
     def getExportPath(self):
         filename = os.path.basename(self._imgview.image.filepath)
@@ -190,6 +214,36 @@ class CropTool(ViewTool):
         img.save(path)
         print("Exported cropped image to", path)
 
+    def exportImageTest(self, poly: QPolygonF):
+        print("===== exportImage =====")
+        rect = poly.boundingRect()
+        origin = rect.topLeft()
+
+        img = self._imgview.image.pixmap()
+        mat = self.toCvMat( img.copy(rect.toRect()) )
+
+        ptsSrc = np.float32([
+            [poly.at(0).x()-origin.x(), poly.at(0).y()-origin.y()],
+            [poly.at(1).x()-origin.x(), poly.at(1).y()-origin.y()],
+            [poly.at(2).x()-origin.x(), poly.at(2).y()-origin.y()]
+        ])
+
+        ptsDest = np.float32([
+            [0, 0],
+            [self._targetWidth, 0],
+            [self._targetWidth, self._targetHeight],
+        ])
+
+        M = cv.getAffineTransform(ptsSrc, ptsDest)
+        dsize = (self._targetWidth, self._targetHeight)
+        #matDest = np.zeros([self._targetHeight, self._targetWidth, 4])
+        #matDest = cv.warpAffine(src=mat, M=M, dsize=dsize, dst=matDest, flags=cv.INTER_NEAREST)
+        matDest = cv.warpAffine(src=mat, M=M, dsize=dsize, flags=cv.INTER_LANCZOS4)
+
+        path = self.getExportPath()
+        cv.imwrite(path, matDest)
+        print("Exported cropped image to", path)
+
 
     def onEnabled(self, imgview):
         super().onEnabled(imgview)
@@ -241,7 +295,8 @@ class CropTool(ViewTool):
         rect = self._cropRect.rect()
         poly = self._imgview.mapToScene(rect.toRect())
         poly = self._imgview.image.mapFromParent(poly)
-        self.exportImage(poly)
+        #self.exportImage(poly)
+        self.exportImageTest(poly)
         return True
 
 
@@ -269,6 +324,23 @@ class MaskRect(QGraphicsRectItem):
     def shape(self) -> QPainterPath:
         return self.clipPath
 
+
+class RotCropDeformer:
+    def __init__(self, w, h):
+        self.src = [QPointF(0, 0), QPointF(0, 0), QPointF(0, 0), QPointF(0, 0)]
+        self.target = QRectF(0, 0, w, h)
+
+    def getmesh(self, img):
+        src = [p.toPoint() for p in self.src]
+        target = self.target.toRect()
+
+        return [(
+            (target.x(), target.y(), target.width(), target.height()),
+            (src[0].x(), src[0].y(),
+             src[1].x(), src[1].y(),
+             src[2].x(), src[2].y(),
+             src[3].x(), src[3].y())
+        )]
 
 
 class CropToolBar(QtWidgets.QToolBar):
