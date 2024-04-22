@@ -1,12 +1,28 @@
-import io, os
-from PIL import Image, ImageOps  # https://pillow.readthedocs.io/en/stable/reference/Image.html
-from PySide6.QtCore import QBuffer, QPointF, QPoint, QRect, QRectF, Qt, Slot
-from PySide6.QtGui import QBrush, QColor, QPainterPath, QPen, QPolygonF, QTransform, QImage, QPixmap
-from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem
-from PySide6 import QtWidgets
-from .view import ViewTool
-import cv2 as cv   # https://docs.opencv.org/3.4/da/d6e/tutorial_py_geometric_transformations.html
+import os
+import cv2 as cv
 import numpy as np
+from PySide6 import QtWidgets
+from PySide6.QtCore import QBuffer, QPointF, QRectF, Qt, Slot
+from PySide6.QtGui import QBrush, QColor, QPainterPath, QPen, QPolygonF
+from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem
+from .view import ViewTool
+
+# TODO: Bug when cropping parts outside of image. Fix: Don't allow selection to go beyond image
+
+
+INTERP_MODES = {
+    "Nearest": cv.INTER_NEAREST,
+    "Linear":  cv.INTER_LINEAR,
+    "Cubic":   cv.INTER_CUBIC,
+    "Area":    cv.INTER_AREA,
+    "Lanczos": cv.INTER_LANCZOS4
+}
+
+SAVE_PARAMS = {
+    "PNG":  [cv.IMWRITE_PNG_COMPRESSION, 9],
+    "JPG":  [cv.IMWRITE_JPEG_QUALITY, 95],
+    "WEBP": [cv.IMWRITE_WEBP_QUALITY, 95]
+}
 
 
 def createPen(r, g, b):
@@ -104,12 +120,6 @@ class CropTool(ViewTool):
         self._toolbar.setSelectionSize(self._cropHeight * self._cropAspectRatio, self._cropHeight)
 
 
-    def toPILImage(self, pixmap):
-        buffer = QBuffer()
-        buffer.open(QBuffer.ReadWrite)
-        pixmap.save(buffer, "PNG")
-        return Image.open(io.BytesIO(buffer.data()))
-
     def toCvMat(self, pixmap):
         buffer = QBuffer()
         buffer.open(QBuffer.ReadWrite)
@@ -118,114 +128,30 @@ class CropTool(ViewTool):
         buf = np.frombuffer(buffer.data(), dtype=np.uint8)
         return cv.imdecode(buf, cv.IMREAD_UNCHANGED) # IMREAD_COLOR -> Convert to 3 channel BGR format
 
-    def toCvMat_wrong(self, pixmap: QPixmap):
-        qimg = pixmap.toImage()
-        #qimg = qimg.convertToFormat(QImage.Format_RGB32)
-        qimg = qimg.convertToFormat(QImage.Format_BGR888)
-        w = qimg.width()
-        h = qimg.height()
-
-        # ptr = qimg.bits()
-        # ptr.setsize(qimg.byteCount())
-        # return np.array(ptr).reshape(h, w, 4)
-
-        mat = cv.Mat(h, w, cv.CV_8UC3, qimg.bits(), qimg.bytesPerLine())
-        return mat
-
-    def getExportPath(self):
+    def getExportPath(self, ext):
         filename = os.path.basename(self._imgview.image.filepath)
         filename = os.path.splitext(filename)[0] + f"_{self._targetWidth}x{self._targetHeight}"
         prefix = "/mnt/data/Pictures/SDOut/" + filename
 
-        path = prefix + ".png"
+        path = f"{prefix}.{ext}"
         suffix = 1
         while os.path.exists(path):
-            path = prefix + f"_{suffix:02}.png"
+            path = f"{prefix}_{suffix:02}.{ext}"
             suffix += 1
         
         return path
 
-    def calcSourceBox(self, poly: QPolygonF, rect: QRectF) -> QRectF:
-        # Calc points inside cropped image
-        pivot = rect.center()
-        p0 = poly.at(0) - pivot
-        p1 = poly.at(1) - pivot
-        p2 = poly.at(2) - pivot
-        p3 = poly.at(3) - pivot
-        poly = QPolygonF([p0, p1, p2, p3])
-        #print("polyRel:", polyRel)
-
-        rotMatrix = QTransform().rotate(self._imgview.rotation)
-        polyRot = rotMatrix.map(poly) # is now axis oriented
-
-        rectCenter = rect.center()
-        rect = rect.translated(-rectCenter.x(), -rectCenter.y())
-        rectRot = rotMatrix.mapRect(rect)
-        rectRot.translate(rectCenter.x(), rectCenter.y())
-
-        origin = rectRot.topLeft()
-        p0 = polyRot.at(0) + pivot - origin
-        p1 = polyRot.at(1) + pivot - origin
-        p2 = polyRot.at(2) + pivot - origin
-        p3 = polyRot.at(3) + pivot - origin
-        polyRot = QPolygonF([p0, p1, p2, p3])
-        #print("poly:", polyRot)
-        return polyRot.boundingRect()
-
     def exportImage(self, poly: QPolygonF):
-        # TODO: Adjust rect to rotation -> no? it should already include everything
-        # The selected region is inside the mapped boundingRect
-        # Region to be exported is a rectangle inside the rotated image
-        # Need the selection points relative to the boundingRect
+        pixmap = self._imgview.image.pixmap()
+        rect   = poly.boundingRect()
+        mat    = self.toCvMat( pixmap.copy(rect.toRect()) ) # TODO: Expand rect, crop more to prevent weird edges.
 
-        print("===== exportImage =====")
-        #print("poly:", poly)
-        rect = poly.boundingRect()
-        #print("rect:", rect)
-
-        srcRect = self.calcSourceBox(poly, rect)
-
-        # Crop and convert
-        img = self._imgview.image.pixmap()
-        img = self.toPILImage( img.copy(rect.toRect()) )
-        
-        path = self.getExportPath()
-        if abs(self._imgview.rotation) > 0.01:
-            img = img.rotate(-self._imgview.rotation, Image.Resampling.BICUBIC, expand=1, fillcolor=(0,0,0))
-            img.save(path + "-rot.png")
-
-        srcBoxX = max(0, srcRect.x())
-        srcBoxY = max(0, srcRect.y())
-        srcBoxW = min(img.width, srcRect.width())
-        srcBoxH = min(img.height, srcRect.height())
-        srcBox = (srcBoxX, srcBoxY, srcBoxW, srcBoxH)
-        print("srcBox:", srcBox)
-
-        img = img.resize(size=(self._targetWidth, self._targetHeight), resample=Image.Resampling.LANCZOS, box=srcBox)
-
-        # if img.width < self._targetWidth:
-        #     # Upscaling
-        #     img = img.resize((self._targetWidth, self._targetHeight), Image.Resampling.LANCZOS, srcBox)
-        # else:
-        #     # Downscaling: Use reducing_gap=3 when downscaling?
-        #     img = img.resize((self._targetWidth, self._targetHeight), Image.Resampling.LANCZOS, srcBox)
-
-        #path = self.getExportPath()
-        img.save(path)
-        print("Exported cropped image to", path)
-
-    def exportImageTest(self, poly: QPolygonF):
-        print("===== exportImage =====")
-        rect = poly.boundingRect()
-        origin = rect.topLeft()
-
-        img = self._imgview.image.pixmap()
-        mat = self.toCvMat( img.copy(rect.toRect()) )
-
+        p0, p1, p2, _ = poly
+        ox, oy = rect.topLeft().toTuple()
         ptsSrc = np.float32([
-            [poly.at(0).x()-origin.x(), poly.at(0).y()-origin.y()],
-            [poly.at(1).x()-origin.x(), poly.at(1).y()-origin.y()],
-            [poly.at(2).x()-origin.x(), poly.at(2).y()-origin.y()]
+            [p0.x()-ox, p0.y()-oy],
+            [p1.x()-ox, p1.y()-oy],
+            [p2.x()-ox, p2.y()-oy]
         ])
 
         ptsDest = np.float32([
@@ -234,14 +160,15 @@ class CropTool(ViewTool):
             [self._targetWidth, self._targetHeight],
         ])
 
-        M = cv.getAffineTransform(ptsSrc, ptsDest)
+        # https://docs.opencv.org/3.4/da/d6e/tutorial_py_geometric_transformations.html
+        matrix = cv.getAffineTransform(ptsSrc, ptsDest)
         dsize = (self._targetWidth, self._targetHeight)
-        #matDest = np.zeros([self._targetHeight, self._targetWidth, 4])
-        #matDest = cv.warpAffine(src=mat, M=M, dsize=dsize, dst=matDest, flags=cv.INTER_NEAREST)
-        matDest = cv.warpAffine(src=mat, M=M, dsize=dsize, flags=cv.INTER_LANCZOS4)
+        interp = self._toolbar.getInterpolationMode()
+        matDest = cv.warpAffine(src=mat, M=matrix, dsize=dsize, flags=interp)
 
-        path = self.getExportPath()
-        cv.imwrite(path, matDest)
+        ext, params = self._toolbar.getSaveParams()
+        path = self.getExportPath(ext)
+        cv.imwrite(path, matDest, params)
         print("Exported cropped image to", path)
 
 
@@ -295,8 +222,7 @@ class CropTool(ViewTool):
         rect = self._cropRect.rect()
         poly = self._imgview.mapToScene(rect.toRect())
         poly = self._imgview.image.mapFromParent(poly)
-        #self.exportImage(poly)
-        self.exportImageTest(poly)
+        self.exportImage(poly)
         return True
 
 
@@ -325,23 +251,6 @@ class MaskRect(QGraphicsRectItem):
         return self.clipPath
 
 
-class RotCropDeformer:
-    def __init__(self, w, h):
-        self.src = [QPointF(0, 0), QPointF(0, 0), QPointF(0, 0), QPointF(0, 0)]
-        self.target = QRectF(0, 0, w, h)
-
-    def getmesh(self, img):
-        src = [p.toPoint() for p in self.src]
-        target = self.target.toRect()
-
-        return [(
-            (target.x(), target.y(), target.width(), target.height()),
-            (src[0].x(), src[0].y(),
-             src[1].x(), src[1].y(),
-             src[2].x(), src[2].y(),
-             src[3].x(), src[3].y())
-        )]
-
 
 class CropToolBar(QtWidgets.QToolBar):
     def __init__(self, cropTool):
@@ -353,6 +262,7 @@ class CropToolBar(QtWidgets.QToolBar):
         layout.addWidget(self._buildTargetSize())
         layout.addWidget(self._buildSelectionSize())
         layout.addWidget(self._buildRotation())
+        layout.addWidget(self._buildSave())
 
         widget = QtWidgets.QWidget()
         widget.setLayout(layout)
@@ -426,6 +336,23 @@ class CropToolBar(QtWidgets.QToolBar):
         group.setLayout(layout)
         return group
 
+    def _buildSave(self):
+        self.cboInterp = QtWidgets.QComboBox()
+        self.cboInterp.addItems(INTERP_MODES.keys())
+        self.cboInterp.setCurrentIndex(4) # Default: Lanczos
+
+        self.cboFormat = QtWidgets.QComboBox()
+        self.cboFormat.addItems(SAVE_PARAMS.keys())
+
+        layout = QtWidgets.QFormLayout()
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.addRow("Interp:", self.cboInterp)
+        layout.addRow("Format:", self.cboFormat)
+
+        group = QtWidgets.QGroupBox("Save")
+        group.setLayout(layout)
+        return group
+
     @Slot()
     def updateSize(self):
         self._cropTool.setTargetSize(self.spinW.value(), self.spinH.value())
@@ -463,6 +390,16 @@ class CropToolBar(QtWidgets.QToolBar):
         else:
             self.lblScale.setStyleSheet("QLabel { color: #30ff30; }")
             self.lblScale.setText(f"▼   {scale:.3f}")
+    
+
+    def getInterpolationMode(self):
+        idx = self.cboInterp.currentIndex()
+        return INTERP_MODES[ self.cboInterp.itemText(idx) ]
+
+    def getSaveParams(self):
+        idx = self.cboFormat.currentIndex()
+        key = self.cboFormat.itemText(idx)
+        return (key.lower(), SAVE_PARAMS[key])
 
 
 
