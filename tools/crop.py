@@ -121,12 +121,21 @@ class CropTool(ViewTool):
 
 
     def toCvMat(self, pixmap):
+        #print(f"pixmap w={pixmap.width()} h={pixmap.height()}")
+
         buffer = QBuffer()
         buffer.open(QBuffer.ReadWrite)
         pixmap.save(buffer, "PNG")
 
         buf = np.frombuffer(buffer.data(), dtype=np.uint8)
         return cv.imdecode(buf, cv.IMREAD_UNCHANGED) # IMREAD_COLOR -> Convert to 3 channel BGR format
+
+    def calcCropRect(self, poly: QPolygonF):
+        pad  = 4
+        pad2 = pad*2
+        rect = poly.boundingRect().toRect()
+        rect.setRect(rect.x()-pad, rect.y()-pad, rect.width()+pad2, rect.height()+pad2)
+        return rect
 
     def getExportPath(self, ext):
         filename = os.path.basename(self._imgview.image.filepath)
@@ -143,9 +152,9 @@ class CropTool(ViewTool):
 
     def exportImage(self, poly: QPolygonF):
         pixmap = self._imgview.image.pixmap()
-        rect   = poly.boundingRect()
-        mat    = self.toCvMat( pixmap.copy(rect.toRect()) ) # TODO: Expand rect, crop more to prevent weird edges.
-
+        rect   = self.calcCropRect(poly)
+        mat    = self.toCvMat( pixmap.copy(rect) )
+        
         p0, p1, p2, _ = poly
         ox, oy = rect.topLeft().toTuple()
         ptsSrc = np.float32([
@@ -161,9 +170,9 @@ class CropTool(ViewTool):
         ])
 
         # https://docs.opencv.org/3.4/da/d6e/tutorial_py_geometric_transformations.html
-        matrix = cv.getAffineTransform(ptsSrc, ptsDest)
-        dsize = (self._targetWidth, self._targetHeight)
-        interp = self._toolbar.getInterpolationMode()
+        matrix  = cv.getAffineTransform(ptsSrc, ptsDest)
+        dsize   = (self._targetWidth, self._targetHeight)
+        interp  = self._toolbar.getInterpolationMode()
         matDest = cv.warpAffine(src=mat, M=matrix, dsize=dsize, flags=interp)
 
         ext, params = self._toolbar.getSaveParams()
@@ -219,8 +228,9 @@ class CropTool(ViewTool):
         if (event.modifiers() & Qt.ControlModifier) == Qt.ControlModifier:
             return False
 
-        rect = self._cropRect.rect()
-        poly = self._imgview.mapToScene(rect.toRect())
+        rect = self._cropRect.rect().toRect()
+        rect.setRect(rect.x(), rect.y(), max(1, rect.width()), max(1, rect.height()))
+        poly = self._imgview.mapToScene(rect)
         poly = self._imgview.image.mapFromParent(poly)
         self.exportImage(poly)
         return True
