@@ -156,17 +156,27 @@ class CropTool(ViewTool):
         rot  = QTransform().rotate(-self._imgview.rotation)
         
         # Constrain selection size
-        # FIXME: WRONG
         imgSize = self._imgview.image.pixmap().size()
-        rectSel = QRectF(0, 0, 100 * self._cropAspectRatio, 100)
+        rectSel = QRectF(0, 0, self._cropAspectRatio, 1.0)
         rectSel = rot.mapRect(rectSel)
-        sizeRatio = min(1/self._cropAspectRatio, 1)
+        
+        ratioH = imgSize.height() / rectSel.height()
+        ratioW = imgSize.width() / rectSel.width()
+        ratio = min(ratioH, ratioW)
 
-        cropH = min(self._cropHeight, imgSize.height()*sizeRatio)
+        cropH = min(self._cropHeight, ratio)
         cropW = cropH * self._cropAspectRatio
-        # if cropW > imgSize.width()*sizeRatio:
-        #     cropW = imgSize.width()*sizeRatio
-        #     cropH = cropW / self._cropAspectRatio
+
+        # if ratioW >= ratioH:
+        #     cropH = min(self._cropHeight, ratioH)
+        #     cropW = cropH * self._cropAspectRatio
+        # else:
+        #     cropH = min(self._cropHeight, ratioW)
+        #     cropW = cropH * self._cropAspectRatio
+
+            # cropW = min(self._cropHeight * self._cropAspectRatio, ratioW * self._cropAspectRatio)
+            # cropH = cropW / self._cropAspectRatio
+
         self._cropHeight = cropH
         
         # Map mouse coordinates to image space
