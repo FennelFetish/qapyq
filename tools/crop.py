@@ -2,8 +2,8 @@ import os
 import cv2 as cv
 import numpy as np
 from PySide6 import QtWidgets
-from PySide6.QtCore import QBuffer, QPointF, QRectF, Qt, Slot
-from PySide6.QtGui import QBrush, QColor, QPainterPath, QPen, QPolygonF
+from PySide6.QtCore import QBuffer, QPointF, QRectF, QRect, Qt, Slot
+from PySide6.QtGui import QBrush, QColor, QPainterPath, QPen, QPolygonF, QVector2D, QTransform
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem
 from .view import ViewTool
 
@@ -67,27 +67,23 @@ class CropTool(ViewTool):
         self._cropAspectRatio = self._targetWidth / self._targetHeight
         #self.updateCropSelection(self._cropRect.rect().center())
 
+    def updateCropAligned(self, mouseCoords: QPointF, poly: QPolygonF):
+        rect = poly.boundingRect()
+        imgHeight = self._imgview.image.pixmap().height()
 
-    def updateCropSelection(self, mouseCoords: QPointF):
-        # Calculate image bounds in viewport coordinates
-        img = self._imgview.image
-        rect = QRectF(0, 0, img.pixmap().width(), img.pixmap().height())
-        rect = img.mapRectToParent(rect)
-        rect = self._imgview.mapFromScene(rect).boundingRect()
-        
         # Calculate crop size in viewport coordinates
-        h = (self._cropHeight * self._imgview.viewport().height() * self._imgview.zoom) / img.pixmap().height()
+        h = (self._cropHeight * self._imgview.viewport().height() * self._imgview.zoom) / imgHeight
         w = h * self._cropAspectRatio
 
         # Constrain crop size
         if w > rect.width():
             w = rect.width()
             h = w / self._cropAspectRatio
-            self._cropHeight = (h * img.pixmap().height()) / (self._imgview.viewport().height() * self._imgview.zoom)
+            self._cropHeight = (h * imgHeight) / (self._imgview.viewport().height() * self._imgview.zoom)
         if h > rect.height():
             h = rect.height()
             w = h * self._cropAspectRatio
-            self._cropHeight = (h * img.pixmap().height()) / (self._imgview.viewport().height() * self._imgview.zoom)
+            self._cropHeight = (h * imgHeight) / (self._imgview.viewport().height() * self._imgview.zoom)
 
         # Crop position
         x = mouseCoords.x() - w/2
@@ -105,6 +101,135 @@ class CropTool(ViewTool):
         if h > rect.height():
             y += (h-rect.height()) / 2
 
+        return (x, y, w, h)
+
+    def updateCropRotated(self, mouseCoords: QPointF, poly: QPolygonF):
+        # Calculate crop size in viewport coordinates
+        h = (self._cropHeight * self._imgview.viewport().height() * self._imgview.zoom) / self._imgview.image.pixmap().height()
+        w = h * self._cropAspectRatio
+
+        # ----1) Calculate distance of selection corners to each side of image-poly. Store as (distance, corner-idx, side-idx) tuple.
+        # ----2) Sort by distance
+
+        # Calculate allowed zone
+        # 1) Rotate selection-rect by -angle
+        # 2) Calculate boundingRect of rotated rect
+        # 3) w/2 and h/2 is the shrinking amount
+
+        rect = QRectF(0, 0, w/2, h/2)
+        rot = QTransform().rotate(-self._imgview.rotation)
+        rect = rot.mapRect(rect)
+
+        left = QVector2D(poly.at(1) - poly.at(0))
+        left.normalize()
+        left *= rect.width()
+        left = left.toPointF()
+
+        down = QVector2D(poly.at(3) - poly.at(0))
+        down.normalize()
+        down *= rect.height()
+        down = down.toPointF()
+
+        zone = QPolygonF([
+            poly.at(0).toPointF() + left + down,
+            poly.at(1).toPointF() - left + down,
+            poly.at(2).toPointF() - left - down,
+            poly.at(3).toPointF() + left - down
+        ])
+
+        # TODO: Check zone size / winding order to determine if selection rect is too big
+
+        print("poly:", poly)
+        print("zone:", zone)
+
+        if not zone.containsPoint(mouseCoords, Qt.WindingFill):
+            return (0, 0, 1, 1)
+
+        # Crop position
+        x = mouseCoords.x() - w/2
+        y = mouseCoords.y() - h/2
+
+        return (x, y, w, h)
+
+
+    def updateCropCombined(self, mouseCoords: QPointF):
+        rot  = QTransform().rotate(-self._imgview.rotation)
+        
+        # Constrain selection size
+        # FIXME: WRONG
+        imgSize = self._imgview.image.pixmap().size()
+        rectSel = QRectF(0, 0, 100 * self._cropAspectRatio, 100)
+        rectSel = rot.mapRect(rectSel)
+        sizeRatio = min(1/self._cropAspectRatio, 1)
+
+        cropH = min(self._cropHeight, imgSize.height()*sizeRatio)
+        cropW = cropH * self._cropAspectRatio
+        # if cropW > imgSize.width()*sizeRatio:
+        #     cropW = imgSize.width()*sizeRatio
+        #     cropH = cropW / self._cropAspectRatio
+        self._cropHeight = cropH
+        
+        # Map mouse coordinates to image space
+        mouse = self._imgview.mapToScene(mouseCoords.toPoint())
+        mouse = self._imgview.image.mapFromParent(mouse)
+
+        # Calculate selected area in image space
+        rect = QRect(-cropW/2, -cropH/2, cropW, cropH)
+        poly = rot.mapToPolygon(rect)
+        poly.translate(mouse.x(), mouse.y())
+        rect = poly.boundingRect()
+
+        # Make selected polygon points relative to bounding box
+        origin = rect.topLeft()
+        pointsRel = [
+            poly.at(0) - origin,
+            poly.at(1) - origin,
+            poly.at(2) - origin,
+            poly.at(3) - origin
+        ]
+        
+        # Constrain selection position (move bounding box)
+        if rect.x() < 0:
+            rect.moveLeft(0)
+        if rect.y() < 0:
+            rect.moveTop(0)
+        
+        if rect.right() > imgSize.width():
+            rect.moveRight(imgSize.width())
+        if rect.bottom() > imgSize.height():
+            rect.moveBottom(imgSize.height())
+
+        # Convert relative points inside bounding box back to image space
+        origin = rect.topLeft()
+        poly = QPolygonF([
+            pointsRel[0] + origin,
+            pointsRel[1] + origin,
+            pointsRel[2] + origin,
+            pointsRel[3] + origin
+        ])
+
+        # Map selected polygon to viewport
+        poly = self._imgview.image.mapToParent(poly)
+        poly = self._imgview.mapFromScene(poly)
+        rect = poly.boundingRect()
+        return (rect.x(), rect.y(), rect.width(), rect.height())
+        
+
+
+
+    def updateCropSelection(self, mouseCoords: QPointF):
+        # Calculate image bounds in viewport coordinates
+        img = self._imgview.image
+        rect = QRectF(0, 0, img.pixmap().width(), img.pixmap().height())
+        poly = img.mapToParent(rect)
+        poly = self._imgview.mapFromScene(poly)
+        
+        #if abs(self._imgview.rotation) < 0.1:
+        #    x, y, w, h = self.updateCropAligned(mouseCoords, poly)
+        #else:
+        #    x, y, w, h = self.updateCropRotated(mouseCoords, poly)
+        x, y, w, h = self.updateCropCombined(mouseCoords)
+
         self._cropRect.setRect(x, y, w, h)
 
         self._mask.clipPath.clear()
@@ -119,7 +244,6 @@ class CropTool(ViewTool):
         self._imgview.scene().update()
         self._toolbar.setSelectionSize(self._cropHeight * self._cropAspectRatio, self._cropHeight)
 
-
     def toCvMat(self, pixmap):
         #print(f"pixmap w={pixmap.width()} h={pixmap.height()}")
 
@@ -130,11 +254,14 @@ class CropTool(ViewTool):
         buf = np.frombuffer(buffer.data(), dtype=np.uint8)
         return cv.imdecode(buf, cv.IMREAD_UNCHANGED) # IMREAD_COLOR -> Convert to 3 channel BGR format
 
-    def calcCropRect(self, poly: QPolygonF):
+    def calcCropRect(self, poly: QPolygonF, pixmap):
         pad  = 4
-        pad2 = pad*2
         rect = poly.boundingRect().toRect()
-        rect.setRect(rect.x()-pad, rect.y()-pad, rect.width()+pad2, rect.height()+pad2)
+        # FIXME: This may change the aspect ratio -> I think this doesn't matter
+        rect.setLeft(max(0, rect.x()-pad))
+        rect.setTop (max(0, rect.y()-pad))
+        rect.setRight (min(pixmap.width(),  rect.right()+pad))
+        rect.setBottom(min(pixmap.height(), rect.bottom()+pad))
         return rect
 
     def getExportPath(self, ext):
@@ -152,7 +279,7 @@ class CropTool(ViewTool):
 
     def exportImage(self, poly: QPolygonF):
         pixmap = self._imgview.image.pixmap()
-        rect   = self.calcCropRect(poly)
+        rect   = self.calcCropRect(poly, pixmap)
         mat    = self.toCvMat( pixmap.copy(rect) )
         
         p0, p1, p2, _ = poly
@@ -246,7 +373,7 @@ class CropTool(ViewTool):
 
         wheelSteps = event.angleDelta().y() / 120.0 # 8*15° standard
         self._cropHeight += wheelSteps * change
-        self._cropHeight = max(self._cropHeight, 1)
+        self._cropHeight = round(max(self._cropHeight, 1))
         self.updateCropSelection(event.position())
         return True
 
