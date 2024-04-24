@@ -80,7 +80,6 @@ class ImgTab(QtWidgets.QMainWindow):
 
         self.imgview = ImgView(self)
         self.export = Export()
-        self.export.basePath = "/mnt/data/Pictures/SDOut"
         self.tools = {}
         self._toolbar = None
         self.setTool("view")

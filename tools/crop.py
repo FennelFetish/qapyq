@@ -114,7 +114,7 @@ class CropTool(ViewTool):
     def toCvMat(self, pixmap):
         buffer = QBuffer()
         buffer.open(QBuffer.ReadWrite)
-        pixmap.save(buffer, "PNG")
+        pixmap.save(buffer, "BMP")
 
         buf = np.frombuffer(buffer.data(), dtype=np.uint8)
         return cv.imdecode(buf, cv.IMREAD_UNCHANGED)
@@ -159,6 +159,7 @@ class CropTool(ViewTool):
         matDest = cv.warpAffine(src=mat, M=matrix, dsize=dsize, flags=interp, borderMode=cv.BORDER_REPLICATE)
 
         path = self.getExportPath()
+        self._export.createFolders(path)
         params = self._toolbar.getSaveParams()
         cv.imwrite(path, matDest, params)
         print("Exported cropped image to", path)
@@ -172,6 +173,8 @@ class CropTool(ViewTool):
 
         imgview.rotation = self._toolbar.slideRot.value() / 10
         imgview.updateImageTransform()
+
+        self._toolbar.updateSize()
 
     def onDisabled(self, imgview):
         super().onDisabled(imgview)
