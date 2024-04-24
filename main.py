@@ -2,6 +2,7 @@ import sys
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Slot
 from imgview import ImgView
+from export import Export
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -52,8 +53,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @Slot()
     def addTab(self):
-        index = self.tabWidget.addTab(ImgTab(), "Empty")
+        tab = ImgTab(self.tabWidget)
+        index = self.tabWidget.addTab(tab, "Empty")
         self.tabWidget.setCurrentIndex(index)
+
+        # For debugging
+        tab.imgview.loadImage("/home/rem/Pictures/red-tree-with-eyes.jpeg")
 
     @Slot()
     def closeTab(self, index):
@@ -69,9 +74,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 class ImgTab(QtWidgets.QMainWindow):
-    def __init__(self):
+    def __init__(self, tabWidget):
         super().__init__()
-        self.imgview = ImgView()
+        self.tabWidget = tabWidget
+
+        self.imgview = ImgView(self)
+        self.export = Export()
+        self.export.basePath = "/mnt/data/Pictures/SDOut"
         self.tools = {}
         self._toolbar = None
         self.setTool("view")
@@ -82,9 +91,6 @@ class ImgTab(QtWidgets.QMainWindow):
         layout.addWidget(self.imgview)
         widget.setLayout(layout)
         self.setCentralWidget(widget)
-
-        # For debugging
-        self.imgview.loadImage("/home/rem/Pictures/red-tree-with-eyes.jpeg")
 
     def setTool(self, toolName: str):
         if toolName not in self.tools:
@@ -109,8 +115,12 @@ class ImgTab(QtWidgets.QMainWindow):
                 return CompareTool()
             case "crop":
                 from tools import CropTool
-                return CropTool()
+                return CropTool(self.export)
         return None
+
+    def setTabName(self, name):
+        idx = self.tabWidget.indexOf(self)
+        self.tabWidget.setTabText(idx, name)
 
 
 

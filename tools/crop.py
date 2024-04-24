@@ -18,8 +18,8 @@ INTERP_MODES = {
 
 SAVE_PARAMS = {
     "PNG":  [cv.IMWRITE_PNG_COMPRESSION, 9],
-    "JPG":  [cv.IMWRITE_JPEG_QUALITY, 95],
-    "WEBP": [cv.IMWRITE_WEBP_QUALITY, 95]
+    "JPG":  [cv.IMWRITE_JPEG_QUALITY, 100],
+    "WEBP": [cv.IMWRITE_WEBP_QUALITY, 100]
 }
 
 
@@ -36,8 +36,9 @@ class CropTool(ViewTool):
     BUTTON_CROP   = Qt.LeftButton
 
 
-    def __init__(self):
+    def __init__(self, export):
         super().__init__()
+        self._export = export
 
         self._targetWidth = 512
         self._targetHeight = 512
@@ -63,7 +64,6 @@ class CropTool(ViewTool):
         self._targetWidth = round(width)
         self._targetHeight = round(height)
         self._cropAspectRatio = self._targetWidth / self._targetHeight
-        #self.updateCropSelection(self._cropRect.rect().center())
 
 
     def updateSelectionRect(self, mouseCoords: QPointF):
@@ -131,7 +131,7 @@ class CropTool(ViewTool):
         pixmap.save(buffer, "PNG")
 
         buf = np.frombuffer(buffer.data(), dtype=np.uint8)
-        return cv.imdecode(buf, cv.IMREAD_UNCHANGED) # IMREAD_COLOR -> Convert to 3 channel BGR format
+        return cv.imdecode(buf, cv.IMREAD_UNCHANGED)
 
     def calcCutRect(self, poly: QPolygonF, pixmap):
         pad  = 4
@@ -143,18 +143,9 @@ class CropTool(ViewTool):
         rect.setBottom(min(pixmap.height(), rect.bottom()+pad))
         return rect
 
-    def getExportPath(self, ext):
-        filename = os.path.basename(self._imgview.image.filepath)
-        filename = os.path.splitext(filename)[0] + f"_{self._targetWidth}x{self._targetHeight}"
-        prefix = "/mnt/data/Pictures/SDOut/" + filename
-
-        path = f"{prefix}.{ext}"
-        suffix = 1
-        while os.path.exists(path):
-            path = f"{prefix}_{suffix:02}.{ext}"
-            suffix += 1
-        
-        return path
+    def getExportPath(self):
+        self._export.suffix = f"_{self._targetWidth}x{self._targetHeight}"
+        return self._export.getExportPath(self._imgview.image.filepath)
 
     def exportImage(self, poly: QPolygonF):
         pixmap = self._imgview.image.pixmap()
@@ -181,8 +172,8 @@ class CropTool(ViewTool):
         interp  = self._toolbar.getInterpolationMode(self._targetHeight > self._cropHeight)
         matDest = cv.warpAffine(src=mat, M=matrix, dsize=dsize, flags=interp, borderMode=cv.BORDER_REPLICATE)
 
-        ext, params = self._toolbar.getSaveParams()
-        path = self.getExportPath(ext)
+        path = self.getExportPath()
+        params = self._toolbar.getSaveParams()
         cv.imwrite(path, matDest, params)
         print("Exported cropped image to", path)
 
@@ -300,13 +291,18 @@ class CropToolBar(QtWidgets.QToolBar):
         self.spinH.valueChanged.connect(self.updateSize)
 
         btnSwap  = QtWidgets.QPushButton("Swap")
-        btnSwap.clicked.connect(self.swapSize)
+        btnSwap.clicked.connect(self.sizeSwap)
+
+        self.cboSizePresets = QtWidgets.QComboBox()
+        self.cboSizePresets.addItems(["", "Quad", "512x512", "512x768", "768x768", "768x1152", "1024x1024"])
+        self.cboSizePresets.currentTextChanged.connect(self.sizePreset)
 
         layout = QtWidgets.QFormLayout()
         layout.setContentsMargins(1, 1, 1, 1)
         layout.addRow("W:", self.spinW)
         layout.addRow("H:", self.spinH)
         layout.addRow(btnSwap)
+        layout.addRow(self.cboSizePresets)
 
         group = QtWidgets.QGroupBox("Target Size")
         group.setLayout(layout)
@@ -363,6 +359,7 @@ class CropToolBar(QtWidgets.QToolBar):
 
         self.cboFormat = QtWidgets.QComboBox()
         self.cboFormat.addItems(SAVE_PARAMS.keys())
+        self.cboFormat.currentTextChanged.connect(self.updateExtension)
 
         layout = QtWidgets.QFormLayout()
         layout.setContentsMargins(1, 1, 1, 1)
@@ -379,11 +376,24 @@ class CropToolBar(QtWidgets.QToolBar):
         self._cropTool.setTargetSize(self.spinW.value(), self.spinH.value())
     
     @Slot()
-    def swapSize(self):
+    def sizeSwap(self):
         w = self.spinW.value()
         self.spinW.setValue(self.spinH.value())
         self.spinH.setValue(w)
         self.updateSize()
+    
+    def sizePreset(self, text: str):
+        match text:
+            case "": return
+            case "Quad":
+                self.spinH.setValue( self.spinW.value() )
+            case _:
+                w, h = text.split("x")
+                self.spinW.setValue(int(w))
+                self.spinH.setValue(int(h))
+        
+        self.updateSize()
+        self.cboSizePresets.setCurrentIndex(0)
     
     @Slot()
     def updateRotationFromSlider(self, rot: int):
@@ -418,10 +428,13 @@ class CropToolBar(QtWidgets.QToolBar):
         idx = cbo.currentIndex()
         return INTERP_MODES[ cbo.itemText(idx) ]
 
+    def updateExtension(self, ext):
+        self._imgview._export.extension = ext
+
     def getSaveParams(self):
         idx = self.cboFormat.currentIndex()
         key = self.cboFormat.itemText(idx)
-        return (key.lower(), SAVE_PARAMS[key])
+        return SAVE_PARAMS[key]
 
 
 

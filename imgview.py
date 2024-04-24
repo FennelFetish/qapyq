@@ -2,11 +2,13 @@ from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPixmap, QTransform
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsPixmapItem, QGraphicsView
 from dropview import DropView, DropZone
-
+from filelist import FileList
+import os
 
 class ImgView(DropView):
-    def __init__(self):
+    def __init__(self, tab):
         super().__init__()
+        self.tab = tab
 
         bgBrush = QBrush(QColor(0, 0, 0))
         bgBrush.setStyle(Qt.Dense2Pattern)
@@ -19,15 +21,26 @@ class ImgView(DropView):
 
         self.rotation = 0.0
         self._tool = None
+        self._filelist = FileList()
 
         self.image = ImgItem()
         self.scene().addItem(self.image)
+        
 
-    def loadImage(self, path):
+    def loadImage(self, path, resetFileList=True):
+        if os.path.isdir(path):
+            self._filelist.loadFolder(path, True)
+            path = self._filelist.getCurrentFile()
+            resetFileList = False
+
         if self.image.loadImage(path):
             self.resetView()
             self.updateImageTransform()
             self.updateScene()
+            self.tab.setTabName( os.path.basename(path) )
+
+            if resetFileList:
+                self._filelist.setFile(path)
 
     def updateImageTransform(self):
         self.image.updateTransform(self.viewport().rect(), self.rotation)
@@ -84,6 +97,11 @@ class ImgView(DropView):
     def wheelEvent(self, event):
         if not self._tool.onMouseWheel(event):
             super().wheelEvent(event)
+    
+
+    def keyPressEvent(self, event):
+        super().keyPressEvent(event)
+        self._tool.onKeyPress(event)
         
 
 

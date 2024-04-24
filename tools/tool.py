@@ -49,3 +49,7 @@ class Tool:
 
     def onMouseWheel(self, event) -> bool:
         return False
+
+
+    def onKeyPress(self, event):
+        pass
