@@ -60,7 +60,7 @@ class ZoomPanView(QGraphicsView):
     def wheelEvent(self, event):
         zoomSteps = event.angleDelta().y() / 120.0 # 8*15° standard
         self.zoom *= self.zoomFactor ** zoomSteps
-        self.zoom = max(self.zoom, 1.0)
+        self.zoom = max(self.zoom, 0.5)
         
         oldPos = self.mapToScene(event.position().toPoint())
         self.updateScene()
