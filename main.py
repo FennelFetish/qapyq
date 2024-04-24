@@ -2,7 +2,6 @@ import sys
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Slot
 from imgview import ImgView
-import tools
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -102,9 +101,15 @@ class ImgTab(QtWidgets.QMainWindow):
 
     def createTool(self, toolName: str):
         match toolName:
-            case "view":    return tools.ViewTool()
-            case "compare": return tools.CompareTool()
-            case "crop":    return tools.CropTool()
+            case "view":
+                from tools import ViewTool
+                return ViewTool()
+            case "compare":
+                from tools import CompareTool
+                return CompareTool()
+            case "crop":
+                from tools import CropTool
+                return CropTool()
         return None
 
 
@@ -113,8 +118,8 @@ if __name__ == "__main__":
     app = QtWidgets.QApplication([])
 
     win = MainWindow()
-    win.resize(800, 600)
-    win.move(100, 500)
+    win.resize(1500, 900)
+    win.move(0, 0)
     win.show()
 
     sys.exit(app.exec())

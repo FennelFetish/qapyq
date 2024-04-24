@@ -3,11 +3,9 @@ import cv2 as cv
 import numpy as np
 from PySide6 import QtWidgets
 from PySide6.QtCore import QBuffer, QPointF, QRectF, QRect, Qt, Slot
-from PySide6.QtGui import QBrush, QColor, QPainterPath, QPen, QPolygonF, QVector2D, QTransform
+from PySide6.QtGui import QBrush, QColor, QPainterPath, QPen, QPolygonF, QTransform
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem
 from .view import ViewTool
-
-# TODO: Bug when cropping parts outside of image. Fix: Don't allow selection to go beyond image
 
 
 INTERP_MODES = {
@@ -32,8 +30,8 @@ def createPen(r, g, b):
 
 
 class CropTool(ViewTool):
-    PEN_DOWNSCALE = createPen(0, 255, 255)
-    PEN_UPSCALE   = createPen(255, 0, 255)
+    PEN_DOWNSCALE = createPen(0, 255, 0)
+    PEN_UPSCALE   = createPen(255, 0, 0)
 
     BUTTON_CROP   = Qt.LeftButton
 
@@ -68,7 +66,7 @@ class CropTool(ViewTool):
         #self.updateCropSelection(self._cropRect.rect().center())
 
 
-    def updateCropRect(self, mouseCoords: QPointF):
+    def updateSelectionRect(self, mouseCoords: QPointF):
         rot = QTransform().rotate(-self._imgview.rotation)
         
         # Constrain selection size
@@ -112,8 +110,8 @@ class CropTool(ViewTool):
         poly = self._imgview.mapFromScene(poly)
         self._cropRect.setRect(poly.boundingRect())
 
-    def updateCropSelection(self, mouseCoords: QPointF):
-        self.updateCropRect(mouseCoords)
+    def updateSelection(self, mouseCoords: QPointF):
+        self.updateSelectionRect(mouseCoords)
 
         self._mask.clipPath.clear()
         self._mask.clipPath.addRect(self._imgview.viewport().rect())
@@ -121,7 +119,8 @@ class CropTool(ViewTool):
 
         # Change selection color depending on crop size
         pen = self.PEN_UPSCALE if self._cropHeight < self._targetHeight else self.PEN_DOWNSCALE
-        self._cropRect.setPen(pen)
+        if pen != self._cropRect.pen():
+            self._cropRect.setPen(pen)
 
         self._imgview.scene().update()
         self._toolbar.setSelectionSize(self._cropHeight * self._cropAspectRatio, self._cropHeight)
@@ -134,7 +133,7 @@ class CropTool(ViewTool):
         buf = np.frombuffer(buffer.data(), dtype=np.uint8)
         return cv.imdecode(buf, cv.IMREAD_UNCHANGED) # IMREAD_COLOR -> Convert to 3 channel BGR format
 
-    def calcCropRect(self, poly: QPolygonF, pixmap):
+    def calcCutRect(self, poly: QPolygonF, pixmap):
         pad  = 4
         rect = poly.boundingRect().toRect()
 
@@ -159,7 +158,7 @@ class CropTool(ViewTool):
 
     def exportImage(self, poly: QPolygonF):
         pixmap = self._imgview.image.pixmap()
-        rect   = self.calcCropRect(poly, pixmap)
+        rect   = self.calcCutRect(poly, pixmap)
         mat    = self.toCvMat( pixmap.copy(rect) )
         
         p0, p1, p2, _ = poly
@@ -179,8 +178,8 @@ class CropTool(ViewTool):
         # https://docs.opencv.org/3.4/da/d6e/tutorial_py_geometric_transformations.html
         matrix  = cv.getAffineTransform(ptsSrc, ptsDest)
         dsize   = (self._targetWidth, self._targetHeight)
-        interp  = self._toolbar.getInterpolationMode()
-        matDest = cv.warpAffine(src=mat, M=matrix, dsize=dsize, flags=interp)
+        interp  = self._toolbar.getInterpolationMode(self._targetHeight > self._cropHeight)
+        matDest = cv.warpAffine(src=mat, M=matrix, dsize=dsize, flags=interp, borderMode=cv.BORDER_REPLICATE)
 
         ext, params = self._toolbar.getSaveParams()
         path = self.getExportPath(ext)
@@ -207,7 +206,7 @@ class CropTool(ViewTool):
 
 
     def onSceneUpdate(self):
-        self.updateCropSelection(self._cropRect.rect().center())
+        self.updateSelection(self._cropRect.rect().center())
 
     def onResetView(self):
         self._toolbar.slideRot.setValue(self._imgview.rotation)
@@ -221,7 +220,7 @@ class CropTool(ViewTool):
         self._mask.setVisible(True)
 
     def onMouseMove(self, event):
-        self.updateCropSelection(event.position())
+        self.updateSelection(event.position())
 
     def onMouseLeave(self, event):
         self._cropRect.setVisible(False)
@@ -254,7 +253,7 @@ class CropTool(ViewTool):
         wheelSteps = event.angleDelta().y() / 120.0 # 8*15° standard
         self._cropHeight += wheelSteps * change
         self._cropHeight = round(max(self._cropHeight, 1))
-        self.updateCropSelection(event.position())
+        self.updateSelection(event.position())
         return True
 
 
@@ -354,16 +353,21 @@ class CropToolBar(QtWidgets.QToolBar):
         return group
 
     def _buildSave(self):
-        self.cboInterp = QtWidgets.QComboBox()
-        self.cboInterp.addItems(INTERP_MODES.keys())
-        self.cboInterp.setCurrentIndex(4) # Default: Lanczos
+        self.cboInterpUp = QtWidgets.QComboBox()
+        self.cboInterpUp.addItems(INTERP_MODES.keys())
+        self.cboInterpUp.setCurrentIndex(4) # Default: Lanczos
+
+        self.cboInterpDown = QtWidgets.QComboBox()
+        self.cboInterpDown.addItems(INTERP_MODES.keys())
+        self.cboInterpDown.setCurrentIndex(3) # Default: Area
 
         self.cboFormat = QtWidgets.QComboBox()
         self.cboFormat.addItems(SAVE_PARAMS.keys())
 
         layout = QtWidgets.QFormLayout()
         layout.setContentsMargins(1, 1, 1, 1)
-        layout.addRow("Interp:", self.cboInterp)
+        layout.addRow("Interp 🠕:", self.cboInterpUp)
+        layout.addRow("Interp 🠗:", self.cboInterpDown)
         layout.addRow("Format:", self.cboFormat)
 
         group = QtWidgets.QGroupBox("Save")
@@ -409,9 +413,10 @@ class CropToolBar(QtWidgets.QToolBar):
             self.lblScale.setText(f"▼   {scale:.3f}")
     
 
-    def getInterpolationMode(self):
-        idx = self.cboInterp.currentIndex()
-        return INTERP_MODES[ self.cboInterp.itemText(idx) ]
+    def getInterpolationMode(self, upscale):
+        cbo = self.cboInterpUp if upscale else self.cboInterpDown
+        idx = cbo.currentIndex()
+        return INTERP_MODES[ cbo.itemText(idx) ]
 
     def getSaveParams(self):
         idx = self.cboFormat.currentIndex()
