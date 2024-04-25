@@ -35,6 +35,8 @@ class CropToolBar(QtWidgets.QToolBar):
         widget.setLayout(layout)
         act = self.addWidget(widget)
 
+        self.setMaximumWidth(180)
+
 
     def _buildTargetSize(self):
         self.spinW = QtWidgets.QSpinBox()
@@ -49,19 +51,61 @@ class CropToolBar(QtWidgets.QToolBar):
         self.spinH.setValue(512)
         self.spinH.valueChanged.connect(self.updateSize)
 
+        self.spinW2 = QtWidgets.QSpinBox()
+        self.spinW2.setRange(1, 16384)
+        self.spinW2.setSingleStep(64)
+        self.spinW2.setValue(1024)
+        self.spinW2.valueChanged.connect(self.updateSize)
+
+        self.spinH2 = QtWidgets.QSpinBox()
+        self.spinH2.setRange(1, 16384)
+        self.spinH2.setSingleStep(64)
+        self.spinH2.setValue(1024)
+        self.spinH2.valueChanged.connect(self.updateSize)
+
+        self.lblTargetAspect = QtWidgets.QLabel()
+        self.lblTargetAspect2 = QtWidgets.QLabel()
+
         btnSwap  = QtWidgets.QPushButton("Swap")
         btnSwap.clicked.connect(self.sizeSwap)
 
+        btnQuad  = QtWidgets.QPushButton("Quad")
+        btnQuad.clicked.connect(self.sizeQuad)
+
         self.cboSizePresets = QtWidgets.QComboBox()
-        self.cboSizePresets.addItems(["", "Quad", "512x512", "512x768", "768x768", "768x1152", "1024x1024"])
+        self.cboSizePresets.addItems(["", "512x512 / 1024x1024", "512x768 / 832x1216", "768x768 / 1024x1024", "768x1152 / 832x1216", "1024x1024 / 1024x1024"])
         self.cboSizePresets.currentTextChanged.connect(self.sizePreset)
 
-        layout = QtWidgets.QFormLayout()
+        layout = QtWidgets.QGridLayout()
         layout.setContentsMargins(1, 1, 1, 1)
-        layout.addRow("W:", self.spinW)
-        layout.addRow("H:", self.spinH)
-        layout.addRow(btnSwap)
-        layout.addRow(self.cboSizePresets)
+        layout.setColumnStretch(0, 0)
+
+        lblW = QtWidgets.QLabel("W:")
+        lblW.setFixedWidth(24)
+        layout.addWidget(lblW, 0, 0)
+        layout.addWidget(self.spinW, 0, 1)
+        layout.addWidget(self.spinW2, 0, 2)
+
+        lblH = QtWidgets.QLabel("H:")
+        lblH.setFixedWidth(24)
+        layout.addWidget(lblH, 1, 0)
+        layout.addWidget(self.spinH, 1, 1)
+        layout.addWidget(self.spinH2, 1, 2)
+
+        lblTargetAspect = QtWidgets.QLabel("AR:")
+        lblTargetAspect.setFixedWidth(24)
+        layout.addWidget(lblTargetAspect, 2, 0)
+        layout.addWidget(self.lblTargetAspect, 2, 1)
+        layout.addWidget(self.lblTargetAspect2, 2, 2)
+
+        lblPreset = QtWidgets.QLabel("Pre:")
+        lblPreset.setFixedWidth(24)
+        layout.addWidget(lblPreset, 3, 0)
+        layout.addWidget(self.cboSizePresets, 3, 1, 1, 2)
+
+        layout.addWidget(btnSwap, 4, 1)
+        layout.addWidget(btnQuad, 4, 2)
+
 
         group = QtWidgets.QGroupBox("Target Size")
         group.setLayout(layout)
@@ -72,11 +116,20 @@ class CropToolBar(QtWidgets.QToolBar):
         self.lblH = QtWidgets.QLabel("0 px")
         self.lblScale = QtWidgets.QLabel("1.0")
 
-        layout = QtWidgets.QFormLayout()
+        layout = QtWidgets.QGridLayout()
         layout.setContentsMargins(1, 1, 1, 1)
-        layout.addRow("W:", self.lblW)
-        layout.addRow("H:", self.lblH)
-        layout.addRow(self.lblScale)
+
+        lblW = QtWidgets.QLabel("W:")
+        lblW.setFixedWidth(24)
+        layout.addWidget(lblW, 0, 0)
+        layout.addWidget(self.lblW, 0, 1)
+        layout.addWidget(self.lblScale, 0, 2)
+
+        lblH = QtWidgets.QLabel("H:")
+        lblH.setFixedWidth(24)
+        layout.addWidget(lblH, 1, 0)
+        layout.addWidget(self.lblH, 1, 1)
+        
 
         group = QtWidgets.QGroupBox("Selection")
         group.setLayout(layout)
@@ -118,7 +171,6 @@ class CropToolBar(QtWidgets.QToolBar):
 
         self.cboFormat = QtWidgets.QComboBox()
         self.cboFormat.addItems(SAVE_PARAMS.keys())
-        self.cboFormat.setCurrentIndex(2) # Default: webp
         self.cboFormat.currentTextChanged.connect(self.updateExport)
 
         layout = QtWidgets.QFormLayout()
@@ -146,7 +198,7 @@ class CropToolBar(QtWidgets.QToolBar):
 
         self.txtPathSample = QtWidgets.QTextEdit()
         self.txtPathSample.setReadOnly(True)
-        self.txtPathSample.setMaximumWidth(140)
+        self.txtPathSample.setMaximumWidth(180)
 
         layout = QtWidgets.QFormLayout()
         layout.setContentsMargins(1, 1, 1, 1)
@@ -163,6 +215,14 @@ class CropToolBar(QtWidgets.QToolBar):
 
     @Slot()
     def updateSize(self):
+        w = self.spinW.value()
+        h = self.spinH.value()
+        self.lblTargetAspect.setText(f"1 : {h/w:.3f}" if h>w else f"{w/h:.3f} : 1")
+
+        w = self.spinW2.value()
+        h = self.spinH2.value()
+        self.lblTargetAspect2.setText(f"1 : {h/w:.3f}" if h>w else f"{w/h:.3f} : 1")
+
         self._cropTool.setTargetSize(self.spinW.value(), self.spinH.value())
         self.updateExport()
     
@@ -171,17 +231,29 @@ class CropToolBar(QtWidgets.QToolBar):
         w = self.spinW.value()
         self.spinW.setValue(self.spinH.value())
         self.spinH.setValue(w)
+
+        w = self.spinW2.value()
+        self.spinW2.setValue(self.spinH2.value())
+        self.spinH2.setValue(w)
+
         self.updateSize()
+
+    @Slot()
+    def sizeQuad(self):
+        self.spinH.setValue( self.spinW.value() )
+        self.spinH2.setValue( self.spinW2.value() )
     
     def sizePreset(self, text: str):
-        match text:
-            case "": return
-            case "Quad":
-                self.spinH.setValue( self.spinW.value() )
-            case _:
-                w, h = text.split("x")
-                self.spinW.setValue(int(w))
-                self.spinH.setValue(int(h))
+        if not text:
+            return
+
+        lowres, hires = text.split("/")
+        w, h = lowres.split("x")
+        self.spinW.setValue(int(w))
+        self.spinH.setValue(int(h))
+        w, h = hires.split("x")
+        self.spinW2.setValue(int(w))
+        self.spinH2.setValue(int(h))
         
         self.updateSize()
         self.cboSizePresets.setCurrentIndex(0)

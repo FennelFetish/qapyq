@@ -184,6 +184,8 @@ class CropTool(ViewTool):
         imgview.rotation = 0.0
         imgview.updateImageTransform()
 
+    def onImageLoaded(self, img):
+        self._toolbar.updateExport()
 
     def onSceneUpdate(self):
         self.updateSelection(self._cropRect.rect().center())

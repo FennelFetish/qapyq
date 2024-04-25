@@ -51,6 +51,9 @@ class MainWindow(QtWidgets.QMainWindow):
         actCrop = toolbar.addAction("Crop")
         actCrop.triggered.connect(lambda: self.setTool("crop"))
 
+        actGallery = toolbar.addAction("Gallery")
+        actGallery.triggered.connect(lambda: self.setTool("gallery"))
+
     @Slot()
     def addTab(self):
         tab = ImgTab(self.tabWidget)
@@ -115,6 +118,9 @@ class ImgTab(QtWidgets.QMainWindow):
             case "crop":
                 from tools import CropTool
                 return CropTool(self.export)
+            case "gallery":
+                from tools import GalleryTool
+                return GalleryTool()
         return None
 
     def setTabName(self, name):

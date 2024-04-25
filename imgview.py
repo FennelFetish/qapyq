@@ -42,6 +42,10 @@ class ImgView(DropView):
             if resetFileList:
                 self._filelist.setFile(path)
 
+            self._tool.onImageLoaded(self.image)
+        
+        self.setFocus()
+
     def updateImageTransform(self):
         self.image.updateTransform(self.viewport().rect(), self.rotation)
     

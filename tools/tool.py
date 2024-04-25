@@ -18,6 +18,9 @@ class Tool:
     def onDisabled(self, imgview: ImgView):
         self._imgview = None
 
+    def onImageLoaded(self, img):
+        pass
+
     def onSceneUpdate(self):
         pass
 

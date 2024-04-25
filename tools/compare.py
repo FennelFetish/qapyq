@@ -19,6 +19,7 @@ class CompareTool(Tool):
         super().onEnabled(imgview)
         imgview.scene().addItem(self._image)
         imgview._guiScene.addItem(self._dividerLine)
+        self.onResize()
 
     def onDisabled(self, imgview):
         super().onDisabled(imgview)
@@ -30,22 +31,18 @@ class CompareTool(Tool):
         return [QRectF(0, 0, 0.5, 1), QRectF(0.5, 0, 1, 1)]
 
     def onDrop(self, event, zoneIndex):
-        img = self._image if zoneIndex>0 else self._imgview.image
+        path = event.mimeData().urls()[0].toLocalFile()
 
-        firstUrl = event.mimeData().urls()[0]
-        img.loadImage(firstUrl.toLocalFile())
-        img.updateTransform(self._imgview.viewport().rect(), self._imgview.rotation)
-        
         if zoneIndex == 0:
-            self._imgview.resetView()
+            self._imgview.loadImage(path)
         else:
-            img.setClipWidth(0)
+            self._image.loadImage(path)
+            self._image.updateTransform(self._imgview.viewport().rect(), self._imgview.rotation)
+            self._image.setClipWidth(0)
+            self._imgview.updateScene()
 
-        self._imgview.updateScene()
-
-    def onResize(self, event):
-        rect = QRectF(0, 0, event.size().width(), event.size().height())
-        self._image.updateTransform(rect, self._imgview.rotation)
+    def onResize(self, event=None):
+        self._image.updateTransform(self._imgview.viewport().rect(), self._imgview.rotation)
 
 
     # ===== Divider Line =====
