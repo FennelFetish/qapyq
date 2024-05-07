@@ -52,30 +52,19 @@ class CropTool(ViewTool):
         self._cropAspectRatio = self._targetWidth / self._targetHeight
 
 
-    def updateSelectionRect(self, mouseCoords: QPointF):
-        rot = QTransform().rotate(-self._imgview.rotation)
-        
-        # Constrain selection size
-        imgSize = self._imgview.image.pixmap().size()
+    def constrainCropSize(self, rotationMatrix, imgSize) -> (float, float):
         rectSel = QRectF(0, 0, self._cropAspectRatio, 1.0)
-        rectSel = rot.mapRect(rectSel)
+        rectSel = rotationMatrix.mapRect(rectSel)
         
         sizeRatioH = imgSize.height() / rectSel.height()
         sizeRatioW = imgSize.width() / rectSel.width()
         cropH = min(self._cropHeight, min(sizeRatioH, sizeRatioW))
         cropW = cropH * self._cropAspectRatio
+
         self._cropHeight = cropH
-        
-        # Map mouse coordinates to image space
-        mouse = self._imgview.mapToScene(mouseCoords.toPoint())
-        mouse = self._imgview.image.mapFromParent(mouse)
+        return (cropW, cropH)
 
-        # Calculate selected area in image space
-        rect = QRect(-cropW/2, -cropH/2, cropW, cropH)
-        poly = rot.mapToPolygon(rect)
-        poly.translate(mouse.x(), mouse.y())
-
-        # Constrain selection position
+    def constraingCropPos(self, poly, imgSize):
         rect = poly.boundingRect()
         moveX, moveY = 0, 0
         
@@ -90,6 +79,29 @@ class CropTool(ViewTool):
             moveY += imgSize.height() - rect.bottom()
         
         poly.translate(moveX, moveY)
+
+    def updateSelectionRect(self, mouseCoords: QPointF):
+        rot = QTransform().rotate(-self._imgview.rotation)
+        imgSize = self._imgview.image.pixmap().size()
+
+        # Constrain selection size
+        if self._toolbar.constrainSize():
+            cropW, cropH = self.constrainCropSize(rot, imgSize)
+        else:
+            cropW, cropH = (self._cropHeight * self._cropAspectRatio), self._cropHeight
+        
+        # Map mouse coordinates to image space
+        mouse = self._imgview.mapToScene(mouseCoords.toPoint())
+        mouse = self._imgview.image.mapFromParent(mouse)
+
+        # Calculate selected area in image space
+        rect = QRect(-cropW/2, -cropH/2, cropW, cropH)
+        poly = rot.mapToPolygon(rect)
+        poly.translate(mouse.x(), mouse.y())
+
+        # Constrain selection position
+        if self._toolbar.constrainSize():
+            self.constraingCropPos(poly, imgSize)
 
         # Map selected polygon to viewport
         poly = self._imgview.image.mapToParent(poly)
@@ -156,7 +168,8 @@ class CropTool(ViewTool):
         matrix  = cv.getAffineTransform(ptsSrc, ptsDest)
         dsize   = (self._targetWidth, self._targetHeight)
         interp  = self._toolbar.getInterpolationMode(self._targetHeight > self._cropHeight)
-        matDest = cv.warpAffine(src=mat, M=matrix, dsize=dsize, flags=interp, borderMode=cv.BORDER_REPLICATE)
+        border  = cv.BORDER_REPLICATE if self._toolbar.constrainSize() else cv.BORDER_CONSTANT
+        matDest = cv.warpAffine(src=mat, M=matrix, dsize=dsize, flags=interp, borderMode=border)
 
         path = self.getExportPath()
         self._export.createFolders(path)
