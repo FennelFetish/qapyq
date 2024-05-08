@@ -1,6 +1,6 @@
 import sys
 from PySide6 import QtGui, QtWidgets
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, QThreadPool
 from imgview import ImgView
 from export import Export
 from gallery import Gallery, GalleryWindow
@@ -180,6 +180,9 @@ class ImgTab(QtWidgets.QMainWindow):
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication([])
+
+    threadPool = QThreadPool.globalInstance()
+    print("Thread pool with maximum %d threads" % threadPool.maxThreadCount())
 
     screenSize = app.primaryScreen().size()
 

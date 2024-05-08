@@ -1,5 +1,5 @@
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, QSize, Slot
+from PySide6.QtCore import Qt, QSize, Slot, Signal, QThreadPool, QObject, QRunnable
 import os
 
 
@@ -34,7 +34,6 @@ class Gallery(QtWidgets.QListWidget):
         self.blockSignals(True)
         for file in self.filelist.getFiles():
             self.addImage(file)
-            #print(f"- {file}")
         self.blockSignals(False)
     
     def addImage(self, file):
@@ -78,8 +77,8 @@ class GalleryItem(QtWidgets.QFrame):
         super().__init__()
         self.file = file
 
-        pixmap = self.getThumbnail(file)
-        self.img = QtWidgets.QLabel(pixmap=pixmap, alignment=Qt.AlignCenter)
+        self.img = QtWidgets.QLabel(alignment=Qt.AlignCenter)
+        self.updateThumbnail(file)
 
         filename = os.path.basename(file)
         self.label = QtWidgets.QLabel(filename, alignment=Qt.AlignCenter)
@@ -88,23 +87,51 @@ class GalleryItem(QtWidgets.QFrame):
 
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(1)
         layout.addWidget(self.img)
         layout.addWidget(self.label)
         self.setLayout(layout)
 
         size = layout.sizeHint()
-        w = max(size.width(), 256)
-        h = max(size.height(), 256)
+        w = max(size.width(), THUMNAIL_SIZE)
+        h = max(size.height(), THUMNAIL_SIZE)
         self.setFixedSize(QSize(w, h))
         self.setFrameShape(QtWidgets.QFrame.Box)
 
 
-    def getThumbnail(self, file):
+    def updateThumbnail(self, file):
         if file in THUMBNAILS:
-            return THUMBNAILS[file]
-        
-        pixmap = QtGui.QPixmap(file)
-        pixmap = pixmap.scaled(THUMNAIL_SIZE, THUMNAIL_SIZE, Qt.KeepAspectRatio)
+            self.img.setPixmap(THUMBNAILS[file])
+
+        task = ThumbnailTask(file)
+        task.signals.done.connect(self.onThumbnailLoaded)
+        QThreadPool.globalInstance().start(task)
+
+    def onThumbnailLoaded(self, file, img):
+        pixmap = QtGui.QPixmap.fromImage(img)
         THUMBNAILS[file] = pixmap
-        return pixmap
+        self.img.setPixmap(pixmap)
+
+
+
+# TODO: What if gallery is closed and reopened before all tasks finish?
+#       In this case new (duplicate) tasks are queued.
+class ThumbnailTask(QRunnable,):
+    def __init__(self, file):
+        super().__init__()
+        self.file = file
+        self.signals = ThumbnailTaskSignals()
+
+    @Slot()
+    def run(self):
+        # QPixmap is not threadsafe, loading as QImage instead
+        img = QtGui.QImage(self.file)
+        img = img.scaled(THUMNAIL_SIZE, THUMNAIL_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.signals.done.emit(self.file, img)
+
+
+class ThumbnailTaskSignals(QObject):
+    done = Signal(str, object)
+
+    def __init__(self):
+        super().__init__()
