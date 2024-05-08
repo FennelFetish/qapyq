@@ -2,13 +2,11 @@ from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPixmap, QTransform
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsPixmapItem, QGraphicsView
 from dropview import DropView, DropZone
-from filelist import FileList
 import os
 
 class ImgView(DropView):
-    def __init__(self, tab):
+    def __init__(self, filelist):
         super().__init__()
-        self.tab = tab
 
         bgBrush = QBrush(QColor(0, 0, 0))
         bgBrush.setStyle(Qt.Dense2Pattern)
@@ -21,7 +19,7 @@ class ImgView(DropView):
 
         self.rotation = 0.0
         self._tool = None
-        self._filelist = FileList()
+        self._filelist = filelist
 
         self.image = ImgItem()
         self.scene().addItem(self.image)
@@ -37,8 +35,7 @@ class ImgView(DropView):
             self.resetView()
             self.updateImageTransform()
             self.updateScene()
-            self.tab.setTabName( os.path.basename(path) )
-
+            
             if resetFileList:
                 self._filelist.setFile(path)
 

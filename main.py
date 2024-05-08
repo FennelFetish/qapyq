@@ -3,12 +3,19 @@ from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Slot
 from imgview import ImgView
 from export import Export
+from gallery import Gallery, GalleryWindow
+from filelist import FileList
+import os
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self):
+    def __init__(self, app):
         super().__init__()
+        self.app = app
+        self.galleryWindow = None
+
         self.setWindowTitle("Image Compare")
+        self.setAttribute(Qt.WA_QuitOnClose)
         self.buildTabs()
         self.buildMenu()
         self.buildToolbar()
@@ -26,6 +33,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabWidget.setDocumentMode(True) # Removes border
         self.tabWidget.setTabsClosable(True)
         self.tabWidget.setCornerWidget(btnAddTab)
+        self.tabWidget.currentChanged.connect(self.onTabChanged)
         self.tabWidget.tabCloseRequested.connect(self.closeTab)
         self.setCentralWidget(self.tabWidget)
 
@@ -51,29 +59,64 @@ class MainWindow(QtWidgets.QMainWindow):
         actCrop = toolbar.addAction("Crop")
         actCrop.triggered.connect(lambda: self.setTool("crop"))
 
-        actGallery = toolbar.addAction("Gallery")
-        actGallery.triggered.connect(lambda: self.setTool("gallery"))
+        toolbar.addSeparator()
+
+        actToggleGallery = toolbar.addAction("Gallery")
+        actToggleGallery.triggered.connect(self.toggleGallery)
+
 
     @Slot()
     def addTab(self):
         tab = ImgTab(self.tabWidget)
         index = self.tabWidget.addTab(tab, "Empty")
-        self.tabWidget.setCurrentIndex(index)
-
+        
         # For debugging
         tab.imgview.loadImage("/home/rem/Pictures/red-tree-with-eyes.jpeg")
+
+        self.tabWidget.setCurrentIndex(index)
 
     @Slot()
     def closeTab(self, index):
         self.tabWidget.removeTab(index)
         if self.tabWidget.count() == 0:
             self.addTab()
+
+    @Slot()
+    def onTabChanged(self, index):
+        if self.galleryWindow:
+            tab = self.tabWidget.currentWidget()
+            self.galleryWindow.setTab(tab)
+        
     
     @Slot()
     def setTool(self, toolName: str):
         tab = self.tabWidget.currentWidget()
         tab.setTool(toolName)
 
+    
+    def toggleGallery(self):
+        # TODO: Keep GalleryWindow instance? Toggle via show/hide?
+        if self.galleryWindow is None:
+            screenSize = app.primaryScreen().size()
+            wHalf = screenSize.width() // 2
+
+            self.galleryWindow = GalleryWindow(self)
+            self.galleryWindow.resize(wHalf, screenSize.height()//2)
+            self.galleryWindow.move(wHalf, 0)
+            self.galleryWindow.show()
+
+            tab = self.tabWidget.currentWidget()
+            self.galleryWindow.setTab(tab)
+        else:
+            self.galleryWindow.close()
+    
+    def onGalleryClosed(self):
+        self.galleryWindow = None
+    
+
+    def closeEvent(self, event):
+        if self.galleryWindow:
+            self.galleryWindow.close()
 
 
 class ImgTab(QtWidgets.QMainWindow):
@@ -81,7 +124,10 @@ class ImgTab(QtWidgets.QMainWindow):
         super().__init__()
         self.tabWidget = tabWidget
 
-        self.imgview = ImgView(self)
+        self.filelist = FileList()
+        self.filelist.addListener(self)
+
+        self.imgview = ImgView(self.filelist)
         self.export = Export()
         self.tools = {}
         self._toolbar = None
@@ -93,6 +139,16 @@ class ImgTab(QtWidgets.QMainWindow):
         layout.addWidget(self.imgview)
         widget.setLayout(layout)
         self.setCentralWidget(widget)
+
+
+    def onFileChanged(self, currentFile):
+        idx = self.tabWidget.indexOf(self)
+        name = os.path.basename(currentFile)
+        self.tabWidget.setTabText(idx, name)
+
+    def onFileLoaded(self, currentFile):
+        self.onFileChanged(currentFile)
+    
 
     def setTool(self, toolName: str):
         if toolName not in self.tools:
@@ -118,22 +174,17 @@ class ImgTab(QtWidgets.QMainWindow):
             case "crop":
                 from tools import CropTool
                 return CropTool(self.export)
-            case "gallery":
-                from tools import GalleryTool
-                return GalleryTool()
         return None
-
-    def setTabName(self, name):
-        idx = self.tabWidget.indexOf(self)
-        self.tabWidget.setTabText(idx, name)
 
 
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication([])
 
-    win = MainWindow()
-    win.resize(1500, 900)
+    screenSize = app.primaryScreen().size()
+
+    win = MainWindow(app)
+    win.resize(screenSize.width()//2, screenSize.height()//2)
     win.move(0, 0)
     win.show()
 
