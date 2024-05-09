@@ -4,7 +4,7 @@ import os
 
 
 THUMBNAILS = {}
-THUMNAIL_SIZE = 256
+THUMBNAIL_SIZE = 256
 
 
 class Gallery(QtWidgets.QListWidget):
@@ -12,6 +12,7 @@ class Gallery(QtWidgets.QListWidget):
         super().__init__()
         self.tab = tab
         self.filelist = tab.filelist
+        self.tileSize = THUMBNAIL_SIZE
 
         self.setFlow(QtWidgets.QListWidget.LeftToRight)
         self.setWrapping(True)
@@ -21,10 +22,12 @@ class Gallery(QtWidgets.QListWidget):
 
         self.setHorizontalScrollMode(QtWidgets.QListWidget.ScrollPerPixel)
         self.setVerticalScrollMode(QtWidgets.QListWidget.ScrollPerPixel)
-        self.setSpacing(4)
+        self.setSpacing(1)
 
-        #self.setIconSize(QSize(200, 200))
-        #self.setViewMode(QtWidgets.QListView.IconMode)
+        self.setViewMode(QtWidgets.QListView.IconMode)
+        #self.setIconSize(QSize(100, 100))
+        #self.setUniformItemSizes(True)
+        self.adjustGrid(self.width())
 
         self.currentItemChanged.connect(self.onFileSelected)
 
@@ -37,66 +40,104 @@ class Gallery(QtWidgets.QListWidget):
         self.blockSignals(False)
     
     def addImage(self, file):
-        item = QtWidgets.QListWidgetItem()
-        self.addItem(item)
+        galleryItem = GalleryItem(self.tab, file)
+        galleryItem.setSize(self.tileSize)
 
-        galleryItem = GalleryItem(file)
+        item = QtWidgets.QListWidgetItem()
         item.setSizeHint(galleryItem.size())
+        self.addItem(item)
         self.setItemWidget(item, galleryItem)
 
         if self.filelist.getCurrentFile() == file:
             self.setCurrentItem(item)
+            galleryItem.setSelected(True)
 
 
     def onFileChanged(self, currentFile):
-        self.blockSignals(True)
         for i in range(self.count()):
             item = self.item(i)
-            file = self.itemWidget(item).file
-            if file == currentFile:
+            widget = self.itemWidget(item)
+            if widget.file == currentFile:
+                self.updateSelection(item, self.currentItem())
+
+                self.blockSignals(True)
                 self.setCurrentItem(item)
+                self.blockSignals(False)
                 break
-        self.blockSignals(False)
+        
 
     def onFileLoaded(self, currentFile):
         self.updateImages()
 
 
     @Slot()
-    def onFileSelected(self, currentItem):
+    def onFileSelected(self, currentItem, prevItem):
+        self.updateSelection(currentItem, prevItem)
         item = self.itemWidget(currentItem)
         if item:
             file = item.file
             self.filelist.setCurrentFile(file)
             self.tab.imgview.loadImage(file, False)
 
+    def updateSelection(self, current, prev):
+        wCurrent = self.itemWidget(current)
+        if wCurrent:
+            wCurrent.setSelected(True)
 
+        wPrev = self.itemWidget(prev)
+        if wPrev:
+            wPrev.setSelected(False)
 
+    def adjustGrid(self, widgetWidth):
+        w = widgetWidth - 4
+        cols = w // THUMBNAIL_SIZE
+        w = w / cols
+        self.setGridSize(QSize(w, w))
+        self.tileSize = w
+
+        for i in range(self.count()):
+            widget = self.itemWidget(self.item(i))
+            if widget:
+                widget.setSize(w)
+
+    def resizeEvent(self, event):
+        self.adjustGrid(event.size().width())
+        #super().resizeEvent(event)
+
+        
+
+# https://stackoverflow.com/questions/74252940/how-to-automatically-adjust-the-elements-of-qgridlayout-to-fit-in-a-row-when-the
 class GalleryItem(QtWidgets.QFrame):
-    def __init__(self, file):
+    def __init__(self, tab, file):
         super().__init__()
+        self.tab = tab
         self.file = file
 
-        self.img = QtWidgets.QLabel(alignment=Qt.AlignCenter)
+        self.img = QtWidgets.QLabel()
+        self.img.setAlignment(Qt.AlignCenter | Qt.AlignTop)
+        #self.img.setScaledContents(True)
         self.updateThumbnail(file)
 
         filename = os.path.basename(file)
-        self.label = QtWidgets.QLabel(filename, alignment=Qt.AlignCenter)
-        self.label.setMaximumWidth(240)
+        self.label = QtWidgets.QLabel(filename)
+        self.label.setAlignment(Qt.AlignCenter | Qt.AlignTop)
+        self.label.setMaximumWidth(THUMBNAIL_SIZE)
         self.label.setWordWrap(True)
 
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(1)
+        layout.setSpacing(0)
         layout.addWidget(self.img)
         layout.addWidget(self.label)
+        layout.addStretch(1)
         self.setLayout(layout)
 
-        size = layout.sizeHint()
-        w = max(size.width(), THUMNAIL_SIZE)
-        h = max(size.height(), THUMNAIL_SIZE)
-        self.setFixedSize(QSize(w, h))
-        self.setFrameShape(QtWidgets.QFrame.Box)
+    
+    def setSize(self, sideLength):
+        self.label.setMaximumWidth(sideLength)
+
+    def setSelected(self, selected):
+        self.setFrameShape(QtWidgets.QFrame.Box if selected else QtWidgets.QFrame.NoFrame)
 
 
     def updateThumbnail(self, file):
@@ -112,11 +153,20 @@ class GalleryItem(QtWidgets.QFrame):
         THUMBNAILS[file] = pixmap
         self.img.setPixmap(pixmap)
 
+    
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            event.ignore()
+            return
+        
+        if event.button() == Qt.RightButton:
+            self.tab.imgview.tool.onGalleryRightClick(self.file)
+
 
 
 # TODO: What if gallery is closed and reopened before all tasks finish?
 #       In this case new (duplicate) tasks are queued.
-class ThumbnailTask(QRunnable,):
+class ThumbnailTask(QRunnable):
     def __init__(self, file):
         super().__init__()
         self.file = file
@@ -126,7 +176,7 @@ class ThumbnailTask(QRunnable,):
     def run(self):
         # QPixmap is not threadsafe, loading as QImage instead
         img = QtGui.QImage(self.file)
-        img = img.scaled(THUMNAIL_SIZE, THUMNAIL_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        img = img.scaled(THUMBNAIL_SIZE+20, THUMBNAIL_SIZE+20, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         self.signals.done.emit(self.file, img)
 
 

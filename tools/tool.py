@@ -56,3 +56,7 @@ class Tool:
 
     def onKeyPress(self, event):
         pass
+
+    
+    def onGalleryRightClick(self, file):
+        pass

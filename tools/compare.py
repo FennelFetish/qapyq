@@ -15,6 +15,12 @@ class CompareTool(Tool):
         self._dividerLine.setPen( QPen(QColor(180, 180, 180, 140)) )
         self._dividerLine.setVisible(False)
 
+    def loadCompareImage(self, path):
+        self._image.loadImage(path)
+        self._image.updateTransform(self._imgview.viewport().rect(), self._imgview.rotation)
+        self._image.setClipWidth(0)
+        self._imgview.updateScene()
+
     def onEnabled(self, imgview):
         super().onEnabled(imgview)
         imgview.scene().addItem(self._image)
@@ -32,14 +38,13 @@ class CompareTool(Tool):
 
     def onDrop(self, event, zoneIndex):
         path = event.mimeData().urls()[0].toLocalFile()
-
         if zoneIndex == 0:
             self._imgview.loadImage(path)
         else:
-            self._image.loadImage(path)
-            self._image.updateTransform(self._imgview.viewport().rect(), self._imgview.rotation)
-            self._image.setClipWidth(0)
-            self._imgview.updateScene()
+            self.loadCompareImage(path)
+
+    def onGalleryRightClick(self, file):
+        self.loadCompareImage(file)
 
     def onResize(self, event=None):
         self._image.updateTransform(self._imgview.viewport().rect(), self._imgview.rotation)
@@ -62,5 +67,3 @@ class CompareTool(Tool):
     def onMouseLeave(self, event):
         self._image.setClipWidth(0)
         self._dividerLine.setVisible(False)
-
-
