@@ -177,6 +177,13 @@ class CropTool(ViewTool):
         cv.imwrite(path, matDest, params)
         print("Exported cropped image to", path)
 
+    def onFileChanged(self, currentFile):
+        self._toolbar.updateExport()
+
+    def onFileListChanged(self, currentFile):
+        self.onFileChanged(currentFile)
+
+    # === Tool Interface ===
 
     def onEnabled(self, imgview):
         super().onEnabled(imgview)
@@ -188,6 +195,7 @@ class CropTool(ViewTool):
         imgview.updateImageTransform()
 
         self._toolbar.updateSize()
+        imgview.filelist.addListener(self)
 
     def onDisabled(self, imgview):
         super().onDisabled(imgview)
@@ -197,8 +205,8 @@ class CropTool(ViewTool):
         imgview.rotation = 0.0
         imgview.updateImageTransform()
 
-    def onImageLoaded(self, img):
-        self._toolbar.updateExport()
+        imgview.filelist.removeListener(self)
+
 
     def onSceneUpdate(self):
         self.updateSelection(self._cropRect.rect().center())
@@ -250,6 +258,7 @@ class CropTool(ViewTool):
         self._cropHeight = round(max(self._cropHeight, 1))
         self.updateSelection(event.position())
         return True
+
 
 
 class MaskRect(QGraphicsRectItem):

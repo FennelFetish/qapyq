@@ -31,7 +31,6 @@ class ImgView(DropView):
             self.resetView()
             self.updateImageTransform()
             self.updateScene()
-            self._tool.onImageLoaded(self.image)
         self.setFocus()
 
     def onFileListChanged(self, currentFile):

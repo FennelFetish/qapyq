@@ -287,7 +287,7 @@ class CropToolBar(QtWidgets.QToolBar):
         export.folderNames = self.spinFolderNames.value()
         export.suffix = f"_{self.spinW.value()}x{self.spinH.value()}"
 
-        examplePath = export.getExportPath(self._cropTool._imgview.image.filepath)
+        examplePath = export.getExportPath(self._cropTool._imgview.filelist.getCurrentFile())
         self.txtPathSample.setText(examplePath)
 
 
