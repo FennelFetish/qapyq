@@ -50,27 +50,30 @@ class FileList:
         self.notifyFileChanged()
 
     def setNextFile(self):
-        self._lazyLoadFolder()
-        self.currentIndex = (self.currentIndex+1) % len(self.files)
-        self.currentFile = self.files[self.currentIndex]
-        self.notifyFileChanged()
+        if numFiles := len(self.files):
+            self._lazyLoadFolder()
+            self.currentIndex = (self.currentIndex+1) % numFiles
+            self.currentFile = self.files[self.currentIndex]
+            self.notifyFileChanged()
 
     def setPrevFile(self):
-        self._lazyLoadFolder()
-        self.currentIndex = (self.currentIndex-1) % len(self.files)
-        self.currentFile = self.files[self.currentIndex]
-        self.notifyFileChanged()
+        if numFiles := len(self.files):
+            self._lazyLoadFolder()
+            self.currentIndex = (self.currentIndex-1) % numFiles
+            self.currentFile = self.files[self.currentIndex]
+            self.notifyFileChanged()
 
 
     def setNextFolder(self):
         self._lazyLoadFolder()
         currentFolder = os.path.dirname(self.currentFile)
+        currentIndex = max(self.currentIndex, 0)
 
-        for i in range(self.currentIndex, len(self.files)):
+        for i in range(currentIndex, len(self.files)):
             if self._switchFolderProcessFile(i, currentFolder):
                 return
         
-        for i in range(0, self.currentIndex):
+        for i in range(0, currentIndex):
             if self._switchFolderProcessFile(i, currentFolder):
                 return
 
