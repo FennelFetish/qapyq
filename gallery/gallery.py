@@ -73,19 +73,15 @@ class Gallery(QtWidgets.QListWidget):
     @Slot()
     def onFileSelected(self, currentItem, prevItem):
         self.updateSelection(currentItem, prevItem)
-        item = self.itemWidget(currentItem)
-        if item:
+        if item := self.itemWidget(currentItem):
             self.filelist.removeListener(self)
             self.filelist.setCurrentFile(item.file)
             self.filelist.addListener(self)
 
     def updateSelection(self, current, prev):
-        wCurrent = self.itemWidget(current)
-        if wCurrent:
+        if wCurrent := self.itemWidget(current):
             wCurrent.setSelected(True)
-
-        wPrev = self.itemWidget(prev)
-        if wPrev:
+        if wPrev := self.itemWidget(prev):
             wPrev.setSelected(False)
 
     def adjustGrid(self, widgetWidth):
@@ -96,8 +92,7 @@ class Gallery(QtWidgets.QListWidget):
         self.tileSize = w
 
         for i in range(self.count()):
-            widget = self.itemWidget(self.item(i))
-            if widget:
+            if widget := self.itemWidget(self.item(i)):
                 widget.setSize(w)
 
     def resizeEvent(self, event):

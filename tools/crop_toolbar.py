@@ -251,7 +251,7 @@ class CropToolBar(QtWidgets.QToolBar):
         self.lblW.setText(f"{w:.1f} px")
         self.lblH.setText(f"{h:.1f} px")
 
-        scale = self.spinH.value() / h
+        scale = (self.spinH.value() / h) if h>0 else 1.0
         if scale > 1.0:
             self.lblScale.setStyleSheet("QLabel { color: #ff3030; }")
             self.lblScale.setText(f"▲   {scale:.3f}")

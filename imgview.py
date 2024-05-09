@@ -32,6 +32,7 @@ class ImgView(DropView):
             self.updateImageTransform()
             self.updateScene()
         self.setFocus()
+        self.activateWindow()
 
     def onFileListChanged(self, currentFile):
         self.onFileChanged(currentFile)
@@ -44,6 +45,8 @@ class ImgView(DropView):
         super().resetView()
         self.rotation = 0.0
         self._tool.onResetView()
+
+    
 
     @property
     def tool(self):

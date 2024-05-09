@@ -1,9 +1,10 @@
 import sys
 from PySide6 import QtGui, QtWidgets
-from PySide6.QtCore import Qt, Slot, QThreadPool
+from PySide6.QtCore import Qt, Slot
 from imgview import ImgView
 from export import Export
 from gallery import Gallery, GalleryWindow
+from caption import CaptionWindow
 from filelist import FileList
 import os
 
@@ -13,6 +14,7 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.app = app
         self.galleryWindow = None
+        self.captionWindow = None
 
         self.setWindowTitle("Image Compare")
         self.setAttribute(Qt.WA_QuitOnClose)
@@ -23,7 +25,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         #self.setWindowState(Qt.WindowFullScreen)
         #self.setWindowState(Qt::WindowMaximized);
-        #setWindowState(w.windowState() ^ Qt::WindowFullScreen);
+        #self.setWindowState(self.windowState() ^ Qt.WindowFullScreen)
 
     def buildTabs(self):
         btnAddTab = QtWidgets.QPushButton("Add Tab")
@@ -64,6 +66,9 @@ class MainWindow(QtWidgets.QMainWindow):
         actToggleGallery = toolbar.addAction("Gallery")
         actToggleGallery.triggered.connect(self.toggleGallery)
 
+        actToggleCaption = toolbar.addAction("Captions")
+        actToggleCaption.triggered.connect(self.toggleCaptionWindow)
+
 
     @Slot()
     def addTab(self):
@@ -82,9 +87,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @Slot()
     def onTabChanged(self, index):
+        tab = self.tabWidget.currentWidget()
         if self.galleryWindow:
-            tab = self.tabWidget.currentWidget()
             self.galleryWindow.setTab(tab)
+        if self.captionWindow:
+            self.captionWindow.setTab(tab)
         
     
     @Slot()
@@ -93,15 +100,12 @@ class MainWindow(QtWidgets.QMainWindow):
         tab.setTool(toolName)
 
     
+    @Slot()
     def toggleGallery(self):
         # TODO: Keep GalleryWindow instance? Toggle via show/hide?
         if self.galleryWindow is None:
-            screenSize = app.primaryScreen().size()
-            wHalf = screenSize.width() // 2
-
             self.galleryWindow = GalleryWindow()
-            self.galleryWindow.resize(wHalf, screenSize.height()//2)
-            self.galleryWindow.move(wHalf, 0)
+            self.galleryWindow.setDimensions(self.app, 0.5, 0.5, 0.5, 0)
             self.galleryWindow.closed.connect(self.onGalleryClosed)
             self.galleryWindow.show()
 
@@ -110,19 +114,42 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.galleryWindow.close()
     
+    @Slot()
     def onGalleryClosed(self):
         self.galleryWindow = None
+
     
+    @Slot()
+    def toggleCaptionWindow(self):
+        if self.captionWindow is None:
+            self.captionWindow = CaptionWindow()
+            self.captionWindow.setDimensions(self.app, 0.5, 0.5, 0.5, 0.5)
+            self.captionWindow.closed.connect(self.onCaptionWindowClosed)
+            self.captionWindow.show()
+
+            tab = self.tabWidget.currentWidget()
+            self.captionWindow.setTab(tab)
+        else:
+            self.captionWindow.close()
+
+    @Slot()
+    def onCaptionWindowClosed(self):
+        self.captionWindow = None
+
 
     def closeEvent(self, event):
         if self.galleryWindow:
             self.galleryWindow.close()
+        if self.captionWindow:
+            self.captionWindow.close()
+
 
 
 class ImgTab(QtWidgets.QMainWindow):
     def __init__(self, tabWidget):
         super().__init__()
         self.tabWidget = tabWidget
+        self._index = -1 # Store index when fullscreen
 
         self.filelist = FileList()
         self.filelist.addListener(self)
@@ -143,7 +170,7 @@ class ImgTab(QtWidgets.QMainWindow):
 
     def onFileChanged(self, currentFile):
         idx = self.tabWidget.indexOf(self)
-        name = os.path.basename(currentFile)
+        name = os.path.basename(currentFile) if currentFile else "Empty"
         self.tabWidget.setTabText(idx, name)
 
     def onFileListChanged(self, currentFile):
@@ -156,10 +183,10 @@ class ImgTab(QtWidgets.QMainWindow):
         self.imgview.tool = self.tools[toolName]
 
         # Replace toolbar
-        if self._toolbar is not None:
+        if self._toolbar:
             self.removeToolBar(self._toolbar)
         self._toolbar = self.imgview.tool.getToolbar()
-        if self._toolbar is not None:
+        if self._toolbar:
             self.addToolBar(Qt.RightToolBarArea, self._toolbar)
             self._toolbar.show()
 
@@ -177,12 +204,34 @@ class ImgTab(QtWidgets.QMainWindow):
         return None
 
 
+    def toggleFullscreen(self):
+        winState = self.windowState()
+        if winState & Qt.WindowFullScreen:
+            # Disable fullscreen
+            index = self.tabWidget.insertTab(self._index, self, "Fullscreen")
+            self.tabWidget.setCurrentIndex(index)
+            self.onFileChanged(self.filelist.getCurrentFile())
+            self._index = -1
+        else:
+            # Enable fullscreen
+            self._index = self.tabWidget.indexOf(self)
+            self.tabWidget.removeTab(self._index)
+            self.setParent(None)
+
+        self.imgview.setFocus()
+        self.setWindowState(winState ^ Qt.WindowFullScreen)
+        self.setVisible(True)
+
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_F:
+            self.toggleFullscreen()
+
+
+
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication([])
-
-    threadPool = QThreadPool.globalInstance()
-    print("Thread pool with maximum %d threads" % threadPool.maxThreadCount())
 
     screenSize = app.primaryScreen().size()
 
