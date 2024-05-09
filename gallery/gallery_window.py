@@ -1,18 +1,15 @@
 from PySide6 import QtWidgets
 from .gallery import Gallery
+from aux_window import AuxiliaryWindow
 
-# Gallery content tied to active tab
 
 # Contains directory tree toolbar
 
 
-class GalleryWindow(QtWidgets.QMainWindow):
-    def __init__(self, mainWindow):
-        super().__init__()
-        self.mainWindow = mainWindow
+class GalleryWindow(AuxiliaryWindow):
+    def __init__(self):
+        super().__init__("Gallery")
         self.tab = None
-
-        self.setWindowTitle("Gallery")
 
     def setTab(self, tab):
         if tab is self.tab:
@@ -29,11 +26,9 @@ class GalleryWindow(QtWidgets.QMainWindow):
             self.setCentralWidget(gallery)
             gallery.updateImages()
 
-            
-
+    
     def closeEvent(self, event):
         gallery = self.takeCentralWidget()
         self.tab.filelist.removeListener(gallery)
-
         self.tab = None
-        self.mainWindow.onGalleryClosed()
+        super().closeEvent(event)

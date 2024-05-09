@@ -126,7 +126,7 @@ class CropTool(ViewTool):
     def toCvMat(self, pixmap):
         buffer = QBuffer()
         buffer.open(QBuffer.ReadWrite)
-        pixmap.save(buffer, "BMP")
+        pixmap.save(buffer, "PNG") # Preserve transparency with PNG
 
         buf = np.frombuffer(buffer.data(), dtype=np.uint8)
         return cv.imdecode(buf, cv.IMREAD_UNCHANGED)

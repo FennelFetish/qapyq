@@ -72,7 +72,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabWidget.setCurrentIndex(index)
 
         # For debugging
-        tab.filelist.load("/home/rem/Pictures/red-tree-with-eyes.jpeg")
+        #tab.filelist.load("/home/rem/Pictures/red-tree-with-eyes.jpeg")
 
     @Slot()
     def closeTab(self, index):
@@ -99,9 +99,10 @@ class MainWindow(QtWidgets.QMainWindow):
             screenSize = app.primaryScreen().size()
             wHalf = screenSize.width() // 2
 
-            self.galleryWindow = GalleryWindow(self)
+            self.galleryWindow = GalleryWindow()
             self.galleryWindow.resize(wHalf, screenSize.height()//2)
             self.galleryWindow.move(wHalf, 0)
+            self.galleryWindow.closed.connect(self.onGalleryClosed)
             self.galleryWindow.show()
 
             tab = self.tabWidget.currentWidget()

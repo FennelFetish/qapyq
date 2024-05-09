@@ -39,7 +39,12 @@ class FileList:
         return self.currentFile
 
     def setCurrentFile(self, file):
-        index = self.files.index(file)
+        try:
+            index = self.files.index(file)
+        except ValueError as ex:
+            print(f"Warning: File {file} not in FileList")
+            index = -1
+
         self.currentFile = file
         self.currentIndex = index
         self.notifyFileChanged()
@@ -92,7 +97,7 @@ class FileList:
 
 
     def _lazyLoadFolder(self):
-        if self.currentIndex < 0:
+        if self.currentIndex < 0 and self.currentFile:
             path = os.path.dirname(self.currentFile)
             self._readFolder(path, False)
             self.currentIndex = self.files.index(self.currentFile)
