@@ -11,19 +11,15 @@ class ViewTool(Tool):
     
     def onDrop(self, event, zoneIndex):
         firstUrl = event.mimeData().urls()[0]
-        self._imgview.loadImage(firstUrl.toLocalFile())
+        self._imgview.filelist.load(firstUrl.toLocalFile())
 
     def onKeyPress(self, event):
-        file = ""
         match event.key():
             case Qt.Key_Left:
-                file = self._imgview._filelist.getPrevFile()
+                self._imgview.filelist.setPrevFile()
             case Qt.Key_Right:
-                file = self._imgview._filelist.getNextFile()
+                self._imgview.filelist.setNextFile()
             case Qt.Key_Up:
-                file = self._imgview._filelist.getNextFolder()
+                self._imgview.filelist.setNextFolder()
             case Qt.Key_Down:
-                file = self._imgview._filelist.getPrevFolder()
-
-        if file:
-            self._imgview.loadImage(file, False)
+                self._imgview.filelist.setPrevFolder()

@@ -19,29 +19,24 @@ class ImgView(DropView):
 
         self.rotation = 0.0
         self._tool = None
-        self._filelist = filelist
+        self.filelist = filelist
+        filelist.addListener(self)
 
         self.image = ImgItem()
         self.scene().addItem(self.image)
         
 
-    def loadImage(self, path, resetFileList=True):
-        if os.path.isdir(path):
-            self._filelist.loadFolder(path, True)
-            path = self._filelist.getCurrentFile()
-            resetFileList = False
-
-        if self.image.loadImage(path):
+    def onFileChanged(self, currentFile):
+        if self.image.loadImage(currentFile):
             self.resetView()
             self.updateImageTransform()
             self.updateScene()
-            
-            if resetFileList:
-                self._filelist.setFile(path)
-
             self._tool.onImageLoaded(self.image)
-        
         self.setFocus()
+
+    def onFileListChanged(self, currentFile):
+        self.onFileChanged(currentFile)
+
 
     def updateImageTransform(self):
         self.image.updateTransform(self.viewport().rect(), self.rotation)

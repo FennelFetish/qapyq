@@ -69,11 +69,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def addTab(self):
         tab = ImgTab(self.tabWidget)
         index = self.tabWidget.addTab(tab, "Empty")
-        
-        # For debugging
-        tab.imgview.loadImage("/home/rem/Pictures/red-tree-with-eyes.jpeg")
-
         self.tabWidget.setCurrentIndex(index)
+
+        # For debugging
+        tab.filelist.load("/home/rem/Pictures/red-tree-with-eyes.jpeg")
 
     @Slot()
     def closeTab(self, index):
@@ -146,7 +145,7 @@ class ImgTab(QtWidgets.QMainWindow):
         name = os.path.basename(currentFile)
         self.tabWidget.setTabText(idx, name)
 
-    def onFileLoaded(self, currentFile):
+    def onFileListChanged(self, currentFile):
         self.onFileChanged(currentFile)
     
 

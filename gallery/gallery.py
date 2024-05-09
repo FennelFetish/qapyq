@@ -64,9 +64,8 @@ class Gallery(QtWidgets.QListWidget):
                 self.setCurrentItem(item)
                 self.blockSignals(False)
                 break
-        
-
-    def onFileLoaded(self, currentFile):
+    
+    def onFileListChanged(self, currentFile):
         self.updateImages()
 
 
@@ -75,9 +74,9 @@ class Gallery(QtWidgets.QListWidget):
         self.updateSelection(currentItem, prevItem)
         item = self.itemWidget(currentItem)
         if item:
-            file = item.file
-            self.filelist.setCurrentFile(file)
-            self.tab.imgview.loadImage(file, False)
+            self.filelist.removeListener(self)
+            self.filelist.setCurrentFile(item.file)
+            self.filelist.addListener(self)
 
     def updateSelection(self, current, prev):
         wCurrent = self.itemWidget(current)
