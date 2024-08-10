@@ -1,6 +1,6 @@
 from PySide6 import QtWidgets
 from aux_window import AuxiliaryWindow
-from .caption import Caption
+from .caption import CaptionContainer
 
 
 
@@ -10,8 +10,9 @@ class CaptionWindow(AuxiliaryWindow):
 
 
     def setupContent(self, tab) -> object:
-        caption = Caption(tab)
+        caption = CaptionContainer(tab)
         tab.filelist.addListener(caption)
+        caption.onFileChanged( tab.filelist.getCurrentFile() )
         return caption
 
     def teardownContent(self, caption):

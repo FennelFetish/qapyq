@@ -1,12 +1,13 @@
+import os
 import sys
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Slot
-from imgview import ImgView
-from export import Export
-from gallery import Gallery, GalleryWindow
+
 from caption import CaptionWindow
+from export import Export
 from filelist import FileList
-import os
+from gallery import Gallery, GalleryWindow
+from imgview import ImgView
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -16,7 +17,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.galleryWindow = None
         self.captionWindow = None
 
-        self.setWindowTitle("Image Compare")
+        self.setWindowTitle("PyImgSet")
         self.setAttribute(Qt.WA_QuitOnClose)
         self.buildTabs()
         self.buildMenu()
@@ -34,6 +35,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabWidget = QtWidgets.QTabWidget(self)
         self.tabWidget.setDocumentMode(True) # Removes border
         self.tabWidget.setTabsClosable(True)
+        self.tabWidget.setElideMode(Qt.ElideMiddle)
         self.tabWidget.setCornerWidget(btnAddTab)
         self.tabWidget.currentChanged.connect(self.onTabChanged)
         self.tabWidget.tabCloseRequested.connect(self.closeTab)
@@ -75,9 +77,8 @@ class MainWindow(QtWidgets.QMainWindow):
         tab = ImgTab(self.tabWidget)
         index = self.tabWidget.addTab(tab, "Empty")
         self.tabWidget.setCurrentIndex(index)
+        tab.imgview.setFocus()
 
-        # For debugging
-        #tab.filelist.load("/home/rem/Pictures/red-tree-with-eyes.jpeg")
 
     @Slot()
     def closeTab(self, index):
@@ -123,7 +124,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def toggleCaptionWindow(self):
         if self.captionWindow is None:
             self.captionWindow = CaptionWindow()
-            self.captionWindow.setDimensions(self.app, 0.5, 0.5, 0.5, 0.5)
+            self.captionWindow.setDimensions(self.app, 0.5, 0.45, 0.5, 0.55)
             self.captionWindow.closed.connect(self.onCaptionWindowClosed)
             self.captionWindow.show()
 
@@ -150,6 +151,7 @@ class ImgTab(QtWidgets.QMainWindow):
         super().__init__()
         self.tabWidget = tabWidget
         self._index = -1 # Store index when fullscreen
+        self.setWindowTitle("PyImgSet Tab")
 
         self.filelist = FileList()
         self.filelist.addListener(self)
@@ -236,8 +238,15 @@ if __name__ == "__main__":
     screenSize = app.primaryScreen().size()
 
     win = MainWindow(app)
-    win.resize(screenSize.width()//2, screenSize.height()//2)
+    win.resize(screenSize.width()//2, screenSize.height())
     win.move(0, 0)
     win.show()
+
+    if len(sys.argv) > 1:
+        tab = win.tabWidget.currentWidget()
+        tab.filelist.load(sys.argv[1])
+    # else:
+    #     tab = win.tabWidget.currentWidget()
+    #     tab.filelist.load("/home/rem/Pictures/red-tree-with-eyes.jpeg")
 
     sys.exit(app.exec())
