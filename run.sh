@@ -25,4 +25,4 @@ fi
 
 
 # Run main.py using the specified Python version and command-line arguments
-exec ${python_path} "$(dirname "$0")/main.py"
+exec ${python_path} "$(dirname "$0")/main.py" "$1"
