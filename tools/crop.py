@@ -147,8 +147,11 @@ class CropTool(ViewTool):
 
     def exportImage(self, poly: QPolygonF):
         pixmap = self._imgview.image.pixmap()
-        rect   = self.calcCutRect(poly, pixmap)
-        mat    = self.toCvMat( pixmap.copy(rect) )
+        if not pixmap:
+            return
+
+        rect = self.calcCutRect(poly, pixmap)
+        mat  = self.toCvMat( pixmap.copy(rect) )
         
         p0, p1, p2, _ = poly
         ox, oy = rect.topLeft().toTuple()

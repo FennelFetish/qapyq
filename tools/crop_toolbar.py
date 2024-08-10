@@ -1,6 +1,7 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
 import cv2 as cv
+from qtlib import PrecisionSpinBox
 
 
 INTERP_MODES = {
@@ -132,7 +133,7 @@ class CropToolBar(QtWidgets.QToolBar):
         self.slideRot.setValue(0)
         self.slideRot.valueChanged.connect(self.updateRotationFromSlider)
 
-        self.spinRot = PrecisionSpinBox()
+        self.spinRot = PrecisionSpinBox(2)
         self.spinRot.setRange(-3600, 3600)
         self.spinRot.setSingleStep(1)
         self.spinRot.setValue(0)
@@ -289,15 +290,3 @@ class CropToolBar(QtWidgets.QToolBar):
 
         examplePath = export.getExportPath(self._cropTool._imgview.filelist.getCurrentFile())
         self.txtPathSample.setText(examplePath)
-
-
-
-class PrecisionSpinBox(QtWidgets.QSpinBox):
-    PRECISION = 10
-
-    def textFromValue(self, val: int) -> str:
-        return f"{val / self.PRECISION:.1f}"
-    
-    def valueFromText(self, text: str) -> int:
-        val = float(text) * self.PRECISION
-        return round(val)
