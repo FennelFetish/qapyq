@@ -1,6 +1,5 @@
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot
-from qtlib import PrecisionSpinBox
 from .caption_bubbles import CaptionBubbles
 import os
 

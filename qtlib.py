@@ -2,38 +2,6 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QRect, QSize, QEvent
 
 
-class PrecisionSpinBox(QtWidgets.QSpinBox):
-    def __init__(self, digits=2):
-        super().__init__()
-        digits = max(int(digits), 1) - 1
-        self._precision = 10 ** digits
-        self._format = f".{digits}f"
-
-    def textFromValue(self, val: int) -> str:
-        val /= self._precision
-        #print(f"textFromValue: {val} -> {val:{self._format}}")
-        return f"{val:{self._format}}"
-    
-    def valueFromText(self, text: str) -> int:
-        val = float(text) * self._precision
-        #print(f"valueFromText: {text} -> {val}")
-        return round(val)
-
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Period:
-            text = self.lineEdit().text()
-            self.lineEdit().setText(text + ".")
-            #self.lineEdit().insert('.')
-        else:
-            super().keyPressEvent(event)
-
-    # def setRange(self, min, max):
-    #     min *= self._precision
-    #     max *= self._precision
-    #     super().setRange(min, max)
-
-
-
 class DynamicLineEdit(QtWidgets.QLineEdit):
     def __init__(self):
         super().__init__()

@@ -1,7 +1,6 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
 import cv2 as cv
-from qtlib import PrecisionSpinBox
 
 
 INTERP_MODES = {
@@ -125,7 +124,7 @@ class CropToolBar(QtWidgets.QToolBar):
 
     def _buildRotation(self):
         self.slideRot = QtWidgets.QSlider(Qt.Horizontal)
-        self.slideRot.setRange(-1, 3600)
+        self.slideRot.setRange(-10, 3600)
         self.slideRot.setTickPosition(QtWidgets.QSlider.TicksAbove)
         self.slideRot.setTickInterval(900)
         self.slideRot.setSingleStep(10)
@@ -133,9 +132,9 @@ class CropToolBar(QtWidgets.QToolBar):
         self.slideRot.setValue(0)
         self.slideRot.valueChanged.connect(self.updateRotationFromSlider)
 
-        self.spinRot = PrecisionSpinBox(2)
-        self.spinRot.setRange(-3600, 3600)
-        self.spinRot.setSingleStep(1)
+        self.spinRot = QtWidgets.QDoubleSpinBox()
+        self.spinRot.setRange(-360.0, 360.0)
+        self.spinRot.setSingleStep(0.1)
         self.spinRot.setValue(0)
         self.spinRot.valueChanged.connect(self.updateRotationFromSpinner)
 
@@ -234,17 +233,16 @@ class CropToolBar(QtWidgets.QToolBar):
 
     @Slot()
     def updateRotationFromSlider(self, rot: int):
+        rot /= 10.0
         self.spinRot.setValue(rot)
-        self._cropTool._imgview.rotation = rot / 10
-        self._cropTool._imgview.updateImageTransform()
+        #self._cropTool._imgview.rotation = rot
+        #self._cropTool._imgview.updateImageTransform()
 
     @Slot()
-    def updateRotationFromSpinner(self, rot: int):
-        rot = rot % 3600
-        self.spinRot.setValue(rot)
-        self.slideRot.setValue(rot)
-        
-        self._cropTool._imgview.rotation = rot / 10
+    def updateRotationFromSpinner(self, rot: float):
+        rot = rot % 360.0
+        self.slideRot.setValue(int(rot*10))
+        self._cropTool._imgview.rotation = rot
         self._cropTool._imgview.updateImageTransform()
 
 
