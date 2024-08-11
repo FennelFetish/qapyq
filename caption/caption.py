@@ -1,6 +1,7 @@
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot
 from qtlib import PrecisionSpinBox
+from .caption_bubbles import CaptionBubbles
 import os
 
 
@@ -23,6 +24,7 @@ class CaptionContainer(QtWidgets.QWidget):
         super().__init__()
         self.tab = tab
         self.captionCache = {}
+        self.bubbles = CaptionBubbles()
         
         self.captionFile = None
         self.captionFileExt = ".txt"
@@ -42,28 +44,16 @@ class CaptionContainer(QtWidgets.QWidget):
         self.btnReset = QtWidgets.QPushButton("Reload")
         self.btnReset.clicked.connect(self.resetCaption)
 
-        layout = QtWidgets.QVBoxLayout()
-        layout.addWidget(self.txtCaption)
-        layout.addWidget(self.btnReset)
-        layout.addWidget(self.btnSave)
+        layout = QtWidgets.QGridLayout()
+        layout.addWidget(self.bubbles, 0, 0, 1, 2)
+        layout.addWidget(self.txtCaption, 1, 0, 1, 2)
+        layout.addWidget(self.btnReset, 2, 0)
+        layout.addWidget(self.btnSave, 2, 1)
         self.setLayout(layout)
-
-        #self.updateCaption()
-
-    
-    # def updateCaption(self):
-    #     layout = QtWidgets.QVBoxLayout()
-
-    #     for tag in self.text.split(','):
-    #         tag = tag.strip()
-    #         caption = Caption()
-    #         caption.text = tag
-    #         layout.addWidget(caption)
-
-    #     self.setLayout(layout)
 
     def updateCaption(self, text):
         self.txtCaption.setPlainText(text)
+        self.bubbles.setText(text)
 
     def onCaptionChanged(self):
         text = self.txtCaption.toPlainText()
@@ -113,35 +103,3 @@ class CaptionContainer(QtWidgets.QWidget):
         self.onFileChanged(currentFile)
 
 
-
-class Caption(QtWidgets.QFrame):
-    def __init__(self):
-        super().__init__()
-
-        self._text = ""
-        self.weight = 1.0
-
-        self.textField = QtWidgets.QTextEdit()
-
-        self.spinWeight = PrecisionSpinBox(3)
-        self.spinWeight.setRange(-1000, 1000) # -10 .. 10
-        self.spinWeight.setValue(100)
-        self.spinWeight.setSingleStep(5)
-
-        layout = QtWidgets.QHBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.textField)
-        layout.addWidget(self.spinWeight)
-        self.setLayout(layout)
-
-        self.setFrameShape(QtWidgets.QFrame.Shape.Box)
-        self.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
-
-    @property
-    def text(self):
-        return self._text
-    
-    @text.setter
-    def text(self, text):
-        self._text = text
-        self.textField.setText(text)
