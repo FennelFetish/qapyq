@@ -1,17 +1,84 @@
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, QRect, QSize, QEvent
+from PySide6.QtCore import Qt, Slot, Signal, QRect, QSize
 
 
 class DynamicLineEdit(QtWidgets.QLineEdit):
     def __init__(self):
         super().__init__()
         self.textChanged.connect(self.updateWidth)
+        self.extraWidth = 8
     
     @Slot()
     def updateWidth(self):
-        width = self.fontMetrics().boundingRect(self.text()).width() + 8
+        width = self.fontMetrics().boundingRect(self.text()).width() + self.extraWidth
         width = max(width, self.minimumSizeHint().width())
         self.setFixedWidth(width)
+
+
+class EditablePushButton(QtWidgets.QWidget):
+    clicked = Signal(str)
+    textChanged = Signal(str)
+
+    def __init__(self, text, parent=None):
+        super().__init__(parent)
+        self.extraWidth = 12
+
+        self.button = QtWidgets.QPushButton(text)
+        self.button.clicked.connect(self.click)
+        self.button.mouseReleaseEvent = self._button_mouseReleaseEvent
+        self.edit = None
+
+        self._updateWidth()
+        layout = QtWidgets.QVBoxLayout()
+        layout.setSizeConstraint(QtWidgets.QLayout.SetFixedSize)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.button)
+        self.setLayout(layout)
+
+    def activeWidget(self):
+        return self.edit if self.edit else self.button
+
+    def sizeHint(self):
+        return self.activeWidget().sizeHint()
+
+    # Handles clicks by other means than mouse left button (e.g. keyboard)
+    @Slot()
+    def click(self):
+        self.clicked.emit(self.button.text())
+
+    def _button_mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.click()
+        elif event.button() == Qt.RightButton:
+            self.edit = QtWidgets.QLineEdit()
+            self.edit.setText(self.button.text())
+            self.edit.setFixedWidth(self.button.width())
+            self.edit.textChanged.connect(self._updateWidth)
+            self.edit.editingFinished.connect(self._editFinished)
+
+            self.layout().replaceWidget(self.button, self.edit)
+            self.button.hide()
+            self.edit.setFocus()
+
+    @Slot()
+    def _editFinished(self):
+        text = self.edit.text()
+        self.button.setText(text)
+        self.button.setFixedWidth(self.edit.width())
+        self.button.show()
+        self.layout().replaceWidget(self.edit, self.button)
+        self.edit.deleteLater()
+        self.edit = None
+
+        self.textChanged.emit(text)
+
+    @Slot()
+    def _updateWidth(self):
+        widget = self.activeWidget()
+        text = widget.text()
+        width = widget.fontMetrics().boundingRect(text).width() + self.extraWidth
+        widget.setFixedWidth(width)
+
 
 
 class FlowLayout(QtWidgets.QLayout):
@@ -92,19 +159,30 @@ class TestWindow(QtWidgets.QMainWindow):
         super().__init__()
         import random
 
-        self.setWindowTitle("Caption Bubbles Test")
+        self.setWindowTitle("Test")
         self.setAttribute(Qt.WA_QuitOnClose)
 
-        layout = FlowLayout(spacing=5)
-        for i in range(20):
-            btn = QtWidgets.QPushButton("Button-" + str(i))
-            btn.setMinimumWidth(random.randint(80,400))
-            layout.addWidget(btn)
+        layout = QtWidgets.QGridLayout()
+        #layout = FlowLayout(spacing=1)
+        for x in range(3):
+            for y in range(3):
+                btn = EditablePushButton("Btn " + str(x) + "/" + str(y))
+                btn.clicked.connect(self.onClick)
+                btn.textChanged.connect(self.onTextChanged)
+                layout.addWidget(btn, x, y)
 
         widget = QtWidgets.QWidget()
         widget.setLayout(layout)
 
         self.setCentralWidget(widget)
+    
+    @Slot()
+    def onClick(self, text):
+        print("click:", text)
+    
+    @Slot()
+    def onTextChanged(self, text):
+        print("text changed:", text)
 
 
 if __name__ == "__main__":
