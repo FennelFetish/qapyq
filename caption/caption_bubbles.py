@@ -11,8 +11,8 @@ class CaptionBubbles(QtWidgets.QWidget):
         super().__init__()
         self.text = ""
 
-        self.layout = FlowLayout(spacing=5)
-        self.setLayout(self.layout)
+        layout = FlowLayout(spacing=5)
+        self.setLayout(layout)
 
         self.updateBubbles()
 
@@ -27,20 +27,23 @@ class CaptionBubbles(QtWidgets.QWidget):
             tag = tag.strip()
             bubble = Bubble()
             bubble.text = tag
-            self.layout.addWidget(bubble)
+            self.layout().addWidget(bubble)
             bubble.forceUpdateWidth()
 
     def clearLayout(self):
-        for i in reversed(range(self.layout.count())):
-            item = self.layout.takeAt(i)
+        layout = self.layout()
+        for i in reversed(range(layout.count())):
+            item = layout.takeAt(i)
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
             else:
                 self.clearLayout(item.layout())
+    
+    def resizeEvent(self, event):
+        self.layout().update()  # Weird: Needed for proper resize.
 
 
-# TODO: Mouse wheel anywhere over widget should adjust weight
 # TODO: Change background color according to weight (blue=low, red=high?)
 class Bubble(QtWidgets.QFrame):
     def __init__(self):
@@ -82,6 +85,10 @@ class Bubble(QtWidgets.QFrame):
 
     def forceUpdateWidth(self):
         self.textField.updateWidth()
+
+    def wheelEvent(self, event):
+        self.spinWeight.wheelEvent(event)
+        self.spinWeight.lineEdit().setCursorPosition(0) # Clear text selection
 
 
 
