@@ -15,9 +15,11 @@ class DynamicLineEdit(QtWidgets.QLineEdit):
         self.setFixedWidth(width)
 
 
+
 class EditablePushButton(QtWidgets.QWidget):
-    clicked = Signal(str)
+    clicked     = Signal(str)
     textChanged = Signal(str)
+    textEmpty   = Signal(object)
 
     def __init__(self, text, parent=None):
         super().__init__(parent)
@@ -45,20 +47,24 @@ class EditablePushButton(QtWidgets.QWidget):
     @Slot()
     def click(self):
         self.clicked.emit(self.button.text())
+        self.button.setDown(False)
 
     def _button_mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.click()
         elif event.button() == Qt.RightButton:
-            self.edit = QtWidgets.QLineEdit()
-            self.edit.setText(self.button.text())
-            self.edit.setFixedWidth(self.button.width())
-            self.edit.textChanged.connect(self._updateWidth)
-            self.edit.editingFinished.connect(self._editFinished)
+            self.setEditMode()
+    
+    def setEditMode(self):
+        self.edit = QtWidgets.QLineEdit()
+        self.edit.setText(self.button.text())
+        self.edit.setFixedWidth(self.button.width())
+        self.edit.textChanged.connect(self._updateWidth)
+        self.edit.editingFinished.connect(self._editFinished)
 
-            self.layout().replaceWidget(self.button, self.edit)
-            self.button.hide()
-            self.edit.setFocus()
+        self.layout().replaceWidget(self.button, self.edit)
+        self.button.hide()
+        self.edit.setFocus()
 
     @Slot()
     def _editFinished(self):
@@ -70,7 +76,10 @@ class EditablePushButton(QtWidgets.QWidget):
         self.edit.deleteLater()
         self.edit = None
 
-        self.textChanged.emit(text)
+        if text:
+            self.textChanged.emit(text)
+        else:
+            self.textEmpty.emit(self)
 
     @Slot()
     def _updateWidth(self):
@@ -88,7 +97,7 @@ class FlowLayout(QtWidgets.QLayout):
         if spacing >= 0:
             self.setSpacing(spacing)
 
-        self.setContentsMargins(5, 5, 5, 5)
+        self.setContentsMargins(0, 0, 0, 0)
 
         self.items = []
         self._size = QSize(0, 0)
@@ -138,10 +147,12 @@ class FlowLayout(QtWidgets.QLayout):
         for i, item in enumerate(self.items):
             itemRect = QRect(left, top, item.sizeHint().width(), item.sizeHint().height())
             rowHeight = max(rowHeight, itemRect.height())
-            if itemRect.right() > maxWidth and i>0:
+            if i==0:
+                totalRect = itemRect
+            elif itemRect.right() > maxWidth:
                 left = rect.x() + margins.left()
                 top += rowHeight + self.spacing()
-                rowHeight = itemRect.height()
+                rowHeight = 0
                 itemRect.moveLeft(left)
                 itemRect.moveTop(top)
 

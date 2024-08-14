@@ -10,6 +10,7 @@ class CaptionBubbles(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.text = ""
+        self.separator = ','
 
         layout = FlowLayout(spacing=5)
         self.setLayout(layout)
@@ -23,7 +24,7 @@ class CaptionBubbles(QtWidgets.QWidget):
     def updateBubbles(self):
         self.clearLayout()
 
-        for tag in self.text.split(','):
+        for tag in self.text.split(self.separator):
             tag = tag.strip()
             bubble = Bubble()
             bubble.text = tag
@@ -38,7 +39,7 @@ class CaptionBubbles(QtWidgets.QWidget):
             if widget is not None:
                 widget.deleteLater()
             else:
-                self.clearLayout(item.layout())
+                item.spacerItem().deleteLater()
     
     def resizeEvent(self, event):
         self.layout().update()  # Weird: Needed for proper resize.
