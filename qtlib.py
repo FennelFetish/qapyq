@@ -15,6 +15,15 @@ class DynamicLineEdit(QtWidgets.QLineEdit):
         self.setFixedWidth(width)
 
 
+def setTextEditHeight(textEdit, numRows):
+    lineHeight = textEdit.fontMetrics().lineSpacing()
+    docMargin = textEdit.document().documentMargin()
+    frameWidth = textEdit.frameWidth()
+    margins = textEdit.contentsMargins()
+
+    height = lineHeight*numRows + 2*(docMargin + frameWidth) + margins.top() + margins.bottom()
+    textEdit.setFixedHeight(height)
+
 
 class EditablePushButton(QtWidgets.QWidget):
     clicked     = Signal(str)

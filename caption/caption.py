@@ -26,7 +26,7 @@ class CaptionContainer(QtWidgets.QWidget):
         super().__init__()
         self.tab = tab
         self.captionCache = {}
-        self.captionControl = CaptionControl()
+        self.captionControl = CaptionControl(self)
         self.captionControl.captionClicked.connect(self.appendToCaption)
         self.bubbles = CaptionBubbles()
         
@@ -35,29 +35,35 @@ class CaptionContainer(QtWidgets.QWidget):
         self.captionSeparator = ', '
 
         self.txtCaption = QtWidgets.QTextEdit()
+        self.txtCaption.setAcceptRichText(False)
         self.txtCaption.textChanged.connect(self._onCaptionEdited)
         font = self.txtCaption.currentFont()
         font.setStyleHint(QtGui.QFont.Monospace)
         font.setFamily("monospace")
-        fontSize = font.pointSizeF() * 1.5
+        fontSize = font.pointSizeF() * 1.2
         font.setPointSizeF(fontSize)
         self.txtCaption.setCurrentFont(font)
 
-        self.btnSave = QtWidgets.QPushButton("Save")
-        self.btnSave.clicked.connect(self.saveCaption)
+        self.btnApplyRules = QtWidgets.QPushButton("Apply Rules")
+        self.btnApplyRules.clicked.connect(self.applyRules)
 
         self.btnReset = QtWidgets.QPushButton("Reload")
         self.btnReset.clicked.connect(self.resetCaption)
 
+        self.btnSave = QtWidgets.QPushButton("Save")
+        self.btnSave.clicked.connect(self.saveCaption)
+
+
         layout = QtWidgets.QGridLayout()
-        layout.addWidget(self.captionControl, 0, 0, 1, 2)
+        layout.addWidget(self.captionControl, 0, 0, 1, 3)
         layout.setRowStretch(0, 0)
-        layout.addWidget(self.bubbles, 1, 0, 1, 2)
+        layout.addWidget(self.bubbles, 1, 0, 1, 3)
         layout.setRowStretch(1, 0)
-        layout.addWidget(self.txtCaption, 2, 0, 1, 2)
+        layout.addWidget(self.txtCaption, 2, 0, 1, 3)
         layout.setRowStretch(2, 1)
-        layout.addWidget(self.btnReset, 3, 0)
-        layout.addWidget(self.btnSave, 3, 1)
+        layout.addWidget(self.btnApplyRules, 3, 0)
+        layout.addWidget(self.btnReset, 3, 1)
+        layout.addWidget(self.btnSave, 3, 2)
         layout.setRowStretch(3, 0)
         self.setLayout(layout)
 
@@ -70,6 +76,21 @@ class CaptionContainer(QtWidgets.QWidget):
         self.captionCache[self.captionFile] = text
         self.bubbles.setText(text)
 
+    def getSelectedCaption(self):
+        text = self.txtCaption.toPlainText()
+        splitSeparator = self.captionSeparator.strip()
+        lenSplitSeparator = len(splitSeparator)
+        splitText = text.split(splitSeparator)
+        cursorPos = self.txtCaption.textCursor().position()
+
+        accumulatedLength = 0
+        for part in splitText:
+            accumulatedLength += len(part) + lenSplitSeparator
+            if cursorPos < accumulatedLength:
+                return part.strip()
+
+        return ""
+
     @Slot()
     def appendToCaption(self, text):
         caption = self.txtCaption.toPlainText()
@@ -77,6 +98,10 @@ class CaptionContainer(QtWidgets.QWidget):
             caption += self.captionSeparator
         caption += text
         self.setCaption(caption)
+
+    @Slot()
+    def applyRules(self):
+        pass
 
     @Slot()
     def saveCaption(self):
