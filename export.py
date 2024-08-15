@@ -3,7 +3,7 @@ import os
 
 class Export:
     def __init__(self):
-        self.basePath = "/mnt/data/Pictures/SDOut"
+        self.basePath = "/mnt/ai/Datasets/"
         self._extension = "png"
         self.suffix = ""
 

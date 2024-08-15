@@ -46,6 +46,10 @@ class EditablePushButton(QtWidgets.QWidget):
         layout.addWidget(self.button)
         self.setLayout(layout)
 
+    @property
+    def text(self) -> str:
+        return self.activeWidget().text()
+
     def activeWidget(self):
         return self.edit if self.edit else self.button
 

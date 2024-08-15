@@ -1,7 +1,9 @@
 
-from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Slot, Signal
+import os
+from PySide6 import QtGui, QtWidgets
+from PySide6.QtCore import Qt, Signal, Slot
 import qtlib
+from .caption_preset import CaptionPreset
 
 
 class CaptionControl(QtWidgets.QTabWidget):
@@ -10,6 +12,10 @@ class CaptionControl(QtWidgets.QTabWidget):
     def __init__(self, container):
         super().__init__()
         self._container = container
+        self.bannedSeparator = ', '
+
+        self._defaultPresetPath = self._container.tab.export.basePath
+
         self._settingsWidget = self._buildSettings()
         self._groupsWidget = self._buildGroups()
         self._bannedWidget = self._buildBanned()
@@ -39,13 +45,16 @@ class CaptionControl(QtWidgets.QTabWidget):
         layout.addWidget(self.chkAutoApply, 1, 0, 1, 2)
 
         self.chkRemoveDup = QtWidgets.QCheckBox("Remove duplicates")
+        self.chkRemoveDup.setChecked(True)
         layout.addWidget(self.chkRemoveDup, 1, 2, 1, 2)
         
         # Row 2
         self.btnLoad = QtWidgets.QPushButton("Load preset ...")
+        self.btnLoad.clicked.connect(self.loadPreset)
         layout.addWidget(self.btnLoad, 2, 0, 1, 2)
 
         self.btnSave = QtWidgets.QPushButton("Save preset as ...")
+        self.btnSave.clicked.connect(self.savePreset)
         layout.addWidget(self.btnSave, 2, 2, 1, 2)
 
         widget = QtWidgets.QWidget()
@@ -86,6 +95,7 @@ class CaptionControl(QtWidgets.QTabWidget):
         group.remove.connect(self.removeGroup)
         index = self.groupLayout.count() - 1
         self.groupLayout.insertWidget(index, group)
+        return group
 
     @Slot()
     def removeGroup(self, group):
@@ -99,16 +109,69 @@ class CaptionControl(QtWidgets.QTabWidget):
             self.groupLayout.removeWidget(group)
             group.deleteLater()
 
+    def removeAllGroups(self):
+        widgets = []
+        for i in range(self.groupLayout.count()):
+            widget = self.groupLayout.itemAt(i).widget()
+            if widget and isinstance(widget, CaptionControlGroup):
+                widgets.append(widget)
+
+        for w in widgets:
+            self.groupLayout.removeWidget(w)
+            w.deleteLater()
+
     @Slot()
     def addBanned(self):
         caption = self._container.getSelectedCaption()
         text = self.txtBanned.toPlainText()
         if text:
-            text += ", "
+            text += self.bannedSeparator
         text += caption
         self.txtBanned.setPlainText(text)
+    
+    @Slot()
+    def savePreset(self):
+        preset = CaptionPreset()
+        preset.prefix = self.txtPrefix.toPlainText()
+        preset.suffix = self.txtSuffix.toPlainText()
+        preset.autoApplyRules = self.chkAutoApply.isChecked()
+        preset.removeDuplicates = self.chkRemoveDup.isChecked()
+        preset.banned = [ b.strip() for b in self.txtBanned.toPlainText().split(self.bannedSeparator.strip()) ]
 
+        for i in range(self.groupLayout.count()):
+            widget = self.groupLayout.itemAt(i).widget()
+            if widget and isinstance(widget, CaptionControlGroup):
+                preset.addGroup(widget.name, widget.mutuallyExclusive, widget.captions)
 
+        fileFilter = "JSON (*.json)"
+        path, selectedFilter = QtWidgets.QFileDialog.getSaveFileName(self, "Save preset", self._defaultPresetPath, fileFilter)
+        if path:
+            self._defaultPresetPath = os.path.dirname(path)
+            preset.saveTo(path)
+
+    @Slot()
+    def loadPreset(self):
+        fileFilter = "JSON (*.json)"
+        path, selectedFilter = QtWidgets.QFileDialog.getOpenFileName(self, "Load preset", self._defaultPresetPath, fileFilter)
+        if not path:
+            return
+        self._defaultPresetPath = os.path.dirname(path)
+
+        preset = CaptionPreset()
+        preset.loadFrom(path)
+        self.txtPrefix.setPlainText(preset.prefix)
+        self.txtSuffix.setPlainText(preset.suffix)
+        self.chkAutoApply.setChecked(preset.autoApplyRules)
+        self.chkRemoveDup.setChecked(preset.removeDuplicates)
+        self.txtBanned.setPlainText( self.bannedSeparator.join(preset.banned) )
+
+        self.removeAllGroups()
+        for group in preset.groups:
+            groupWidget = self.addGroup()
+            groupWidget.name = group.name
+            groupWidget.mutuallyExclusive = group.mutuallyExclusive
+            for caption in group.captions:
+                groupWidget.addCaption(caption)
 
 
     # Controls for:
@@ -188,8 +251,29 @@ class CaptionControlGroup(QtWidgets.QFrame):
         self.headerWidget.setLayout(self.headerLayout)
 
     @property
-    def name(self):
+    def name(self) -> str:
         return self.txtName.text()
+
+    @name.setter
+    def name(self, name):
+        self.txtName.setText(name)
+
+    @property
+    def mutuallyExclusive(self) -> bool:
+        return self.chkExclusive.isChecked()
+
+    @mutuallyExclusive.setter
+    def mutuallyExclusive(self, checked):
+        self.chkExclusive.setChecked(checked)
+
+    @property
+    def captions(self) -> list:
+        captions = []
+        for i in range(self.buttonLayout.count()):
+            widget = self.buttonLayout.itemAt(i).widget()
+            if widget and isinstance(widget, qtlib.EditablePushButton):
+                captions.append(widget.text)
+        return captions
     
     def addCaption(self, text):
         button = qtlib.EditablePushButton(text)
