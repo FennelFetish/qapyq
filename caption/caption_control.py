@@ -4,16 +4,36 @@ from PySide6.QtCore import Qt, Slot, Signal
 from qtlib import FlowLayout, EditablePushButton
 
 
-class CaptionControl(QtWidgets.QWidget):
+class CaptionControl(QtWidgets.QTabWidget):
     captionClicked = Signal(str)
 
     def __init__(self):
         super().__init__()
+        self._settingsWidget = self._buildSettings()
+        self._groupsWidget = self._buildGroups()
+        self.addTab(self._settingsWidget, "Settings")
+        self.addTab(self._groupsWidget, "Groups")
 
-        self.baseControls = self._buildBaseControls()
 
+    def _buildSettings(self):
+        self.txtPrefix = QtWidgets.QTextEdit()
+        self.txtPrefix.setMaximumHeight(40)
+        self.txtSuffix = QtWidgets.QTextEdit()
+        self.txtSuffix.setMaximumHeight(40)
+        
+        layout = QtWidgets.QGridLayout()
+        layout.addWidget(QtWidgets.QLabel("Prefix:"), 0, 0)
+        layout.addWidget(self.txtPrefix, 0, 1)
+        layout.addWidget(QtWidgets.QLabel("Suffix:"), 0, 2)
+        layout.addWidget(self.txtSuffix, 0, 3)
+
+        widget = QtWidgets.QWidget()
+        widget.setLayout(layout)
+        return widget
+
+    def _buildGroups(self):
         layout = QtWidgets.QVBoxLayout()
-        layout.addWidget(self.baseControls)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         group1 = CaptionControlGroup("Hair", self.captionClicked)
         group1.addCaption("blonde hair")
@@ -27,19 +47,7 @@ class CaptionControl(QtWidgets.QWidget):
         group2.addCaption("laying")
         layout.addWidget(group2)
 
-        self.setLayout(layout)
-    
-    def _buildBaseControls(self):
-        self.txtPrefix = QtWidgets.QLineEdit()
-        self.txtSuffix = QtWidgets.QLineEdit()
-        
-        layout = QtWidgets.QGridLayout()
-        layout.addWidget(QtWidgets.QLabel("Prefix:"), 0, 0)
-        layout.addWidget(self.txtPrefix, 0, 1)
-        layout.addWidget(QtWidgets.QLabel("Suffix:"), 0, 2)
-        layout.addWidget(self.txtSuffix, 0, 3)
-
-        widget = QtWidgets.QGroupBox("Basic")
+        widget = QtWidgets.QWidget()
         widget.setLayout(layout)
         return widget
 
