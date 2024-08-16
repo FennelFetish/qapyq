@@ -29,7 +29,7 @@ class BannedCaptionFilter(CaptionFilter):
 
 
 class SortCaptionFilter(CaptionFilter):
-    def __init__(self, captionGroups: list[list[str]], prefix="", suffix=""):
+    def __init__(self, captionGroups: list[list[str]], prefix, suffix, separator):
         super().__init__()
         self.captionOrder = {}
 
@@ -39,8 +39,14 @@ class SortCaptionFilter(CaptionFilter):
                 self.captionOrder[caption] = i
                 i += 1
         
-        self.captionOrder[prefix] = -1
-        self.captionOrder[suffix] = 99999
+        separator = separator.strip()
+        prefixCaptions = [c.strip() for c in prefix.split(separator)]
+        for i, c in enumerate(reversed(prefixCaptions)):
+            self.captionOrder[c] = -1-i
+
+        suffixCaptions = [c.strip() for c in suffix.split(separator)]
+        for i, c in enumerate(suffixCaptions):
+            self.captionOrder[c] = 100000+i
 
     def filterCaptions(self, captions: list[str]) -> list[str]:
         order = {c: self.captionOrder.get(c, 65536) for c in captions}
@@ -48,19 +54,18 @@ class SortCaptionFilter(CaptionFilter):
 
 
 class PrefixSuffixFilter(CaptionFilter):
-    def __init__(self, prefix, suffix):
+    def __init__(self, prefix, suffix, separator):
         super().__init__()
         self.prefix = prefix
         self.suffix = suffix
+        self.separator = separator
 
     def filterCaptions(self, captions: list[str]) -> list[str]:
-        lastIndex = len(captions) - 1
-        if lastIndex < 0:
-            return captions
+        text = self.separator.join(captions)
 
-        if not captions[0].startswith(self.prefix):
-            captions[0] = self.prefix + captions[0]
-        if not captions[lastIndex].endswith(self.suffix):
-            captions[lastIndex] += self.suffix
+        if not text.startswith(self.prefix):
+            text = self.prefix + text
+        if not text.endswith(self.suffix):
+            text += self.suffix
 
-        return captions
+        return [ c.strip() for c in text.split(self.separator.strip()) ]

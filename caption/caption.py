@@ -27,7 +27,8 @@ class CaptionContainer(QtWidgets.QWidget):
     def __init__(self, tab):
         super().__init__()
         self.tab = tab
-        self.bubbles = CaptionBubbles()
+        self.bubbles = CaptionBubbles(showWeights=False, showRemove=True)
+        self.bubbles.remove.connect(self.removeCaption)
 
         self.captionCache = {}
         self.captionControl = CaptionControl(self)
@@ -103,6 +104,14 @@ class CaptionContainer(QtWidgets.QWidget):
         self.setCaption(caption)
 
     @Slot()
+    def removeCaption(self, index):
+        text = self.txtCaption.toPlainText()
+        splitSeparator = self.captionSeparator.strip()
+        captions = [c.strip() for c in text.split(splitSeparator)]
+        del captions[index]
+        self.setCaption( self.captionSeparator.join(captions) )
+
+    @Slot()
     def applyRules(self):
         text = self.txtCaption.toPlainText()
         splitSeparator = self.captionSeparator.strip()
@@ -116,10 +125,10 @@ class CaptionContainer(QtWidgets.QWidget):
         captions = banFilter.filterCaptions(captions)
 
         captionGroups = [group.captions for group in self.captionControl.getCaptionGroups()]
-        sortFilter = SortCaptionFilter(captionGroups, self.captionControl.prefix, self.captionControl.suffix)
+        sortFilter = SortCaptionFilter(captionGroups, self.captionControl.prefix, self.captionControl.suffix, self.captionSeparator)
         captions = sortFilter.filterCaptions(captions)
 
-        presufFilter = PrefixSuffixFilter(self.captionControl.prefix, self.captionControl.suffix)
+        presufFilter = PrefixSuffixFilter(self.captionControl.prefix, self.captionControl.suffix, self.captionSeparator)
         captions = presufFilter.filterCaptions(captions)
 
         # Only set when text has changed to prevent save button turning red

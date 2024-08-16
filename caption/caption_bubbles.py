@@ -2,16 +2,19 @@
 import random
 import sys
 from PySide6 import QtGui, QtWidgets
-from PySide6.QtCore import QRect, QSize, Qt, Slot
+from PySide6.QtCore import QRect, QSize, Qt, Slot, Signal
 import qtlib
 
 
 class CaptionBubbles(QtWidgets.QWidget):
-    def __init__(self, showWeights=True):
+    remove = Signal(int)
+
+    def __init__(self, showWeights=True, showRemove=False):
         super().__init__()
         self.text = ""
         self.separator = ','
         self.showWeights = showWeights
+        self.showRemove = showRemove
 
         layout = qtlib.FlowLayout(spacing=5)
         self.setLayout(layout)
@@ -25,9 +28,9 @@ class CaptionBubbles(QtWidgets.QWidget):
     def updateBubbles(self):
         self.clearLayout()
 
-        for tag in self.text.split(self.separator):
+        for i, tag in enumerate(self.text.split(self.separator)):
             tag = tag.strip()
-            bubble = Bubble(self.showWeights)
+            bubble = Bubble(i, self.remove, self.showWeights, self.showRemove)
             bubble.text = tag
             self.layout().addWidget(bubble)
             bubble.forceUpdateWidth()
@@ -48,7 +51,7 @@ class CaptionBubbles(QtWidgets.QWidget):
 
 # TODO: Change background color according to weight (blue=low, red=high?)
 class Bubble(QtWidgets.QFrame):
-    def __init__(self, showWeights=True):
+    def __init__(self, index, removeSignal, showWeights=True, showRemove=False):
         super().__init__()
 
         self._text = ""
@@ -75,6 +78,13 @@ class Bubble(QtWidgets.QFrame):
             layout.addWidget(self.spinWeight)
         else:
             self.spinWeight = None
+
+        if showRemove:
+            btnRemove = QtWidgets.QPushButton("X")
+            btnRemove.setFixedWidth(20)
+            btnRemove.setFixedHeight(20)
+            btnRemove.clicked.connect(lambda: removeSignal.emit(index))
+            layout.addWidget(btnRemove)
 
         self.setLayout(layout)
 
