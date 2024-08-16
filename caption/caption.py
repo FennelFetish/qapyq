@@ -4,6 +4,7 @@ from .caption_control import CaptionControl
 from .caption_bubbles import CaptionBubbles
 import os
 import qtlib
+from .caption_filter import DuplicateCaptionFilter, BannedCaptionFilter, SortCaptionFilter, PrefixSuffixFilter
 
 
 # Tags as QLineEdit with handle, width is adjusted on text change
@@ -50,7 +51,6 @@ class CaptionContainer(QtWidgets.QWidget):
         self.btnSave = QtWidgets.QPushButton("Save")
         self.btnSave.clicked.connect(self.saveCaption)
 
-
         layout = QtWidgets.QGridLayout()
         layout.addWidget(self.captionControl, 0, 0, 1, 3)
         layout.setRowStretch(0, 0)
@@ -63,6 +63,12 @@ class CaptionContainer(QtWidgets.QWidget):
         layout.addWidget(self.btnSave, 3, 2)
         layout.setRowStretch(3, 0)
         self.setLayout(layout)
+    
+    def _setButtonStyle(self, changed: bool):
+        if changed:
+            self.btnSave.setStyleSheet("border: 2px solid #bb3030; border-style: outset; border-radius: 4px; padding: 2px")
+        else:
+            self.btnSave.setStyleSheet("")
 
     def setCaption(self, text):
         self.txtCaption.setPlainText(text)
@@ -71,6 +77,7 @@ class CaptionContainer(QtWidgets.QWidget):
         text = self.txtCaption.toPlainText()
         self.captionCache[self.captionFile] = text
         self.bubbles.setText(text)
+        self._setButtonStyle(True)
 
     def getSelectedCaption(self):
         text = self.txtCaption.toPlainText()
@@ -97,7 +104,28 @@ class CaptionContainer(QtWidgets.QWidget):
 
     @Slot()
     def applyRules(self):
-        pass
+        text = self.txtCaption.toPlainText()
+        splitSeparator = self.captionSeparator.strip()
+        captions = [c.strip() for c in text.split(splitSeparator)]
+
+        if self.captionControl.isRemoveDuplicates:
+            dupFilter = DuplicateCaptionFilter()
+            captions = dupFilter.filterCaptions(captions)
+
+        banFilter = BannedCaptionFilter(self.captionControl.bannedCaptions)
+        captions = banFilter.filterCaptions(captions)
+
+        captionGroups = [group.captions for group in self.captionControl.getCaptionGroups()]
+        sortFilter = SortCaptionFilter(captionGroups, self.captionControl.prefix, self.captionControl.suffix)
+        captions = sortFilter.filterCaptions(captions)
+
+        presufFilter = PrefixSuffixFilter(self.captionControl.prefix, self.captionControl.suffix)
+        captions = presufFilter.filterCaptions(captions)
+
+        # Only set when text has changed to prevent save button turning red
+        textNew = self.captionSeparator.join(captions)
+        if textNew != text:
+            self.setCaption(textNew)
 
     @Slot()
     def saveCaption(self):
@@ -111,21 +139,25 @@ class CaptionContainer(QtWidgets.QWidget):
             file.write(text)
 
         del self.captionCache[self.captionFile]
+        self._setButtonStyle(False)
 
     @Slot()
     def resetCaption(self):
         if os.path.exists(self.captionFile):
             with open(self.captionFile) as file:
                 text = file.read()
-                self.captionCache[self.captionFile] = text
+                #self.captionCache[self.captionFile] = text
                 self.setCaption(text)
         else:
             self.setCaption("")
+        
+        # When setting the text, _onCaptionEdited() will make a cache entry and turn the save button red. So we revert that here.
+        del self.captionCache[self.captionFile]
+        self._setButtonStyle(False)
 
     def loadCaption(self):
-        # Use cached caption if it exists in dictionary. But if cached caption is empty, reload it from file.
-        # (If another program changes the caption file, one can set the cached caption to empty string to reload the caption...)
-        if self.captionFile in self.captionCache and self.captionCache[self.captionFile]:
+        # Use cached caption if it exists in dictionary
+        if self.captionFile in self.captionCache:
             self.setCaption( self.captionCache[self.captionFile] )
         else:
             self.resetCaption()
@@ -143,6 +175,9 @@ class CaptionContainer(QtWidgets.QWidget):
         filename = os.path.splitext(filename)[0]
         self.captionFile = os.path.join(dirname, filename + self.captionFileExt)
         self.loadCaption()
+
+        if self.captionControl.isAutoApplyRules:
+            self.applyRules()
     
     def onFileListChanged(self, currentFile):
         self.onFileChanged(currentFile)

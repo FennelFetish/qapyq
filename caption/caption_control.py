@@ -2,8 +2,11 @@
 import os
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Signal, Slot
+from typing import ForwardRef
 import qtlib
 from .caption_preset import CaptionPreset
+
+CaptionControlGroup = ForwardRef('CaptionControlGroup')
 
 
 # Controls for:
@@ -47,6 +50,7 @@ class CaptionControl(QtWidgets.QTabWidget):
         self._groupsWidget = self._buildGroups()
         self.addTab(self._settingsWidget, "Settings")
         self.addTab(self._groupsWidget, "Caption")
+        self.addTab(QtWidgets.QWidget(), "Batch Process")
         self.addTab(QtWidgets.QWidget(), "Generate")
 
 
@@ -123,6 +127,41 @@ class CaptionControl(QtWidgets.QTabWidget):
         widget.setLayout(self.groupLayout)
         return widget
 
+
+    @property
+    def prefix(self) -> str:
+        return self.txtPrefix.toPlainText()
+
+    @property
+    def suffix(self) -> str:
+        return self.txtSuffix.toPlainText()
+
+    @property
+    def isAutoApplyRules(self) -> bool:
+        return self.chkAutoApply.isChecked()
+
+    @property
+    def isRemoveDuplicates(self) -> bool:
+        return self.chkRemoveDup.isChecked()
+
+    @property
+    def bannedCaptions(self) -> list[str]:
+        banned = self.txtBanned.toPlainText().split(self.bannedSeparator.strip())
+        return [b.strip() for b in banned]
+    
+    @bannedCaptions.setter
+    def bannedCaptions(self, bannedCaptions):
+        self.txtBanned.setPlainText( self.bannedSeparator.join(bannedCaptions) )
+
+    def getCaptionGroups(self) -> list[CaptionControlGroup]:
+        groups = []
+        for i in range(self.groupLayout.count()):
+            widget = self.groupLayout.itemAt(i).widget()
+            if widget and isinstance(widget, CaptionControlGroup):
+                groups.append(widget)
+        return groups
+
+
     @Slot()
     def addGroup(self):
         group = CaptionControlGroup(self, "Group")
@@ -176,7 +215,7 @@ class CaptionControl(QtWidgets.QTabWidget):
         preset.separator = self.txtSeparator.text()
         preset.autoApplyRules = self.chkAutoApply.isChecked()
         preset.removeDuplicates = self.chkRemoveDup.isChecked()
-        preset.banned = [ b.strip() for b in self.txtBanned.toPlainText().split(self.bannedSeparator.strip()) ]
+        preset.banned = self.bannedCaptions
 
         for i in range(self.groupLayout.count()):
             widget = self.groupLayout.itemAt(i).widget()
@@ -204,7 +243,7 @@ class CaptionControl(QtWidgets.QTabWidget):
         self.txtSeparator.setText(preset.separator)
         self.chkAutoApply.setChecked(preset.autoApplyRules)
         self.chkRemoveDup.setChecked(preset.removeDuplicates)
-        self.txtBanned.setPlainText( self.bannedSeparator.join(preset.banned) )
+        self.bannedCaptions = preset.banned
 
         self.removeAllGroups()
         for group in preset.groups:
