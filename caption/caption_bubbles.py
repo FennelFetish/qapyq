@@ -56,16 +56,17 @@ class Bubble(QtWidgets.QFrame):
 
         self._text = ""
         self.weight = 1.0
-        self.setContentsMargins(3, 1, 3, 1)
+        self.setContentsMargins(4, 1, 4, 1)
 
         # self.setStyleSheet(f"background-color: {self.color.name()}")
-        self.setStyleSheet(".Bubble{border: 3px solid black; border-radius: 12px}")
+        self.setStyleSheet(".Bubble{border: 1px solid #181818; background-color: #161616; border-radius: 10px}")
 
         self.textField = qtlib.DynamicLineEdit()
         qtlib.setMonospace(self.textField)
-        self.textField.setStyleSheet("border: 0px")
+        self.textField.setStyleSheet(".DynamicLineEdit{background-color: #161616; border: 0px}")
 
         layout = QtWidgets.QHBoxLayout()
+        layout.setSpacing(0)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.textField)
 
@@ -80,9 +81,10 @@ class Bubble(QtWidgets.QFrame):
             self.spinWeight = None
 
         if showRemove:
-            btnRemove = QtWidgets.QPushButton("X")
-            btnRemove.setFixedWidth(20)
-            btnRemove.setFixedHeight(20)
+            btnRemove = QtWidgets.QPushButton("⨯")
+            btnRemove.setStyleSheet(".QPushButton{color: #D54040; background-color: #161616; border: 1px solid #401616; border-radius: 4px}")
+            btnRemove.setFixedWidth(18)
+            btnRemove.setFixedHeight(18)
             btnRemove.clicked.connect(lambda: removeSignal.emit(index))
             layout.addWidget(btnRemove)
 
