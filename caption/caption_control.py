@@ -46,7 +46,7 @@ class CaptionControl(QtWidgets.QTabWidget):
         self._settingsWidget = self._buildSettings()
         self._groupsWidget = self._buildGroups()
         self.addTab(self._settingsWidget, "Settings")
-        self.addTab(self._groupsWidget, "Groups")
+        self.addTab(self._groupsWidget, "Caption")
         self.addTab(QtWidgets.QWidget(), "Generate")
 
 
@@ -55,17 +55,17 @@ class CaptionControl(QtWidgets.QTabWidget):
         layout.setAlignment(Qt.AlignTop)
 
         # Row 0
-        self.txtPrefix = QtWidgets.QTextEdit()
-        self.txtPrefix.setAcceptRichText(False)
+        self.txtPrefix = QtWidgets.QPlainTextEdit()
         qtlib.setMonospace(self.txtPrefix)
         qtlib.setTextEditHeight(self.txtPrefix, 2)
+        qtlib.setShowWhitespace(self.txtPrefix)
         layout.addWidget(QtWidgets.QLabel("Prefix:"), 0, 0, Qt.AlignTop)
         layout.addWidget(self.txtPrefix, 0, 1, Qt.AlignTop)
 
-        self.txtSuffix = QtWidgets.QTextEdit()
-        self.txtSuffix.setAcceptRichText(False)
+        self.txtSuffix = QtWidgets.QPlainTextEdit()
         qtlib.setMonospace(self.txtSuffix)
         qtlib.setTextEditHeight(self.txtSuffix, 2)
+        qtlib.setShowWhitespace(self.txtSuffix)
         layout.addWidget(QtWidgets.QLabel("Suffix:"), 0, 2, Qt.AlignTop)
         layout.addWidget(self.txtSuffix, 0, 3, Qt.AlignTop)
 
@@ -76,8 +76,7 @@ class CaptionControl(QtWidgets.QTabWidget):
         layout.addWidget(QtWidgets.QLabel("Separator:"), 1, 0, Qt.AlignTop)
         layout.addWidget(self.txtSeparator, 1, 1, Qt.AlignTop)
 
-        self.txtBanned = QtWidgets.QTextEdit()
-        self.txtBanned.setAcceptRichText(False)
+        self.txtBanned = QtWidgets.QPlainTextEdit()
         qtlib.setMonospace(self.txtBanned)
         qtlib.setTextEditHeight(self.txtBanned, 3)
         layout.addWidget(QtWidgets.QLabel("Banned:"), 1, 2, Qt.AlignTop)
@@ -131,7 +130,6 @@ class CaptionControl(QtWidgets.QTabWidget):
         self.groupLayout.insertWidget(index, group)
         return group
 
-    @Slot()
     def removeGroup(self, group):
         dialog = QtWidgets.QMessageBox()
         dialog.setIcon(QtWidgets.QMessageBox.Question)
@@ -175,6 +173,7 @@ class CaptionControl(QtWidgets.QTabWidget):
         preset = CaptionPreset()
         preset.prefix = self.txtPrefix.toPlainText()
         preset.suffix = self.txtSuffix.toPlainText()
+        preset.separator = self.txtSeparator.text()
         preset.autoApplyRules = self.chkAutoApply.isChecked()
         preset.removeDuplicates = self.chkRemoveDup.isChecked()
         preset.banned = [ b.strip() for b in self.txtBanned.toPlainText().split(self.bannedSeparator.strip()) ]
@@ -202,6 +201,7 @@ class CaptionControl(QtWidgets.QTabWidget):
         preset.loadFrom(path)
         self.txtPrefix.setPlainText(preset.prefix)
         self.txtSuffix.setPlainText(preset.suffix)
+        self.txtSeparator.setText(preset.separator)
         self.chkAutoApply.setChecked(preset.autoApplyRules)
         self.chkRemoveDup.setChecked(preset.removeDuplicates)
         self.txtBanned.setPlainText( self.bannedSeparator.join(preset.banned) )
@@ -224,7 +224,7 @@ class CaptionControlGroup(QtWidgets.QFrame):
 
         self._buildHeaderWidget(name)
 
-        self.buttonLayout = qtlib.FlowLayout()
+        self.buttonLayout = qtlib.FlowLayout(spacing=1)
         self.buttonWidget = QtWidgets.QWidget()
         self.buttonWidget.setLayout(self.buttonLayout)
 

@@ -7,6 +7,7 @@ class CaptionPreset:
     def __init__(self):
         self.prefix = ""
         self.suffix = ""
+        self.separator = ", "
 
         self.autoApplyRules : bool = False
         self.removeDuplicates : bool = True
@@ -27,6 +28,7 @@ class CaptionPreset:
             "version": CaptionPreset.version,
             "prefix": self.prefix,
             "suffix": self.suffix,
+            "separator": self.separator,
             "autoApplyRules": self.autoApplyRules,
             "removeDuplicates": self.removeDuplicates,
             "groups": groupData,
@@ -42,14 +44,19 @@ class CaptionPreset:
         with open(path, 'r') as file:
             data = json.load(file)
         
-        self.prefix = data["prefix"]
-        self.suffix = data["suffix"]
-        self.autoApplyRules = data["autoApplyRules"]
-        self.removeDuplicates = data["removeDuplicates"]
-        self.banned = data["banned"]
+        self.prefix             = self.getWithDefault(data, "prefix", "")
+        self.suffix             = self.getWithDefault(data, "suffix", "")
+        self.separator          = self.getWithDefault(data, "separator", ", ")
+        self.autoApplyRules     = self.getWithDefault(data, "autoApplyRules", False)
+        self.removeDuplicates   = self.getWithDefault(data, "removeDuplicates", True)
+        self.banned             = self.getWithDefault(data, "banned", [])
 
-        for group in data["groups"]:
-            self.addGroup(group["name"], group["mutuallyExclusive"], group["captions"])
+        if "groups" in data:
+            for group in data["groups"]:
+                self.addGroup(group["name"], group["mutuallyExclusive"], group["captions"])
+    
+    def getWithDefault(self, data, key, default):
+        return data[key] if key in data else default
 
 
 

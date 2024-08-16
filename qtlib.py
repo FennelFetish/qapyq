@@ -26,23 +26,20 @@ def setTextEditHeight(textEdit, numRows):
     textEdit.setFixedHeight(height)
 
 def setMonospace(textWidget, fontSizeFactor=1.0, bold=False):
-    if isinstance(textWidget, QtWidgets.QTextEdit):
-        font = textWidget.currentFont()
-    else:
-        font = textWidget.font()
-
+    font = textWidget.font()
     font.setStyleHint(QtGui.QFont.Monospace)
     font.setFamily("monospace")
     font.setBold(bold)
     if fontSizeFactor != 1.0:
         fontSize = font.pointSizeF() * fontSizeFactor
         font.setPointSizeF(fontSize)
+    textWidget.setFont(font)
 
-    if isinstance(textWidget, QtWidgets.QTextEdit):
-        textWidget.setCurrentFont(font)
-    else:
-        textWidget.setFont(font)
-
+def setShowWhitespace(textEdit):
+    doc = textEdit.document()
+    opt = doc.defaultTextOption()
+    opt.setFlags(QtGui.QTextOption.ShowTabsAndSpaces)
+    doc.setDefaultTextOption(opt)
 
 
 class EditablePushButton(QtWidgets.QWidget):

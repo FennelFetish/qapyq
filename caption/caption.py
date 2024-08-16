@@ -37,8 +37,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.captionFileExt = ".txt"
         self.captionSeparator = ', '
 
-        self.txtCaption = QtWidgets.QTextEdit()
-        self.txtCaption.setAcceptRichText(False)
+        self.txtCaption = QtWidgets.QPlainTextEdit()
         self.txtCaption.textChanged.connect(self._onCaptionEdited)
         qtlib.setMonospace(self.txtCaption, 1.2)
 
