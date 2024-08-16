@@ -138,11 +138,27 @@ class CropToolBar(QtWidgets.QToolBar):
         self.spinRot.setValue(0)
         self.spinRot.valueChanged.connect(self.updateRotationFromSpinner)
 
+        btnDeg0 = QtWidgets.QPushButton("0")
+        btnDeg0.clicked.connect(lambda: self.spinRot.setValue(0))
+        btnDeg90 = QtWidgets.QPushButton("90")
+        btnDeg90.clicked.connect(lambda: self.spinRot.setValue(90))
+        btnDeg180 = QtWidgets.QPushButton("180")
+        btnDeg180.clicked.connect(lambda: self.spinRot.setValue(180))
+        btnDeg270 = QtWidgets.QPushButton("270")
+        btnDeg270.clicked.connect(lambda: self.spinRot.setValue(270))
+
+        btnLayout = QtWidgets.QHBoxLayout()
+        btnLayout.addWidget(btnDeg0)
+        btnLayout.addWidget(btnDeg90)
+        btnLayout.addWidget(btnDeg180)
+        btnLayout.addWidget(btnDeg270)
+
         layout = QtWidgets.QFormLayout()
         layout.setContentsMargins(1, 1, 1, 1)
         layout.addRow(self.slideRot)
         layout.addRow("Deg:", self.spinRot)
-
+        layout.addRow(btnLayout)
+        
         group = QtWidgets.QGroupBox("Rotation")
         group.setLayout(layout)
         return group
