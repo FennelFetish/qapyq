@@ -3,16 +3,17 @@ import random
 import sys
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import QRect, QSize, Qt, Slot
-from qtlib import FlowLayout, DynamicLineEdit
+import qtlib
 
 
 class CaptionBubbles(QtWidgets.QWidget):
-    def __init__(self):
+    def __init__(self, showWeights=True):
         super().__init__()
         self.text = ""
         self.separator = ','
+        self.showWeights = showWeights
 
-        layout = FlowLayout(spacing=5)
+        layout = qtlib.FlowLayout(spacing=5)
         self.setLayout(layout)
 
         self.updateBubbles()
@@ -26,7 +27,7 @@ class CaptionBubbles(QtWidgets.QWidget):
 
         for tag in self.text.split(self.separator):
             tag = tag.strip()
-            bubble = Bubble()
+            bubble = Bubble(self.showWeights)
             bubble.text = tag
             self.layout().addWidget(bubble)
             bubble.forceUpdateWidth()
@@ -47,7 +48,7 @@ class CaptionBubbles(QtWidgets.QWidget):
 
 # TODO: Change background color according to weight (blue=low, red=high?)
 class Bubble(QtWidgets.QFrame):
-    def __init__(self):
+    def __init__(self, showWeights=True):
         super().__init__()
 
         self._text = ""
@@ -57,19 +58,24 @@ class Bubble(QtWidgets.QFrame):
         # self.setStyleSheet(f"background-color: {self.color.name()}")
         self.setStyleSheet(".Bubble{border: 3px solid black; border-radius: 12px}")
 
-        self.textField = DynamicLineEdit()
+        self.textField = qtlib.DynamicLineEdit()
+        qtlib.setMonospace(self.textField)
         self.textField.setStyleSheet("border: 0px")
-
-        self.spinWeight = QtWidgets.QDoubleSpinBox()
-        self.spinWeight.setRange(-10.0, 10.0)
-        self.spinWeight.setValue(1.0)
-        self.spinWeight.setSingleStep(0.05)
-        self.spinWeight.setFixedWidth(55)
 
         layout = QtWidgets.QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.textField)
-        layout.addWidget(self.spinWeight)
+
+        if showWeights:
+            self.spinWeight = QtWidgets.QDoubleSpinBox()
+            self.spinWeight.setRange(-10.0, 10.0)
+            self.spinWeight.setValue(1.0)
+            self.spinWeight.setSingleStep(0.05)
+            self.spinWeight.setFixedWidth(55)
+            layout.addWidget(self.spinWeight)
+        else:
+            self.spinWeight = None
+
         self.setLayout(layout)
 
         self.setFrameShape(QtWidgets.QFrame.Shape.Box)
@@ -88,8 +94,9 @@ class Bubble(QtWidgets.QFrame):
         self.textField.updateWidth()
 
     def wheelEvent(self, event):
-        self.spinWeight.wheelEvent(event)
-        self.spinWeight.lineEdit().setCursorPosition(0) # Clear text selection
+        if self.spinWeight:
+            self.spinWeight.wheelEvent(event)
+            self.spinWeight.lineEdit().setCursorPosition(0) # Clear text selection
 
 
 

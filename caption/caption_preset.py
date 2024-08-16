@@ -60,7 +60,6 @@ class CaptionPresetGroup:
         self.captions = []
     
     def toDict(self):
-        #captionData = [f'"{c}"' for c in self.captions]
         captionData = [c for c in self.captions]
         return {
             "name": self.name,

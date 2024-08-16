@@ -1,4 +1,4 @@
-from PySide6 import QtWidgets
+from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QRect, QSize
 
 
@@ -15,6 +15,7 @@ class DynamicLineEdit(QtWidgets.QLineEdit):
         self.setFixedWidth(width)
 
 
+
 def setTextEditHeight(textEdit, numRows):
     lineHeight = textEdit.fontMetrics().lineSpacing()
     docMargin = textEdit.document().documentMargin()
@@ -23,6 +24,25 @@ def setTextEditHeight(textEdit, numRows):
 
     height = lineHeight*numRows + 2*(docMargin + frameWidth) + margins.top() + margins.bottom()
     textEdit.setFixedHeight(height)
+
+def setMonospace(textWidget, fontSizeFactor=1.0, bold=False):
+    if isinstance(textWidget, QtWidgets.QTextEdit):
+        font = textWidget.currentFont()
+    else:
+        font = textWidget.font()
+
+    font.setStyleHint(QtGui.QFont.Monospace)
+    font.setFamily("monospace")
+    font.setBold(bold)
+    if fontSizeFactor != 1.0:
+        fontSize = font.pointSizeF() * fontSizeFactor
+        font.setPointSizeF(fontSize)
+
+    if isinstance(textWidget, QtWidgets.QTextEdit):
+        textWidget.setCurrentFont(font)
+    else:
+        textWidget.setFont(font)
+
 
 
 class EditablePushButton(QtWidgets.QWidget):

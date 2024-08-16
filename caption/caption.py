@@ -3,6 +3,7 @@ from PySide6.QtCore import Qt, Slot
 from .caption_control import CaptionControl
 from .caption_bubbles import CaptionBubbles
 import os
+import qtlib
 
 
 # Tags as QLineEdit with handle, width is adjusted on text change
@@ -25,11 +26,13 @@ class CaptionContainer(QtWidgets.QWidget):
     def __init__(self, tab):
         super().__init__()
         self.tab = tab
+        self.bubbles = CaptionBubbles()
+
         self.captionCache = {}
         self.captionControl = CaptionControl(self)
         self.captionControl.captionClicked.connect(self.appendToCaption)
-        self.bubbles = CaptionBubbles()
-        
+        self.captionControl.separatorChanged.connect(self._onSeparatorChanged)
+
         self.captionFile = None
         self.captionFileExt = ".txt"
         self.captionSeparator = ', '
@@ -37,12 +40,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.txtCaption = QtWidgets.QTextEdit()
         self.txtCaption.setAcceptRichText(False)
         self.txtCaption.textChanged.connect(self._onCaptionEdited)
-        font = self.txtCaption.currentFont()
-        font.setStyleHint(QtGui.QFont.Monospace)
-        font.setFamily("monospace")
-        fontSize = font.pointSizeF() * 1.2
-        font.setPointSizeF(fontSize)
-        self.txtCaption.setCurrentFont(font)
+        qtlib.setMonospace(self.txtCaption, 1.2)
 
         self.btnApplyRules = QtWidgets.QPushButton("Apply Rules")
         self.btnApplyRules.clicked.connect(self.applyRules)
@@ -69,7 +67,6 @@ class CaptionContainer(QtWidgets.QWidget):
 
     def setCaption(self, text):
         self.txtCaption.setPlainText(text)
-        #self.bubbles.setText(text)
 
     def _onCaptionEdited(self):
         text = self.txtCaption.toPlainText()
@@ -134,6 +131,11 @@ class CaptionContainer(QtWidgets.QWidget):
         else:
             self.resetCaption()
 
+    @Slot()
+    def _onSeparatorChanged(self, separator):
+        self.captionSeparator = separator
+        self.bubbles.separator = separator
+        self.bubbles.updateBubbles()
 
     def onFileChanged(self, currentFile):
         filename = os.path.normpath(currentFile)
