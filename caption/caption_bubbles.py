@@ -25,12 +25,21 @@ class CaptionBubbles(qtlib.ReorderWidget):
         self.text = text
         self.updateBubbles()
 
+    def getCaptions(self) -> list[str]:
+        captions: list[str] = []
+        layout = self.layout()
+        for i in range(layout.count()):
+            widget = layout.itemAt(i).widget()
+            if widget and isinstance(widget, Bubble): # TODO: Why is there other stuff in there?
+                captions.append(widget.text)
+        return captions
+
     def updateBubbles(self):
         self.clearLayout()
 
         for i, tag in enumerate(self.text.split(self.separator)):
             tag = tag.strip()
-            bubble = Bubble(i, self.remove, self.showWeights, self.showRemove)
+            bubble = Bubble(i, self.remove, self.showWeights, self.showRemove, editable=False)
             bubble.text = tag
             self.layout().addWidget(bubble)
             bubble.forceUpdateWidth()
@@ -51,7 +60,7 @@ class CaptionBubbles(qtlib.ReorderWidget):
 
 # TODO: Change background color according to weight (blue=low, red=high?)
 class Bubble(QtWidgets.QFrame):
-    def __init__(self, index, removeSignal, showWeights=True, showRemove=False):
+    def __init__(self, index, removeSignal, showWeights=True, showRemove=False, editable=True):
         super().__init__()
 
         self._text = ""
@@ -61,13 +70,18 @@ class Bubble(QtWidgets.QFrame):
         # self.setStyleSheet(f"background-color: {self.color.name()}")
         self.setStyleSheet(".Bubble{border: 1px solid #181818; background-color: #161616; border-radius: 8px}")
 
-        self.textField = QtWidgets.QLabel() #qtlib.DynamicLineEdit()
+        if editable:
+            self.textField = qtlib.DynamicLineEdit()
+        else:
+            self.textField = QtWidgets.QLabel()
+            self.textField.setContentsMargins(0, 0, 4, 0)
+        
         qtlib.setMonospace(self.textField)
         self.textField.setStyleSheet(".DynamicLineEdit{background-color: #161616; border: 0px}")
 
         layout = QtWidgets.QHBoxLayout()
-        layout.setSpacing(0)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
         layout.addWidget(self.textField)
 
         if showWeights:
@@ -103,7 +117,8 @@ class Bubble(QtWidgets.QFrame):
         self.textField.setText(text)
 
     def forceUpdateWidth(self):
-        pass #self.textField.updateWidth()
+        if isinstance(self.textField, qtlib.DynamicLineEdit):
+            self.textField.updateWidth()
 
     def wheelEvent(self, event):
         if self.spinWeight:

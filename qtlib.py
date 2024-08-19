@@ -221,9 +221,14 @@ class ReorderWidget(QtWidgets.QWidget):
     def _setDragTarget(self, pixmap):
         label = QtWidgets.QLabel()
         label.setPixmap(pixmap)
-        label.setStyleSheet("QLabel{border: 2px solid #D52020; border-radius: 4px;}")
+        #label.setStyleSheet("QLabel{border: 2px solid #D52020; border-radius: 4px;}")
         self.layout().addWidget(label)
         self._drag_target = label
+
+    def _removeDragTarget(self):
+        self._drag_target.hide()
+        self._drag_target.deleteLater()
+        self._drag_target = None
 
     def widgetUnderCursor(self):
         layout = self.layout()
@@ -238,13 +243,12 @@ class ReorderWidget(QtWidgets.QWidget):
             return
 
         #widget = self.childAt(e.position().toPoint())
-        widget = self.widgetUnderCursor() # Only direct children
+        widget = self.widgetUnderCursor() # Only drag direct children
         if not widget:
             return
 
         drag = QtGui.QDrag(widget)
-        mime = QMimeData()
-        drag.setMimeData(mime)
+        drag.setMimeData(QMimeData())
 
         pixmap = widget.grab()
         #drag.setPixmap(pixmap)
@@ -258,10 +262,10 @@ class ReorderWidget(QtWidgets.QWidget):
         print("Drag result:", result)
         widget.show() # Show this widget again, if it's dropped outside.
         if self._drag_target:
-            self._drag_target.deleteLater()
-            self._drag_target = None
+            self._removeDragTarget()
 
     def dragEnterEvent(self, e):
+        print("Drag enter")
         e.accept()
 
     def dragLeaveEvent(self, e):
@@ -297,34 +301,27 @@ class ReorderWidget(QtWidgets.QWidget):
         index = layout.indexOf(self._drag_target)
         if index is not None:
             layout.insertWidget(index, widget)
-            #self.orderChanged.emit(self.get_item_data())
             self.orderChanged.emit()
             widget.show()
             layout.activate()
 
-        self._drag_target.hide()
-        self._drag_target.deleteLater()
-        self._drag_target = None
+        self._removeDragTarget()
         e.accept()
 
     def _findDropIndex(self, e):
-        pos = e.position()
+        posX = e.position().x() + self._drag_widget.width()
+        posY = e.position().y()
         layout = self.layout()
         spacing = layout.spacing() / 2
 
+        i = 0
         for n in range(layout.count()):
-            # Get the widget at each index in turn.
-            w = layout.itemAt(n).widget()
-
-            # Drag drop horizontally.
-            if (
-                pos.x() >= w.x() - spacing
-                and pos.x() <= w.x() + w.size().width() + spacing
-            ):
-                return n
-
-        return None
-
+            ele = layout.itemAt(n).widget()
+            if posY < ele.y() - spacing:
+                break
+            if posX > ele.x() + ele.width():
+                i = n
+        return i
 
 
 

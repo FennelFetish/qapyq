@@ -29,6 +29,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.tab = tab
         self.bubbles = CaptionBubbles(showWeights=False, showRemove=True)
         self.bubbles.remove.connect(self.removeCaption)
+        self.bubbles.orderChanged.connect(lambda: self.setCaption( self.captionSeparator.join(self.bubbles.getCaptions()) ))
 
         self.captionCache = {}
         self.captionControl = CaptionControl(self)
