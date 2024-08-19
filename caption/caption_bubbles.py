@@ -6,7 +6,7 @@ from PySide6.QtCore import QRect, QSize, Qt, Slot, Signal
 import qtlib
 
 
-class CaptionBubbles(QtWidgets.QWidget):
+class CaptionBubbles(qtlib.ReorderWidget):
     remove = Signal(int)
 
     def __init__(self, showWeights=True, showRemove=False):
@@ -59,9 +59,9 @@ class Bubble(QtWidgets.QFrame):
         self.setContentsMargins(4, 1, 4, 1)
 
         # self.setStyleSheet(f"background-color: {self.color.name()}")
-        self.setStyleSheet(".Bubble{border: 1px solid #181818; background-color: #161616; border-radius: 10px}")
+        self.setStyleSheet(".Bubble{border: 1px solid #181818; background-color: #161616; border-radius: 8px}")
 
-        self.textField = qtlib.DynamicLineEdit()
+        self.textField = QtWidgets.QLabel() #qtlib.DynamicLineEdit()
         qtlib.setMonospace(self.textField)
         self.textField.setStyleSheet(".DynamicLineEdit{background-color: #161616; border: 0px}")
 
@@ -103,7 +103,7 @@ class Bubble(QtWidgets.QFrame):
         self.textField.setText(text)
 
     def forceUpdateWidth(self):
-        self.textField.updateWidth()
+        pass #self.textField.updateWidth()
 
     def wheelEvent(self, event):
         if self.spinWeight:

@@ -264,7 +264,7 @@ class CaptionControlGroup(QtWidgets.QFrame):
         self._buildHeaderWidget(name)
 
         self.buttonLayout = qtlib.FlowLayout(spacing=1)
-        self.buttonWidget = QtWidgets.QWidget()
+        self.buttonWidget = qtlib.ReorderWidget()
         self.buttonWidget.setLayout(self.buttonLayout)
 
         layout = QtWidgets.QVBoxLayout()

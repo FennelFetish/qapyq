@@ -1,5 +1,5 @@
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Slot, Signal, QRect, QSize
+from PySide6.QtCore import Qt, Slot, Signal, QRect, QSize, QMimeData
 
 
 class DynamicLineEdit(QtWidgets.QLineEdit):
@@ -148,6 +148,17 @@ class FlowLayout(QtWidgets.QLayout):
             return None
         return self.items.pop(index)
 
+    def insertWidget(self, index, widget):
+        existing_index = self.indexOf(widget)
+        if existing_index >= 0:
+            item = self.items.pop(existing_index)
+        else:
+            item = QtWidgets.QWidgetItem(widget)
+
+        index = min(index, len(self.items))
+        self.items.insert(index, item)
+        self.invalidate()
+
     def expandingDirections(self):
         return Qt.Orientation.Vertical
 
@@ -175,6 +186,8 @@ class FlowLayout(QtWidgets.QLayout):
         totalRect = QRect()
 
         for i, item in enumerate(self.items):
+            # if not item.widget().isVisible():
+            #     continue
             itemRect = QRect(left, top, item.sizeHint().width(), item.sizeHint().height())
             rowHeight = max(rowHeight, itemRect.height())
             if i==0:
@@ -195,6 +208,126 @@ class FlowLayout(QtWidgets.QLayout):
 
 
 
+class ReorderWidget(QtWidgets.QWidget):
+    orderChanged = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.setAcceptDrops(True)
+        self._drag_widget = None
+        self._drag_widget_idx = -1
+        self._drag_target = None
+
+    def _setDragTarget(self, pixmap):
+        label = QtWidgets.QLabel()
+        label.setPixmap(pixmap)
+        label.setStyleSheet("QLabel{border: 2px solid #D52020; border-radius: 4px;}")
+        self.layout().addWidget(label)
+        self._drag_target = label
+
+    def widgetUnderCursor(self):
+        layout = self.layout()
+        for i in range(layout.count()):
+            widget = layout.itemAt(i).widget()
+            if widget and widget.underMouse():
+                return widget
+        return None
+
+    def mouseMoveEvent(self, e):
+        if e.buttons() != Qt.MouseButton.LeftButton:
+            return
+
+        #widget = self.childAt(e.position().toPoint())
+        widget = self.widgetUnderCursor() # Only direct children
+        if not widget:
+            return
+
+        drag = QtGui.QDrag(widget)
+        mime = QMimeData()
+        drag.setMimeData(mime)
+
+        pixmap = widget.grab()
+        #drag.setPixmap(pixmap)
+        self._setDragTarget(pixmap)
+
+        widget.hide()
+        self._drag_widget = widget
+        self._drag_widget_idx = self.layout().indexOf(widget)
+
+        result = drag.exec(Qt.DropAction.MoveAction) # Blocking call
+        print("Drag result:", result)
+        widget.show() # Show this widget again, if it's dropped outside.
+        if self._drag_target:
+            self._drag_target.deleteLater()
+            self._drag_target = None
+
+    def dragEnterEvent(self, e):
+        e.accept()
+
+    def dragLeaveEvent(self, e):
+        print("Drag leave")
+        self.layout().insertWidget(self._drag_widget_idx, self._drag_target)
+
+        # if self._drag_target:
+        #     self._drag_target.hide()
+        #     self._drag_target.deleteLater()
+        #     self._drag_target = None
+        # self.layout().insertWidget(self._drag_widget_idx, self._drag_widget)
+        # self._drag_widget.show()
+        e.accept()
+
+    def dragMoveEvent(self, e):
+        layout = self.layout()
+        # Find the correct location of the drop target, so we can move it there.
+        index = self._findDropIndex(e)
+        if index is not None:
+            # Inserting moves the item if its alreaady in the layout.
+            layout.insertWidget(index, self._drag_target)
+            # Hide the item being dragged.
+            e.source().hide()
+            # Show the target.
+            #self._drag_target.show()
+        e.accept()
+
+    def dropEvent(self, e):
+        print("Drop")
+        layout = self.layout()
+        widget = self._drag_widget #e.source()
+        # Use drop target location for destination, then remove it.
+        index = layout.indexOf(self._drag_target)
+        if index is not None:
+            layout.insertWidget(index, widget)
+            #self.orderChanged.emit(self.get_item_data())
+            self.orderChanged.emit()
+            widget.show()
+            layout.activate()
+
+        self._drag_target.hide()
+        self._drag_target.deleteLater()
+        self._drag_target = None
+        e.accept()
+
+    def _findDropIndex(self, e):
+        pos = e.position()
+        layout = self.layout()
+        spacing = layout.spacing() / 2
+
+        for n in range(layout.count()):
+            # Get the widget at each index in turn.
+            w = layout.itemAt(n).widget()
+
+            # Drag drop horizontally.
+            if (
+                pos.x() >= w.x() - spacing
+                and pos.x() <= w.x() + w.size().width() + spacing
+            ):
+                return n
+
+        return None
+
+
+
+
 class TestWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
@@ -203,16 +336,15 @@ class TestWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("Test")
         self.setAttribute(Qt.WA_QuitOnClose)
 
-        layout = QtWidgets.QGridLayout()
-        #layout = FlowLayout(spacing=1)
+        #layout = QtWidgets.QGridLayout()
+        layout = FlowLayout(spacing=10)
+        #layout = QtWidgets.QHBoxLayout()
         for x in range(3):
             for y in range(3):
-                btn = EditablePushButton("Btn " + str(x) + "/" + str(y))
-                btn.clicked.connect(self.onClick)
-                btn.textChanged.connect(self.onTextChanged)
-                layout.addWidget(btn, x, y)
+                btn = QtWidgets.QLabel(f"{x} / {y}")
+                layout.addWidget(btn)#, x, y)
 
-        widget = QtWidgets.QWidget()
+        widget = ReorderWidget()
         widget.setLayout(layout)
 
         self.setCentralWidget(widget)
