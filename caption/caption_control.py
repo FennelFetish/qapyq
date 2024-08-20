@@ -4,6 +4,7 @@ from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Signal, Slot
 from typing import ForwardRef
 import qtlib
+import util
 from .caption_preset import CaptionPreset
 
 CaptionControlGroup = ForwardRef('CaptionControlGroup')
@@ -38,6 +39,7 @@ CaptionControlGroup = ForwardRef('CaptionControlGroup')
 class CaptionControl(QtWidgets.QTabWidget):
     captionClicked = Signal(str)
     separatorChanged = Signal(str)
+    controlUpdated = Signal()
 
     def __init__(self, container):
         super().__init__()
@@ -81,6 +83,7 @@ class CaptionControl(QtWidgets.QTabWidget):
         layout.addWidget(self.txtSeparator, 1, 1, Qt.AlignTop)
 
         self.txtBanned = QtWidgets.QPlainTextEdit()
+        self.txtBanned.textChanged.connect(lambda: self.controlUpdated.emit())
         qtlib.setMonospace(self.txtBanned)
         qtlib.setTextEditHeight(self.txtBanned, 3)
         layout.addWidget(QtWidgets.QLabel("Banned:"), 1, 2, Qt.AlignTop)
@@ -156,10 +159,23 @@ class CaptionControl(QtWidgets.QTabWidget):
     def getCaptionGroups(self) -> list[CaptionControlGroup]:
         groups = []
         for i in range(self.groupLayout.count()):
-            widget = self.groupLayout.itemAt(i).widget()
-            if widget and isinstance(widget, CaptionControlGroup):
-                groups.append(widget)
+            g = self.groupLayout.itemAt(i).widget()
+            if g and isinstance(g, CaptionControlGroup):
+                groups.append(g)
         return groups
+
+    def getCaptionColors(self):
+        colors = {}
+        for i in range(self.groupLayout.count()):
+            group = self.groupLayout.itemAt(i).widget()
+            if group and isinstance(group, CaptionControlGroup):
+                groupColor = group.color
+                for caption in group.captions:
+                    colors[caption] = groupColor
+        
+        for banned in self.bannedCaptions:
+            colors[banned] = "#454545"
+        return colors
 
 
     @Slot()
@@ -167,6 +183,7 @@ class CaptionControl(QtWidgets.QTabWidget):
         group = CaptionControlGroup(self, "Group")
         index = self.groupLayout.count() - 1 # Insert before button
         self.groupLayout.insertWidget(index, group)
+        self.controlUpdated.emit()
         return group
 
     def removeGroup(self, group):
@@ -179,6 +196,7 @@ class CaptionControl(QtWidgets.QTabWidget):
         if dialog.exec() == QtWidgets.QMessageBox.Yes:
             self.groupLayout.removeWidget(group)
             group.deleteLater()
+            self.controlUpdated.emit()
 
     def removeAllGroups(self):
         widgets = []
@@ -191,12 +209,15 @@ class CaptionControl(QtWidgets.QTabWidget):
             self.groupLayout.removeWidget(w)
             w.deleteLater()
 
+        self.controlUpdated.emit()
+
     def moveGroup(self, group, move: int):
         count = self.groupLayout.count()
         index = self.groupLayout.indexOf(group)
         index += move
         if index >= 0 and index < count-1: # There's also a button at the bottom
             self.groupLayout.insertWidget(index, group)
+            self.controlUpdated.emit()
 
     @Slot()
     def addBanned(self):
@@ -218,9 +239,9 @@ class CaptionControl(QtWidgets.QTabWidget):
         preset.banned = self.bannedCaptions
 
         for i in range(self.groupLayout.count()):
-            widget = self.groupLayout.itemAt(i).widget()
-            if widget and isinstance(widget, CaptionControlGroup):
-                preset.addGroup(widget.name, widget.mutuallyExclusive, widget.captions)
+            group = self.groupLayout.itemAt(i).widget()
+            if group and isinstance(group, CaptionControlGroup):
+                preset.addGroup(group.name, group.color, group.mutuallyExclusive, group.captions)
 
         fileFilter = "JSON (*.json)"
         path, selectedFilter = QtWidgets.QFileDialog.getSaveFileName(self, "Save preset", self._defaultPresetPath, fileFilter)
@@ -249,6 +270,7 @@ class CaptionControl(QtWidgets.QTabWidget):
         for group in preset.groups:
             groupWidget = self.addGroup()
             groupWidget.name = group.name
+            groupWidget.color = group.color
             groupWidget.mutuallyExclusive = group.mutuallyExclusive
             for caption in group.captions:
                 groupWidget.addCaption(caption)
@@ -256,6 +278,8 @@ class CaptionControl(QtWidgets.QTabWidget):
 
 
 class CaptionControlGroup(QtWidgets.QFrame):
+    _nextHue = util.rnd01()
+
     def __init__(self, captionControl, name):
         super().__init__()
         self._captionControl = captionControl
@@ -277,6 +301,13 @@ class CaptionControlGroup(QtWidgets.QFrame):
         self.txtName = QtWidgets.QLineEdit(name)
         qtlib.setMonospace(self.txtName, 1.2, bold=True)
 
+        self.txtColor = QtWidgets.QLineEdit()
+        self.txtColor.textChanged.connect(self._updateColor)
+        self.txtColor.setFixedWidth(60)
+        qtlib.setMonospace(self.txtColor, 0.8)
+        self.color = util.hsv_to_rgb(CaptionControlGroup._nextHue, 0.5, 0.25)
+        CaptionControlGroup._nextHue += 0.3819444
+
         btnAddCaption = QtWidgets.QPushButton("Add Caption")
         btnAddCaption.clicked.connect(self._addCaption)
         btnAddCaption.setFocusPolicy(Qt.NoFocus)
@@ -295,6 +326,7 @@ class CaptionControlGroup(QtWidgets.QFrame):
         self.headerLayout = QtWidgets.QHBoxLayout()
         self.headerLayout.setContentsMargins(0, 0, 0, 0)
         self.headerLayout.addWidget(self.txtName)
+        self.headerLayout.addWidget(self.txtColor)
         
         self.headerLayout.addWidget(btnAddCaption)
         self.headerLayout.addWidget(self.chkExclusive)
@@ -313,6 +345,20 @@ class CaptionControlGroup(QtWidgets.QFrame):
     @name.setter
     def name(self, name):
         self.txtName.setText(name)
+
+    @property
+    def color(self) -> str:
+        return self.txtColor.text()
+
+    @color.setter
+    def color(self, color):
+        self.txtColor.setText(color)
+        
+    @Slot()
+    def _updateColor(self, color):
+        if util.isValidColor(color):
+            self.txtColor.setStyleSheet(f"background-color: {color}")
+            self._captionControl.controlUpdated.emit()
 
     @property
     def mutuallyExclusive(self) -> bool:
@@ -336,6 +382,7 @@ class CaptionControlGroup(QtWidgets.QFrame):
         button.button.setFocusPolicy(Qt.NoFocus)
         button.clicked.connect(self._captionControl.captionClicked)
         button.textEmpty.connect(self._removeCaption)
+        button.textChanged.connect(lambda: self._captionControl.controlUpdated.emit())
         self.buttonLayout.addWidget(button)
         return button
     
@@ -343,12 +390,13 @@ class CaptionControlGroup(QtWidgets.QFrame):
     def _addCaption(self):
         caption = self._captionControl._container.getSelectedCaption()
         button = self.addCaption(caption)
-        #button.setEditMode()
+        self._captionControl.controlUpdated.emit()
 
     @Slot()
     def _removeCaption(self, button):
         self.buttonLayout.removeWidget(button)
         button.deleteLater()
+        self._captionControl.controlUpdated.emit()
 
     def resizeEvent(self, event):
         self.layout().update()  # Weird: Needed for proper resize.

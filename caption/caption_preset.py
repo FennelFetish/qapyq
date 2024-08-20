@@ -15,9 +15,10 @@ class CaptionPreset:
         self.groups = []
         self.banned = []
 
-    def addGroup(self, name, mutuallyExclusive, captions):
+    def addGroup(self, name, color, mutuallyExclusive, captions):
         group = CaptionPresetGroup()
         group.name = name
+        group.color = color
         group.mutuallyExclusive = mutuallyExclusive
         group.captions.extend(captions)
         self.groups.append(group)
@@ -53,13 +54,19 @@ class CaptionPreset:
 
         if "groups" in data:
             for group in data["groups"]:
-                self.addGroup(group["name"], group["mutuallyExclusive"], group["captions"])
+                self.addGroup(
+                    group.get("name", "Group"),
+                    group.get("color", "#000"),
+                    group.get("mutuallyExclusive", False),
+                    group.get("captions", [])
+                )
 
 
 
 class CaptionPresetGroup:
     def __init__(self):
         self.name = "Group"
+        self.color = "#000"
         self.mutuallyExclusive : bool = False
         self.captions = []
     
@@ -67,6 +74,7 @@ class CaptionPresetGroup:
         captionData = [c for c in self.captions]
         return {
             "name": self.name,
+            "color": self.color,
             "mutuallyExclusive": self.mutuallyExclusive,
             "captions": captionData
         }

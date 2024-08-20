@@ -3,16 +3,17 @@ import random
 import sys
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import QRect, QSize, Qt, Slot, Signal
-import qtlib
+import qtlib, util
 
 
 class CaptionBubbles(qtlib.ReorderWidget):
     remove = Signal(int)
 
-    def __init__(self, showWeights=True, showRemove=False):
+    def __init__(self, captionColors, showWeights=True, showRemove=False):
         super().__init__()
         self.text = ""
         self.separator = ','
+        self._captionColors = captionColors
         self.showWeights = showWeights
         self.showRemove = showRemove
 
@@ -36,11 +37,13 @@ class CaptionBubbles(qtlib.ReorderWidget):
 
     def updateBubbles(self):
         self.clearLayout()
+        colors = self._captionColors()
 
         for i, tag in enumerate(self.text.split(self.separator)):
             tag = tag.strip()
-            bubble = Bubble(i, self.remove, self.showWeights, self.showRemove, editable=False)
+            bubble = Bubble(i, self.remove, self.showWeights, self.showRemove, editable=True)
             bubble.text = tag
+            bubble.setColor(colors.get(tag, "#161616"))
             self.layout().addWidget(bubble)
             bubble.forceUpdateWidth()
 
@@ -66,9 +69,7 @@ class Bubble(QtWidgets.QFrame):
         self._text = ""
         self.weight = 1.0
         self.setContentsMargins(4, 1, 4, 1)
-
-        # self.setStyleSheet(f"background-color: {self.color.name()}")
-        self.setStyleSheet(".Bubble{border: 1px solid #181818; background-color: #161616; border-radius: 8px}")
+        
 
         if editable:
             self.textField = qtlib.DynamicLineEdit()
@@ -77,7 +78,6 @@ class Bubble(QtWidgets.QFrame):
             self.textField.setContentsMargins(0, 0, 4, 0)
         
         qtlib.setMonospace(self.textField)
-        self.textField.setStyleSheet(".DynamicLineEdit{background-color: #161616; border: 0px}")
 
         layout = QtWidgets.QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
@@ -104,6 +104,7 @@ class Bubble(QtWidgets.QFrame):
 
         self.setLayout(layout)
 
+        self.setColor("#161616")
         self.setFrameShape(QtWidgets.QFrame.Shape.Box)
         self.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
 
@@ -115,6 +116,10 @@ class Bubble(QtWidgets.QFrame):
     def text(self, text):
         self._text = text
         self.textField.setText(text)
+
+    def setColor(self, color):
+        self.setStyleSheet(".Bubble{background-color: " + color + "; border: 1px solid #161616; border-radius: 8px}")
+        self.textField.setStyleSheet(".DynamicLineEdit{background-color: " + color + "; border: 0px}")
 
     def forceUpdateWidth(self):
         if isinstance(self.textField, qtlib.DynamicLineEdit):

@@ -219,11 +219,22 @@ class ReorderWidget(QtWidgets.QWidget):
         self._drag_target = None
 
     def _setDragTarget(self, pixmap):
+        pixmap = self._adjustBrightness(pixmap, 2, 1.9, 1.6)
         label = QtWidgets.QLabel()
         label.setPixmap(pixmap)
-        #label.setStyleSheet("QLabel{border: 2px solid #D52020; border-radius: 4px;}")
         self.layout().addWidget(label)
         self._drag_target = label
+
+    def _adjustBrightness(self, pixmap, r, g, b):
+        image = pixmap.toImage()
+        for y in range(image.height()):
+            for x in range(image.width()):
+                color = QtGui.QColor(image.pixel(x, y))
+                color.setRed(min(255, int(color.red() * r)))
+                color.setGreen(min(255, int(color.green() * g)))
+                color.setBlue(min(255, int(color.blue() * b)))
+                image.setPixel(x, y, color.rgb())
+        return QtGui.QPixmap.fromImage(image)
 
     def _removeDragTarget(self):
         self._drag_target.hide()
