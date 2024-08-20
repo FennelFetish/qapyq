@@ -33,10 +33,10 @@ class CaptionContainer(QtWidgets.QWidget):
         self.captionControl.captionClicked.connect(self.appendToCaption)
         self.captionControl.separatorChanged.connect(self._onSeparatorChanged)
 
-        self.bubbles = CaptionBubbles(self.captionControl.getCaptionColors, showWeights=False, showRemove=True)
+        self.bubbles = CaptionBubbles(self.captionControl.getCaptionColors, showWeights=False, showRemove=True, editable=False)
         self.bubbles.remove.connect(self.removeCaption)
         self.bubbles.orderChanged.connect(lambda: self.setCaption( self.captionSeparator.join(self.bubbles.getCaptions()) ))
-        self.captionControl.controlUpdated.connect(lambda: self.bubbles.updateBubbles())
+        self.captionControl.controlUpdated.connect(self.onControlUpdated)
 
         self.captionFile = None
         self.captionFileExt = ".txt"
@@ -81,6 +81,7 @@ class CaptionContainer(QtWidgets.QWidget):
         text = self.txtCaption.toPlainText()
         self.captionCache[self.captionFile] = text
         self.bubbles.setText(text)
+        self.captionControl.setText(text)
         self._setSaveButtonStyle(True)
 
     def getSelectedCaption(self):
@@ -98,6 +99,12 @@ class CaptionContainer(QtWidgets.QWidget):
 
         return ""
 
+
+    @Slot()
+    def onControlUpdated(self):
+        self.bubbles.updateBubbles()
+        self.captionControl.setText(self.txtCaption.toPlainText())
+
     @Slot()
     def appendToCaption(self, text):
         caption = self.txtCaption.toPlainText()
@@ -105,6 +112,9 @@ class CaptionContainer(QtWidgets.QWidget):
             caption += self.captionSeparator
         caption += text
         self.setCaption(caption)
+
+        if self.captionControl.isAutoApplyRules:
+            self.applyRules()
 
     @Slot()
     def removeCaption(self, index):

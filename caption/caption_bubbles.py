@@ -9,13 +9,14 @@ import qtlib, util
 class CaptionBubbles(qtlib.ReorderWidget):
     remove = Signal(int)
 
-    def __init__(self, captionColors, showWeights=True, showRemove=False):
+    def __init__(self, captionColors, showWeights=True, showRemove=False, editable=True):
         super().__init__()
         self.text = ""
         self.separator = ','
         self._captionColors = captionColors
         self.showWeights = showWeights
         self.showRemove = showRemove
+        self.editable = editable
 
         layout = qtlib.FlowLayout(spacing=5)
         self.setLayout(layout)
@@ -41,7 +42,7 @@ class CaptionBubbles(qtlib.ReorderWidget):
 
         for i, tag in enumerate(self.text.split(self.separator)):
             tag = tag.strip()
-            bubble = Bubble(i, self.remove, self.showWeights, self.showRemove, editable=True)
+            bubble = Bubble(i, self.remove, self.showWeights, self.showRemove, self.editable)
             bubble.text = tag
             bubble.setColor(colors.get(tag, "#161616"))
             self.layout().addWidget(bubble)
@@ -65,18 +66,15 @@ class CaptionBubbles(qtlib.ReorderWidget):
 class Bubble(QtWidgets.QFrame):
     def __init__(self, index, removeSignal, showWeights=True, showRemove=False, editable=True):
         super().__init__()
-
         self._text = ""
         self.weight = 1.0
         self.setContentsMargins(4, 1, 4, 1)
         
-
         if editable:
             self.textField = qtlib.DynamicLineEdit()
         else:
             self.textField = QtWidgets.QLabel()
             self.textField.setContentsMargins(0, 0, 4, 0)
-        
         qtlib.setMonospace(self.textField)
 
         layout = QtWidgets.QHBoxLayout()
@@ -120,6 +118,10 @@ class Bubble(QtWidgets.QFrame):
     def setColor(self, color):
         self.setStyleSheet(".Bubble{background-color: " + color + "; border: 1px solid #161616; border-radius: 8px}")
         self.textField.setStyleSheet(".DynamicLineEdit{background-color: " + color + "; border: 0px}")
+
+        if self.spinWeight:
+            #self.spinWeight.setStyleSheet(".QDoubleSpinBox{background-color: " + color + "; border: 0; padding-right: 25px}")
+            self.spinWeight.lineEdit().setStyleSheet("background-color: " + color)
 
     def forceUpdateWidth(self):
         if isinstance(self.textField, qtlib.DynamicLineEdit):
