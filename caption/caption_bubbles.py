@@ -8,6 +8,7 @@ import qtlib, util
 
 class CaptionBubbles(qtlib.ReorderWidget):
     remove = Signal(int)
+    dropped = Signal(str)
 
     def __init__(self, captionColors, showWeights=True, showRemove=False, editable=True):
         super().__init__()
@@ -17,6 +18,9 @@ class CaptionBubbles(qtlib.ReorderWidget):
         self.showWeights = showWeights
         self.showRemove = showRemove
         self.editable = editable
+
+        self.dataCallback = lambda widget: widget.text
+        self.dropCallback = self._onDrop
 
         layout = qtlib.FlowLayout(spacing=5)
         self.setLayout(layout)
@@ -39,12 +43,11 @@ class CaptionBubbles(qtlib.ReorderWidget):
     def updateBubbles(self):
         self.clearLayout()
         colors = self._captionColors()
-
-        for i, tag in enumerate(self.text.split(self.separator)):
-            tag = tag.strip()
+        for i, caption in enumerate(self.text.split(self.separator)):
+            caption = caption.strip()
             bubble = Bubble(i, self.remove, self.showWeights, self.showRemove, self.editable)
-            bubble.text = tag
-            bubble.setColor(colors.get(tag, "#161616"))
+            bubble.text = caption
+            bubble.setColor(colors.get(caption, "#161616"))
             self.layout().addWidget(bubble)
             bubble.forceUpdateWidth()
 
@@ -60,6 +63,10 @@ class CaptionBubbles(qtlib.ReorderWidget):
     
     def resizeEvent(self, event):
         self.layout().update()  # Weird: Needed for proper resize.
+    
+    def _onDrop(self, text):
+        self.dropped.emit(text)
+        return False
 
 
 # TODO: Change background color according to weight (blue=low, red=high?)

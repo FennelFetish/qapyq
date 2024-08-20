@@ -40,6 +40,7 @@ class CaptionControl(QtWidgets.QTabWidget):
     captionClicked = Signal(str)
     separatorChanged = Signal(str)
     controlUpdated = Signal()
+    needsRulesApplied = Signal()
 
     def __init__(self, container):
         super().__init__()
@@ -206,7 +207,7 @@ class CaptionControl(QtWidgets.QTabWidget):
         if dialog.exec() == QtWidgets.QMessageBox.Yes:
             self.groupLayout.removeWidget(group)
             group.deleteLater()
-            self.controlUpdated.emit()
+            self._emitUpdatedApplyRules()
 
     def removeAllGroups(self):
         widgets = []
@@ -227,7 +228,7 @@ class CaptionControl(QtWidgets.QTabWidget):
         index += move
         if index >= 0 and index < count-1: # There's also a button at the bottom
             self.groupLayout.insertWidget(index, group)
-            self.controlUpdated.emit()
+            self._emitUpdatedApplyRules()
 
     @Slot()
     def addBanned(self):
@@ -287,6 +288,9 @@ class CaptionControl(QtWidgets.QTabWidget):
         
         self.controlUpdated.emit()
 
+    def _emitUpdatedApplyRules(self):
+        self.controlUpdated.emit()
+        self.needsRulesApplied.emit()
 
 
 class CaptionControlGroup(QtWidgets.QFrame):
@@ -300,8 +304,12 @@ class CaptionControlGroup(QtWidgets.QFrame):
         self._buildHeaderWidget(name)
 
         self.buttonLayout = qtlib.FlowLayout(spacing=1)
-        self.buttonWidget = qtlib.ReorderWidget()
+        self.buttonWidget = qtlib.ReorderWidget(giveDrop=True)
         self.buttonWidget.setLayout(self.buttonLayout)
+        self.buttonWidget.orderChanged.connect(self._captionControl.needsRulesApplied)
+        self.buttonWidget.dataCallback = lambda widget: widget.text
+        self.buttonWidget.dropCallback = self._addCaptionDrop
+        self.buttonWidget.updateCallback = self._captionControl._emitUpdatedApplyRules
 
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(5, 5, 5, 5)
@@ -323,7 +331,7 @@ class CaptionControlGroup(QtWidgets.QFrame):
         qtlib.setMonospace(self.txtName, 1.2, bold=True)
 
         btnAddCaption = QtWidgets.QPushButton("Add Caption")
-        btnAddCaption.clicked.connect(self._addCaption)
+        btnAddCaption.clicked.connect(self._addCaptionClick)
         btnAddCaption.setFocusPolicy(Qt.NoFocus)
 
         self.chkExclusive = QtWidgets.QCheckBox("Mutually Exclusive")
@@ -405,25 +413,35 @@ class CaptionControlGroup(QtWidgets.QFrame):
         return captions
     
     def addCaption(self, text):
+        # Check if caption already exists in group
+        for i in range(self.buttonLayout.count()):
+            widget = self.buttonLayout.itemAt(i).widget()
+            if widget and isinstance(widget, qtlib.EditablePushButton) and text == widget.text:
+                return False
+
         button = qtlib.EditablePushButton(text, lambda w: qtlib.setMonospace(w, 1.05))
         button.button.setFocusPolicy(Qt.NoFocus)
         button.clicked.connect(self._captionControl.captionClicked)
         button.textEmpty.connect(self._removeCaption)
-        button.textChanged.connect(lambda: self._captionControl.controlUpdated.emit())
+        button.textChanged.connect(lambda: self._captionControl._emitUpdatedApplyRules())
         self.buttonLayout.addWidget(button)
-        return button
+        return True
     
     @Slot()
-    def _addCaption(self):
-        caption = self._captionControl._container.getSelectedCaption()
-        button = self.addCaption(caption)
-        self._captionControl.controlUpdated.emit()
+    def _addCaptionClick(self):
+        text = self._captionControl._container.getSelectedCaption()
+        self._addCaptionDrop(text)
+
+    def _addCaptionDrop(self, text):
+        if self.addCaption(text):
+            self._captionControl._emitUpdatedApplyRules()
+        return True # Take drop
 
     @Slot()
     def _removeCaption(self, button):
         self.buttonLayout.removeWidget(button)
         button.deleteLater()
-        self._captionControl.controlUpdated.emit()
+        self._captionControl._emitUpdatedApplyRules()
 
     def resizeEvent(self, event):
         self.layout().update()  # Weird: Needed for proper resize.

@@ -32,12 +32,14 @@ class CaptionContainer(QtWidgets.QWidget):
         self.captionControl = CaptionControl(self)
         self.captionControl.captionClicked.connect(self.appendToCaption)
         self.captionControl.separatorChanged.connect(self._onSeparatorChanged)
+        self.captionControl.controlUpdated.connect(self.onControlUpdated)
+        self.captionControl.needsRulesApplied.connect(self.applyRulesIfAuto)
 
         self.bubbles = CaptionBubbles(self.captionControl.getCaptionColors, showWeights=False, showRemove=True, editable=False)
         self.bubbles.setContentsMargins(0, 18, 0, 0)
         self.bubbles.remove.connect(self.removeCaption)
         self.bubbles.orderChanged.connect(lambda: self.setCaption( self.captionSeparator.join(self.bubbles.getCaptions()) ))
-        self.captionControl.controlUpdated.connect(self.onControlUpdated)
+        self.bubbles.dropped.connect(self.appendToCaption)
 
         self.captionFile = None
         self.captionFileExt = ".txt"
@@ -124,6 +126,11 @@ class CaptionContainer(QtWidgets.QWidget):
         captions = [c.strip() for c in text.split(splitSeparator)]
         del captions[index]
         self.setCaption( self.captionSeparator.join(captions) )
+
+    @Slot()
+    def applyRulesIfAuto(self):
+        if self.captionControl.isAutoApplyRules:
+            self.applyRules()
 
     @Slot()
     def applyRules(self):

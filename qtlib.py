@@ -218,12 +218,16 @@ class FlowLayout(QtWidgets.QLayout):
 class ReorderWidget(QtWidgets.QWidget):
     orderChanged = Signal()
 
-    def __init__(self):
+    def __init__(self, giveDrop=False):
         super().__init__()
         self.setAcceptDrops(True)
-        self._drag_widget = None
-        self._drag_widget_idx = -1
+        self._dragWidgetIndex = -1
         self._drag_target = None
+
+        self.dataCallback = None
+        self.dropCallback = None # Callback returns true = Remove from source widget (takeDrop)
+        self.updateCallback = None
+        self.giveDrop = giveDrop
 
     def _setDragTarget(self, pixmap):
         pixmap = self._adjustBrightness(pixmap, 2, 1.9, 1.6)
@@ -259,75 +263,92 @@ class ReorderWidget(QtWidgets.QWidget):
     def mouseMoveEvent(self, e):
         if e.buttons() != Qt.MouseButton.LeftButton:
             return
-
-        #widget = self.childAt(e.position().toPoint())
+        
         widget = self.widgetUnderCursor() # Only drag direct children
         if not widget:
             return
 
-        drag = QtGui.QDrag(widget)
-        drag.setMimeData(QMimeData())
-
         pixmap = widget.grab()
-        #drag.setPixmap(pixmap)
         self._setDragTarget(pixmap)
 
-        widget.hide()
-        self._drag_widget = widget
-        self._drag_widget_idx = self.layout().indexOf(widget)
+        data = QMimeData()
+        if self.dataCallback:
+            data.setText( self.dataCallback(widget) )
 
-        result = drag.exec(Qt.DropAction.MoveAction) # Blocking call
-        print("Drag result:", result)
-        widget.show() # Show this widget again, if it's dropped outside.
-        if self._drag_target:
-            self._removeDragTarget()
+        drag = QtGui.QDrag(widget)
+        drag.setPixmap(pixmap)
+        drag.setMimeData(data)
+
+        self._dragWidgetIndex = self.layout().indexOf(widget)
+        self.layout().insertWidget(self._dragWidgetIndex, self._drag_target)
+        widget.hide()
+
+        actions = Qt.DropAction.CopyAction
+        if self.giveDrop:
+            actions |= Qt.DropAction.MoveAction
+        result = drag.exec(actions) # Blocking call
+
+        print(f"Drag result: {result}")
+        if result == Qt.MoveAction:
+            self.layout().removeWidget(widget)
+            widget.deleteLater()
+        else:
+            widget.show() # Show this widget again, if it's dropped outside.
+
+        self._removeDragTarget()
+
+        if self.updateCallback:
+            self.updateCallback()
 
     def dragEnterEvent(self, e):
         print("Drag enter")
-        e.accept()
+        if e.mimeData().hasText:
+            e.accept()
 
     def dragLeaveEvent(self, e):
         print("Drag leave")
-        self.layout().insertWidget(self._drag_widget_idx, self._drag_target)
-
-        # if self._drag_target:
-        #     self._drag_target.hide()
-        #     self._drag_target.deleteLater()
-        #     self._drag_target = None
-        # self.layout().insertWidget(self._drag_widget_idx, self._drag_widget)
-        # self._drag_widget.show()
+        if self._drag_target:
+            self.layout().insertWidget(self._dragWidgetIndex, self._drag_target)
         e.accept()
 
     def dragMoveEvent(self, e):
+        if not self._drag_target:
+            e.accept()
+            return
+
         layout = self.layout()
-        # Find the correct location of the drop target, so we can move it there.
         index = self._findDropIndex(e)
         if index is not None:
-            # Inserting moves the item if its alreaady in the layout.
             layout.insertWidget(index, self._drag_target)
-            # Hide the item being dragged.
-            e.source().hide()
-            # Show the target.
-            #self._drag_target.show()
         e.accept()
 
     def dropEvent(self, e):
         print("Drop")
+        # Dropped into different widget
+        if not self._drag_target:
+            if self.dropCallback:
+                takeDrop = self.dropCallback(e.mimeData().text())
+                action = Qt.DropAction.MoveAction if takeDrop else Qt.DropAction.CopyAction
+                e.setDropAction(action)
+            e.accept()
+            return
+
+        # Dropped into same widget
+        print("Drop same")
         layout = self.layout()
-        widget = self._drag_widget #e.source()
-        # Use drop target location for destination, then remove it.
+        widget = e.source()
         index = layout.indexOf(self._drag_target)
         if index is not None:
             layout.insertWidget(index, widget)
-            self.orderChanged.emit()
             widget.show()
             layout.activate()
-
-        self._removeDragTarget()
+            self.orderChanged.emit()
+        
+        e.setDropAction(Qt.DropAction.CopyAction)
         e.accept()
 
     def _findDropIndex(self, e):
-        posX = e.position().x() + self._drag_widget.width()
+        posX = e.position().x() + e.source().width()
         posY = e.position().y()
         layout = self.layout()
         spacing = layout.spacing() / 2
