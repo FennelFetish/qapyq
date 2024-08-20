@@ -1,2 +1,3 @@
 PySide6
-pillow
+#pillow
+opencv-python
