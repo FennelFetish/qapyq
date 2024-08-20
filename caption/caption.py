@@ -4,7 +4,7 @@ from .caption_control import CaptionControl
 from .caption_bubbles import CaptionBubbles
 import os
 import qtlib
-from .caption_filter import DuplicateCaptionFilter, BannedCaptionFilter, SortCaptionFilter, PrefixSuffixFilter
+from .caption_filter import DuplicateCaptionFilter, BannedCaptionFilter, SortCaptionFilter, PrefixSuffixFilter, MutuallyExclusiveFilter
 
 
 # Tags as QLineEdit with handle, width is adjusted on text change
@@ -34,6 +34,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.captionControl.separatorChanged.connect(self._onSeparatorChanged)
 
         self.bubbles = CaptionBubbles(self.captionControl.getCaptionColors, showWeights=False, showRemove=True, editable=False)
+        self.bubbles.setContentsMargins(0, 18, 0, 0)
         self.bubbles.remove.connect(self.removeCaption)
         self.bubbles.orderChanged.connect(lambda: self.setCaption( self.captionSeparator.join(self.bubbles.getCaptions()) ))
         self.captionControl.controlUpdated.connect(self.onControlUpdated)
@@ -129,6 +130,12 @@ class CaptionContainer(QtWidgets.QWidget):
         text = self.txtCaption.toPlainText()
         splitSeparator = self.captionSeparator.strip()
         captions = [c.strip() for c in text.split(splitSeparator)]
+        captionGroups = self.captionControl.getCaptionGroups()
+
+        # Filter mutually exclusive captions before removing duplicates: This will keep the last inserted caption
+        exclusiveCaptionGroups = [group.captions for group in captionGroups if group.mutuallyExclusive]
+        exclusiveFilter = MutuallyExclusiveFilter(exclusiveCaptionGroups)
+        captions = exclusiveFilter.filterCaptions(captions)
 
         if self.captionControl.isRemoveDuplicates:
             dupFilter = DuplicateCaptionFilter()
@@ -137,8 +144,8 @@ class CaptionContainer(QtWidgets.QWidget):
         banFilter = BannedCaptionFilter(self.captionControl.bannedCaptions)
         captions = banFilter.filterCaptions(captions)
 
-        captionGroups = [group.captions for group in self.captionControl.getCaptionGroups()]
-        sortFilter = SortCaptionFilter(captionGroups, self.captionControl.prefix, self.captionControl.suffix, self.captionSeparator)
+        allCaptionGroups = [group.captions for group in captionGroups]
+        sortFilter = SortCaptionFilter(allCaptionGroups, self.captionControl.prefix, self.captionControl.suffix, self.captionSeparator)
         captions = sortFilter.filterCaptions(captions)
 
         presufFilter = PrefixSuffixFilter(self.captionControl.prefix, self.captionControl.suffix, self.captionSeparator)

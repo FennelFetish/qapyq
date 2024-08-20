@@ -47,14 +47,18 @@ class EditablePushButton(QtWidgets.QWidget):
     textChanged = Signal(str)
     textEmpty   = Signal(object)
 
-    def __init__(self, text, parent=None):
+    def __init__(self, text, stylerFunc=None, parent=None):
         super().__init__(parent)
+        self.stylerFunc = stylerFunc
         self.extraWidth = 12
 
         self.button = QtWidgets.QPushButton(text)
         self.button.clicked.connect(self.click)
         self.button.mouseReleaseEvent = self._button_mouseReleaseEvent
         self.edit = None
+
+        if stylerFunc:
+            stylerFunc(self.button)
 
         self._updateWidth()
         layout = QtWidgets.QVBoxLayout()
@@ -91,6 +95,9 @@ class EditablePushButton(QtWidgets.QWidget):
         self.edit.setFixedWidth(self.button.width())
         self.edit.textChanged.connect(self._updateWidth)
         self.edit.editingFinished.connect(self._editFinished)
+
+        if self.stylerFunc:
+            self.stylerFunc(self.edit)
 
         self.layout().replaceWidget(self.button, self.edit)
         self.button.hide()

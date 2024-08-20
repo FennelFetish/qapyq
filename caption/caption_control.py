@@ -405,7 +405,7 @@ class CaptionControlGroup(QtWidgets.QFrame):
         return captions
     
     def addCaption(self, text):
-        button = qtlib.EditablePushButton(text)
+        button = qtlib.EditablePushButton(text, lambda w: qtlib.setMonospace(w, 1.05))
         button.button.setFocusPolicy(Qt.NoFocus)
         button.clicked.connect(self._captionControl.captionClicked)
         button.textEmpty.connect(self._removeCaption)

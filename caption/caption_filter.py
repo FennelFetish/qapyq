@@ -69,3 +69,24 @@ class PrefixSuffixFilter(CaptionFilter):
             text += self.suffix
 
         return [ c.strip() for c in text.split(self.separator.strip()) ]
+
+
+class MutuallyExclusiveFilter(CaptionFilter):
+    def __init__(self, captionGroups: list[list[str]]):
+        self.groups = [set(caps) for caps in captionGroups]
+
+    def filterCaptions(self, captions: list[str]) -> list[str]:
+        enumerated = list(enumerate(captions))
+        deleteIndices = set()
+
+        for group in self.groups:
+            exists = False
+            for i, cap in reversed(enumerated):
+                if cap in group:
+                    if exists:
+                        deleteIndices.add(i)
+                    exists = True
+        
+        for i in sorted(deleteIndices, reverse=True):
+            del captions[i]
+        return captions
