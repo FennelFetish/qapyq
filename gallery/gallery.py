@@ -17,6 +17,7 @@ class Gallery(QtWidgets.QWidget):
         self._ignoreFileChange = False
 
         layout = QtWidgets.QGridLayout()
+        layout.setAlignment(Qt.AlignTop)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(20)
         self.setLayout(layout)
@@ -65,7 +66,7 @@ class Gallery(QtWidgets.QWidget):
 
     def adjustGrid(self, widgetWidth):
         w = widgetWidth * 0.9
-        cols = w // ThumbnailCache.THUMBNAIL_SIZE
+        cols = int(w // ThumbnailCache.THUMBNAIL_SIZE)
         cols -= 1
         cols = max(cols, 1)
         if cols == self.columns:
@@ -84,6 +85,30 @@ class Gallery(QtWidgets.QWidget):
             layout.addItem(item, row, col)
         
         layout.update()
+
+
+    def getRowForY(self, y, compareBottom=False):
+        layout = self.layout()
+        row = 0
+        while (rect := layout.cellRect(row, 0)).isValid():
+            itemY = rect.bottom() if compareBottom else rect.top()
+            if itemY < y:
+                row += 1
+            else:
+                break
+        return row
+
+    def getYforRow(self, row):
+        layout = self.layout()
+        rect = layout.cellRect(row, 0)
+        if not rect.isValid():
+            return -1
+
+        y = rect.top()
+        for col in range(1, self.columns):
+            if (rect := layout.cellRect(row, col)).isValid():
+                y = min(y, rect.top())
+        return y
 
 
     def onFileChanged(self, currentFile):
@@ -113,6 +138,7 @@ class GalleryItem(QtWidgets.QWidget):
         self.selectionStyle = None
 
         self._height = 100
+        self.setMinimumSize(100, 100)
 
         ThumbnailCache.updateThumbnail(self, file)
 
@@ -181,6 +207,7 @@ class GalleryItem(QtWidgets.QWidget):
             selectionColor = palette.color(QtGui.QPalette.Highlight)
             pen = QtGui.QPen(selectionColor)
             pen.setWidth(borderSize)
+            pen.setJoinStyle(Qt.RoundJoin)
             painter.setPen(pen)
             painter.drawRect(x, y, w, h)
         

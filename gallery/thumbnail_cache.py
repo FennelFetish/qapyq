@@ -3,7 +3,7 @@ from PySide6.QtGui import QPixmap, QImage
 
 
 class ThumbnailCache:
-    THUMBNAIL_SIZE = 256
+    THUMBNAIL_SIZE = 196
 
     thumbnails = {}
 
@@ -33,9 +33,9 @@ class ThumbnailTask(QRunnable):
     @Slot()
     def run(self):
         # QPixmap is not threadsafe, loading as QImage instead
-        size = ThumbnailCache.THUMBNAIL_SIZE + 20
+        size = ThumbnailCache.THUMBNAIL_SIZE
         img = QImage(self.file)
-        img = img.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        img = img.scaled(size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
         self.signals.done.emit(self.target, self.file, img)
 
 

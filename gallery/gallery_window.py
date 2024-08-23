@@ -17,7 +17,7 @@ class GalleryWindow(AuxiliaryWindow):
         self.gallery.adjustGrid(self.width()-40)
         self.gallery.reloadImages()
 
-        scrollArea = QtWidgets.QScrollArea()
+        scrollArea = FastScrollArea()
         scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scrollArea.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         scrollArea.setWidgetResizable(True)
@@ -32,3 +32,21 @@ class GalleryWindow(AuxiliaryWindow):
         if self.gallery:
             self.gallery.adjustGrid(event.size().width()-40)
         #super().resizeEvent(event)
+
+
+class FastScrollArea(QtWidgets.QScrollArea):
+    def __init__(self):
+        super().__init__()
+
+    def wheelEvent(self, event):
+        scrollBar = self.verticalScrollBar()
+        gallery = self.widget()
+
+        scrollDown = event.angleDelta().y() < 0
+
+        row = gallery.getRowForY(scrollBar.value(), scrollDown)
+        row += 1 if scrollDown else -1
+        y = gallery.getYforRow(row)
+        if y >= 0:
+            scrollBar.setValue(y)
+        
