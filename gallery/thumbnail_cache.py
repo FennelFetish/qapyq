@@ -8,28 +8,25 @@ class ThumbnailCache:
     thumbnails = {}
 
     @classmethod
-    def updateThumbnail(cls, label, file):
+    def updateThumbnail(cls, target, file):
         if file in cls.thumbnails:
-            label.setPixmap(cls.thumbnails[file])
+            target.pixmap = cls.thumbnails[file]
 
-        task = ThumbnailTask(label, file)
+        task = ThumbnailTask(target, file)
         task.signals.done.connect(cls._onThumbnailLoaded)
         QThreadPool.globalInstance().start(task)
 
     @classmethod
-    def _onThumbnailLoaded(cls, label, file, img):
+    def _onThumbnailLoaded(cls, target, file, img):
         pixmap = QPixmap.fromImage(img)
         cls.thumbnails[file] = pixmap
-        label.setPixmap(pixmap)
+        target.pixmap = pixmap
 
 
-
-# TODO: What if gallery is closed and reopened before all tasks finish?
-#       In this case new (duplicate) tasks are queued.
 class ThumbnailTask(QRunnable):
-    def __init__(self, label, file):
+    def __init__(self, target, file):
         super().__init__()
-        self.label = label
+        self.target = target
         self.file = file
         self.signals = ThumbnailTaskSignals()
 
@@ -39,7 +36,7 @@ class ThumbnailTask(QRunnable):
         size = ThumbnailCache.THUMBNAIL_SIZE + 20
         img = QImage(self.file)
         img = img.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        self.signals.done.emit(self.label, self.file, img)
+        self.signals.done.emit(self.target, self.file, img)
 
 
 class ThumbnailTaskSignals(QObject):

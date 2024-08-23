@@ -4,140 +4,192 @@ from .thumbnail_cache import ThumbnailCache
 import os
 
 
-class Gallery(QtWidgets.QListWidget):
+class Gallery(QtWidgets.QWidget):
     def __init__(self, tab):
         super().__init__()
         self.tab = tab
         self.filelist = tab.filelist
-        self.tileSize = ThumbnailCache.THUMBNAIL_SIZE
 
-        self.setFlow(QtWidgets.QListWidget.LeftToRight)
-        self.setWrapping(True)
-        #self.setMovement(QtWidgets.QListWidget.Static)
-        self.setResizeMode(QtWidgets.QListWidget.Adjust)
-        #self.setSortingEnabled(True)
+        self.columns = 4
+        self.itemCount = 0
 
-        self.setHorizontalScrollMode(QtWidgets.QListWidget.ScrollPerPixel)
-        self.setVerticalScrollMode(QtWidgets.QListWidget.ScrollPerPixel)
-        self.setSpacing(1)
+        self._selectedItem = None
+        self._ignoreFileChange = False
 
-        self.setViewMode(QtWidgets.QListView.IconMode)
-        #self.setIconSize(QSize(100, 100))
-        #self.setUniformItemSizes(True)
-        self.adjustGrid(self.width())
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(20)
+        self.setLayout(layout)
 
-        self.currentItemChanged.connect(self.onFileSelected)
-
-
-    def updateImages(self):
-        try:
-            self.blockSignals(True)
-            self.clear()
-            for file in self.filelist.getFiles():
-                self.addImage(file)
-        finally:
-            self.blockSignals(False)
+    def reloadImages(self):
+        self.clearLayout()
+        for file in self.filelist.getFiles():
+            self.addImage(file)
     
     def addImage(self, file):
-        galleryItem = GalleryItem(self.tab, file)
-        galleryItem.setSize(self.tileSize)
+        galleryItem = GalleryItem(self, file)
 
-        item = QtWidgets.QListWidgetItem()
-        item.setSizeHint(galleryItem.size())
-        self.addItem(item)
-        self.setItemWidget(item, galleryItem)
+        row = self.itemCount // self.columns
+        col = self.itemCount % self.columns
+        self.layout().addWidget(galleryItem, row, col)
+        self.itemCount += 1
 
         if self.filelist.getCurrentFile() == file:
-            self.setCurrentItem(item)
+            self._selectedItem = galleryItem
             galleryItem.setSelected(True)
+
+    def clearLayout(self):
+        layout = self.layout()
+        for i in reversed(range(layout.count())):
+            item = layout.takeAt(i)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+            else:
+                item.spacerItem().deleteLater()
+        self.itemCount = 0
+        self._selectedItem = None
+
+    def setSelectedItem(self, item, updateFileList=False):
+        if self._selectedItem:
+            self._selectedItem.setSelected(False)
+        item.setSelected(True)
+        self._selectedItem = item
+
+        if updateFileList:
+            try:
+                self._ignoreFileChange = True
+                self.filelist.setCurrentFile(item.file)
+            finally:
+                self._ignoreFileChange = False
+
+    def adjustGrid(self, widgetWidth):
+        w = widgetWidth * 0.9
+        cols = w // ThumbnailCache.THUMBNAIL_SIZE
+        cols -= 1
+        cols = max(cols, 1)
+        if cols == self.columns:
+            return
+    
+        self.columns = cols
+        layout = self.layout()
+
+        items = []
+        for i in reversed(range(layout.count())):
+            items.append(layout.takeAt(i))
+
+        for i, item in enumerate(reversed(items)):
+            row = i // cols
+            col = i % cols
+            layout.addItem(item, row, col)
+        
+        layout.update()
 
 
     def onFileChanged(self, currentFile):
-        for i in range(self.count()):
-            item = self.item(i)
-            widget = self.itemWidget(item)
-            if widget.file == currentFile:
-                self.updateSelection(item, self.currentItem())
+        if self._ignoreFileChange:
+            return
 
-                try:
-                    self.blockSignals(True)
-                    self.setCurrentItem(item)
-                finally:
-                    self.blockSignals(False)
+        layout = self.layout()
+        for i in range(layout.count()):
+            widget = layout.itemAt(i).widget()
+            if widget and widget.file == currentFile:
+                self.setSelectedItem(widget)
                 break
     
     def onFileListChanged(self, currentFile):
-        self.updateImages()
-
-
-    @Slot()
-    def onFileSelected(self, currentItem, prevItem):
-        self.updateSelection(currentItem, prevItem)
-        if item := self.itemWidget(currentItem):
-            self.filelist.removeListener(self)
-            self.filelist.setCurrentFile(item.file)
-            self.filelist.addListener(self)
-
-    def updateSelection(self, current, prev):
-        if wCurrent := self.itemWidget(current):
-            wCurrent.setSelected(True)
-        if wPrev := self.itemWidget(prev):
-            wPrev.setSelected(False)
-
-    def adjustGrid(self, widgetWidth):
-        w = widgetWidth - 4
-        cols = w // ThumbnailCache.THUMBNAIL_SIZE
-        w = w / cols
-        self.setGridSize(QSize(w, w))
-        self.tileSize = w
-
-        for i in range(self.count()):
-            if widget := self.itemWidget(self.item(i)):
-                widget.setSize(w)
-
-    def resizeEvent(self, event):
-        self.adjustGrid(event.size().width())
-        #super().resizeEvent(event)
+        self.reloadImages()
 
 
 
-# https://stackoverflow.com/questions/74252940/how-to-automatically-adjust-the-elements-of-qgridlayout-to-fit-in-a-row-when-the
-class GalleryItem(QtWidgets.QFrame):
-    def __init__(self, tab, file):
+class GalleryItem(QtWidgets.QWidget):
+    def __init__(self, gallery, file):
         super().__init__()
-        self.tab = tab
+        self.gallery = gallery
         self.file = file
+        
+        self._pixmap = None
+        self.filename = os.path.basename(file)
+        self.selectionStyle = None
 
-        self.img = QtWidgets.QLabel()
-        self.img.setAlignment(Qt.AlignCenter | Qt.AlignTop)
-        #self.img.setScaledContents(True)
-        ThumbnailCache.updateThumbnail(self.img, file)
+        self._height = 100
 
-        filename = os.path.basename(file)
-        self.label = QtWidgets.QLabel(filename)
-        self.label.setAlignment(Qt.AlignCenter | Qt.AlignTop)
-        self.label.setWordWrap(True)
+        ThumbnailCache.updateThumbnail(self, file)
 
-        layout = QtWidgets.QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        layout.addWidget(self.img)
-        layout.addWidget(self.label)
-        layout.addStretch(1)
-        self.setLayout(layout)
+    def sizeHint(self):
+        return QSize(-1, self._height)
+        #return QSize(256, 256)
 
+    # def minimumSizeHint(self):
+    #     return self.sizeHint()
+
+    # def minimumSize(self):
+    #     return self.sizeHint()
+
+    @property
+    def pixmap(self):
+        return self._pixmap
     
-    def setSize(self, sideLength):
-        self.label.setMaximumWidth(sideLength)
+    @pixmap.setter
+    def pixmap(self, pixmap):
+        self._pixmap = pixmap
+        w = pixmap.width()
+        h = pixmap.height()
+        self._height = h
+        # aspect = h / w
+        # h = w * aspect
+        self.update()
 
     def setSelected(self, selected):
-        self.setFrameShape(QtWidgets.QFrame.Box if selected else QtWidgets.QFrame.NoFrame)
-
+        self.selectionStyle = "primary" if selected else None
+        self.update()
     
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            event.ignore()
-            return
+            self.gallery.setSelectedItem(self, True)
+        elif event.button() == Qt.RightButton:
+            self.gallery.tab.imgview.tool.onGalleryRightClick(self.file)
+
+    def paintEvent(self, event):
+        palette = QtWidgets.QApplication.palette()
         
-        if event.button() == Qt.RightButton:
-            self.tab.imgview.tool.onGalleryRightClick(self.file)
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform)
+
+        borderSize = 6
+        x = borderSize/2
+        y = x
+        w = self.width() - borderSize
+        h = self.height() - borderSize
+
+        textSpacing = 3
+        textMaxHeight = 40
+
+        # Draw image
+        if self._pixmap:
+            imgW = self._pixmap.width()
+            imgH = self._pixmap.height()
+            aspect = imgH / imgW
+            imgH = w * aspect
+            painter.drawPixmap(x, y, w, imgH, self._pixmap)
+        else:
+            imgH = 0
+        
+        # Draw border
+        if self.selectionStyle:
+            selectionColor = palette.color(QtGui.QPalette.Highlight)
+            pen = QtGui.QPen(selectionColor)
+            pen.setWidth(borderSize)
+            painter.setPen(pen)
+            painter.drawRect(x, y, w, h)
+        
+        # Draw filename
+        textColor = palette.color(QtGui.QPalette.Text)
+        pen = QtGui.QPen(textColor)
+        painter.setPen(pen)
+        textY = y + imgH + textSpacing
+        painter.drawText(x, textY, w, textMaxHeight, Qt.AlignHCenter | Qt.TextWordWrap, self.filename)
+
+        self._height = y + imgH + borderSize + textSpacing + textMaxHeight
+        self.setFixedHeight(self._height)
