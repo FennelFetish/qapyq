@@ -14,6 +14,7 @@ class GalleryWindow(AuxiliaryWindow):
     def setupContent(self, tab) -> object:
         self.gallery = Gallery(tab)
         self.gallery.filelist.addListener(self.gallery)
+        self.gallery.filelist.addDataListener(self.gallery)
         self.gallery.adjustGrid(self.width()-40)
         self.gallery.reloadImages()
 
@@ -26,6 +27,7 @@ class GalleryWindow(AuxiliaryWindow):
 
     def teardownContent(self, scrollArea):
         self.gallery.filelist.removeListener(self.gallery)
+        self.gallery.filelist.removeDataListener(self.gallery)
         self.gallery = None
 
     def resizeEvent(self, event):

@@ -231,10 +231,9 @@ class ReorderWidget(QtWidgets.QWidget):
 
     def _setDragTarget(self, pixmap):
         pixmap = self._adjustBrightness(pixmap, 2, 1.9, 1.6)
-        label = QtWidgets.QLabel()
-        label.setPixmap(pixmap)
-        self.layout().addWidget(label)
-        self._drag_target = label
+        self._drag_target = QtWidgets.QLabel()
+        self._drag_target.setPixmap(pixmap)
+        self.layout().addWidget(self._drag_target)
 
     def _adjustBrightness(self, pixmap, r, g, b):
         image = pixmap.toImage()
@@ -301,12 +300,10 @@ class ReorderWidget(QtWidgets.QWidget):
             self.updateCallback()
 
     def dragEnterEvent(self, e):
-        print("Drag enter")
         if e.mimeData().hasText:
             e.accept()
 
     def dragLeaveEvent(self, e):
-        print("Drag leave")
         if self._drag_target:
             self.layout().insertWidget(self._dragWidgetIndex, self._drag_target)
         e.accept()
@@ -323,7 +320,6 @@ class ReorderWidget(QtWidgets.QWidget):
         e.accept()
 
     def dropEvent(self, e):
-        print("Drop")
         # Dropped into different widget
         if not self._drag_target:
             if self.dropCallback:
@@ -334,7 +330,6 @@ class ReorderWidget(QtWidgets.QWidget):
             return
 
         # Dropped into same widget
-        print("Drop same")
         layout = self.layout()
         widget = e.source()
         index = layout.indexOf(self._drag_target)

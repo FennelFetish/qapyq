@@ -9,6 +9,7 @@ class CompareTool(Tool):
     def __init__(self):
         super().__init__()
         self._image = ClipImgItem()
+        self.compareFile = ""
 
         self._dividerLine = QGraphicsLineItem(0, 0, 0, 0)
         self._dividerLine.setZValue(1000)
@@ -16,6 +17,7 @@ class CompareTool(Tool):
         self._dividerLine.setVisible(False)
 
     def loadCompareImage(self, path):
+        self.compareFile = path
         self._image.loadImage(path)
         self._image.updateTransform(self._imgview.viewport().rect(), self._imgview.rotation)
         self._image.setClipWidth(0)

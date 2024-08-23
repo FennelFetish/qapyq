@@ -28,12 +28,13 @@ class CaptionContainer(QtWidgets.QWidget):
         super().__init__()
         self.tab = tab
 
-        self.captionCache = {}
         self.captionControl = CaptionControl(self)
         self.captionControl.captionClicked.connect(self.appendToCaption)
         self.captionControl.separatorChanged.connect(self._onSeparatorChanged)
         self.captionControl.controlUpdated.connect(self.onControlUpdated)
         self.captionControl.needsRulesApplied.connect(self.applyRulesIfAuto)
+
+        self.captionCache = CaptionCache(self)
 
         self.bubbles = CaptionBubbles(self.captionControl.getCaptionColors, showWeights=False, showRemove=True, editable=False)
         self.bubbles.setContentsMargins(0, 18, 0, 0)
@@ -82,9 +83,11 @@ class CaptionContainer(QtWidgets.QWidget):
 
     def _onCaptionEdited(self):
         text = self.txtCaption.toPlainText()
-        self.captionCache[self.captionFile] = text
         self.bubbles.setText(text)
         self.captionControl.setText(text)
+
+        self.captionCache.put(text)
+        self.captionCache.setState("fail")
         self._setSaveButtonStyle(True)
 
     def getSelectedCaption(self):
@@ -174,7 +177,8 @@ class CaptionContainer(QtWidgets.QWidget):
         with open(self.captionFile, 'w') as file:
             file.write(text)
 
-        del self.captionCache[self.captionFile]
+        self.captionCache.remove()
+        self.captionCache.setState("pass")
         self._setSaveButtonStyle(False)
 
     @Slot()
@@ -182,19 +186,22 @@ class CaptionContainer(QtWidgets.QWidget):
         if os.path.exists(self.captionFile):
             with open(self.captionFile) as file:
                 text = file.read()
-                #self.captionCache[self.captionFile] = text
                 self.setCaption(text)
+            self.captionCache.setState("white")
         else:
             self.setCaption("")
+            self.captionCache.setState(None)
         
         # When setting the text, _onCaptionEdited() will make a cache entry and turn the save button red. So we revert that here.
-        del self.captionCache[self.captionFile]
+        self.captionCache.remove()
         self._setSaveButtonStyle(False)
 
     def loadCaption(self):
         # Use cached caption if it exists in dictionary
-        if self.captionFile in self.captionCache:
-            self.setCaption( self.captionCache[self.captionFile] )
+        cachedCaption = self.captionCache.get()
+        if cachedCaption:
+            self.setCaption(cachedCaption)
+            self.captionCache.setState("fail")
         else:
             self.resetCaption()
 
@@ -217,3 +224,33 @@ class CaptionContainer(QtWidgets.QWidget):
     
     def onFileListChanged(self, currentFile):
         self.onFileChanged(currentFile)
+
+
+
+class CaptionCache:
+    keyCaption = "caption"
+    keyState   = "caption_state"
+
+    def __init__(self, captionControl):
+        self.captionControl = captionControl
+        self.filelist = captionControl.tab.filelist
+    
+    def get(self):
+        file = self.filelist.getCurrentFile()
+        return self.filelist.getData(file, CaptionCache.keyCaption)
+
+    def put(self, text):
+        file = self.filelist.getCurrentFile()
+        self.filelist.setData(file, CaptionCache.keyCaption, text)
+
+    def remove(self):
+        file = self.filelist.getCurrentFile()
+        self.filelist.removeData(file, CaptionCache.keyCaption)
+    
+    def setState(self, state):
+        file = self.filelist.getCurrentFile()
+        if state:
+            self.filelist.setData(file, CaptionCache.keyState, state)
+        else:
+            self.filelist.removeData(file, CaptionCache.keyState)
+            

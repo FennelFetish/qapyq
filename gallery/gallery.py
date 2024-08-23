@@ -9,6 +9,7 @@ class Gallery(QtWidgets.QWidget):
         super().__init__()
         self.tab = tab
         self.filelist = tab.filelist
+        self.fileItems = {}
 
         colorWhite = QtGui.QColor(230, 230, 230)
         colorPass = QtGui.QColor(50, 180, 60)
@@ -24,6 +25,7 @@ class Gallery(QtWidgets.QWidget):
         self.itemCount = 0
 
         self._selectedItem = None
+        self._selectedCompare = None
         self._ignoreFileChange = False
 
         layout = QtWidgets.QGridLayout()
@@ -39,6 +41,7 @@ class Gallery(QtWidgets.QWidget):
     
     def addImage(self, file):
         galleryItem = GalleryItem(self, file)
+        self.fileItems[file] = galleryItem
 
         row = self.itemCount // self.columns
         col = self.itemCount % self.columns
@@ -49,6 +52,11 @@ class Gallery(QtWidgets.QWidget):
             self._selectedItem = galleryItem
             galleryItem.setSelected(True)
 
+        if compareTool := self.tab.getTool("compare"):
+            if compareTool.compareFile == file:
+                self._selectedCompare = galleryItem
+                galleryItem.setCompare(True)
+
     def clearLayout(self):
         layout = self.layout()
         for i in reversed(range(layout.count())):
@@ -58,6 +66,8 @@ class Gallery(QtWidgets.QWidget):
                 widget.deleteLater()
             else:
                 item.spacerItem().deleteLater()
+        
+        self.fileItems = {}
         self.itemCount = 0
         self._selectedItem = None
 
@@ -73,6 +83,12 @@ class Gallery(QtWidgets.QWidget):
                 self.filelist.setCurrentFile(item.file)
             finally:
                 self._ignoreFileChange = False
+
+    def setSelectedCompare(self, item):
+        if self._selectedCompare:
+            self._selectedCompare.setCompare(False)
+        item.setCompare(True)
+        self._selectedCompare = item
 
     def adjustGrid(self, widgetWidth):
         w = widgetWidth * 0.9
@@ -123,22 +139,31 @@ class Gallery(QtWidgets.QWidget):
 
 
     def onFileChanged(self, currentFile):
-        if self._ignoreFileChange:
-            return
-
-        layout = self.layout()
-        for i in range(layout.count()):
-            widget = layout.itemAt(i).widget()
-            if widget and widget.file == currentFile:
-                self.setSelectedItem(widget)
-                break
+        if not self._ignoreFileChange:
+            widget = self.fileItems[currentFile]
+            self.setSelectedItem(widget)
     
     def onFileListChanged(self, currentFile):
         self.reloadImages()
 
+    def onFileDataChanged(self, file, key):
+        if file not in self.fileItems:
+            return
+        
+        if key == "caption_state":
+            widget = self.fileItems[file]
+            if captionState := self.filelist.getData(file, "caption_state"):
+                widget.setIcon("caption", captionState)
+            else:
+                widget.removeIcon("caption")
+            widget.update()
+
 
 
 class GalleryItem(QtWidgets.QWidget):
+    SelectionPrimary = 1
+    SelectionCompare = 2
+
     def __init__(self, gallery, file):
         super().__init__()
         self.gallery = gallery
@@ -146,7 +171,7 @@ class GalleryItem(QtWidgets.QWidget):
         
         self._pixmap = None
         self.filename = os.path.basename(file)
-        self.selectionStyle = None
+        self.selectionStyle: int = 0
         self.icons = {}
 
         self._height = 100
@@ -156,13 +181,20 @@ class GalleryItem(QtWidgets.QWidget):
         self._checkCaption(file)
 
     def _checkCaption(self, file):
-        filenameNoExt, ext = os.path.splitext(self.filename)
-        captionFile = os.path.join(os.path.dirname(file), filenameNoExt + ".txt")
-        if os.path.exists(captionFile):
-            self.setIcon("caption", "white")
+        if captionState := self.gallery.filelist.getData(file, "caption_state"):
+            self.setIcon("caption", captionState)
+        else:
+            filenameNoExt, ext = os.path.splitext(self.filename)
+            captionFile = os.path.join(os.path.dirname(file), filenameNoExt + ".txt")
+            if os.path.exists(captionFile):
+                self.setIcon("caption", "white")
 
     def setIcon(self, key, state):
         self.icons[key] = state
+
+    def removeIcon(self, key):
+        if key in self.icons:
+            del self.icons[key]
 
     def sizeHint(self):
         return QSize(ThumbnailCache.THUMBNAIL_SIZE, self._height)
@@ -177,25 +209,28 @@ class GalleryItem(QtWidgets.QWidget):
         w = pixmap.width()
         h = pixmap.height()
         self._height = h
-        # aspect = h / w
-        # h = w * aspect
         self.update()
 
     def setSelected(self, selected):
-        self.selectionStyle = "primary" if selected else None
+        if selected:
+            self.selectionStyle |= GalleryItem.SelectionPrimary
+        else:
+            self.selectionStyle &= ~GalleryItem.SelectionPrimary
         self.update()
 
     def setCompare(self, selected):
-        if not self.selectionStyle:
-            self.selectionStyle = "compare" if selected else None
-            self.update()
-        
+        if selected:
+            self.selectionStyle |= GalleryItem.SelectionCompare
+        else:
+            self.selectionStyle &= ~GalleryItem.SelectionCompare
+        self.update()
+    
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.gallery.setSelectedItem(self, True)
         elif event.button() == Qt.RightButton:
             self.gallery.tab.imgview.tool.onGalleryRightClick(self.file)
-            self.setCompare(True)
+            self.gallery.setSelectedCompare(self)
 
     def paintEvent(self, event):
         palette = QtWidgets.QApplication.palette()
@@ -227,21 +262,8 @@ class GalleryItem(QtWidgets.QWidget):
         self.paintIcons(painter, x+4, y+4)
         
         # Draw border
-        if self.selectionStyle == "primary":
-            selectionColor = palette.color(QtGui.QPalette.Highlight)
-            pen = QtGui.QPen(selectionColor)
-            pen.setWidth(borderSize)
-            pen.setJoinStyle(Qt.RoundJoin)
-            painter.setPen(pen)
-            painter.drawRect(x, y, w, h)
-        elif self.selectionStyle == "compare":
-            selectionColor = palette.color(QtGui.QPalette.Highlight)
-            pen = QtGui.QPen(selectionColor)
-            pen.setStyle(Qt.DotLine)
-            pen.setWidth(borderSize)
-            pen.setJoinStyle(Qt.RoundJoin)
-            painter.setPen(pen)
-            painter.drawRect(x, y, w, h)
+        if self.selectionStyle:
+            self.paintBorder(painter, palette, borderSize, x, y, w, h)
         
         # Draw filename
         textColor = palette.color(QtGui.QPalette.Text)
@@ -252,6 +274,18 @@ class GalleryItem(QtWidgets.QWidget):
 
         self._height = y + imgH + borderSize + textSpacing + textMaxHeight
         self.setFixedHeight(self._height)
+
+    def paintBorder(self, painter, palette, borderSize, x, y, w, h):
+        selectionColor = palette.color(QtGui.QPalette.Highlight)
+        pen = QtGui.QPen(selectionColor)
+        pen.setWidth(borderSize)
+        pen.setJoinStyle(Qt.RoundJoin)
+        if self.selectionStyle & GalleryItem.SelectionPrimary:
+            pen.setStyle(Qt.SolidLine)
+        elif self.selectionStyle & GalleryItem.SelectionCompare:
+            pen.setStyle(Qt.DotLine)
+        painter.setPen(pen)
+        painter.drawRect(x, y, w, h)
     
     def paintIcons(self, painter, x, y):
         painter.save()

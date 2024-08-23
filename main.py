@@ -205,6 +205,12 @@ class ImgTab(QtWidgets.QMainWindow):
                 return CropTool(self.export)
         return None
 
+    def getTool(self, toolName: str):
+        if toolName in self.tools:
+            return self.tools[toolName]
+        else:
+            return None
+
 
     def toggleFullscreen(self):
         winState = self.windowState()

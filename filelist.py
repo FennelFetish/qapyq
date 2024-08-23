@@ -2,14 +2,15 @@ import os
 
 VALID_EXTENSION = ['.jpg', '.jpeg', '.png', '.webp', '.bmp']
 
-
 class FileList:
     def __init__(self):
         self.files = []
+        self.fileData = dict()
         self.currentFile = ""
         self.currentIndex = -1  # Index < 0 means: File set, but folder not yet scanned
 
         self.listeners = []
+        self.dataListeners = []
 
 
     def load(self, path):
@@ -20,6 +21,7 @@ class FileList:
 
     def loadFile(self, file):
         self.files = []
+        self.fileData = dict()
         self.currentFile = file
         self.currentIndex = -1
         self.notifyListChanged()
@@ -107,6 +109,7 @@ class FileList:
 
     def _readFolder(self, path, subfolders=False):
         self.files = []
+        self.fileData = dict()
         for (root, dirs, files) in os.walk(path, topdown=True, followlinks=True):
             if not subfolders:
                 dirs[:] = []
@@ -127,3 +130,35 @@ class FileList:
     def notifyListChanged(self):
         for l in self.listeners:
             l.onFileListChanged(self.currentFile)
+
+
+    def setData(self, file, key, data):
+        if file not in self.fileData:
+            self.fileData[file] = {}
+        self.fileData[file][key] = data
+        self.notifyDataChanged(file, key)
+
+    def getData(self, file, key):
+        if file not in self.fileData:
+            return None
+        d = self.fileData[file]
+        return d[key] if key in d else None
+
+    def removeData(self, file, key):
+        if file not in self.fileData:
+            return
+        d = self.fileData[file]
+        if key in d:
+            del d[key]
+            self.notifyDataChanged(file, key)
+
+
+    def addDataListener(self, listener):
+        self.dataListeners.append(listener)
+
+    def removeDataListener(self, listener):
+        self.dataListeners.remove(listener)
+
+    def notifyDataChanged(self, file, key):
+        for l in self.dataListeners:
+            l.onFileDataChanged(file, key)
