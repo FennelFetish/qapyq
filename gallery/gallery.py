@@ -10,6 +10,16 @@ class Gallery(QtWidgets.QWidget):
         self.tab = tab
         self.filelist = tab.filelist
 
+        colorWhite = QtGui.QColor(230, 230, 230)
+        colorPass = QtGui.QColor(50, 180, 60)
+        colorFail = QtGui.QColor(250, 70, 30)
+        self.icons = {"caption": QtGui.QPixmap("./res/icon_caption.png")}
+        self.iconStates = {
+            "white": (QtGui.QPen(colorWhite), QtGui.QBrush(colorWhite)),
+            "pass": (QtGui.QPen(colorPass), QtGui.QBrush(colorPass)),
+            "fail": (QtGui.QPen(colorFail), QtGui.QBrush(colorFail)),
+        }
+
         self.columns = 4
         self.itemCount = 0
 
@@ -32,7 +42,7 @@ class Gallery(QtWidgets.QWidget):
 
         row = self.itemCount // self.columns
         col = self.itemCount % self.columns
-        self.layout().addWidget(galleryItem, row, col)
+        self.layout().addWidget(galleryItem, row, col, Qt.AlignTop)
         self.itemCount += 1
 
         if self.filelist.getCurrentFile() == file:
@@ -82,7 +92,8 @@ class Gallery(QtWidgets.QWidget):
         for i, item in enumerate(reversed(items)):
             row = i // cols
             col = i % cols
-            layout.addItem(item, row, col)
+            #layout.addItem(item, row, col)
+            layout.addWidget(item.widget(), row, col, Qt.AlignTop)
         
         layout.update()
 
@@ -136,21 +147,25 @@ class GalleryItem(QtWidgets.QWidget):
         self._pixmap = None
         self.filename = os.path.basename(file)
         self.selectionStyle = None
+        self.icons = {}
 
         self._height = 100
         self.setMinimumSize(100, 100)
 
         ThumbnailCache.updateThumbnail(self, file)
+        self._checkCaption(file)
+
+    def _checkCaption(self, file):
+        filenameNoExt, ext = os.path.splitext(self.filename)
+        captionFile = os.path.join(os.path.dirname(file), filenameNoExt + ".txt")
+        if os.path.exists(captionFile):
+            self.setIcon("caption", "white")
+
+    def setIcon(self, key, state):
+        self.icons[key] = state
 
     def sizeHint(self):
-        return QSize(-1, self._height)
-        #return QSize(256, 256)
-
-    # def minimumSizeHint(self):
-    #     return self.sizeHint()
-
-    # def minimumSize(self):
-    #     return self.sizeHint()
+        return QSize(ThumbnailCache.THUMBNAIL_SIZE, self._height)
 
     @property
     def pixmap(self):
@@ -169,12 +184,18 @@ class GalleryItem(QtWidgets.QWidget):
     def setSelected(self, selected):
         self.selectionStyle = "primary" if selected else None
         self.update()
-    
+
+    def setCompare(self, selected):
+        if not self.selectionStyle:
+            self.selectionStyle = "compare" if selected else None
+            self.update()
+        
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.gallery.setSelectedItem(self, True)
         elif event.button() == Qt.RightButton:
             self.gallery.tab.imgview.tool.onGalleryRightClick(self.file)
+            self.setCompare(True)
 
     def paintEvent(self, event):
         palette = QtWidgets.QApplication.palette()
@@ -201,11 +222,22 @@ class GalleryItem(QtWidgets.QWidget):
             painter.drawPixmap(x, y, w, imgH, self._pixmap)
         else:
             imgH = 0
+
+        # Draw icons
+        self.paintIcons(painter, x+4, y+4)
         
         # Draw border
-        if self.selectionStyle:
+        if self.selectionStyle == "primary":
             selectionColor = palette.color(QtGui.QPalette.Highlight)
             pen = QtGui.QPen(selectionColor)
+            pen.setWidth(borderSize)
+            pen.setJoinStyle(Qt.RoundJoin)
+            painter.setPen(pen)
+            painter.drawRect(x, y, w, h)
+        elif self.selectionStyle == "compare":
+            selectionColor = palette.color(QtGui.QPalette.Highlight)
+            pen = QtGui.QPen(selectionColor)
+            pen.setStyle(Qt.DotLine)
             pen.setWidth(borderSize)
             pen.setJoinStyle(Qt.RoundJoin)
             painter.setPen(pen)
@@ -220,3 +252,18 @@ class GalleryItem(QtWidgets.QWidget):
 
         self._height = y + imgH + borderSize + textSpacing + textMaxHeight
         self.setFixedHeight(self._height)
+    
+    def paintIcons(self, painter, x, y):
+        painter.save()
+
+        sizeX, sizeY = 20, 20
+        for iconKey, iconState in self.icons.items():
+            pen, brush = self.gallery.iconStates[iconState]
+            painter.setPen(pen)
+            painter.setBrush(brush)
+
+            painter.drawRoundedRect(x, y, sizeX, sizeY, 3, 3)
+            painter.drawPixmap(x, y, sizeX, sizeY, self.gallery.icons[iconKey])
+            y += sizeX + 8
+        
+        painter.restore()
