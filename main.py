@@ -17,11 +17,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.galleryWindow = None
         self.captionWindow = None
 
-        self.setWindowTitle("PyImgSet")
+        self.setWindowTitle("Caption Crunch")
         self.setAttribute(Qt.WA_QuitOnClose)
+
+        self.toolbar = MainToolBar(self)
+        self.addToolBar(self.toolbar)
+
         self.buildTabs()
-        self.buildMenu()
-        self.buildToolbar()
+        #self.buildMenu()
+
         self.addTab()
 
         #self.setWindowState(Qt.WindowFullScreen)
@@ -51,27 +55,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         menuEdit = self.menuBar().addMenu("&Edit")
 
-    def buildToolbar(self):
-        toolbar = self.addToolBar("Tools")
-
-        actView = toolbar.addAction("View")
-        actView.triggered.connect(lambda: self.setTool("view"))
-
-        actCompare = toolbar.addAction("Compare")
-        actCompare.triggered.connect(lambda: self.setTool("compare"))
-
-        actCrop = toolbar.addAction("Crop")
-        actCrop.triggered.connect(lambda: self.setTool("crop"))
-
-        toolbar.addSeparator()
-
-        actToggleGallery = toolbar.addAction("Gallery")
-        actToggleGallery.triggered.connect(self.toggleGallery)
-
-        actToggleCaption = toolbar.addAction("Captions")
-        actToggleCaption.triggered.connect(self.toggleCaptionWindow)
-
-
     @Slot()
     def addTab(self):
         tab = ImgTab(self.tabWidget)
@@ -89,6 +72,7 @@ class MainWindow(QtWidgets.QMainWindow):
     @Slot()
     def onTabChanged(self, index):
         tab = self.tabWidget.currentWidget()
+        self.toolbar.setTool(tab.toolName)
         if self.galleryWindow:
             self.galleryWindow.setTab(tab)
         if self.captionWindow:
@@ -99,6 +83,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def setTool(self, toolName: str):
         tab = self.tabWidget.currentWidget()
         tab.setTool(toolName)
+        self.toolbar.setTool(toolName)
 
     
     @Slot()
@@ -117,6 +102,7 @@ class MainWindow(QtWidgets.QMainWindow):
     
     @Slot()
     def onGalleryClosed(self):
+        self.toolbar.actToggleGallery.setChecked(False)
         self.galleryWindow = None
 
     
@@ -135,6 +121,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @Slot()
     def onCaptionWindowClosed(self):
+        self.toolbar.actToggleCaption.setChecked(False)
         self.captionWindow = None
 
 
@@ -144,6 +131,53 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.captionWindow:
             self.captionWindow.close()
 
+
+
+class MainToolBar(QtWidgets.QToolBar):
+    def __init__(self, mainWindow):
+        super().__init__()
+        self.mainWindow = mainWindow
+        self.setFloatable(False)
+
+        self.actViewTool = self.addAction("View")
+        self.actViewTool.setCheckable(True)
+        self.actViewTool.triggered.connect(lambda: mainWindow.setTool("view"))
+
+        self.actCompareTool = self.addAction("Compare")
+        self.actCompareTool.setCheckable(True)
+        self.actCompareTool.triggered.connect(lambda: mainWindow.setTool("compare"))
+
+        self.actCropTool = self.addAction("Crop")
+        self.actCropTool.setCheckable(True)
+        self.actCropTool.triggered.connect(lambda: mainWindow.setTool("crop"))
+
+        self.setTool("view")
+        self.addSeparator()
+
+        self.actToggleGallery = self.addAction("Gallery")
+        self.actToggleGallery.setCheckable(True)
+        self.actToggleGallery.triggered.connect(mainWindow.toggleGallery)
+
+        self.actToggleCaption = self.addAction("Captions")
+        self.actToggleCaption.setCheckable(True)
+        self.actToggleCaption.triggered.connect(mainWindow.toggleCaptionWindow)
+
+        winColor = QtWidgets.QApplication.palette().color(QtGui.QPalette.ColorRole.Window)
+        colorBg = winColor.lighter().name()
+        colorBorder = winColor.darker().name()
+        self.setStyleSheet("QToolBar::separator {background-color: " + colorBg + "; border: 1px dotted " + colorBorder + "; height: 1px; width: 1px;}")
+
+    def setTool(self, toolName):
+        self.actViewTool.setChecked(False)
+        self.actCompareTool.setChecked(False)
+        self.actCropTool.setChecked(False)
+
+        if toolName == "view":
+                self.actViewTool.setChecked(True)
+        elif toolName == "compare":
+                self.actCompareTool.setChecked(True)
+        elif toolName == "crop":
+                self.actCropTool.setChecked(True)
 
 
 class ImgTab(QtWidgets.QMainWindow):
@@ -160,6 +194,7 @@ class ImgTab(QtWidgets.QMainWindow):
         self.export = Export()
         self.tools = {}
         self._toolbar = None
+        self.toolName = None
         self.setTool("view")
 
         widget = QtWidgets.QWidget()
@@ -183,6 +218,7 @@ class ImgTab(QtWidgets.QMainWindow):
         if toolName not in self.tools:
             self.tools[toolName] = self.createTool(toolName)
         self.imgview.tool = self.tools[toolName]
+        self.toolName = toolName
 
         # Replace toolbar
         if self._toolbar:
@@ -193,14 +229,13 @@ class ImgTab(QtWidgets.QMainWindow):
             self._toolbar.show()
 
     def createTool(self, toolName: str):
-        match toolName:
-            case "view":
+        if toolName == "view":
                 from tools import ViewTool
                 return ViewTool()
-            case "compare":
+        elif toolName == "compare":
                 from tools import CompareTool
                 return CompareTool()
-            case "crop":
+        elif toolName == "crop":
                 from tools import CropTool
                 return CropTool(self.export)
         return None
@@ -210,6 +245,9 @@ class ImgTab(QtWidgets.QMainWindow):
             return self.tools[toolName]
         else:
             return None
+
+    def getCurrentTool(self):
+        return self.imgview.tool
 
 
     def toggleFullscreen(self):
