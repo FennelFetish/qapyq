@@ -124,11 +124,11 @@ class Bubble(QtWidgets.QFrame):
 
     def setColor(self, color):
         self.setStyleSheet(".Bubble{background-color: " + color + "; border: 1px solid #161616; border-radius: 8px}")
-        self.textField.setStyleSheet(".DynamicLineEdit{background-color: " + color + "; border: 0px}")
+        self.textField.setStyleSheet("color: #fff; background-color: " + color + "; border: 0px")
 
         if self.spinWeight:
             #self.spinWeight.setStyleSheet(".QDoubleSpinBox{background-color: " + color + "; border: 0; padding-right: 25px}")
-            self.spinWeight.lineEdit().setStyleSheet("background-color: " + color)
+            self.spinWeight.lineEdit().setStyleSheet("color: #fff; background-color: " + color)
 
     def forceUpdateWidth(self):
         if isinstance(self.textField, qtlib.DynamicLineEdit):

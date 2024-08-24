@@ -368,9 +368,9 @@ class CaptionControlGroup(QtWidgets.QFrame):
             if widget and isinstance(widget, qtlib.EditablePushButton):
                 text = widget.text.strip()
                 if text in captions:
-                    widget.setStyleSheet("background-color: " + color + "; border: 3px solid " + color + "; border-radius: 8px")
+                    widget.setStyleSheet("color: #fff; background-color: " + color + "; border: 3px solid " + color + "; border-radius: 8px")
                 else:
-                    widget.setStyleSheet("background-color: #161616; border: 3px solid #161616; border-radius: 8px")
+                    widget.setStyleSheet("color: #fff; background-color: #161616; border: 3px solid #161616; border-radius: 8px")
 
 
     @property
@@ -392,7 +392,7 @@ class CaptionControlGroup(QtWidgets.QFrame):
     @Slot()
     def _updateColor(self, color):
         if util.isValidColor(color):
-            self.txtColor.setStyleSheet(f"background-color: {color}")
+            self.txtColor.setStyleSheet(f"color: #fff; background-color: {color}")
             self._captionControl.controlUpdated.emit()
 
     @property
