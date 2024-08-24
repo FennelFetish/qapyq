@@ -12,6 +12,8 @@ class ImageIcon:
 
 
 class Gallery(QtWidgets.QWidget):
+    headersUpdated = Signal(dict)
+
     def __init__(self, tab):
         super().__init__()
         self.tab = tab
@@ -46,8 +48,9 @@ class Gallery(QtWidgets.QWidget):
 
     def reloadImages(self):
         self.clearLayout()
-        currentDir = ""
+        headers = dict()
 
+        currentDir = ""
         row, col = 0, 0
         for file in self.filelist.getFiles():
             if (dirname := os.path.dirname(file)) != currentDir:
@@ -56,6 +59,7 @@ class Gallery(QtWidgets.QWidget):
                     col = 0
                 currentDir = dirname
                 self.addHeader(dirname, row)
+                headers[dirname] = row
                 row += 1
 
             self.addImage(file, row, col)
@@ -63,6 +67,8 @@ class Gallery(QtWidgets.QWidget):
             if col >= self.columns:
                 col = 0
                 row += 1
+
+        self.headersUpdated.emit(headers)
     
     def addImage(self, file, row, col):
         galleryItem = GalleryItem(self, file)
@@ -137,6 +143,7 @@ class Gallery(QtWidgets.QWidget):
         for i in reversed(range(layout.count())):
             items.append(layout.takeAt(i))
 
+        headers = dict()
         row, col = 0, 0
         for widget in (item.widget() for item in reversed(items)):
             if isinstance(widget, GalleryItem):
@@ -150,9 +157,11 @@ class Gallery(QtWidgets.QWidget):
                     row += 1
                     col = 0
                 layout.addWidget(widget, row, 0, 1, cols)
+                headers[widget.text()] = row
                 row += 1
         
         layout.update()
+        self.headersUpdated.emit(headers)
 
 
     def getRowForY(self, y, compareBottom=False):

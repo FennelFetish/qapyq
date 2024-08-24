@@ -25,6 +25,7 @@ class AuxiliaryWindow(QtWidgets.QMainWindow):
         
         if content := self.takeCentralWidget():
             self.teardownContent(content)
+            content.deleteLater()
         
         if tab:
             content = self.setupContent(tab)
@@ -34,6 +35,7 @@ class AuxiliaryWindow(QtWidgets.QMainWindow):
     def closeEvent(self, event):
         if content := self.takeCentralWidget():
             self.teardownContent(content)
+            content.deleteLater()
 
         self.tab = None
         super().closeEvent(event)
