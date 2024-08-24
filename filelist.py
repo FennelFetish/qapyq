@@ -26,6 +26,21 @@ class FileList:
         self.dataListeners = []
 
 
+    def loadAll(self, paths):
+        self.files = []
+        self.fileData = dict()
+        for path in paths:
+            if os.path.isdir(path):
+                self._walkPath(path, True)
+            elif any(path.lower().endswith(ext) for ext in VALID_EXTENSION):
+                self.files.append(path)
+
+        self.files.sort()
+        numFiles = len(self.files)
+        self.currentFile = self.files[0] if numFiles > 0 else ""
+        self.currentIndex = 0 if numFiles > 1 else -1
+        self.notifyListChanged()
+
     def load(self, path):
         if os.path.isdir(path):
             self.loadFolder(path, True)
@@ -123,12 +138,14 @@ class FileList:
     def _readFolder(self, path, subfolders=False):
         self.files = []
         self.fileData = dict()
+        self._walkPath(path, subfolders)
+        self.files.sort()
+
+    def _walkPath(self, path, subfolders=False):
         for (root, dirs, files) in os.walk(path, topdown=True, followlinks=True):
             if not subfolders:
                 dirs[:] = []
             self.files += [os.path.join(root, f) for f in files if any(f.lower().endswith(ext) for ext in VALID_EXTENSION)]
-        self.files.sort()
-
 
     def addListener(self, listener):
         self.listeners.append(listener)

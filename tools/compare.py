@@ -39,10 +39,11 @@ class CompareTool(Tool):
         return [QRectF(0, 0, 0.5, 1), QRectF(0.5, 0, 1, 1)]
 
     def onDrop(self, event, zoneIndex):
-        path = event.mimeData().urls()[0].toLocalFile()
         if zoneIndex == 0:
-            self._imgview.filelist.load(path)
+            paths = (url.toLocalFile() for url in event.mimeData().urls())
+            self._imgview.filelist.loadAll(paths)
         else:
+            path = event.mimeData().urls()[0].toLocalFile()
             self.loadCompareImage(path)
 
     def onGalleryRightClick(self, file):

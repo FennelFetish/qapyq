@@ -10,8 +10,8 @@ class ViewTool(Tool):
         return [QRectF(0, 0, 1, 1)]
     
     def onDrop(self, event, zoneIndex):
-        firstUrl = event.mimeData().urls()[0]
-        self._imgview.filelist.load(firstUrl.toLocalFile())
+        paths = (url.toLocalFile() for url in event.mimeData().urls())
+        self._imgview.filelist.loadAll(paths)
 
     def onKeyPress(self, event):
         match event.key():
