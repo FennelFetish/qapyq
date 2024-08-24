@@ -8,6 +8,7 @@ import qtlib
 
 class ImageIcon:
     Caption = "caption"
+    Crop = "crop"
 
 
 class Gallery(QtWidgets.QWidget):
@@ -17,14 +18,18 @@ class Gallery(QtWidgets.QWidget):
         self.filelist = tab.filelist
         self.fileItems = {}
 
+        self.icons = {
+            ImageIcon.Caption: QtGui.QPixmap("./res/icon_caption.png"),
+            ImageIcon.Crop: QtGui.QPixmap("./res/icon_crop.png")
+        }
+
         colorWhite = QtGui.QColor(230, 230, 230)
         colorGreen = QtGui.QColor(50, 180, 60)
         colorRed   = QtGui.QColor(250, 70, 30)
-        self.icons = {ImageIcon.Caption: QtGui.QPixmap("./res/icon_caption.png")}
         self.iconStates = {
-            DataKeys.CaptionStates.Exists: (QtGui.QPen(colorWhite), QtGui.QBrush(colorWhite)),
-            DataKeys.CaptionStates.Saved: (QtGui.QPen(colorGreen), QtGui.QBrush(colorGreen)),
-            DataKeys.CaptionStates.Changed: (QtGui.QPen(colorRed), QtGui.QBrush(colorRed)),
+            DataKeys.IconStates.Exists: (QtGui.QPen(colorWhite), QtGui.QBrush(colorWhite)),
+            DataKeys.IconStates.Saved: (QtGui.QPen(colorGreen), QtGui.QBrush(colorGreen)),
+            DataKeys.IconStates.Changed: (QtGui.QPen(colorRed), QtGui.QBrush(colorRed)),
         }
 
         self.columns = 4
@@ -204,6 +209,14 @@ class Gallery(QtWidgets.QWidget):
                 widget.removeIcon(ImageIcon.Caption)
             widget.update()
 
+        elif key == DataKeys().CropState:
+            widget = self.fileItems[file]
+            if cropState := self.filelist.getData(file, DataKeys.CropState):
+                widget.setIcon(ImageIcon.Crop, cropState)
+            else:
+                widget.removeIcon(ImageIcon.Crop)
+            widget.update()
+
 
 
 class GalleryItem(QtWidgets.QWidget):
@@ -224,16 +237,19 @@ class GalleryItem(QtWidgets.QWidget):
         self.setMinimumSize(100, 100)
 
         ThumbnailCache.updateThumbnail(self.gallery.filelist, self, file)
-        self._checkCaption(file)
+        self._checkIcons(file)
 
-    def _checkCaption(self, file):
+    def _checkIcons(self, file):
         if captionState := self.gallery.filelist.getData(file, DataKeys.CaptionState):
             self.setIcon(ImageIcon.Caption, captionState)
         else:
             filenameNoExt, ext = os.path.splitext(self.filename)
             captionFile = os.path.join(os.path.dirname(file), filenameNoExt + ".txt")
             if os.path.exists(captionFile):
-                self.setIcon(ImageIcon.Caption, DataKeys.CaptionStates.Exists)
+                self.setIcon(ImageIcon.Caption, DataKeys.IconStates.Exists)
+
+        if cropState := self.gallery.filelist.getData(file, DataKeys.CropState):
+            self.setIcon(ImageIcon.Crop, cropState)
 
     def setIcon(self, key, state):
         self.icons[key] = state
@@ -337,7 +353,7 @@ class GalleryItem(QtWidgets.QWidget):
         painter.save()
 
         sizeX, sizeY = 20, 20
-        for iconKey, iconState in self.icons.items():
+        for iconKey, iconState in sorted(self.icons.items(), key=lambda item: item[0]):
             pen, brush = self.gallery.iconStates[iconState]
             painter.setPen(pen)
             painter.setBrush(brush)

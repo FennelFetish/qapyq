@@ -75,7 +75,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.captionControl.setText(text)
 
         self.captionCache.put(text)
-        self.captionCache.setState(DataKeys.CaptionStates.Changed)
+        self.captionCache.setState(DataKeys.IconStates.Changed)
         self._setSaveButtonStyle(True)
 
     def getSelectedCaption(self):
@@ -166,7 +166,7 @@ class CaptionContainer(QtWidgets.QWidget):
             file.write(text)
 
         self.captionCache.remove()
-        self.captionCache.setState(DataKeys.CaptionStates.Saved)
+        self.captionCache.setState(DataKeys.IconStates.Saved)
         self._setSaveButtonStyle(False)
 
     @Slot()
@@ -175,7 +175,7 @@ class CaptionContainer(QtWidgets.QWidget):
             with open(self.captionFile) as file:
                 text = file.read()
                 self.setCaption(text)
-            self.captionCache.setState(DataKeys.CaptionStates.Exists)
+            self.captionCache.setState(DataKeys.IconStates.Exists)
         else:
             self.setCaption("")
             self.captionCache.setState(None)
@@ -189,7 +189,7 @@ class CaptionContainer(QtWidgets.QWidget):
         cachedCaption = self.captionCache.get()
         if cachedCaption:
             self.setCaption(cachedCaption)
-            self.captionCache.setState(DataKeys.CaptionStates.Changed)
+            self.captionCache.setState(DataKeys.IconStates.Changed)
         else:
             self.resetCaption()
 
@@ -232,7 +232,7 @@ class CaptionCache:
         file = self.filelist.getCurrentFile()
         self.filelist.removeData(file, DataKeys.Caption)
     
-    def setState(self, state: DataKeys.CaptionStates):
+    def setState(self, state: DataKeys.IconStates):
         file = self.filelist.getCurrentFile()
         if state:
             self.filelist.setData(file, DataKeys.CaptionState, state)

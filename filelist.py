@@ -5,9 +5,10 @@ import enum
 class DataKeys:
     Caption         = "caption"
     CaptionState    = "caption_state"
+    CropState       = "crop_state"
     Thumbnail       = "thumbnail"
 
-    class CaptionStates(enum.Enum):
+    class IconStates(enum.Enum):
         Exists  = "exists"
         Changed = "changed"
         Saved   = "saved"

@@ -6,7 +6,7 @@ from PySide6.QtGui import QBrush, QPen, QColor, QPainterPath, QPolygonF, QTransf
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem
 from .crop_toolbar import CropToolBar
 from .view import ViewTool
-
+from filelist import DataKeys
 
 
 def createPen(r, g, b):
@@ -179,6 +179,9 @@ class CropTool(ViewTool):
         params = self._toolbar.getSaveParams()
         cv.imwrite(path, matDest, params)
         print("Exported cropped image to", path)
+
+        filelist = self._imgview.filelist
+        filelist.setData(filelist.getCurrentFile(), DataKeys.CropState, DataKeys.IconStates.Saved)
 
     def onFileChanged(self, currentFile):
         self._toolbar.updateExport()
