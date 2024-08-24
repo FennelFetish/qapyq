@@ -1,4 +1,17 @@
 import os
+import enum
+
+
+class DataKeys:
+    Caption         = "caption"
+    CaptionState    = "caption_state"
+    Thumbnail       = "thumbnail"
+
+    class CaptionStates(enum.Enum):
+        Exists  = "exists"
+        Changed = "changed"
+        Saved   = "saved"
+
 
 VALID_EXTENSION = ['.jpg', '.jpeg', '.png', '.webp', '.bmp']
 

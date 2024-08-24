@@ -48,7 +48,7 @@ class FastScrollArea(QtWidgets.QScrollArea):
 
         row = gallery.getRowForY(scrollBar.value(), scrollDown)
         row += 1 if scrollDown else -1
-        y = gallery.getYforRow(row)
+        y = gallery.getYforRow(row, scrollDown)
         if y >= 0:
             scrollBar.setValue(y)
         

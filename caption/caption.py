@@ -5,23 +5,11 @@ from .caption_bubbles import CaptionBubbles
 import os
 import qtlib
 from .caption_filter import DuplicateCaptionFilter, BannedCaptionFilter, SortCaptionFilter, PrefixSuffixFilter, MutuallyExclusiveFilter
+from filelist import DataKeys
 
-
-# Tags as QLineEdit with handle, width is adjusted on text change
-# Drag&Drop reorder, visualize insertion position with |-element, freeze any other relayouting during drag&drop
-# Multiple rows of QHBoxLayout? FlowLayout? https://doc.qt.io/qt-6/qtwidgets-layouts-flowlayout-example.html
-
-# Nested text fields for expressions like: (blue (starry:0.8) sky:1.2)
-# Colored fields: red=high weight, blue=low weight
-# Navigate with arrow keys into adjacent tags (always navigate in text)
-# One handle per segment (comma until comma)
-
-
-# QTextDocument?        https://doc.qt.io/qt-6/qtextdocument.html
-# QSyntaxHighlighter?   https://doc.qt.io/qt-6/qsyntaxhighlighter.html
-
-
-# TODO: Show icon in gallery for changed but unsaved captions.
+# TODO:
+# - Nested text fields for expressions like: (blue (starry:0.8) sky:1.2)
+# - Navigate with arrow keys into adjacent tags (always navigate in text)
 
 class CaptionContainer(QtWidgets.QWidget):
     def __init__(self, tab):
@@ -87,7 +75,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.captionControl.setText(text)
 
         self.captionCache.put(text)
-        self.captionCache.setState("fail")
+        self.captionCache.setState(DataKeys.CaptionStates.Changed)
         self._setSaveButtonStyle(True)
 
     def getSelectedCaption(self):
@@ -178,7 +166,7 @@ class CaptionContainer(QtWidgets.QWidget):
             file.write(text)
 
         self.captionCache.remove()
-        self.captionCache.setState("pass")
+        self.captionCache.setState(DataKeys.CaptionStates.Saved)
         self._setSaveButtonStyle(False)
 
     @Slot()
@@ -187,7 +175,7 @@ class CaptionContainer(QtWidgets.QWidget):
             with open(self.captionFile) as file:
                 text = file.read()
                 self.setCaption(text)
-            self.captionCache.setState("white")
+            self.captionCache.setState(DataKeys.CaptionStates.Exists)
         else:
             self.setCaption("")
             self.captionCache.setState(None)
@@ -201,7 +189,7 @@ class CaptionContainer(QtWidgets.QWidget):
         cachedCaption = self.captionCache.get()
         if cachedCaption:
             self.setCaption(cachedCaption)
-            self.captionCache.setState("fail")
+            self.captionCache.setState(DataKeys.CaptionStates.Changed)
         else:
             self.resetCaption()
 
@@ -228,29 +216,26 @@ class CaptionContainer(QtWidgets.QWidget):
 
 
 class CaptionCache:
-    keyCaption = "caption"
-    keyState   = "caption_state"
-
     def __init__(self, captionControl):
         self.captionControl = captionControl
         self.filelist = captionControl.tab.filelist
     
     def get(self):
         file = self.filelist.getCurrentFile()
-        return self.filelist.getData(file, CaptionCache.keyCaption)
+        return self.filelist.getData(file, DataKeys.Caption)
 
     def put(self, text):
         file = self.filelist.getCurrentFile()
-        self.filelist.setData(file, CaptionCache.keyCaption, text)
+        self.filelist.setData(file, DataKeys.Caption, text)
 
     def remove(self):
         file = self.filelist.getCurrentFile()
-        self.filelist.removeData(file, CaptionCache.keyCaption)
+        self.filelist.removeData(file, DataKeys.Caption)
     
-    def setState(self, state):
+    def setState(self, state: DataKeys.CaptionStates):
         file = self.filelist.getCurrentFile()
         if state:
-            self.filelist.setData(file, CaptionCache.keyState, state)
+            self.filelist.setData(file, DataKeys.CaptionState, state)
         else:
-            self.filelist.removeData(file, CaptionCache.keyState)
+            self.filelist.removeData(file, DataKeys.CaptionState)
             

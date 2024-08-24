@@ -1,7 +1,13 @@
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, QSize, Slot, Signal, QThreadPool, QObject, QRunnable
 from .thumbnail_cache import ThumbnailCache
+from filelist import DataKeys
 import os
+import qtlib
+
+
+class ImageIcon:
+    Caption = "caption"
 
 
 class Gallery(QtWidgets.QWidget):
@@ -12,17 +18,16 @@ class Gallery(QtWidgets.QWidget):
         self.fileItems = {}
 
         colorWhite = QtGui.QColor(230, 230, 230)
-        colorPass = QtGui.QColor(50, 180, 60)
-        colorFail = QtGui.QColor(250, 70, 30)
-        self.icons = {"caption": QtGui.QPixmap("./res/icon_caption.png")}
+        colorGreen = QtGui.QColor(50, 180, 60)
+        colorRed   = QtGui.QColor(250, 70, 30)
+        self.icons = {ImageIcon.Caption: QtGui.QPixmap("./res/icon_caption.png")}
         self.iconStates = {
-            "white": (QtGui.QPen(colorWhite), QtGui.QBrush(colorWhite)),
-            "pass": (QtGui.QPen(colorPass), QtGui.QBrush(colorPass)),
-            "fail": (QtGui.QPen(colorFail), QtGui.QBrush(colorFail)),
+            DataKeys.CaptionStates.Exists: (QtGui.QPen(colorWhite), QtGui.QBrush(colorWhite)),
+            DataKeys.CaptionStates.Saved: (QtGui.QPen(colorGreen), QtGui.QBrush(colorGreen)),
+            DataKeys.CaptionStates.Changed: (QtGui.QPen(colorRed), QtGui.QBrush(colorRed)),
         }
 
         self.columns = 4
-        self.itemCount = 0
 
         self._selectedItem = None
         self._selectedCompare = None
@@ -36,17 +41,29 @@ class Gallery(QtWidgets.QWidget):
 
     def reloadImages(self):
         self.clearLayout()
+        currentDir = ""
+
+        row, col = 0, 0
         for file in self.filelist.getFiles():
-            self.addImage(file)
+            if (dirname := os.path.dirname(file)) != currentDir:
+                if col > 0:
+                    row += 1
+                    col = 0
+                currentDir = dirname
+                self.addHeader(dirname, row)
+                row += 1
+
+            self.addImage(file, row, col)
+            col += 1
+            if col >= self.columns:
+                col = 0
+                row += 1
     
-    def addImage(self, file):
+    def addImage(self, file, row, col):
         galleryItem = GalleryItem(self, file)
         self.fileItems[file] = galleryItem
 
-        row = self.itemCount // self.columns
-        col = self.itemCount % self.columns
         self.layout().addWidget(galleryItem, row, col, Qt.AlignTop)
-        self.itemCount += 1
 
         if self.filelist.getCurrentFile() == file:
             self._selectedItem = galleryItem
@@ -56,6 +73,16 @@ class Gallery(QtWidgets.QWidget):
             if compareTool.compareFile == file:
                 self._selectedCompare = galleryItem
                 galleryItem.setCompare(True)
+
+    def addHeader(self, text, row):
+        label = QtWidgets.QLabel(text)
+        qtlib.setMonospace(label, 1.2, bold=True)
+        label.setContentsMargins(4, 4, 4, 4)
+
+        palette = QtWidgets.QApplication.palette()
+        colorFg = palette.color(QtGui.QPalette.ColorRole.BrightText).name()
+        label.setStyleSheet(f"color: {colorFg}; background-color: #161616")
+        self.layout().addWidget(label, row, 0, 1, self.columns)
 
     def clearLayout(self):
         layout = self.layout()
@@ -67,9 +94,9 @@ class Gallery(QtWidgets.QWidget):
             else:
                 item.spacerItem().deleteLater()
         
-        self.fileItems = {}
-        self.itemCount = 0
+        self.fileItems.clear()
         self._selectedItem = None
+        self._selectedCompare = None
 
     def setSelectedItem(self, item, updateFileList=False):
         if self._selectedItem:
@@ -105,11 +132,20 @@ class Gallery(QtWidgets.QWidget):
         for i in reversed(range(layout.count())):
             items.append(layout.takeAt(i))
 
-        for i, item in enumerate(reversed(items)):
-            row = i // cols
-            col = i % cols
-            #layout.addItem(item, row, col)
-            layout.addWidget(item.widget(), row, col, Qt.AlignTop)
+        row, col = 0, 0
+        for widget in (item.widget() for item in reversed(items)):
+            if isinstance(widget, GalleryItem):
+                layout.addWidget(widget, row, col, Qt.AlignTop)
+                col += 1
+                if col >= cols:
+                    row += 1
+                    col = 0
+            else:
+                if col > 0:
+                    row += 1
+                    col = 0
+                layout.addWidget(widget, row, 0, 1, cols)
+                row += 1
         
         layout.update()
 
@@ -125,12 +161,22 @@ class Gallery(QtWidgets.QWidget):
                 break
         return row
 
-    def getYforRow(self, row):
+    def getYforRow(self, row, skipDownwards=False):
         layout = self.layout()
         rect = layout.cellRect(row, 0)
         if not rect.isValid():
             return -1
 
+        # Check for header above current row
+        rectAbove = layout.cellRect(row-1, 0)
+        if rectAbove.height() < 100 and rectAbove.isValid():
+            if skipDownwards:
+                row += 1
+                rect = layout.cellRect(row, 0)
+            else:
+                row -= 1
+                rect = rectAbove
+        
         y = rect.top()
         for col in range(1, self.columns):
             if (rect := layout.cellRect(row, col)).isValid():
@@ -150,12 +196,12 @@ class Gallery(QtWidgets.QWidget):
         if file not in self.fileItems:
             return
         
-        if key == "caption_state":
+        if key == DataKeys.CaptionState:
             widget = self.fileItems[file]
-            if captionState := self.filelist.getData(file, "caption_state"):
-                widget.setIcon("caption", captionState)
+            if captionState := self.filelist.getData(file, DataKeys.CaptionState):
+                widget.setIcon(ImageIcon.Caption, captionState)
             else:
-                widget.removeIcon("caption")
+                widget.removeIcon(ImageIcon.Caption)
             widget.update()
 
 
@@ -177,17 +223,17 @@ class GalleryItem(QtWidgets.QWidget):
         self._height = 100
         self.setMinimumSize(100, 100)
 
-        ThumbnailCache.updateThumbnail(self, file)
+        ThumbnailCache.updateThumbnail(self.gallery.filelist, self, file)
         self._checkCaption(file)
 
     def _checkCaption(self, file):
-        if captionState := self.gallery.filelist.getData(file, "caption_state"):
-            self.setIcon("caption", captionState)
+        if captionState := self.gallery.filelist.getData(file, DataKeys.CaptionState):
+            self.setIcon(ImageIcon.Caption, captionState)
         else:
             filenameNoExt, ext = os.path.splitext(self.filename)
             captionFile = os.path.join(os.path.dirname(file), filenameNoExt + ".txt")
             if os.path.exists(captionFile):
-                self.setIcon("caption", "white")
+                self.setIcon(ImageIcon.Caption, DataKeys.CaptionStates.Exists)
 
     def setIcon(self, key, state):
         self.icons[key] = state
