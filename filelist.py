@@ -36,7 +36,7 @@ class FileList:
             elif any(path.lower().endswith(ext) for ext in VALID_EXTENSION):
                 self.files.append(path)
 
-        self.files.sort()
+        self._sortFiles()
         numFiles = len(self.files)
         self.currentFile = self.files[0] if numFiles > 0 else ""
         self.currentIndex = 0 if numFiles > 1 else -1
@@ -140,13 +140,17 @@ class FileList:
         self.files = []
         self.fileData = dict()
         self._walkPath(path, subfolders)
-        self.files.sort()
+        self._sortFiles()
 
     def _walkPath(self, path, subfolders=False):
         for (root, dirs, files) in os.walk(path, topdown=True, followlinks=True):
             if not subfolders:
                 dirs[:] = []
             self.files += [os.path.join(root, f) for f in files if any(f.lower().endswith(ext) for ext in VALID_EXTENSION)]
+
+    def _sortFiles(self):
+        self.files.sort(key=lambda path: os.path.split(path))
+
 
     def addListener(self, listener):
         self.listeners.append(listener)
