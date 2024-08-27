@@ -152,6 +152,10 @@ class ClipImgItem(ImgItem):
         self.clipPath.clear()
         self.clipPath.addRect(x, 0, w-x, h)
         self.update()
+    
+    def setClipEmpty(self):
+        self.clipPath.clear()
+        self.update()
 
     def shape(self) -> QPainterPath:
         return self.clipPath

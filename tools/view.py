@@ -13,6 +13,16 @@ class ViewTool(Tool):
         paths = (url.toLocalFile() for url in event.mimeData().urls())
         self._imgview.filelist.loadAll(paths)
 
+    def onMousePress(self, event) -> bool:
+        match event.button():
+            case Qt.BackButton:
+                self._imgview.filelist.setPrevFile()
+                return True
+            case Qt.ForwardButton:
+                self._imgview.filelist.setNextFile()
+                return True
+        return False
+
     def onKeyPress(self, event):
         match event.key():
             case Qt.Key_Left:

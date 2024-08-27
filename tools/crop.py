@@ -239,9 +239,9 @@ class CropTool(ViewTool):
 
     def onMousePress(self, event) -> bool:
         if event.button() != self.BUTTON_CROP:
-            return False
+            return super().onMousePress(event)
         if (event.modifiers() & Qt.ControlModifier) == Qt.ControlModifier:
-            return False
+            return super().onMousePress(event)
 
         rect = self._cropRect.rect().toRect()
         rect.setRect(rect.x(), rect.y(), max(1, rect.width()), max(1, rect.height()))

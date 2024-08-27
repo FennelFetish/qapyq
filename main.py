@@ -275,8 +275,7 @@ class ImgTab(QtWidgets.QMainWindow):
 
 
 
-
-if __name__ == "__main__":
+def main() -> int:
     app = QtWidgets.QApplication([])
 
     screenSize = app.primaryScreen().size()
@@ -293,4 +292,7 @@ if __name__ == "__main__":
     #     tab = win.tabWidget.currentWidget()
     #     tab.filelist.load("/home/rem/Pictures/red-tree-with-eyes.jpeg")
 
-    sys.exit(app.exec())
+    return app.exec()
+
+if __name__ == "__main__":
+    sys.exit( main() )

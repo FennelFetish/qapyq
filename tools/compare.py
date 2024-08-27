@@ -1,11 +1,11 @@
-from PySide6.QtCore import QRectF
+from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPen
 from PySide6.QtWidgets import QGraphicsLineItem
 from imgview import ClipImgItem
-from .tool import Tool
+from .view import ViewTool
 
 
-class CompareTool(Tool):
+class CompareTool(ViewTool):
     def __init__(self):
         super().__init__()
         self._image = ClipImgItem()
@@ -68,5 +68,5 @@ class CompareTool(Tool):
         self._dividerLine.setLine(x, 0, x, h)
 
     def onMouseLeave(self, event):
-        self._image.setClipWidth(0)
+        self._image.setClipEmpty()
         self._dividerLine.setVisible(False)
