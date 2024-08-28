@@ -1,12 +1,15 @@
 import cv2 as cv
 import numpy as np
 from PySide6 import QtWidgets
-from PySide6.QtCore import QBuffer, QPointF, QRect, QRectF, Qt
+from PySide6.QtCore import QBuffer, QPointF, QRect, QRectF, Qt, QTimer
 from PySide6.QtGui import QBrush, QPen, QColor, QPainterPath, QPolygonF, QTransform
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem
 from .crop_toolbar import CropToolBar
 from .view import ViewTool
 from filelist import DataKeys
+
+
+# TODO: Upscale using model (whole image upscaled before crop so selected area matches target size? or upscale cropped region only?)
 
 
 def createPen(r, g, b):
@@ -36,6 +39,9 @@ class CropTool(ViewTool):
         self._cropRect = QGraphicsRectItem(-50, -50, 100, 100)
         self._cropRect.setPen(self.PEN_UPSCALE)
         self._cropRect.setVisible(False)
+
+        self._confirmRect = ConfirmRect(tab.imgview.scene())
+        self._confirmRect.setVisible(False)
 
         self._mask = MaskRect()
         self._mask.setBrush( QBrush(QColor(0, 0, 0, 100)) )
@@ -184,7 +190,7 @@ class CropTool(ViewTool):
         path = self.getExportPath()
         self._export.createFolders(path)
         params = self._toolbar.getSaveParams()
-        cv.imwrite(path, matDest, params)
+        cv.imwrite(path, matDest, params) # TODO: Write in separate thread
         print("Exported cropped image to", path)
         self.tab.statusBar().showColoredMessage("Exported cropped image to: " + path, success=True)
 
@@ -204,6 +210,7 @@ class CropTool(ViewTool):
         self._mask.setRect(self._imgview.viewport().rect())
         imgview._guiScene.addItem(self._mask)
         imgview._guiScene.addItem(self._cropRect)
+        imgview._guiScene.addItem(self._confirmRect)
 
         imgview.rotation = self._toolbar.slideRot.value() / 10
         imgview.updateImageTransform()
@@ -215,6 +222,7 @@ class CropTool(ViewTool):
         super().onDisabled(imgview)
         imgview._guiScene.removeItem(self._mask)
         imgview._guiScene.removeItem(self._cropRect)
+        imgview._guiScene.removeItem(self._confirmRect)
 
         imgview.rotation = 0.0
         imgview.updateImageTransform()
@@ -260,9 +268,15 @@ class CropTool(ViewTool):
             if self._waitForConfirmation:
                 rect = self._cropRect.rect().toRect()
                 rect.setRect(rect.x(), rect.y(), max(1, rect.width()), max(1, rect.height()))
-                poly = self._imgview.mapToScene(rect)
-                poly = self._imgview.image.mapFromParent(poly)
-                self.exportImage(poly)
+
+                # Save if mouse click is inside selection rectangle
+                if rect.contains(event.position().toPoint()):
+                    poly = self._imgview.mapToScene(rect)
+                    poly = self._imgview.image.mapFromParent(poly)
+                    self.exportImage(poly)
+
+                    self._confirmRect.setRect(rect)
+                    self._confirmRect.startAnim()
 
                 self._waitForConfirmation = False
                 self.updateSelection(event.position())
@@ -306,3 +320,40 @@ class MaskRect(QGraphicsRectItem):
 
     def shape(self) -> QPainterPath:
         return self.clipPath
+
+
+
+class ConfirmRect(QGraphicsRectItem):
+    ALPHA = 100
+
+    def __init__(self, scene):
+        super().__init__(None)
+        self._scene = scene
+        self.alpha = ConfirmRect.ALPHA
+
+        self.color = QColor(60, 255, 60, self.alpha)
+        self.brush = QBrush(self.color)
+        self.setBrush(self.brush)
+        self.setPen(QPen(QColor(0, 0, 0, 0)))
+        
+        self.timer = QTimer()
+        self.timer.setInterval(40)
+        self.timer.timeout.connect(self.anim)
+
+    def startAnim(self):
+        self.alpha = ConfirmRect.ALPHA
+        self.setVisible(True)
+        self.timer.start()
+
+    def anim(self):
+        if self.alpha <= 0:
+            self.timer.stop()
+            self.setVisible(False)
+            return
+
+        self.color.setAlpha(self.alpha)
+        self.brush.setColor(self.color)
+        self.setBrush(self.brush)
+        self._scene.update()
+
+        self.alpha = max(0, self.alpha-7)
