@@ -8,6 +8,7 @@ from export import Export
 from filelist import FileList
 from gallery import Gallery, GalleryWindow
 from imgview import ImgView
+import qtlib
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -33,14 +34,12 @@ class MainWindow(QtWidgets.QMainWindow):
         #self.setWindowState(self.windowState() ^ Qt.WindowFullScreen)
 
     def buildTabs(self):
-        btnAddTab = QtWidgets.QPushButton("Add Tab")
-        btnAddTab.clicked.connect(self.addTab)
-
         self.tabWidget = QtWidgets.QTabWidget(self)
         self.tabWidget.setDocumentMode(True) # Removes border
+        self.tabWidget.setTabBarAutoHide(True)
         self.tabWidget.setTabsClosable(True)
+        self.tabWidget.setMovable(True)
         self.tabWidget.setElideMode(Qt.ElideMiddle)
-        self.tabWidget.setCornerWidget(btnAddTab)
         self.tabWidget.currentChanged.connect(self.onTabChanged)
         self.tabWidget.tabCloseRequested.connect(self.closeTab)
         self.setCentralWidget(self.tabWidget)
@@ -140,18 +139,7 @@ class MainToolBar(QtWidgets.QToolBar):
         self.mainWindow = mainWindow
         self.setFloatable(False)
 
-        self.actViewTool = self.addAction("View")
-        self.actViewTool.setCheckable(True)
-        self.actViewTool.triggered.connect(lambda: mainWindow.setTool("view"))
-
-        self.actCompareTool = self.addAction("Compare")
-        self.actCompareTool.setCheckable(True)
-        self.actCompareTool.triggered.connect(lambda: mainWindow.setTool("compare"))
-
-        self.actCropTool = self.addAction("Crop")
-        self.actCropTool.setCheckable(True)
-        self.actCropTool.triggered.connect(lambda: mainWindow.setTool("crop"))
-
+        self.buildToolButtons(mainWindow)
         self.setTool("view")
         self.addSeparator()
 
@@ -163,22 +151,35 @@ class MainToolBar(QtWidgets.QToolBar):
         self.actToggleCaption.setCheckable(True)
         self.actToggleCaption.triggered.connect(mainWindow.toggleCaptionWindow)
 
+        self.addWidget(qtlib.SpacerWidget())
+
+        actAddTab = self.addAction("Add Tab")
+        actAddTab.triggered.connect(mainWindow.addTab)
+
         winColor = QtWidgets.QApplication.palette().color(QtGui.QPalette.ColorRole.Window)
         colorBg = winColor.lighter().name()
         colorBorder = winColor.darker().name()
-        self.setStyleSheet("QToolBar::separator {background-color: " + colorBg + "; border: 1px dotted " + colorBorder + "; height: 1px; width: 1px;}")
+        self.setStyleSheet("QToolBar{border:0px;} ::separator{background-color: " + colorBg + "; border: 1px dotted " + colorBorder + "; height: 1px; width: 1px;}")
+
+    def buildToolButtons(self, mainWindow):
+        self._toolActions = {
+            "view":     self.addAction("View"),
+            "measure":  self.addAction("Measure"),
+            "compare":  self.addAction("Compare"),
+            "crop":     self.addAction("Crop"),
+            "mask":     self.addAction("Mask")
+        }
+
+        for name, act in self._toolActions.items():
+            act.setCheckable(True)
+            act.triggered.connect(lambda act=act, name=name: mainWindow.setTool(name)) # Capture correct vars
 
     def setTool(self, toolName):
-        self.actViewTool.setChecked(False)
-        self.actCompareTool.setChecked(False)
-        self.actCropTool.setChecked(False)
+        for act in self._toolActions.values():
+            act.setChecked(False)
 
-        if toolName == "view":
-                self.actViewTool.setChecked(True)
-        elif toolName == "compare":
-                self.actCompareTool.setChecked(True)
-        elif toolName == "crop":
-                self.actCropTool.setChecked(True)
+        if toolName in self._toolActions:
+            self._toolActions[toolName].setChecked(True)
 
 
 class ImgTab(QtWidgets.QMainWindow):
@@ -235,12 +236,20 @@ class ImgTab(QtWidgets.QMainWindow):
         if toolName == "view":
                 from tools import ViewTool
                 return ViewTool(self)
+        elif toolName == "measure":
+                from tools import MeasureTool
+                return MeasureTool(self)
         elif toolName == "compare":
                 from tools import CompareTool
                 return CompareTool(self)
         elif toolName == "crop":
                 from tools import CropTool
                 return CropTool(self)
+        elif toolName == "mask":
+                from tools import MaskTool
+                return MaskTool(self)
+        
+        print("Invalid tool:", toolName)
         return None
 
     def getTool(self, toolName: str):
@@ -283,19 +292,16 @@ class TabStatusBar(QtWidgets.QStatusBar):
     def __init__(self, tab):
         super().__init__()
         self.tab = tab
-
         self.setSizeGripEnabled(False)
-        #self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        self.setContentsMargins(6, 0, 6, 0)
 
         self._lblMouseCoords = QtWidgets.QLabel()
         self._lblMouseCoords.setFixedWidth(100)
         self.addPermanentWidget(self._lblMouseCoords)
 
         self._lblImgSize = QtWidgets.QLabel()
-        self._lblImgSize.setContentsMargins(0, 0, 12, 0)
         self.addPermanentWidget(self._lblImgSize)
 
-        self.setContentsMargins(6, 0, 6, 0)
         self.updateStyleSheet()
 
     def setImageSize(self, width, height):

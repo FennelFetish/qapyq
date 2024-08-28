@@ -359,6 +359,14 @@ class ReorderWidget(QtWidgets.QWidget):
 
 
 
+class SpacerWidget(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        policy = QtWidgets.QSizePolicy.Expanding
+        self.setSizePolicy(policy, policy)
+
+
+
 class TestWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
