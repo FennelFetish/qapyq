@@ -6,8 +6,8 @@ from .view import ViewTool
 
 
 class CompareTool(ViewTool):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, tab):
+        super().__init__(tab)
         self._image = ClipImgItem()
         self.compareFile = ""
 
@@ -59,6 +59,7 @@ class CompareTool(ViewTool):
             self._dividerLine.setVisible(True)
 
     def onMouseMove(self, event):
+        super().onMouseMove(event)
         imgpos = self._imgview.mapToScene(event.position().toPoint())
         imgpos = self._image.mapFromParent(imgpos)
         self._image.setClipWidth(imgpos.x())

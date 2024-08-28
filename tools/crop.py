@@ -20,11 +20,12 @@ class CropTool(ViewTool):
     PEN_UPSCALE   = createPen(255, 0, 0)
 
     BUTTON_CROP   = Qt.LeftButton
+    BUTTON_ABORT  = Qt.RightButton
 
 
-    def __init__(self, export):
-        super().__init__()
-        self._export = export
+    def __init__(self, tab):
+        super().__init__(tab)
+        self._export = tab.export
 
         self._targetWidth = 512
         self._targetHeight = 512
@@ -38,6 +39,7 @@ class CropTool(ViewTool):
 
         self._mask = MaskRect()
         self._mask.setBrush( QBrush(QColor(0, 0, 0, 100)) )
+        self._waitForConfirmation = False
 
         self._toolbar = CropToolBar(self)
 
@@ -123,6 +125,11 @@ class CropTool(ViewTool):
         self._imgview.scene().update()
         self._toolbar.setSelectionSize(self._cropHeight * self._cropAspectRatio, self._cropHeight)
 
+    def setSelectionVisible(self, visible: bool):
+        self._cropRect.setVisible(visible)
+        self._mask.setVisible(visible)
+        self._imgview.scene().update()
+
     def toCvMat(self, pixmap):
         buffer = QBuffer()
         buffer.open(QBuffer.ReadWrite)
@@ -179,6 +186,7 @@ class CropTool(ViewTool):
         params = self._toolbar.getSaveParams()
         cv.imwrite(path, matDest, params)
         print("Exported cropped image to", path)
+        self.tab.statusBar().showColoredMessage("Exported cropped image to: " + path, success=True)
 
         filelist = self._imgview.filelist
         filelist.setData(filelist.getCurrentFile(), DataKeys.CropState, DataKeys.IconStates.Saved)
@@ -215,6 +223,9 @@ class CropTool(ViewTool):
 
 
     def onSceneUpdate(self):
+        super().onSceneUpdate()
+        self._waitForConfirmation = False
+        self.setSelectionVisible(False)
         self.updateSelection(self._cropRect.rect().center())
 
     def onResetView(self):
@@ -225,35 +236,55 @@ class CropTool(ViewTool):
 
 
     def onMouseEnter(self, event):
-        self._cropRect.setVisible(True)
-        self._mask.setVisible(True)
+        self.setSelectionVisible(True)
 
     def onMouseMove(self, event):
-        self.updateSelection(event.position())
+        super().onMouseMove(event)
+        if not self._mask.isVisible():
+            self.setSelectionVisible(True)
+        if not self._waitForConfirmation:
+            self.updateSelection(event.position())
 
     def onMouseLeave(self, event):
-        self._cropRect.setVisible(False)
-        self._mask.setVisible(False)
-        self._imgview.scene().update()
+        if not self._waitForConfirmation:
+            self.setSelectionVisible(False)
 
 
     def onMousePress(self, event) -> bool:
-        if event.button() != self.BUTTON_CROP:
-            return super().onMousePress(event)
+        # CTRL pressed -> Use default controls (pan)
         if (event.modifiers() & Qt.ControlModifier) == Qt.ControlModifier:
             return super().onMousePress(event)
+        
+        button = event.button()
+        if button == self.BUTTON_CROP:
+            if self._waitForConfirmation:
+                rect = self._cropRect.rect().toRect()
+                rect.setRect(rect.x(), rect.y(), max(1, rect.width()), max(1, rect.height()))
+                poly = self._imgview.mapToScene(rect)
+                poly = self._imgview.image.mapFromParent(poly)
+                self.exportImage(poly)
 
-        rect = self._cropRect.rect().toRect()
-        rect.setRect(rect.x(), rect.y(), max(1, rect.width()), max(1, rect.height()))
-        poly = self._imgview.mapToScene(rect)
-        poly = self._imgview.image.mapFromParent(poly)
-        self.exportImage(poly)
-        return True
+                self._waitForConfirmation = False
+                self.updateSelection(event.position())
+            else:
+                self._waitForConfirmation = True
+            return True
+        
+        elif button == self.BUTTON_ABORT:
+            self._waitForConfirmation = False
+            self.updateSelection(event.position())
+            return True
+
+        return super().onMousePress(event)
 
 
     def onMouseWheel(self, event) -> bool:
+        # CTRL pressed -> Use default controls (zoom)
         if (event.modifiers() & Qt.ControlModifier) == Qt.ControlModifier:
             return False
+        
+        if self._waitForConfirmation:
+            return True
         
         change = self._imgview.image.pixmap().height() * 0.03
         if (event.modifiers() & Qt.ShiftModifier) == Qt.ShiftModifier:

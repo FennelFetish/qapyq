@@ -3,8 +3,8 @@ from imgview import ImgView
 
 
 class Tool:
-    def __init__(self):
-        pass
+    def __init__(self, tab):
+        self.tab = tab
 
     def getToolbar(self):
         return None

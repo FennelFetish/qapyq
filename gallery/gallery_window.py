@@ -32,6 +32,9 @@ class GalleryWindow(AuxiliaryWindow):
         self.gallery.reloadImages() # Slot onHeadersUpdated() needs access to cboFolders and scrollArea
         self.scrollArea.setWidget(self.gallery)
 
+        # statusBar = QtWidgets.QStatusBar()
+        # self.setStatusBar(statusBar)
+
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.cboFolders)
         layout.addWidget(self.scrollArea)
@@ -39,6 +42,11 @@ class GalleryWindow(AuxiliaryWindow):
         widget = QtWidgets.QWidget()
         widget.setLayout(layout)
         return widget
+
+    def updateStatusBar(self, numFolders):
+        numFiles = self.gallery.filelist.getNumFiles()
+        statusBar = self.statusBar()
+        statusBar.showMessage(f"{numFiles} Images in {numFolders} Folders")
 
     def teardownContent(self, content):
         self.gallery.filelist.removeListener(self.gallery)
@@ -62,7 +70,10 @@ class GalleryWindow(AuxiliaryWindow):
                 self.rowToHeader[row] = i
         finally:
             self.cboFolders.blockSignals(False)
+        
         self.onScrolled(self.scrollArea.verticalScrollBar().value())
+        self.updateStatusBar(len(headers))
+        
     
     @Slot()
     def onFolderSelected(self, index):

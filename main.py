@@ -17,7 +17,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.galleryWindow = None
         self.captionWindow = None
 
-        self.setWindowTitle("Caption Crunch")
+        self.setWindowTitle("pyImgSet")
         self.setAttribute(Qt.WA_QuitOnClose)
 
         self.toolbar = MainToolBar(self)
@@ -72,11 +72,12 @@ class MainWindow(QtWidgets.QMainWindow):
     @Slot()
     def onTabChanged(self, index):
         tab = self.tabWidget.currentWidget()
-        self.toolbar.setTool(tab.toolName)
         if self.galleryWindow:
             self.galleryWindow.setTab(tab)
         if self.captionWindow:
             self.captionWindow.setTab(tab)
+
+        self.toolbar.setTool(tab.toolName if tab else None)
         
     
     @Slot()
@@ -187,6 +188,8 @@ class ImgTab(QtWidgets.QMainWindow):
         self._index = -1 # Store index when fullscreen
         self.setWindowTitle("PyImgSet Tab")
 
+        self.setStatusBar(TabStatusBar(self))
+
         self.filelist = FileList()
         self.filelist.addListener(self)
 
@@ -231,13 +234,13 @@ class ImgTab(QtWidgets.QMainWindow):
     def createTool(self, toolName: str):
         if toolName == "view":
                 from tools import ViewTool
-                return ViewTool()
+                return ViewTool(self)
         elif toolName == "compare":
                 from tools import CompareTool
-                return CompareTool()
+                return CompareTool(self)
         elif toolName == "crop":
                 from tools import CropTool
-                return CropTool(self.export)
+                return CropTool(self)
         return None
 
     def getTool(self, toolName: str):
@@ -273,6 +276,50 @@ class ImgTab(QtWidgets.QMainWindow):
         if event.key() == Qt.Key_F:
             self.toggleFullscreen()
 
+
+
+
+class TabStatusBar(QtWidgets.QStatusBar):
+    def __init__(self, tab):
+        super().__init__()
+        self.tab = tab
+
+        self.setSizeGripEnabled(False)
+        #self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+
+        self._lblMouseCoords = QtWidgets.QLabel()
+        self._lblMouseCoords.setFixedWidth(100)
+        self.addPermanentWidget(self._lblMouseCoords)
+
+        self._lblImgSize = QtWidgets.QLabel()
+        self._lblImgSize.setContentsMargins(0, 0, 12, 0)
+        self.addPermanentWidget(self._lblImgSize)
+
+        self.setContentsMargins(6, 0, 6, 0)
+        self.updateStyleSheet()
+
+    def setImageSize(self, width, height):
+        self._lblImgSize.setText(f"W: {width}  H: {height}")
+
+    def setMouseCoords(self, x, y):
+        self._lblMouseCoords.setText(f"X: {x}  Y: {y}")
+
+    def showMessage(self, text, timeout=0):
+        self.updateStyleSheet()
+        super().showMessage(text, timeout)
+
+    def showColoredMessage(self, text, success=True, timeout=4000):
+        if success:
+            self.updateStyleSheet("#00ff00")
+        else:
+            self.updateStyleSheet("#ff0000")
+        super().showMessage(text, timeout)
+
+    def updateStyleSheet(self, color=None):
+        colorStr = f"color: {color}" if color else ""
+        self.setStyleSheet("QStatusBar{border-top: 1px outset black;" + colorStr + "}")
+
+        
 
 
 def main() -> int:

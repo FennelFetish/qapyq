@@ -62,6 +62,9 @@ class FileList:
         self.notifyListChanged()
 
 
+    def getNumFiles(self):
+        return len(self.files)
+
     def getFiles(self):
         self._lazyLoadFolder()
         return self.files

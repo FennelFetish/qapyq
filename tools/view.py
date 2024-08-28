@@ -3,8 +3,12 @@ from .tool import Tool
 
 
 class ViewTool(Tool):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, tab):
+        super().__init__(tab)
+
+    def onSceneUpdate(self):
+        imgSize = self._imgview.image.pixmap().size()
+        self.tab.statusBar().setImageSize(imgSize.width(), imgSize.height())
 
     def getDropRects(self):
         return [QRectF(0, 0, 1, 1)]
@@ -33,3 +37,9 @@ class ViewTool(Tool):
                 self._imgview.filelist.setNextFolder()
             case Qt.Key_Down:
                 self._imgview.filelist.setPrevFolder()
+
+    def onMouseMove(self, event):
+        imgpos = self._imgview.mapToScene(event.position().toPoint())
+        imgpos = self._imgview.image.mapFromParent(imgpos)
+        x, y = int(imgpos.x()), int(imgpos.y())
+        self.tab.statusBar().setMouseCoords(x, y)
