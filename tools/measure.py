@@ -47,6 +47,14 @@ class MeasureTool(ViewTool):
         qtlib.setMonospace(self._text, 1.5, True)
         self._text.setVisible(False)
 
+        crosshairPen = QtGui.QPen(QtGui.QColor(180, 180, 180, 180))
+        crosshairPen.setStyle(Qt.DashLine)
+        crosshairPen.setDashPattern([3,6])
+        self._crosshairH = QtWidgets.QGraphicsLineItem()
+        self._crosshairH.setPen(crosshairPen)
+        self._crosshairV = QtWidgets.QGraphicsLineItem()
+        self._crosshairV.setPen(crosshairPen)
+
 
     def updateLine(self):
         startPoint = self.imgToView(self._startPoint)
@@ -87,6 +95,11 @@ class MeasureTool(ViewTool):
     def updateEndPoint(self, cursorPos: QPointF):
         if not self._frozen:
             self._endPoint = self.viewToImg(cursorPos.toPoint())
+
+        rect = self._imgview.rect()
+        self._crosshairH.setLine(0, cursorPos.y(), rect.width(), cursorPos.y())
+        self._crosshairV.setLine(cursorPos.x(), 0, cursorPos.x(), rect.height())
+
         self.updateLine()
 
     def viewToImg(self, point: QPoint) -> QPointF:
@@ -114,12 +127,16 @@ class MeasureTool(ViewTool):
         imgview._guiScene.addItem(self._line)
         imgview._guiScene.addItem(self._rect)
         imgview._guiScene.addItem(self._text)
+        imgview._guiScene.addItem(self._crosshairH)
+        imgview._guiScene.addItem(self._crosshairV)
 
     def onDisabled(self, imgview):
         super().onDisabled(imgview)
         imgview._guiScene.removeItem(self._line)
         imgview._guiScene.removeItem(self._rect)
         imgview._guiScene.removeItem(self._text)
+        imgview._guiScene.removeItem(self._crosshairH)
+        imgview._guiScene.removeItem(self._crosshairV)
 
     def onSceneUpdate(self):
         super().onSceneUpdate()
@@ -149,3 +166,13 @@ class MeasureTool(ViewTool):
     def onMouseWheel(self, event):
         self.updateEndPoint(event.position())
         return super().onMouseWheel(event)
+
+    def onMouseEnter(self, event):
+        self._crosshairH.setVisible(True)
+        self._crosshairV.setVisible(True)
+        self._imgview.scene().update()
+
+    def onMouseLeave(self, event):
+        self._crosshairH.setVisible(False)
+        self._crosshairV.setVisible(False)
+        self._imgview.scene().update()
