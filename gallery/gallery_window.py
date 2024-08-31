@@ -13,6 +13,13 @@ class GalleryWindow(AuxiliaryWindow):
         self.gallery = None
         self.rowToHeader = dict()
 
+        self.chkFollowSelection = QtWidgets.QCheckBox("Follow Selection")
+        self.chkFollowSelection.setChecked(True)
+
+        statusBar = QtWidgets.QStatusBar()
+        statusBar.addPermanentWidget(self.chkFollowSelection)
+        self.setStatusBar(statusBar)
+
     def setupContent(self, tab) -> object:
         self.cboFolders = QtWidgets.QComboBox()
         self.cboFolders.currentIndexChanged.connect(self.onFolderSelected)
@@ -22,7 +29,7 @@ class GalleryWindow(AuxiliaryWindow):
         self.scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scrollArea.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.scrollArea.setWidgetResizable(True)
-        self.scrollArea.verticalScrollBar().valueChanged.connect(self.onScrolled)
+        self.scrollArea.verticalScrollBar().valueChanged.connect(self.updateComboboxFolder)
 
         self.gallery = Gallery(tab)
         self.gallery.filelist.addListener(self.gallery)
@@ -30,10 +37,9 @@ class GalleryWindow(AuxiliaryWindow):
         self.gallery.adjustGrid(self.width()-40) # Adjust grid before connecting slot onHeadersUpdated()
         self.gallery.headersUpdated.connect(self.onHeadersUpdated)
         self.gallery.reloadImages() # Slot onHeadersUpdated() needs access to cboFolders and scrollArea
+        self.gallery.reloaded.connect(self.scrollTop)
+        self.gallery.fileChanged.connect(self.ensureVisible)
         self.scrollArea.setWidget(self.gallery)
-
-        # statusBar = QtWidgets.QStatusBar()
-        # self.setStatusBar(statusBar)
 
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.cboFolders)
@@ -56,6 +62,7 @@ class GalleryWindow(AuxiliaryWindow):
 
     def resizeEvent(self, event):
         if self.gallery:
+            #self.gallery.setMaximumWidth(event.size().width())
             self.gallery.adjustGrid(event.size().width()-40)
         #super().resizeEvent(event)
 
@@ -71,7 +78,7 @@ class GalleryWindow(AuxiliaryWindow):
         finally:
             self.cboFolders.blockSignals(False)
         
-        self.onScrolled(self.scrollArea.verticalScrollBar().value())
+        self.updateComboboxFolder(self.scrollArea.verticalScrollBar().value())
         self.updateStatusBar(len(headers))
         
     
@@ -87,7 +94,7 @@ class GalleryWindow(AuxiliaryWindow):
             self.scrollArea.verticalScrollBar().setValue(y)
     
     @Slot()
-    def onScrolled(self, y):
+    def updateComboboxFolder(self, y):
         row = self.gallery.getRowForY(y, True)
         index = 0
         for headerRow, i in self.rowToHeader.items():
@@ -100,6 +107,16 @@ class GalleryWindow(AuxiliaryWindow):
             self.cboFolders.setCurrentIndex(index)
         finally:
             self.cboFolders.blockSignals(False)
+
+    @Slot()
+    def scrollTop(self):
+        self.scrollArea.verticalScrollBar().setValue(0)
+
+    @Slot()
+    def ensureVisible(self, widget, row):
+        if self.chkFollowSelection.isChecked() and widget.visibleRegion().isEmpty():
+            if (y := self.gallery.getYforRow(row)) >= 0:
+                self.scrollArea.verticalScrollBar().setValue(y)
 
 
 

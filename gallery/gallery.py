@@ -13,6 +13,8 @@ class ImageIcon:
 
 class Gallery(QtWidgets.QWidget):
     headersUpdated = Signal(dict)
+    fileChanged = Signal(object, int)
+    reloaded = Signal()
 
     def __init__(self, tab):
         super().__init__()
@@ -72,6 +74,7 @@ class Gallery(QtWidgets.QWidget):
     
     def addImage(self, file, row, col):
         galleryItem = GalleryItem(self, file)
+        galleryItem.row = row
         self.fileItems[file] = galleryItem
 
         self.layout().addWidget(galleryItem, row, col, Qt.AlignTop)
@@ -115,6 +118,8 @@ class Gallery(QtWidgets.QWidget):
         item.setSelected(True)
         self._selectedItem = item
 
+        self.fileChanged.emit(item, item.row)
+
         if updateFileList:
             try:
                 self._ignoreFileChange = True
@@ -147,6 +152,7 @@ class Gallery(QtWidgets.QWidget):
         row, col = 0, 0
         for widget in (item.widget() for item in reversed(items)):
             if isinstance(widget, GalleryItem):
+                widget.row = row
                 layout.addWidget(widget, row, col, Qt.AlignTop)
                 col += 1
                 if col >= cols:
@@ -205,6 +211,7 @@ class Gallery(QtWidgets.QWidget):
     
     def onFileListChanged(self, currentFile):
         self.reloadImages()
+        self.reloaded.emit()
 
     def onFileDataChanged(self, file, key):
         if file not in self.fileItems:
@@ -236,6 +243,7 @@ class GalleryItem(QtWidgets.QWidget):
         super().__init__()
         self.gallery = gallery
         self.file = file
+        self.row = -1
         
         self._pixmap = None
         self.filename = os.path.basename(file)
