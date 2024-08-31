@@ -28,6 +28,9 @@ class Tool:
     def onResize(self, event):
         pass
 
+    def onFullscreen(self, active):
+        pass
+
 
     def getDropRects(self):
         return []

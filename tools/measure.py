@@ -37,14 +37,14 @@ class MeasureTool(ViewTool):
         self._rect.setBrush(rectBrush)
         self._rect.setVisible(False)
 
-        textPen = QtGui.QPen(QtGui.QColor(0, 0, 0, 140))
+        textPen = QtGui.QPen(QtGui.QColor(0, 60, 60, 180))
         textPen.setCapStyle(Qt.RoundCap)
         textPen.setWidth(1.5)
 
         self._text = QtWidgets.QGraphicsSimpleTextItem()
         self._text.setPen(textPen)
         self._text.setBrush(color)
-        qtlib.setMonospace(self._text, 1.5, True)
+        qtlib.setMonospace(self._text, 1.2, True)
         self._text.setVisible(False)
 
         crosshairPen = QtGui.QPen(QtGui.QColor(180, 180, 180, 180))

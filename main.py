@@ -64,9 +64,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @Slot()
     def closeTab(self, index):
+        # TODO: Proper cleanup, something's hanging there
+        tab = self.tabWidget.widget(index)
+        tab.imgview.tool.onDisabled(tab.imgview)
         self.tabWidget.removeTab(index)
         if self.tabWidget.count() == 0:
             self.addTab()
+        tab.deleteLater()
 
     @Slot()
     def onTabChanged(self, index):
@@ -103,6 +107,7 @@ class MainWindow(QtWidgets.QMainWindow):
     @Slot()
     def onGalleryClosed(self):
         self.toolbar.actToggleGallery.setChecked(False)
+        self.galleryWindow.deleteLater()
         self.galleryWindow = None
 
     
@@ -122,6 +127,7 @@ class MainWindow(QtWidgets.QMainWindow):
     @Slot()
     def onCaptionWindowClosed(self):
         self.toolbar.actToggleCaption.setChecked(False)
+        self.captionWindow.deleteLater()
         self.captionWindow = None
 
 
@@ -164,6 +170,7 @@ class MainToolBar(QtWidgets.QToolBar):
     def buildToolButtons(self, mainWindow):
         self._toolActions = {
             "view":     self.addAction("View"),
+            "slideshow":self.addAction("Slideshow"),
             "measure":  self.addAction("Measure"),
             "compare":  self.addAction("Compare"),
             "crop":     self.addAction("Crop"),
@@ -236,6 +243,9 @@ class ImgTab(QtWidgets.QMainWindow):
         if toolName == "view":
                 from tools import ViewTool
                 return ViewTool(self)
+        elif toolName == "slideshow":
+                from tools import SlideshowTool
+                return SlideshowTool(self)
         elif toolName == "measure":
                 from tools import MeasureTool
                 return MeasureTool(self)
@@ -270,11 +280,13 @@ class ImgTab(QtWidgets.QMainWindow):
             self.tabWidget.setCurrentIndex(index)
             self.onFileChanged(self.filelist.getCurrentFile())
             self._index = -1
+            self.imgview.tool.onFullscreen(False)
         else:
             # Enable fullscreen
             self._index = self.tabWidget.indexOf(self)
             self.tabWidget.removeTab(self._index)
             self.setParent(None)
+            self.imgview.tool.onFullscreen(True)
 
         self.imgview.setFocus()
         self.setWindowState(winState ^ Qt.WindowFullScreen)
@@ -284,7 +296,6 @@ class ImgTab(QtWidgets.QMainWindow):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_F:
             self.toggleFullscreen()
-
 
 
 

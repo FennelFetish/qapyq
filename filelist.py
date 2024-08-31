@@ -28,8 +28,8 @@ class FileList:
 
 
     def loadAll(self, paths):
-        self.files = []
-        self.fileData = dict()
+        self.files.clear()
+        self.fileData.clear()
         for path in paths:
             if os.path.isdir(path):
                 self._walkPath(path, True)
@@ -80,6 +80,15 @@ class FileList:
             index = -1
 
         self.currentFile = file
+        self.currentIndex = index
+        self.notifyFileChanged()
+
+    def setCurrentIndex(self, index):
+        if index < 0 or index >= len(self.files):
+            print(f"Warning: Index {index} out of bounds of FileList")
+            return
+        
+        self.currentFile = self.files[index]
         self.currentIndex = index
         self.notifyFileChanged()
 
