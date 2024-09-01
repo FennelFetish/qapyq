@@ -1,7 +1,7 @@
 import cv2 as cv
 import numpy as np
 from PySide6 import QtWidgets
-from PySide6.QtCore import QBuffer, QPointF, QRect, QRectF, Qt, QTimer
+from PySide6.QtCore import QBuffer, QPointF, QRect, QRectF, Qt, QTimer, QRunnable, QObject, QThreadPool, Signal, Slot
 from PySide6.QtGui import QBrush, QPen, QColor, QPainterPath, QPolygonF, QTransform
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem
 from .crop_toolbar import CropToolBar
@@ -48,10 +48,6 @@ class CropTool(ViewTool):
         self._waitForConfirmation = False
 
         self._toolbar = CropToolBar(self)
-
-
-    def getToolbar(self):
-        return self._toolbar
 
 
     def setTargetSize(self, width, height):
@@ -136,66 +132,29 @@ class CropTool(ViewTool):
         self._mask.setVisible(visible)
         self._imgview.scene().update()
 
-    def toCvMat(self, pixmap):
-        buffer = QBuffer()
-        buffer.open(QBuffer.ReadWrite)
-        pixmap.save(buffer, "PNG") # Preserve transparency with PNG
-
-        buf = np.frombuffer(buffer.data(), dtype=np.uint8)
-        return cv.imdecode(buf, cv.IMREAD_UNCHANGED)
-
-    def calcCutRect(self, poly: QPolygonF, pixmap):
-        pad  = 4
-        rect = poly.boundingRect().toRect()
-
-        rect.setLeft(max(0, rect.x()-pad))
-        rect.setTop (max(0, rect.y()-pad))
-        rect.setRight (min(pixmap.width(),  rect.right()+pad))
-        rect.setBottom(min(pixmap.height(), rect.bottom()+pad))
-        return rect
-
-    def getExportPath(self):
-        self._export.suffix = f"_{self._targetWidth}x{self._targetHeight}"
-        return self._export.getExportPath(self._imgview.image.filepath)
-
     def exportImage(self, poly: QPolygonF):
         pixmap = self._imgview.image.pixmap()
         if not pixmap:
             return
 
-        rect = self.calcCutRect(poly, pixmap)
-        mat  = self.toCvMat( pixmap.copy(rect) )
-        
-        p0, p1, p2, _ = poly
-        ox, oy = rect.topLeft().toTuple()
-        ptsSrc = np.float32([
-            [p0.x()-ox, p0.y()-oy],
-            [p1.x()-ox, p1.y()-oy],
-            [p2.x()-ox, p2.y()-oy]
-        ])
+        self.tab.statusBar().showMessage("Saving cropped image...")
 
-        ptsDest = np.float32([
-            [0, 0],
-            [self._targetWidth, 0],
-            [self._targetWidth, self._targetHeight],
-        ])
-
-        # https://docs.opencv.org/3.4/da/d6e/tutorial_py_geometric_transformations.html
-        matrix  = cv.getAffineTransform(ptsSrc, ptsDest)
-        dsize   = (self._targetWidth, self._targetHeight)
-        interp  = self._toolbar.getInterpolationMode(self._targetHeight > self._cropHeight)
-        border  = cv.BORDER_REPLICATE if self._toolbar.constrainSize() else cv.BORDER_CONSTANT
-        matDest = cv.warpAffine(src=mat, M=matrix, dsize=dsize, flags=interp, borderMode=border)
-
-        path = self.getExportPath()
-        self._export.createFolders(path)
+        currentFile = self._imgview.image.filepath
+        interp = self._toolbar.getInterpolationMode(self._targetHeight > self._cropHeight)
+        border = cv.BORDER_REPLICATE if self._toolbar.constrainSize() else cv.BORDER_CONSTANT
         params = self._toolbar.getSaveParams()
-        cv.imwrite(path, matDest, params) # TODO: Write in separate thread
+
+        task = ExportTask(self._export, currentFile, pixmap, poly, self._targetWidth, self._targetHeight, interp, border, params)
+        task.signals.done.connect(self.onExportDone)
+        task.signals.fail.connect(lambda: self.tab.statusBar().showColoredMessage("Export failed", success=False))
+        QThreadPool.globalInstance().start(task)
+
+    @Slot()
+    def onExportDone(self, file, path):
         print("Exported cropped image to", path)
         self.tab.statusBar().showColoredMessage("Exported cropped image to: " + path, success=True)
+        self._imgview.filelist.setData(file, DataKeys.CropState, DataKeys.IconStates.Saved)
 
-        filelist = self._imgview.filelist
-        filelist.setData(filelist.getCurrentFile(), DataKeys.CropState, DataKeys.IconStates.Saved)
 
     def onFileChanged(self, currentFile):
         self._toolbar.updateExport()
@@ -203,7 +162,11 @@ class CropTool(ViewTool):
     def onFileListChanged(self, currentFile):
         self.onFileChanged(currentFile)
 
+
     # === Tool Interface ===
+
+    def getToolbar(self):
+        return self._toolbar
 
     def onEnabled(self, imgview):
         super().onEnabled(imgview)
@@ -269,7 +232,7 @@ class CropTool(ViewTool):
                 rect = self._cropRect.rect().toRect()
                 rect.setRect(rect.x(), rect.y(), max(1, rect.width()), max(1, rect.height()))
 
-                # Save if mouse click is inside selection rectangle
+                # Start export if mouse click is inside selection rectangle
                 if rect.contains(event.position().toPoint()):
                     poly = self._imgview.mapToScene(rect)
                     poly = self._imgview.image.mapFromParent(poly)
@@ -309,6 +272,82 @@ class CropTool(ViewTool):
         self._cropHeight = round(max(self._cropHeight, 1))
         self.updateSelection(event.position())
         return True
+
+
+
+class ExportTask(QRunnable):
+    class ExportTaskSignals(QObject):
+        done = Signal(str, str)
+        fail = Signal()
+
+        def __init__(self):
+            super().__init__()
+
+    def __init__(self, export, file, pixmap, poly, targetWidth, targetHeight, interp, border, saveParams):
+        super().__init__()
+        self.signals = ExportTask.ExportTaskSignals()
+
+        self.export = export
+        export.suffix = f"_{targetWidth}x{targetHeight}"
+        self.destFile = export.getExportPath(file)
+
+        self.srcFile = file
+        self.poly = poly
+        self.targetWidth  = targetWidth
+        self.targetHeight = targetHeight
+        self.interp = interp
+        self.border = border
+        self.saveParams = saveParams
+        self.rect = self.calcCutRect(poly, pixmap)
+        self.mat  = self.toCvMat( pixmap.copy(self.rect) )
+
+    def calcCutRect(self, poly: QPolygonF, pixmap):
+        pad  = 4
+        rect = poly.boundingRect().toRect()
+
+        rect.setLeft(max(0, rect.x()-pad))
+        rect.setTop (max(0, rect.y()-pad))
+        rect.setRight (min(pixmap.width(),  rect.right()+pad))
+        rect.setBottom(min(pixmap.height(), rect.bottom()+pad))
+        return rect
+
+    def toCvMat(self, pixmap):
+        buffer = QBuffer()
+        buffer.open(QBuffer.ReadWrite)
+        pixmap.save(buffer, "PNG") # Preserve transparency with PNG
+
+        buf = np.frombuffer(buffer.data(), dtype=np.uint8)
+        return cv.imdecode(buf, cv.IMREAD_UNCHANGED)
+
+    @Slot()
+    def run(self):
+        try:
+            p0, p1, p2, _ = self.poly
+            ox, oy = self.rect.topLeft().toTuple()
+            ptsSrc = np.float32([
+                [p0.x()-ox, p0.y()-oy],
+                [p1.x()-ox, p1.y()-oy],
+                [p2.x()-ox, p2.y()-oy]
+            ])
+
+            ptsDest = np.float32([
+                [0, 0],
+                [self.targetWidth, 0],
+                [self.targetWidth, self.targetHeight],
+            ])
+
+            # https://docs.opencv.org/3.4/da/d6e/tutorial_py_geometric_transformations.html
+            matrix  = cv.getAffineTransform(ptsSrc, ptsDest)
+            dsize   = (self.targetWidth, self.targetHeight)
+            matDest = cv.warpAffine(src=self.mat, M=matrix, dsize=dsize, flags=self.interp, borderMode=self.border)
+
+            self.export.createFolders(self.destFile)
+            cv.imwrite(self.destFile, matDest, self.saveParams)
+            self.signals.done.emit(self.srcFile, self.destFile)
+        except Exception as ex:
+            print("Error while exporting:")
+            print(ex)
+            self.signals.fail.emit()
 
 
 
