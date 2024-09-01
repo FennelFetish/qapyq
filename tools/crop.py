@@ -299,7 +299,7 @@ class ExportTask(QRunnable):
         self.border = border
         self.saveParams = saveParams
         self.rect = self.calcCutRect(poly, pixmap)
-        self.mat  = self.toCvMat( pixmap.copy(self.rect) )
+        self.img = pixmap.copy(self.rect).toImage()
 
     def calcCutRect(self, poly: QPolygonF, pixmap):
         pad  = 4
@@ -311,10 +311,10 @@ class ExportTask(QRunnable):
         rect.setBottom(min(pixmap.height(), rect.bottom()+pad))
         return rect
 
-    def toCvMat(self, pixmap):
+    def toCvMat(self, image):
         buffer = QBuffer()
         buffer.open(QBuffer.ReadWrite)
-        pixmap.save(buffer, "PNG") # Preserve transparency with PNG
+        image.save(buffer, "PNG", 100) # Preserve transparency with PNG. quality 100 actually fastest?
 
         buf = np.frombuffer(buffer.data(), dtype=np.uint8)
         return cv.imdecode(buf, cv.IMREAD_UNCHANGED)
@@ -339,15 +339,21 @@ class ExportTask(QRunnable):
             # https://docs.opencv.org/3.4/da/d6e/tutorial_py_geometric_transformations.html
             matrix  = cv.getAffineTransform(ptsSrc, ptsDest)
             dsize   = (self.targetWidth, self.targetHeight)
-            matDest = cv.warpAffine(src=self.mat, M=matrix, dsize=dsize, flags=self.interp, borderMode=self.border)
+            matSrc  = self.toCvMat(self.img)
+            matDest = cv.warpAffine(src=matSrc, M=matrix, dsize=dsize, flags=self.interp, borderMode=self.border)
 
             self.export.createFolders(self.destFile)
             cv.imwrite(self.destFile, matDest, self.saveParams)
             self.signals.done.emit(self.srcFile, self.destFile)
+
+            del matSrc
+            del matDest
         except Exception as ex:
             print("Error while exporting:")
             print(ex)
             self.signals.fail.emit()
+        finally:
+            del self.img
 
 
 
