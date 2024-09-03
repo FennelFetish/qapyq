@@ -1,3 +1,13 @@
 PySide6
 #pillow
 opencv-python
+numpy
+
+# MiniCPM
+# pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121 --upgrade --force-reinstall --no-cache-dir
+
+# JoyTag -> 2GB+ dependecies!
+torch
+torchvision
+transformers
+einops
