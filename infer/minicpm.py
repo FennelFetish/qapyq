@@ -29,11 +29,11 @@ class MiniCPM:
             buffer = QBuffer()
             buffer.open(QBuffer.ReadWrite)
             img = QImage(imgPath)
-            img.save(buffer, "PNG", 100) # Preserve transparency with PNG. quality 100 actually fastest?
+            img.save(buffer, "PNG", 100)
             imgData = buffer.data()
 
-        base64_data = base64.b64encode(imgData).decode('utf-8')
-        return f"data:image/png;base64,{base64_data}"
+        base64Data = base64.b64encode(imgData).decode('utf-8')
+        return f"data:image/png;base64,{base64Data}"
 
     def caption(self, imgPath, prompt, systemPrompt=None):
         imgURI = self.imageToBase64(imgPath)
