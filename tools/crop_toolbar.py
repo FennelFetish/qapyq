@@ -253,10 +253,7 @@ class CropToolBar(QtWidgets.QToolBar):
 
     @Slot()
     def updateRotationFromSlider(self, rot: int):
-        rot /= 10.0
-        self.spinRot.setValue(rot)
-        #self._cropTool._imgview.rotation = rot
-        #self._cropTool._imgview.updateImageTransform()
+        self.spinRot.setValue(rot / 10.0)
 
     @Slot()
     def updateRotationFromSpinner(self, rot: float):
@@ -265,6 +262,14 @@ class CropToolBar(QtWidgets.QToolBar):
         self._cropTool._imgview.rotation = rot
         self._cropTool._imgview.updateImageTransform()
 
+    @property
+    def rotation(self) -> float:
+        return self.slideRot.value() / 10.0
+
+    @rotation.setter
+    def rotation(self, rot: float):
+        self.slideRot.setValue(int(rot*10))
+    
 
     def setSelectionSize(self, w, h):
         self.lblW.setText(f"{w:.1f} px")
@@ -287,10 +292,12 @@ class CropToolBar(QtWidgets.QToolBar):
         key = self.cboFormat.currentText()
         return SAVE_PARAMS[key]
 
-    def isConstrainToImage(self) -> bool:
+    @property
+    def constrainToImage(self) -> bool:
         return self.chkConstrainToImage.isChecked()
 
-    def isAllowUpscale(self) -> bool:
+    @property
+    def allowUpscale(self) -> bool:
         return self.chkAllowUpscale.isChecked()
 
     def chooseExportPath(self):

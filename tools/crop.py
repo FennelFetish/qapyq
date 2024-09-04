@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem
 from .crop_toolbar import CropToolBar
 from .view import ViewTool
 from filelist import DataKeys
+from config import Config
 
 
 # TODO: Upscale using model (whole image upscaled before crop so selected area matches target size? or upscale cropped region only?)
@@ -89,10 +90,10 @@ class CropTool(ViewTool):
         imgSize = self._imgview.image.pixmap().size()
 
         # Constrain selection size
-        if not self._toolbar.isAllowUpscale():
+        if not self._toolbar.allowUpscale:
             self._cropHeight = max(self._cropHeight, self._targetHeight)
 
-        if self._toolbar.isConstrainToImage():
+        if self._toolbar.constrainToImage:
             cropW, cropH = self.constrainCropSize(rot, imgSize)
         else:
             cropW, cropH = (self._cropHeight * self._cropAspectRatio), self._cropHeight
@@ -107,7 +108,7 @@ class CropTool(ViewTool):
         poly.translate(mouse.x(), mouse.y())
 
         # Constrain selection position
-        if self._toolbar.isConstrainToImage():
+        if self._toolbar.constrainToImage:
             self.constraingCropPos(poly, imgSize)
 
         # Map selected polygon to viewport
@@ -144,7 +145,7 @@ class CropTool(ViewTool):
 
         currentFile = self._imgview.image.filepath
         interp = self._toolbar.getInterpolationMode(self._targetHeight > self._cropHeight)
-        border = cv.BORDER_REPLICATE if self._toolbar.isConstrainToImage() else cv.BORDER_CONSTANT
+        border = cv.BORDER_REPLICATE if self._toolbar.constrainToImage() else cv.BORDER_CONSTANT
         params = self._toolbar.getSaveParams()
 
         task = ExportTask(self._export, currentFile, pixmap, poly, self._targetWidth, self._targetHeight, interp, border, params)
@@ -178,7 +179,7 @@ class CropTool(ViewTool):
         imgview._guiScene.addItem(self._cropRect)
         imgview._guiScene.addItem(self._confirmRect)
 
-        imgview.rotation = self._toolbar.slideRot.value() / 10
+        imgview.rotation = self._toolbar.rotation
         imgview.updateImageTransform()
 
         self._toolbar.updateSize()
@@ -203,7 +204,7 @@ class CropTool(ViewTool):
         self.updateSelection(self._cropRect.rect().center())
 
     def onResetView(self):
-        self._toolbar.slideRot.setValue(self._imgview.rotation)
+        self._toolbar.rotation = self._imgview.rotation
 
     def onResize(self, event):
         self._mask.setRect(self._imgview.viewport().rect())
@@ -266,7 +267,7 @@ class CropTool(ViewTool):
         if self._waitForConfirmation:
             return True
         
-        change = round(self._imgview.image.pixmap().height() * 0.02)
+        change = round(self._imgview.image.pixmap().height() * Config.cropChangePercentage)
         if (event.modifiers() & Qt.ShiftModifier) == Qt.ShiftModifier:
             change = 1
 
