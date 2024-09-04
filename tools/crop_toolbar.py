@@ -99,8 +99,11 @@ class CropToolBar(QtWidgets.QToolBar):
         self.lblH = QtWidgets.QLabel("0 px")
         self.lblScale = QtWidgets.QLabel("1.0")
 
-        self.chkConstrainSize = QtWidgets.QCheckBox("Constrain to Image")
-        self.chkConstrainSize.setChecked(True)
+        self.chkConstrainToImage = QtWidgets.QCheckBox("Constrain to Image")
+        self.chkConstrainToImage.setChecked(True)
+
+        self.chkAllowUpscale = QtWidgets.QCheckBox("Allow Upscale")
+        self.chkAllowUpscale.setChecked(True)
 
         layout = QtWidgets.QGridLayout()
         layout.setContentsMargins(1, 1, 1, 1)
@@ -116,7 +119,8 @@ class CropToolBar(QtWidgets.QToolBar):
         layout.addWidget(lblH, 1, 0)
         layout.addWidget(self.lblH, 1, 1)
 
-        layout.addWidget(self.chkConstrainSize, 2, 0, 1, 3)
+        layout.addWidget(self.chkConstrainToImage, 2, 0, 1, 3)
+        layout.addWidget(self.chkAllowUpscale, 3, 0, 1, 3)
 
         group = QtWidgets.QGroupBox("Selection")
         group.setLayout(layout)
@@ -283,8 +287,11 @@ class CropToolBar(QtWidgets.QToolBar):
         key = self.cboFormat.currentText()
         return SAVE_PARAMS[key]
 
-    def constrainSize(self) -> bool:
-        return self.chkConstrainSize.isChecked()
+    def isConstrainToImage(self) -> bool:
+        return self.chkConstrainToImage.isChecked()
+
+    def isAllowUpscale(self) -> bool:
+        return self.chkAllowUpscale.isChecked()
 
     def chooseExportPath(self):
         path = self._cropTool._export.basePath

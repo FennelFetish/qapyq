@@ -89,7 +89,10 @@ class CropTool(ViewTool):
         imgSize = self._imgview.image.pixmap().size()
 
         # Constrain selection size
-        if self._toolbar.constrainSize():
+        if not self._toolbar.isAllowUpscale():
+            self._cropHeight = max(self._cropHeight, self._targetHeight)
+
+        if self._toolbar.isConstrainToImage():
             cropW, cropH = self.constrainCropSize(rot, imgSize)
         else:
             cropW, cropH = (self._cropHeight * self._cropAspectRatio), self._cropHeight
@@ -104,7 +107,7 @@ class CropTool(ViewTool):
         poly.translate(mouse.x(), mouse.y())
 
         # Constrain selection position
-        if self._toolbar.constrainSize():
+        if self._toolbar.isConstrainToImage():
             self.constraingCropPos(poly, imgSize)
 
         # Map selected polygon to viewport
@@ -141,7 +144,7 @@ class CropTool(ViewTool):
 
         currentFile = self._imgview.image.filepath
         interp = self._toolbar.getInterpolationMode(self._targetHeight > self._cropHeight)
-        border = cv.BORDER_REPLICATE if self._toolbar.constrainSize() else cv.BORDER_CONSTANT
+        border = cv.BORDER_REPLICATE if self._toolbar.isConstrainToImage() else cv.BORDER_CONSTANT
         params = self._toolbar.getSaveParams()
 
         task = ExportTask(self._export, currentFile, pixmap, poly, self._targetWidth, self._targetHeight, interp, border, params)
@@ -263,7 +266,7 @@ class CropTool(ViewTool):
         if self._waitForConfirmation:
             return True
         
-        change = self._imgview.image.pixmap().height() * 0.03
+        change = round(self._imgview.image.pixmap().height() * 0.02)
         if (event.modifiers() & Qt.ShiftModifier) == Qt.ShiftModifier:
             change = 1
 
