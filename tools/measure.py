@@ -55,6 +55,8 @@ class MeasureTool(ViewTool):
         self._crosshairV = QtWidgets.QGraphicsLineItem()
         self._crosshairV.setPen(crosshairPen)
 
+        self._cursor = None
+
 
     def updateLine(self):
         startPoint = self.imgToView(self._startPoint)
@@ -124,14 +126,21 @@ class MeasureTool(ViewTool):
 
     def onEnabled(self, imgview):
         super().onEnabled(imgview)
+        self._cursor = imgview.cursor()
+        imgview.setCursor(Qt.CursorShape.CrossCursor)
+
         imgview._guiScene.addItem(self._line)
         imgview._guiScene.addItem(self._rect)
         imgview._guiScene.addItem(self._text)
         imgview._guiScene.addItem(self._crosshairH)
         imgview._guiScene.addItem(self._crosshairV)
+        
 
     def onDisabled(self, imgview):
         super().onDisabled(imgview)
+        imgview.setCursor(self._cursor)
+        self._cursor = None
+
         imgview._guiScene.removeItem(self._line)
         imgview._guiScene.removeItem(self._rect)
         imgview._guiScene.removeItem(self._text)

@@ -24,6 +24,8 @@ class SlideshowTool(ViewTool):
         self._cursorTimer.timeout.connect(lambda: self.tab.imgview.setCursor(Qt.CursorShape.BlankCursor))
 
         self._toolbar = SlideshowToolbar(self)
+        self._toolbar.setFloatable(False)
+        self._toolbar.setMovable(False)
 
 
     @Slot()
@@ -76,7 +78,7 @@ class SlideshowTool(ViewTool):
         while attempts > 0 and (index := random.randint(0, numFiles-1)) in region:
             attempts -= 1
         return index
-        
+
     def resetHistory(self):
         self._history.clear()
         self._historyIndex = 0
@@ -90,14 +92,14 @@ class SlideshowTool(ViewTool):
         self.tab.statusBar().hide()
         self._toolbar.startHideTimeout()
 
-        self._cursor = self.tab.imgview.cursor()
+        self._cursor = imgview.cursor()
 
     def onDisabled(self, imgview):
         self._playTimer.stop()
         self.resetHistory()
         self.tab.statusBar().show()
 
-        self.tab.imgview.setCursor(self._cursor)
+        imgview.setCursor(self._cursor)
         self._cursor = None
 
 
@@ -135,7 +137,7 @@ class SlideshowTool(ViewTool):
         super().onMouseEnter(event)
         self._cursorTimer.stop()
 
-    
+
     def onKeyPress(self, event):
         #super().onKeyPress(event)
         key = event.key()

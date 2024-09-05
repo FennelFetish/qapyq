@@ -110,7 +110,7 @@ class ImgItem(QGraphicsPixmapItem):
         self.filepath = ""
 
     def loadImage(self, path) -> bool:
-        print("Load image:", path)
+        #print("Load image:", path)
         pixmap = QPixmap(path)
         if pixmap.isNull():
             print("Failed to load image:", path)

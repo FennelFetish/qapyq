@@ -93,15 +93,15 @@ class FileList:
         self.notifyFileChanged()
 
     def setNextFile(self):
+        self._lazyLoadFolder()
         if numFiles := len(self.files):
-            self._lazyLoadFolder()
             self.currentIndex = (self.currentIndex+1) % numFiles
             self.currentFile = self.files[self.currentIndex]
             self.notifyFileChanged()
 
     def setPrevFile(self):
+        self._lazyLoadFolder()
         if numFiles := len(self.files):
-            self._lazyLoadFolder()
             self.currentIndex = (self.currentIndex-1) % numFiles
             self.currentFile = self.files[self.currentIndex]
             self.notifyFileChanged()
