@@ -220,12 +220,8 @@ class MainToolBar(QtWidgets.QToolBar):
 
     @Slot()
     def clearModels(self):
-        import gc
         from infer import Inference
-        inference = Inference()
-        inference.unloadMiniCpm()
-        inference.unloadJoytag()
-        gc.collect()
+        Inference().quitProcess()
 
 
 

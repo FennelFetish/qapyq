@@ -28,9 +28,9 @@ class CaptionFile:
 
     def saveToJson(self):
         data = dict()
+        data["version"]  = CaptionFile.version
         data["captions"] = self.captions
         data["tags"]     = self.tags
-        data["version"]  = CaptionFile.version
 
         with open(self.jsonPath, 'w') as file:
             json.dump(data, file, indent=4)
@@ -45,9 +45,9 @@ class CaptionFile:
         
         captions = data.get("captions", {})
         captions.update(self.captions)
+        data["version"]  = CaptionFile.version
         data["captions"] = captions
         data["tags"]     = self.tags
-        data["version"]  = CaptionFile.version
-
+        
         with open(self.jsonPath, 'w') as file:
             json.dump(data, file, indent=4)

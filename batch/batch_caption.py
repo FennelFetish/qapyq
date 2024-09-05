@@ -3,6 +3,7 @@ from PySide6.QtCore import Qt, Signal, Slot, QRunnable, QObject, QMutex, QMutexL
 from infer import Inference
 from .captionfile import CaptionFile
 import qtlib, util
+import traceback
 
 
 class BatchCaption(QtWidgets.QWidget):
@@ -119,6 +120,7 @@ class BatchCaption(QtWidgets.QWidget):
                 prompts, sysPrompt = None, None
 
             self._task = BatchCaptionTask(self.tab.filelist.files, prompts, sysPrompt, self.chkTag.isChecked())
+            self._task.tagThreshold = self.spinTagThreshold.value()
             self._task.signals.progress.connect(self.onProgress)
             self._task.signals.done.connect(self.onFinished)
             self._task.signals.fail.connect(self.onFail)
@@ -155,6 +157,7 @@ class BatchCaptionTask(QRunnable):
         done = Signal(int)
         fail = Signal(str)
 
+
     def __init__(self, files, prompts, systemPrompt, doTag):
         super().__init__()
         self.signals = BatchCaptionTask.Signals()
@@ -166,6 +169,9 @@ class BatchCaptionTask(QRunnable):
         self.systemPrompt = systemPrompt
         self.doTag = doTag
 
+        self.tagThreshold: float = 0.4
+
+
     def abort(self):
         with QMutexLocker(self.mutex):
             self.aborted = True
@@ -174,6 +180,7 @@ class BatchCaptionTask(QRunnable):
         with QMutexLocker(self.mutex):
             return self.aborted
 
+
     @Slot()
     def run(self):
         try:
@@ -181,15 +188,23 @@ class BatchCaptionTask(QRunnable):
             self.signals.progress.emit(0, 0, "")
 
             inference = Inference()
-            minicpm = inference.loadMiniCpm() if self.prompts else None
-            joytag  = inference.loadJoytag() if self.doTag else None
-            self.process(minicpm, joytag)
+            inference.proc.start()
+            minicpm = False
+
+            if self.prompts:
+                inference.proc.setupCaption()
+                minicpm = True
+            if self.doTag:
+                inference.proc.setupTag(threshold=self.tagThreshold)
+
+            self.process(inference.proc, minicpm, self.doTag)
         except Exception as ex:
             print("Error during batch processing:")
-            print(ex)
-            self.signals.fail.emit("Error during batch processing")
+            traceback.print_exc()
+            self.signals.fail.emit(f"Error during batch processing: {str(ex)}")
 
-    def process(self, minicpm, joytag):
+
+    def process(self, inferProc, minicpm, joytag):
         numFiles = len(self.files)
         self.signals.progress.emit(0, numFiles, "")
 
@@ -203,12 +218,12 @@ class BatchCaptionTask(QRunnable):
             captionFile = CaptionFile(imgFile)
 
             if minicpm:
-                answers = minicpm.captionMulti(imgFile, self.prompts, self.systemPrompt)
+                answers = inferProc.caption(imgFile, self.prompts, self.systemPrompt)
                 for name, caption in answers.items():
                     captionFile.addCaption(name, caption)
 
             if joytag:
-                captionFile.tags = joytag.caption(imgFile)
+                captionFile.tags = inferProc.tag(imgFile)
 
             captionFile.updateToJson()
             self.signals.progress.emit(fileNr+1, numFiles, captionFile.jsonPath)

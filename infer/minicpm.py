@@ -23,23 +23,6 @@ class MiniCPM:
 
     def __del__(self):
         self.llm.close()
-        self.llm._model.__del__()
-        del self.llm.model_params
-        del self.llm.kv_overrides
-        del self.llm.context_params
-        del self.llm.tokenizer_
-        del self.llm._ctx
-        del self.llm._batch
-        del self.llm.draft_model
-        del self.llm._n_vocab
-        del self.llm._n_ctx
-        del self.llm._candidates
-        del self.llm.scores
-        del self.llm.metadata
-        del self.llm._chat_handlers
-        del self.llm.chat_format
-        del self.llm
-        del self.chat_handler
 
 
     def imageToBase64(self, imgPath):

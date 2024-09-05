@@ -1,8 +1,8 @@
 
 import os
+from typing import ForwardRef
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Signal, Slot
-from typing import ForwardRef
 import qtlib
 import util
 from .caption_preset import CaptionPreset
@@ -53,8 +53,9 @@ class CaptionControl(QtWidgets.QTabWidget):
         self._groupsWidget = self._buildGroups()
         self.addTab(self._settingsWidget, "Settings")
         self.addTab(self._groupsWidget, "Caption")
-        self.addTab(QtWidgets.QWidget(), "Batch Process")
-        self.addTab(QtWidgets.QWidget(), "Generate")
+        self.addTab(QtWidgets.QWidget(), "Variables (json)")
+        self.addTab(QtWidgets.QWidget(), "Folder Overrides") # Let variables from json override settings?
+        self.addTab(self._buildGenerate(), "Generate")
 
 
     def _buildSettings(self):
@@ -131,6 +132,56 @@ class CaptionControl(QtWidgets.QTabWidget):
         widget = QtWidgets.QWidget()
         widget.setLayout(self.groupLayout)
         return widget
+
+    def _buildGenerate(self):
+        # Save to json
+
+        txtSysPrompt = QtWidgets.QTextEdit()
+        qtlib.setTextEditHeight(txtSysPrompt, 3)
+        txtSysPrompt.setText("You are an assistant that perfectly describes scenes in concise English language. You're always certain and you don't guess. You are never confused or distracted by semblance. You state facts. Refer to a person using gendered pronouns like she/he.  Don't use numered lists or bullet points.")
+        qtlib.setMonospace(txtSysPrompt)
+
+        txtPrompt = QtWidgets.QTextEdit()
+        qtlib.setTextEditHeight(txtPrompt, 3)
+        txtPrompt.setText("What's to see here? Describe the image in detail.")
+        qtlib.setMonospace(txtPrompt)
+
+        self.btnGenerate = QtWidgets.QPushButton("Generate")
+        self.btnGenerate.clicked.connect(lambda: self.generate(txtPrompt.toPlainText(), txtSysPrompt.toPlainText()))
+
+        layout = QtWidgets.QGridLayout()
+        layout.setAlignment(Qt.AlignTop)
+
+        layout.addWidget(QtWidgets.QLabel("Sys Prompt:"), 0, 0, Qt.AlignTop)
+        layout.addWidget(txtSysPrompt, 0, 1)
+
+        layout.addWidget(QtWidgets.QLabel("Prompt:"), 1, 0, Qt.AlignTop)
+        layout.addWidget(txtPrompt, 1, 1)
+
+        layout.addWidget(self.btnGenerate, 2, 1, 1, 2)
+
+        widget = QtWidgets.QWidget()
+        widget.setLayout(layout)
+        return widget
+    
+    def generate(self, prompt, sysPrompt):
+        self.btnGenerate.setEnabled(False)
+
+        file = self._container.tab.imgview.image.filepath
+        prompts = util.parsePrompts(prompt)
+
+        from infer import Inference
+        infer = Inference()
+        infer.startProcess()
+        infer.captionAsync(self.generateCallback, file, prompts, sysPrompt)
+
+    @Slot()
+    def generateCallback(self, imgPath, captions: dict):
+        self.btnGenerate.setEnabled(True)
+        if imgPath == self._container.tab.imgview.image.filepath:
+            parts = (cap for name, cap in captions.items())
+            text = os.linesep.join(parts)
+            self._container.txtCaption.setPlainText(text)
 
 
     def setText(self, text):
@@ -306,6 +357,7 @@ class CaptionControlGroup(QtWidgets.QFrame):
         self.buttonLayout = qtlib.FlowLayout(spacing=1)
         self.buttonWidget = qtlib.ReorderWidget(giveDrop=True)
         self.buttonWidget.setLayout(self.buttonLayout)
+        self.buttonWidget.setMinimumHeight(14)
         self.buttonWidget.orderChanged.connect(self._captionControl.needsRulesApplied)
         self.buttonWidget.dataCallback = lambda widget: widget.text
         self.buttonWidget.dropCallback = self._addCaptionDrop

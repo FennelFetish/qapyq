@@ -1,132 +1,105 @@
 from PySide6.QtCore import QThreadPool, QRunnable, QObject, Signal, Slot
 from util import Singleton
-from config import Config
 
 
 class Inference(metaclass=Singleton):
     def __init__(self):
+        # All interaction with the interference process must happen inside this thread
         self.threadPool = QThreadPool()
         self.threadPool.setMaxThreadCount(1)
 
-        self.minicpm = None
-        self.joytag  = None
+        from .inference_proc import InferenceProcess
+        self.proc = InferenceProcess()
 
 
-    def loadMiniCpm(self):
-        if not self.minicpm:
-            from .minicpm import MiniCPM
-            self.minicpm = MiniCPM(Config.inferCaptionModelPath, Config.inferCaptionClipPath)
-        return self.minicpm
-
-    def unloadMiniCpm(self):
-        if self.minicpm:
-            del self.minicpm
-            self.minicpm = None
-
-
-    def loadJoytag(self):
-        if not self.joytag:
-            from .joytag import JoyTag
-            self.joytag = JoyTag(Config.inferTagModelPath)
-        return self.joytag
-
-    def unloadJoytag(self):
-        if self.joytag:
-            del self.joytag
-            self.joytag = None
-
-
-    def captionAsync(self, handler, imgPath, prompt, systemPrompt=None):
-        task = MiniCPMInferenceTask(self.loadMiniCpm(), imgPath, prompt, systemPrompt)
-        task.signals.done.connect(handler)
+    def startProcess(self):
+        task = InferenceTask(lambda: self.proc.start())
         self.threadPool.start(task)
-        return task
 
-    def captionMultiAsync(self, handler, imgPath, prompts: dict, systemPrompt=None):
-        task = MiniCPMMultiInferenceTask(self.loadMiniCpm(), imgPath, prompts, systemPrompt)
+    def quitProcess(self):
+        task = InferenceTask(lambda: self.proc.stop())
+        self.threadPool.start(task)
+
+
+    def captionAsync(self, handler, imgPath, prompts: dict, systemPrompt=None):
+        task = MiniCpmInferenceTask(self.proc, imgPath, prompts, systemPrompt)
         task.signals.done.connect(handler)
         self.threadPool.start(task)
         return task 
 
     def tagAsync(self, handler, imgPath):
-        task = JoytagInferenceTask(self.loadJoytag(), imgPath)
+        task = JoytagInferenceTask(self.proc, imgPath)
         task.signals.done.connect(handler)
         self.threadPool.start(task)
         return task
 
 
 
-class MiniCPMInferenceTask(QRunnable):
-    def __init__(self, minicpm, imgPath, prompt, systemPrompt=None):
-        super().__init__()
-        self.signals = InferenceTaskSignals()
+class MiniCpmInferenceTask(QRunnable):
+    class Signals(QObject):
+        done = Signal(str, dict)
+        fail = Signal()
 
-        self.minicpm = minicpm
+    def __init__(self, proc, imgPath, prompts: dict, systemPrompt=None):
+        super().__init__()
+        self.signals = MiniCpmInferenceTask.Signals()
+        self.proc = proc
         self.imgPath = imgPath
-        self.prompt  = prompt
+        self.prompts = prompts
         self.systemPrompt = systemPrompt
 
     @Slot()
     def run(self):
         try:
-            result = self.minicpm.caption(self.imgPath, self.prompt, self.systemPrompt)[0].strip()
-            self.signals.done.emit(self.imgPath, result)
+            self.proc.start()
+            captions = self.proc.caption(self.imgPath, self.prompts, self.systemPrompt)
+            if captions != None:
+                self.signals.done.emit(self.imgPath, captions)
+            else:
+                self.signals.fail.emit()
         except Exception as ex:
             print("Error during inference:")
             print(ex)
             self.signals.fail.emit()
 
-
-class MiniCPMMultiInferenceTask(QRunnable):
-    def __init__(self, minicpm, imgPath, prompts: dict, systemPrompt=None):
-        super().__init__()
-        self.signals = MultiInferenceTaskSignals()
-
-        self.minicpm = minicpm
-        self.imgPath = imgPath
-        self.prompts  = prompts
-        self.systemPrompt = systemPrompt
-
-    @Slot()
-    def run(self):
-        try:
-            results = self.minicpm.captionMulti(self.imgPath, self.prompts, self.systemPrompt)
-            self.signals.done.emit(self.imgPath, results)
-        except Exception as ex:
-            print("Error during inference:")
-            print(ex)
-            self.signals.fail.emit()
 
 
 class JoytagInferenceTask(QRunnable):
-    def __init__(self, joytag, imgPath):
-        super().__init__()
-        self.signals = InferenceTaskSignals()
+    class Signals(QObject):
+        done = Signal(str, str)
+        fail = Signal()
 
-        self.joytag  = joytag
+    def __init__(self, proc, imgPath):
+        super().__init__()
+        self.signals = JoytagInferenceTask.Signals()
+        self.proc = proc
         self.imgPath = imgPath
 
     @Slot()
     def run(self):
         try:
-            tags = self.joytag.caption(self.imgPath)
-            self.signals.done.emit(self.imgPath, tags)
+            self.proc.start()
+            tags = self.proc.tag(self.imgPath)
+            if tags != None:
+                self.signals.done.emit(self.imgPath, tags)
+            else:
+                self.signals.fail.emit()
         except Exception as ex:
             print("Error during inference:")
             print(ex)
             self.signals.fail.emit()
 
 
-class InferenceTaskSignals(QObject):
-    done = Signal(str, str)
-    fail = Signal()
 
-    def __init__(self):
+class InferenceTask(QRunnable):
+    def __init__(self, func):
         super().__init__()
+        self.func = func
 
-class MultiInferenceTaskSignals(QObject):
-    done = Signal(str, dict)
-    fail = Signal()
-
-    def __init__(self):
-        super().__init__()
+    @Slot()
+    def run(self):
+        try:
+            self.func()
+        except Exception as ex:
+            print("Error in inference thread:")
+            print(ex)

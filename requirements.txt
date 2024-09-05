@@ -2,6 +2,7 @@ PySide6
 #pillow
 opencv-python
 numpy
+msgpack
 
 # MiniCPM
 # pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121 --upgrade --force-reinstall --no-cache-dir

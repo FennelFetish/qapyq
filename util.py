@@ -28,7 +28,6 @@ def isValidColor(color):
 
 def parsePrompts(text) -> dict:
     defaultName = "caption"
-    numUnnamed = 0
     namePattern = r"^---(.*?)---$"
     currentName = defaultName
     currentPrompt = []
@@ -44,11 +43,12 @@ def parsePrompts(text) -> dict:
                 currentPrompt.clear()
 
             nameMatch = re.match(namePattern, line)
-            if nameMatch:
-                currentName = nameMatch.group(1).strip()
-            else:
-                numUnnamed += 1
-                currentName = f"{defaultName}_{numUnnamed}"
+            currentName = nameMatch.group(1).strip() if nameMatch else defaultName
+
+            appendNr = 1
+            while currentName in prompts:
+                currentName = f"{currentName}_{appendNr}"
+                appendNr += 1
         else:
             currentPrompt.append(line)
 
