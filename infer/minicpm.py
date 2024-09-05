@@ -7,7 +7,7 @@ from PySide6.QtCore import QBuffer
 
 class MiniCPM:
     def __init__(self, modelPath, clipPath):
-        chat_handler = Llava15ChatHandler(clip_model_path=clipPath, verbose=False)
+        self.chat_handler = Llava15ChatHandler(clip_model_path=clipPath, verbose=False)
 
         self.llm = Llama(
             model_path=modelPath,
@@ -16,10 +16,31 @@ class MiniCPM:
             n_batch=512,
             n_threads=12,
             flash_attn=True,
-            chat_handler=chat_handler,
+            chat_handler=self.chat_handler,
             #logits_all=True,# needed to make llava work
-            #verbose=False
+            verbose=False
         )
+
+    def __del__(self):
+        self.llm.close()
+        self.llm._model.__del__()
+        del self.llm.model_params
+        del self.llm.kv_overrides
+        del self.llm.context_params
+        del self.llm.tokenizer_
+        del self.llm._ctx
+        del self.llm._batch
+        del self.llm.draft_model
+        del self.llm._n_vocab
+        del self.llm._n_ctx
+        del self.llm._candidates
+        del self.llm.scores
+        del self.llm.metadata
+        del self.llm._chat_handlers
+        del self.llm.chat_format
+        del self.llm
+        del self.chat_handler
+
 
     def imageToBase64(self, imgPath):
         if imgPath.lower().endswith(".png"):
@@ -31,9 +52,11 @@ class MiniCPM:
             img = QImage(imgPath)
             img.save(buffer, "PNG", 100)
             imgData = buffer.data()
+            del img
 
         base64Data = base64.b64encode(imgData).decode('utf-8')
         return f"data:image/png;base64,{base64Data}"
+
 
     def caption(self, imgPath, prompt, systemPrompt=None):
         imgURI = self.imageToBase64(imgPath)
@@ -54,9 +77,41 @@ class MiniCPM:
 
         completion = self.llm.create_chat_completion(
             messages = messages,
-            #temperature=0.15, top_k=40, min_p=0.15,
             temperature=0.15, top_k=60, min_p=0.1,
-            max_tokens=1024,
+            max_tokens=1024
         )
 
         return [choice["message"]["content"] for choice in completion["choices"]]
+
+
+    def captionMulti(self, imgPath, prompts: dict, systemPrompt=None) -> dict:
+        messages = []
+        if systemPrompt:
+            systemPrompt = systemPrompt.strip() + "\n"
+            messages.append({"role": "system", "content": systemPrompt})
+
+        answers = {}
+        firstRound = True
+        for name, prompt in prompts.items():
+            prompt = prompt.strip() + "\n"
+
+            content = [ {"type" : "text", "text": prompt} ]
+            if firstRound:
+                imgURI = self.imageToBase64(imgPath)
+                content.append( {"type": "image_url", "image_url": {"url": imgURI } } )
+                firstRound = False
+
+            messages.append( { "role": "user", "content": content} )
+
+            completion = self.llm.create_chat_completion(
+                messages = messages,
+                temperature=0.15, top_k=60, min_p=0.1,
+                max_tokens=1024
+            )
+
+            msg = completion["choices"][0]["message"]
+            answer = msg["content"].strip()
+            messages.append( { "role": msg["role"], "content": answer+"\n"} )
+            answers[name] = answer
+        
+        return answers

@@ -16,6 +16,12 @@ class JoyTag:
             lines = (line.strip() for line in f.readlines())
             self.topTags = [line for line in lines if line]
 
+    def __del__(self):
+        if hasattr(self, "model"):
+            del self.model
+        if hasattr(self, "topTags"):
+            del self.topTags
+
 
     def caption(self, imgPath):
         imgMat = cv2.imread(imgPath)
@@ -24,8 +30,8 @@ class JoyTag:
         imgTensor = transforms.ToTensor()(imgMat)
         #imgTensor = transforms.functional.normalize(imgTensor, mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])
 
-        tag_string, scores = self.predict(imgTensor)
-        return tag_string
+        tags, scores = self.predict(imgTensor)
+        return tags
 
 
     @torch.no_grad()
@@ -64,26 +70,3 @@ class JoyTag:
         imgTarget = np.zeros((targetSize, targetSize, channels), dtype=imgScaled.dtype)
         imgTarget[padTop:padTop+scaledHeight, padLeft:padLeft+scaledWidth, :] = imgScaled
         return imgTarget
-
-    
-    # def prepare_image(image: Image.Image, target_size: int) -> torch.Tensor:
-    #     # Pad image to square
-    #     image_shape = image.size
-    #     max_dim = max(image_shape)
-    #     pad_left = (max_dim - image_shape[0]) // 2
-    #     pad_top = (max_dim - image_shape[1]) // 2
-
-    #     padded_image = Image.new('RGB', (max_dim, max_dim), (255, 255, 255))
-    #     padded_image.paste(image, (pad_left, pad_top))
-
-    #     # Resize image
-    #     if max_dim != target_size:
-    #         padded_image = padded_image.resize((target_size, target_size), Image.BICUBIC)
-        
-    #     # Convert to tensor
-    #     image_tensor = transforms.functional.pil_to_tensor(padded_image) / 255.0
-
-    #     # Normalize
-    #     image_tensor = transforms.functional.normalize(image_tensor, mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])
-
-    #     return image_tensor

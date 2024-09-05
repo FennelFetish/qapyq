@@ -1,5 +1,6 @@
 from PySide6.QtCore import QThreadPool, QRunnable, QObject, Signal, Slot
 from util import Singleton
+from config import Config
 
 
 class Inference(metaclass=Singleton):
@@ -14,9 +15,7 @@ class Inference(metaclass=Singleton):
     def loadMiniCpm(self):
         if not self.minicpm:
             from .minicpm import MiniCPM
-            modelPath = "/mnt/ai/Models/MM-LLM/MiniCPM-V-2.6_Q8_0.gguf"
-            clipPath  = "/mnt/ai/Models/MM-LLM/MiniCPM-V-2.6_mmproj-model-f16.gguf"
-            self.minicpm = MiniCPM(modelPath, clipPath)
+            self.minicpm = MiniCPM(Config.inferCaptionModelPath, Config.inferCaptionClipPath)
         return self.minicpm
 
     def unloadMiniCpm(self):
@@ -28,8 +27,7 @@ class Inference(metaclass=Singleton):
     def loadJoytag(self):
         if not self.joytag:
             from .joytag import JoyTag
-            path = "/mnt/ai/Models/MM-LLM/joytag"
-            self.joytag = JoyTag(path)
+            self.joytag = JoyTag(Config.inferTagModelPath)
         return self.joytag
 
     def unloadJoytag(self):
@@ -43,6 +41,12 @@ class Inference(metaclass=Singleton):
         task.signals.done.connect(handler)
         self.threadPool.start(task)
         return task
+
+    def captionMultiAsync(self, handler, imgPath, prompts: dict, systemPrompt=None):
+        task = MiniCPMMultiInferenceTask(self.loadMiniCpm(), imgPath, prompts, systemPrompt)
+        task.signals.done.connect(handler)
+        self.threadPool.start(task)
+        return task 
 
     def tagAsync(self, handler, imgPath):
         task = JoytagInferenceTask(self.loadJoytag(), imgPath)
@@ -59,7 +63,7 @@ class MiniCPMInferenceTask(QRunnable):
 
         self.minicpm = minicpm
         self.imgPath = imgPath
-        self.prompt = prompt
+        self.prompt  = prompt
         self.systemPrompt = systemPrompt
 
     @Slot()
@@ -73,12 +77,33 @@ class MiniCPMInferenceTask(QRunnable):
             self.signals.fail.emit()
 
 
+class MiniCPMMultiInferenceTask(QRunnable):
+    def __init__(self, minicpm, imgPath, prompts: dict, systemPrompt=None):
+        super().__init__()
+        self.signals = MultiInferenceTaskSignals()
+
+        self.minicpm = minicpm
+        self.imgPath = imgPath
+        self.prompts  = prompts
+        self.systemPrompt = systemPrompt
+
+    @Slot()
+    def run(self):
+        try:
+            results = self.minicpm.captionMulti(self.imgPath, self.prompts, self.systemPrompt)
+            self.signals.done.emit(self.imgPath, results)
+        except Exception as ex:
+            print("Error during inference:")
+            print(ex)
+            self.signals.fail.emit()
+
+
 class JoytagInferenceTask(QRunnable):
     def __init__(self, joytag, imgPath):
         super().__init__()
         self.signals = InferenceTaskSignals()
 
-        self.joytag = joytag
+        self.joytag  = joytag
         self.imgPath = imgPath
 
     @Slot()
@@ -94,6 +119,13 @@ class JoytagInferenceTask(QRunnable):
 
 class InferenceTaskSignals(QObject):
     done = Signal(str, str)
+    fail = Signal()
+
+    def __init__(self):
+        super().__init__()
+
+class MultiInferenceTaskSignals(QObject):
+    done = Signal(str, dict)
     fail = Signal()
 
     def __init__(self):

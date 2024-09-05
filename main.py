@@ -2,11 +2,8 @@ import os
 import sys
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Slot
-
-from caption import CaptionWindow
 from export import Export
 from filelist import FileList
-from gallery import Gallery, GalleryWindow
 from imgview import ImgView
 import qtlib
 
@@ -16,6 +13,7 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.app = app
         self.galleryWindow = None
+        self.batchWindow   = None
         self.captionWindow = None
 
         self.setWindowTitle("pyImgSet")
@@ -94,6 +92,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def toggleGallery(self):
         # TODO: Keep GalleryWindow instance? Toggle via show/hide?
         if self.galleryWindow is None:
+            from gallery import GalleryWindow
             self.galleryWindow = GalleryWindow()
             self.galleryWindow.setDimensions(self.app, 0.5, 0.5, 0.5, 0)
             self.galleryWindow.closed.connect(self.onGalleryClosed)
@@ -110,10 +109,32 @@ class MainWindow(QtWidgets.QMainWindow):
         self.galleryWindow.deleteLater()
         self.galleryWindow = None
 
+
+    @Slot()
+    def toggleBatchWindow(self):
+        if self.batchWindow is None:
+            from batch import BatchWindow
+            self.batchWindow = BatchWindow()
+            self.batchWindow.setDimensions(self.app, 0.5, 0.45, 0.5, 0.55)
+            self.batchWindow.closed.connect(self.onBatchWindowClosed)
+            self.batchWindow.show()
+
+            tab = self.tabWidget.currentWidget()
+            self.batchWindow.setTab(tab)
+        else:
+            self.batchWindow.close()
+    
+    @Slot()
+    def onBatchWindowClosed(self):
+        self.toolbar.actToggleBatch.setChecked(False)
+        self.batchWindow.deleteLater()
+        self.batchWindow = None
+
     
     @Slot()
     def toggleCaptionWindow(self):
         if self.captionWindow is None:
+            from caption import CaptionWindow
             self.captionWindow = CaptionWindow()
             self.captionWindow.setDimensions(self.app, 0.5, 0.45, 0.5, 0.55)
             self.captionWindow.closed.connect(self.onCaptionWindowClosed)
@@ -134,6 +155,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def closeEvent(self, event):
         if self.galleryWindow:
             self.galleryWindow.close()
+        if self.batchWindow:
+            self.batchWindow.close()
         if self.captionWindow:
             self.captionWindow.close()
 
@@ -153,11 +176,18 @@ class MainToolBar(QtWidgets.QToolBar):
         self.actToggleGallery.setCheckable(True)
         self.actToggleGallery.triggered.connect(mainWindow.toggleGallery)
 
+        self.actToggleBatch = self.addAction("Batch")
+        self.actToggleBatch.setCheckable(True)
+        self.actToggleBatch.triggered.connect(mainWindow.toggleBatchWindow)
+
         self.actToggleCaption = self.addAction("Captions")
         self.actToggleCaption.setCheckable(True)
         self.actToggleCaption.triggered.connect(mainWindow.toggleCaptionWindow)
 
         self.addWidget(qtlib.SpacerWidget())
+
+        actClearModels = self.addAction("Clear VRAM")
+        actClearModels.triggered.connect(self.clearModels)
 
         actAddTab = self.addAction("Add Tab")
         actAddTab.triggered.connect(mainWindow.addTab)
@@ -187,6 +217,16 @@ class MainToolBar(QtWidgets.QToolBar):
 
         if toolName in self._toolActions:
             self._toolActions[toolName].setChecked(True)
+
+    @Slot()
+    def clearModels(self):
+        import gc
+        from infer import Inference
+        inference = Inference()
+        inference.unloadMiniCpm()
+        inference.unloadJoytag()
+        gc.collect()
+
 
 
 class ImgTab(QtWidgets.QMainWindow):
@@ -223,7 +263,7 @@ class ImgTab(QtWidgets.QMainWindow):
 
     def onFileListChanged(self, currentFile):
         self.onFileChanged(currentFile)
-    
+
 
     def setTool(self, toolName: str):
         if toolName not in self.tools:
@@ -299,7 +339,7 @@ class ImgTab(QtWidgets.QMainWindow):
 
 
 
-class TabStatusBar(QtWidgets.QStatusBar):
+class TabStatusBar(qtlib.ColoredMessageStatusBar):
     def __init__(self, tab):
         super().__init__()
         self.tab = tab
@@ -313,30 +353,12 @@ class TabStatusBar(QtWidgets.QStatusBar):
         self._lblImgSize = QtWidgets.QLabel()
         self.addPermanentWidget(self._lblImgSize)
 
-        self.updateStyleSheet()
-
     def setImageSize(self, width, height):
         self._lblImgSize.setText(f"W: {width}  H: {height}")
 
     def setMouseCoords(self, x, y):
         self._lblMouseCoords.setText(f"X: {x}  Y: {y}")
 
-    def showMessage(self, text, timeout=0):
-        self.updateStyleSheet()
-        super().showMessage(text, timeout)
-
-    def showColoredMessage(self, text, success=True, timeout=4000):
-        if success:
-            self.updateStyleSheet("#00ff00")
-        else:
-            self.updateStyleSheet("#ff0000")
-        super().showMessage(text, timeout)
-
-    def updateStyleSheet(self, color=None):
-        colorStr = f"color: {color}" if color else ""
-        self.setStyleSheet("QStatusBar{border-top: 1px outset black;" + colorStr + "}")
-
-        
 
 
 def main() -> int:

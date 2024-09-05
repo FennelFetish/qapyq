@@ -359,6 +359,28 @@ class ReorderWidget(QtWidgets.QWidget):
 
 
 
+class ColoredMessageStatusBar(QtWidgets.QStatusBar):
+    def __init__(self):
+        super().__init__()
+        self.updateStyleSheet()
+
+    def showMessage(self, text, timeout=0):
+        self.updateStyleSheet()
+        super().showMessage(text, timeout)
+
+    def showColoredMessage(self, text, success=True, timeout=4000):
+        if success:
+            self.updateStyleSheet("#00ff00")
+        else:
+            self.updateStyleSheet("#ff0000")
+        super().showMessage(text, timeout)
+
+    def updateStyleSheet(self, color=None):
+        colorStr = f"color: {color}" if color else ""
+        self.setStyleSheet("QStatusBar{border-top: 1px outset black;" + colorStr + "}")
+
+
+
 class SpacerWidget(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()

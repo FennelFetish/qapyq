@@ -2,6 +2,7 @@ import random
 import colorsys
 import re
 
+
 def randomColor(s=0.5, v=0.5):
     return hsv_to_rgb(rnd01(), s, v)
 
@@ -23,6 +24,36 @@ def rnd(min: float, max: float):
 def isValidColor(color):
     colorPattern = re.compile(r'^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$')
     return colorPattern.match(color) is not None
+
+
+def parsePrompts(text) -> dict:
+    defaultName = "caption"
+    numUnnamed = 0
+    namePattern = r"^---(.*?)---$"
+    currentName = defaultName
+    currentPrompt = []
+    prompts = {}
+    
+    lines = text.splitlines()
+    for line in lines:
+        line = line.strip()
+
+        if line.startswith("---"):
+            if currentPrompt:
+                prompts[currentName] = "\n".join(currentPrompt)
+                currentPrompt.clear()
+
+            nameMatch = re.match(namePattern, line)
+            if nameMatch:
+                currentName = nameMatch.group(1).strip()
+            else:
+                numUnnamed += 1
+                currentName = f"{defaultName}_{numUnnamed}"
+        else:
+            currentPrompt.append(line)
+
+    prompts[currentName] = "\n".join(currentPrompt)
+    return prompts
 
 
 class Singleton(type):
