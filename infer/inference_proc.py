@@ -64,13 +64,14 @@ class InferenceProcess(metaclass=Singleton):
             return self._blockReadMessage("cmd")
 
 
-    def caption(self, imgPath, prompts: dict, sysPrompt=None) -> dict:
+    def caption(self, imgPath, prompts: dict, sysPrompt=None, rounds=1) -> dict:
         with QMutexLocker(self.mutex):
             self._writeMessage({
                 "cmd": "caption",
                 "img": imgPath,
                 "prompts": prompts,
-                "sysPrompt": sysPrompt
+                "sysPrompt": sysPrompt,
+                "rounds": rounds
             })
             return self._blockReadMessage("captions")
 

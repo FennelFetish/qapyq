@@ -11,7 +11,7 @@ class BatchCaption(QtWidgets.QWidget):
                       + "You are never confused or distracted by semblance. You state facts. Refer to a person using gendered pronouns like she/he. " \
                       + "Don't format your response into numered lists or bullet points."
 
-    DEFAULT_PROMPT = "What's to see here? Describe the image in detail."
+    DEFAULT_PROMPT = "Describe the image in detail."
 
     DEFAULT_TAG_THRESHOLD = 0.4
 
@@ -120,6 +120,7 @@ class BatchCaption(QtWidgets.QWidget):
                 prompts, sysPrompt = None, None
 
             self._task = BatchCaptionTask(self.tab.filelist.files, prompts, sysPrompt, self.chkTag.isChecked())
+            self._task.rounds = self.spinRounds.value()
             self._task.tagThreshold = self.spinTagThreshold.value()
             self._task.signals.progress.connect(self.onProgress)
             self._task.signals.done.connect(self.onFinished)
@@ -169,6 +170,7 @@ class BatchCaptionTask(QRunnable):
         self.systemPrompt = systemPrompt
         self.doTag = doTag
 
+        self.rounds: int = 1
         self.tagThreshold: float = 0.4
 
 
@@ -218,7 +220,7 @@ class BatchCaptionTask(QRunnable):
             captionFile = CaptionFile(imgFile)
 
             if minicpm:
-                answers = inferProc.caption(imgFile, self.prompts, self.systemPrompt)
+                answers = inferProc.caption(imgFile, self.prompts, self.systemPrompt, self.rounds)
                 for name, caption in answers.items():
                     captionFile.addCaption(name, caption)
 

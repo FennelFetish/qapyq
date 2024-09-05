@@ -47,7 +47,9 @@ class CaptionFile:
         captions.update(self.captions)
         data["version"]  = CaptionFile.version
         data["captions"] = captions
-        data["tags"]     = self.tags
+
+        if self.tags:
+            data["tags"] = self.tags
         
         with open(self.jsonPath, 'w') as file:
             json.dump(data, file, indent=4)

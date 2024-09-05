@@ -67,34 +67,38 @@ class MiniCPM:
         return [choice["message"]["content"] for choice in completion["choices"]]
 
 
-    def captionMulti(self, imgPath, prompts: dict, systemPrompt=None) -> dict:
-        messages = []
-        if systemPrompt:
-            systemPrompt = systemPrompt.strip() + "\n"
-            messages.append({"role": "system", "content": systemPrompt})
-
+    def captionMulti(self, imgPath, prompts: dict, systemPrompt=None, rounds=1) -> dict:
+        imgURI = self.imageToBase64(imgPath)
         answers = {}
-        firstRound = True
-        for name, prompt in prompts.items():
-            prompt = prompt.strip() + "\n"
 
-            content = [ {"type" : "text", "text": prompt} ]
-            if firstRound:
-                imgURI = self.imageToBase64(imgPath)
-                content.append( {"type": "image_url", "image_url": {"url": imgURI } } )
-                firstRound = False
+        for r in range(rounds):
+            messages = []
+            if systemPrompt:
+                messages.append({"role": "system", "content": systemPrompt.strip()+"\n"})
 
-            messages.append( { "role": "user", "content": content} )
+            firstPrompt = True
+            for name, prompt in prompts.items():
+                prompt = prompt.strip() + "\n"
 
-            completion = self.llm.create_chat_completion(
-                messages = messages,
-                temperature=0.15, top_k=60, min_p=0.1,
-                max_tokens=1024
-            )
+                content = [ {"type" : "text", "text": prompt} ]
+                if firstPrompt:
+                    content.append( {"type": "image_url", "image_url": {"url": imgURI } } )
+                    firstPrompt = False
 
-            msg = completion["choices"][0]["message"]
-            answer = msg["content"].strip()
-            messages.append( { "role": msg["role"], "content": answer+"\n"} )
-            answers[name] = answer
+                messages.append( { "role": "user", "content": content} )
+
+                completion = self.llm.create_chat_completion(
+                    messages = messages,
+                    temperature=0.15, top_k=60, min_p=0.1,
+                    max_tokens=1024
+                )
+
+                msg = completion["choices"][0]["message"]
+                answer = msg["content"].strip()
+                messages.append( { "role": msg["role"], "content": answer+"\n"} )
+
+                if r > 0:
+                    name = f"{name}_round{r}"
+                answers[name] = answer
         
         return answers

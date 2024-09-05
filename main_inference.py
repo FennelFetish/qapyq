@@ -73,7 +73,7 @@ def handleMessage(protocol) -> bool:
     
     elif cmd == "caption":
         img = msg["img"]
-        captions = loadMiniCpm().captionMulti(img, msg["prompts"], msg["sysPrompt"])
+        captions = loadMiniCpm().captionMulti(img, msg["prompts"], msg["sysPrompt"], int(msg["rounds"]))
         protocol.writeMessage({
             "cmd": cmd,
             "img": img,
