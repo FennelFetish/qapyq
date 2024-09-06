@@ -204,7 +204,7 @@ class MainToolBar(QtWidgets.QToolBar):
             "measure":  self.addAction("Measure"),
             "compare":  self.addAction("Compare"),
             "crop":     self.addAction("Crop"),
-            "mask":     self.addAction("Mask")
+            #"mask":     self.addAction("Mask")
         }
 
         for name, act in self._toolActions.items():

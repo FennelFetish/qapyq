@@ -1,6 +1,7 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
 import cv2 as cv
+from config import Config
 
 
 INTERP_MODES = {
@@ -60,7 +61,7 @@ class CropToolBar(QtWidgets.QToolBar):
         btnQuad.clicked.connect(self.sizeQuad)
 
         self.cboSizePresets = QtWidgets.QComboBox()
-        self.cboSizePresets.addItems(["", "512x512", "512x768", "768x768", "768x1152", "1024x1024", "1024x1536"])
+        self.cboSizePresets.addItems([""] + Config.cropSizePresets)
         self.cboSizePresets.currentTextChanged.connect(self.sizePreset)
 
         layout = QtWidgets.QGridLayout()

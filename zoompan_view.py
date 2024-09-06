@@ -1,6 +1,7 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import QCoreApplication, QPointF, QRectF, Qt
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsView
+from config import Config
 
 
 class ZoomPanView(QGraphicsView):
@@ -9,7 +10,8 @@ class ZoomPanView(QGraphicsView):
     def __init__(self, scene):
         super().__init__(scene)
         self.zoom = 1.0
-        self.zoomFactor = 1.15
+        self.zoomFactor = Config.viewZoomFactor
+        self.zoomMin = Config.viewZoomMinimum
         self.pan = QPointF(0, 0)
         self._eventState = None
 
@@ -60,7 +62,7 @@ class ZoomPanView(QGraphicsView):
     def wheelEvent(self, event):
         zoomSteps = event.angleDelta().y() / 120.0 # 8*15° standard
         self.zoom *= self.zoomFactor ** zoomSteps
-        self.zoom = max(self.zoom, 0.5)
+        self.zoom = max(self.zoom, self.zoomMin)
         
         oldPos = self.mapToScene(event.position().toPoint())
         self.updateScene()

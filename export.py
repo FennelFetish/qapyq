@@ -1,9 +1,10 @@
 import os
+from config import Config
 
 
 class Export:
     def __init__(self):
-        self.basePath = "/mnt/ai/Datasets/"
+        self.basePath = Config.pathExport
         self._extension = "png"
         self.suffix = ""
 

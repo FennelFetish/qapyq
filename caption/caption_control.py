@@ -3,8 +3,8 @@ import os
 from typing import ForwardRef
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Signal, Slot
-import qtlib
-import util
+import qtlib, util
+from config import Config
 from .caption_preset import CaptionPreset
 
 CaptionControlGroup = ForwardRef('CaptionControlGroup')
@@ -53,9 +53,11 @@ class CaptionControl(QtWidgets.QTabWidget):
         self._groupsWidget = self._buildGroups()
         self.addTab(self._settingsWidget, "Settings")
         self.addTab(self._groupsWidget, "Caption")
-        self.addTab(QtWidgets.QWidget(), "Variables (json)")
-        self.addTab(QtWidgets.QWidget(), "Folder Overrides") # Let variables from json override settings?
+        #self.addTab(QtWidgets.QWidget(), "Variables (json)")
+        #self.addTab(QtWidgets.QWidget(), "Folder Overrides") # Let variables from json override settings?
         self.addTab(self._buildGenerate(), "Generate")
+
+        self.addGroup()
 
 
     def _buildSettings(self):
@@ -138,12 +140,12 @@ class CaptionControl(QtWidgets.QTabWidget):
 
         txtSysPrompt = QtWidgets.QTextEdit()
         qtlib.setTextEditHeight(txtSysPrompt, 3)
-        txtSysPrompt.setText("You are an assistant that perfectly describes scenes in concise English language. You're always certain and you don't guess. You are never confused or distracted by semblance. You state facts. Refer to a person using gendered pronouns like she/he.  Don't use numered lists or bullet points.")
+        txtSysPrompt.setText(Config.inferSystemPrompt)
         qtlib.setMonospace(txtSysPrompt)
 
         txtPrompt = QtWidgets.QTextEdit()
         qtlib.setTextEditHeight(txtPrompt, 3)
-        txtPrompt.setText("What's to see here? Describe the image in detail.")
+        txtPrompt.setText(Config.inferPrompt)
         qtlib.setMonospace(txtPrompt)
 
         self.btnGenerate = QtWidgets.QPushButton("Generate")

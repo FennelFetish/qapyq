@@ -3,20 +3,21 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QTimer
 import random
 from .view import ViewTool
+from config import Config
 
 
 class SlideshowTool(ViewTool):
     def __init__(self, tab):
         super().__init__(tab)
-        self._shuffle = False
+        self._shuffle = Config.slideshowShuffle
         self._hideTimeout = 600
 
         self._history = [] # Indices
         self._historyIndex = 0
 
         self._playTimer = QTimer()
-        self._playTimer.setInterval(4000)
         self._playTimer.timeout.connect(self.next)
+        self.setInterval(Config.slideshowInterval)
 
         self._cursor = Qt.CursorShape.ArrowCursor
         self._cursorTimer = QTimer()
@@ -52,7 +53,7 @@ class SlideshowTool(ViewTool):
             index = self.getRandomIndex()
             self.tab.filelist.setCurrentIndex(index)
             self._history.append(index)
-        
+
 
     def prev(self):
         if not self._shuffle:
@@ -84,6 +85,13 @@ class SlideshowTool(ViewTool):
         self._historyIndex = 0
 
 
+    def onFileChanged(self, currentFile):
+        pass
+
+    def onFileListChanged(self, currentFile):
+        self.resetHistory()
+
+
     def getToolbar(self):
         return self._toolbar
 
@@ -91,6 +99,7 @@ class SlideshowTool(ViewTool):
         super().onEnabled(imgview)
         self.tab.statusBar().hide()
         self._toolbar.startHideTimeout()
+        self.tab.filelist.addListener(self)
 
         self._cursor = imgview.cursor()
 
@@ -98,6 +107,7 @@ class SlideshowTool(ViewTool):
         self._playTimer.stop()
         self.resetHistory()
         self.tab.statusBar().show()
+        self.tab.filelist.removeListener(self)
 
         imgview.setCursor(self._cursor)
         self._cursor = None
@@ -185,12 +195,13 @@ class SlideshowToolbar(QtWidgets.QToolBar):
         self.btnPlay.clicked.connect(self.togglePlay)
 
         self.spinInterval = QtWidgets.QDoubleSpinBox()
-        self.spinInterval.setRange(0.1, 20.0)
+        self.spinInterval.setRange(0.1, 30.0)
         self.spinInterval.setSingleStep(0.5)
-        self.spinInterval.setValue(4.0)
+        self.spinInterval.setValue(Config.slideshowInterval)
         self.spinInterval.valueChanged.connect(self._slideshowTool.setInterval)
 
         chkShuffle = QtWidgets.QCheckBox()
+        chkShuffle.setChecked(Config.slideshowShuffle)
         chkShuffle.setFocusPolicy(Qt.NoFocus)
         chkShuffle.stateChanged.connect(self._slideshowTool.setShuffle)
 
