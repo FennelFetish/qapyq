@@ -3,19 +3,11 @@ from PySide6.QtCore import Qt, Signal, Slot, QRunnable, QObject, QMutex, QMutexL
 from infer import Inference
 from .captionfile import CaptionFile
 import qtlib, util
+from config import Config
 import traceback
 
 
 class BatchCaption(QtWidgets.QWidget):
-    DEFAULT_SYSPROMPT = "You are an assistant that perfectly describes scenes in concise English language. You're always certain and you don't guess. " \
-                      + "You are never confused or distracted by semblance. You state facts. Refer to a person using gendered pronouns like she/he. " \
-                      + "Don't format your response into numered lists or bullet points."
-
-    DEFAULT_PROMPT = "Describe the image in detail."
-
-    DEFAULT_TAG_THRESHOLD = 0.4
-
-
     def __init__(self, tab, progressBar, statusBar):
         super().__init__()
         self.tab = tab
@@ -36,14 +28,14 @@ class BatchCaption(QtWidgets.QWidget):
         layout.setAlignment(Qt.AlignTop)
         layout.setColumnStretch(0, 0)
 
-        self.txtSystemPrompt = QtWidgets.QTextEdit(BatchCaption.DEFAULT_SYSPROMPT)
+        self.txtSystemPrompt = QtWidgets.QTextEdit(Config.inferSystemPrompt)
         qtlib.setMonospace(self.txtSystemPrompt)
         qtlib.setTextEditHeight(self.txtSystemPrompt, 5)
         qtlib.setShowWhitespace(self.txtSystemPrompt)
         layout.addWidget(QtWidgets.QLabel("System Prompt:"), 0, 0, Qt.AlignTop)
         layout.addWidget(self.txtSystemPrompt, 0, 1)
 
-        self.txtPrompts = QtWidgets.QTextEdit(BatchCaption.DEFAULT_PROMPT)
+        self.txtPrompts = QtWidgets.QTextEdit(Config.inferPrompt)
         qtlib.setMonospace(self.txtPrompts)
         qtlib.setTextEditHeight(self.txtPrompts, 10)
         qtlib.setShowWhitespace(self.txtPrompts)
@@ -72,7 +64,7 @@ class BatchCaption(QtWidgets.QWidget):
         layout.setColumnStretch(1, 1)
 
         self.spinTagThreshold = QtWidgets.QDoubleSpinBox()
-        self.spinTagThreshold.setValue(BatchCaption.DEFAULT_TAG_THRESHOLD)
+        self.spinTagThreshold.setValue(Config.inferTagThreshold)
         self.spinTagThreshold.setRange(0.0, 1.0)
         self.spinTagThreshold.setSingleStep(0.05)
         layout.addWidget(QtWidgets.QLabel("Threshold:"), 0, 0, Qt.AlignTop)

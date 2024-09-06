@@ -8,7 +8,7 @@ class CaptionFile:
 
     def __init__(self, imgPath):
         self.captions = dict()
-        self.tags = ""
+        self.tags = None
 
         path, ext = os.path.splitext(imgPath)
         self.jsonPath = f"{path}.json"
@@ -17,25 +17,21 @@ class CaptionFile:
     def addCaption(self, name, caption):
         self.captions[name] = caption
 
+    def getCaption(self, name):
+        return self.captions.get(name, None)
+
     
     def loadFromJson(self):
-        with open(self.jsonPath, 'r') as file:
-            data = json.load(file)
+        if os.path.exists(self.jsonPath):
+            with open(self.jsonPath, 'r') as file:
+                data = json.load(file)
+        else:
+            data = dict()
 
         self.captions = data.get("captions", {})
-        self.tags     = data.get("tags", "")
+        self.tags     = data.get("tags", None)
 
 
-    def saveToJson(self):
-        data = dict()
-        data["version"]  = CaptionFile.version
-        data["captions"] = self.captions
-        data["tags"]     = self.tags
-
-        with open(self.jsonPath, 'w') as file:
-            json.dump(data, file, indent=4)
-
-    
     def updateToJson(self):
         if os.path.exists(self.jsonPath):
             with open(self.jsonPath, 'r') as file:
@@ -51,5 +47,15 @@ class CaptionFile:
         if self.tags:
             data["tags"] = self.tags
         
+        with open(self.jsonPath, 'w') as file:
+            json.dump(data, file, indent=4)
+
+
+    def saveToJson(self):
+        data = dict()
+        data["version"]  = CaptionFile.version
+        data["captions"] = self.captions
+        data["tags"]     = self.tags
+
         with open(self.jsonPath, 'w') as file:
             json.dump(data, file, indent=4)

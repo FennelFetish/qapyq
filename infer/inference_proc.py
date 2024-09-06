@@ -18,7 +18,7 @@ class InferenceProcess(metaclass=Singleton):
             self.proc.setProgram(sys.executable)
             #self.proc.setArguments(["-u", "main_inference.py"]) # Unbuffered pipes
             self.proc.setArguments(["main_inference.py"])
-            #self.proc.setProcessChannelMode(QProcess.ForwardedChannels)
+            self.proc.setProcessChannelMode(QProcess.SeparateChannels)
             self.proc.readyReadStandardError.connect(self._onError)
             self.proc.finished.connect(self._onProcessEnded)
             self.proc.start()
@@ -28,7 +28,8 @@ class InferenceProcess(metaclass=Singleton):
         with QMutexLocker(self.mutex):
             if self.proc:
                 self._writeMessage({"cmd": "quit"})
-                # For some reason, to flush the message, we have to read from the pipe
+                # There isn't any answer coming. Child process doesn't send anything while quitting.
+                # But for some reason, to flush the message, we have to read from the pipe
                 self._blockReadMessage("cmd")
 
     def terminate(self):
