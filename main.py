@@ -5,7 +5,9 @@ from PySide6.QtCore import Qt, Slot
 from export import Export
 from filelist import FileList
 from imgview import ImgView
+from config import Config
 import qtlib
+import aux_window
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -23,13 +25,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.addToolBar(self.toolbar)
 
         self.buildTabs()
-        #self.buildMenu()
-
         self.addTab()
 
-        #self.setWindowState(Qt.WindowFullScreen)
-        #self.setWindowState(Qt::WindowMaximized);
-        #self.setWindowState(self.windowState() ^ Qt.WindowFullScreen)
+        #self.buildMenu()
+
+        if not aux_window.loadWindowPos(self, "main", False):
+            aux_window.setWindowDimensions(self, 0.5, 1, 0, 0)
 
     def buildTabs(self):
         self.tabWidget = QtWidgets.QTabWidget(self)
@@ -94,7 +95,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.galleryWindow is None:
             from gallery import GalleryWindow
             self.galleryWindow = GalleryWindow()
-            self.galleryWindow.setDimensions(self.app, 0.5, 0.5, 0.5, 0)
             self.galleryWindow.closed.connect(self.onGalleryClosed)
             self.galleryWindow.show()
 
@@ -115,7 +115,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.batchWindow is None:
             from batch import BatchWindow
             self.batchWindow = BatchWindow()
-            self.batchWindow.setDimensions(self.app, 0.5, 0.45, 0.5, 0.55)
             self.batchWindow.closed.connect(self.onBatchWindowClosed)
             self.batchWindow.show()
 
@@ -136,7 +135,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.captionWindow is None:
             from caption import CaptionWindow
             self.captionWindow = CaptionWindow()
-            self.captionWindow.setDimensions(self.app, 0.5, 0.45, 0.5, 0.55)
             self.captionWindow.closed.connect(self.onCaptionWindowClosed)
             self.captionWindow.show()
 
@@ -153,6 +151,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
     def closeEvent(self, event):
+        aux_window.saveWindowPos(self, "main")
         if self.galleryWindow:
             self.galleryWindow.close()
         if self.batchWindow:
@@ -359,12 +358,7 @@ class TabStatusBar(qtlib.ColoredMessageStatusBar):
 
 def main() -> int:
     app = QtWidgets.QApplication([])
-
-    screenSize = app.primaryScreen().size()
-
     win = MainWindow(app)
-    win.resize(screenSize.width()//2, screenSize.height())
-    win.move(0, 0)
     win.show()
 
     if len(sys.argv) > 1:
@@ -377,4 +371,7 @@ def main() -> int:
     return app.exec()
 
 if __name__ == "__main__":
-    sys.exit( main() )
+    Config.load()
+    exitCode = main()
+    Config.save()
+    sys.exit(exitCode)

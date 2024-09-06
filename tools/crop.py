@@ -145,7 +145,7 @@ class CropTool(ViewTool):
 
         currentFile = self._imgview.image.filepath
         interp = self._toolbar.getInterpolationMode(self._targetHeight > self._cropHeight)
-        border = cv.BORDER_REPLICATE if self._toolbar.constrainToImage() else cv.BORDER_CONSTANT
+        border = cv.BORDER_REPLICATE if self._toolbar.constrainToImage else cv.BORDER_CONSTANT
         params = self._toolbar.getSaveParams()
 
         task = ExportTask(self._export, currentFile, pixmap, poly, self._targetWidth, self._targetHeight, interp, border, params)
@@ -267,7 +267,7 @@ class CropTool(ViewTool):
         if self._waitForConfirmation:
             return True
         
-        change = round(self._imgview.image.pixmap().height() * Config.cropChangePercentage)
+        change = round(self._imgview.image.pixmap().height() * Config.cropSelectionChange)
         if (event.modifiers() & Qt.ShiftModifier) == Qt.ShiftModifier:
             change = 1
 

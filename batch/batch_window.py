@@ -9,7 +9,7 @@ import qtlib
 
 class BatchWindow(AuxiliaryWindow):
     def __init__(self):
-        super().__init__("Batch")
+        super().__init__("Batch", "batch")
 
         # ProgressBar on status bar
         self.progressbar = QtWidgets.QProgressBar()

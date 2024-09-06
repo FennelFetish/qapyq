@@ -9,7 +9,7 @@ import qtlib
 
 class GalleryWindow(AuxiliaryWindow):
     def __init__(self):
-        super().__init__("Gallery")
+        super().__init__("Gallery", "gallery")
         self.gallery = None
         self.rowToHeader = dict()
 

@@ -6,7 +6,7 @@ from .caption import CaptionContainer
 
 class CaptionWindow(AuxiliaryWindow):
     def __init__(self):
-        super().__init__("Caption")
+        super().__init__("Caption", "caption")
 
 
     def setupContent(self, tab) -> object:
