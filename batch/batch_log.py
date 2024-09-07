@@ -22,7 +22,12 @@ class BatchLog(QtWidgets.QWidget):
 
     @Slot()
     def addLog(self, line):
-        now = datetime.now()
-        timestamp = now.strftime("%Y-%m-%d %H:%M:%S  ")
+        logScrollBar = self.txtLog.verticalScrollBar()
+        scrollDown = (logScrollBar.value() == logScrollBar.maximum())
+
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S  ")
         self.txtLog.appendPlainText(timestamp + line)
+        if scrollDown:
+            logScrollBar.setValue(logScrollBar.maximum())
+        
         print(line)

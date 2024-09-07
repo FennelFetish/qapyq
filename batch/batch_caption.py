@@ -1,10 +1,10 @@
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Signal, Slot, QRunnable, QObject, QMutex, QMutexLocker
-from infer import Inference
-from .captionfile import CaptionFile
+from PySide6.QtCore import QMutex, QMutexLocker, QObject, QRunnable, Qt, Signal, Slot
 import qtlib, util
 from config import Config
-import traceback
+from infer import Inference
+from .batch_task import BatchTask
+from .captionfile import CaptionFile
 
 
 class BatchCaption(QtWidgets.QWidget):
@@ -102,17 +102,13 @@ class BatchCaption(QtWidgets.QWidget):
             self.btnGenerate.setText("Abort")
             self.statusBar.showMessage("Starting batch caption ...")
 
-            files = list(self.tab.filelist.files)
-            if len(files) == 0:
-                files.append(self.tab.filelist.currentFile)
-
             if self.chkCaption.isChecked():
                 prompts = util.parsePrompts(self.txtPrompts.toPlainText())
                 sysPrompt = self.txtSystemPrompt.toPlainText()
             else:
                 prompts, sysPrompt = None, None
 
-            self._task = BatchCaptionTask(self.log, self.tab.filelist.files, prompts, sysPrompt, self.chkTag.isChecked())
+            self._task = BatchCaptionTask(self.log, self.tab.filelist, prompts, sysPrompt, self.chkTag.isChecked())
             self._task.rounds = self.spinRounds.value()
             self._task.tagThreshold = self.spinTagThreshold.value()
             self._task.signals.progress.connect(self.onProgress)
@@ -145,86 +141,44 @@ class BatchCaption(QtWidgets.QWidget):
 
 
 
-class BatchCaptionTask(QRunnable):
-    class Signals(QObject):
-        progress = Signal(int, int, str)
-        done = Signal(int)
-        fail = Signal(str)
-
-
-    def __init__(self, log, files, prompts, systemPrompt, doTag):
-        super().__init__()
-        self.signals = BatchCaptionTask.Signals()
-        self.mutex = QMutex()
-        self.aborted = False
-        self.log = log
-
-        self.files = files
-        self.prompts = prompts
+class BatchCaptionTask(BatchTask):
+    def __init__(self, log, filelist, prompts, systemPrompt, doTag):
+        super().__init__("caption", log, filelist)
+        self.prompts      = prompts
         self.systemPrompt = systemPrompt
-        self.doTag = doTag
+        self.doCaption    = prompts is not None
+        self.doTag        = doTag
 
         self.rounds: int = 1
         self.tagThreshold: float = 0.4
 
 
-    def abort(self):
-        with QMutexLocker(self.mutex):
-            self.aborted = True
+    def runPrepare(self):
+        inference = Inference()
+        self.inferProc = inference.proc
+        self.inferProc.start()
 
-    def isAborted(self) -> bool:
-        with QMutexLocker(self.mutex):
-            return self.aborted
-
-
-    @Slot()
-    def run(self):
-        try:
-            self.log("=== Starting batch caption ===")
-            self.signals.progress.emit(0, 0, "")
-
-            inference = Inference()
-            inference.proc.start()
-            minicpm = False
-
-            if self.prompts:
-                inference.proc.setupCaption()
-                minicpm = True
-            if self.doTag:
-                inference.proc.setupTag(threshold=self.tagThreshold)
-
-            self.process(inference.proc, minicpm, self.doTag)
-        except Exception as ex:
-            print("Error during batch processing:")
-            traceback.print_exc()
-            self.log(f"Error during batch processing: {str(ex)}")
-            self.signals.fail.emit(f"Error during batch processing: {str(ex)}")
+        if self.doCaption:
+            if not self.inferProc.setupCaption():
+                raise RuntimeError("Couldn't load caption model")
+        if self.doTag:
+            if not self.inferProc.setupTag(threshold=self.tagThreshold):
+                raise RuntimeError("Couldn't load tag model")
 
 
-    def process(self, inferProc, minicpm, joytag):
-        numFiles = len(self.files)
-        self.signals.progress.emit(0, numFiles, "")
+    def runProcessFile(self, imgFile) -> str:
+        captionFile = CaptionFile(imgFile)
 
-        for fileNr, imgFile in enumerate(self.files):
-            if self.isAborted():
-                self.log(f"Batch processing aborted after {fileNr} files")
-                self.signals.fail.emit(f"Batch processing aborted after {fileNr} files")
-                return
+        if self.doCaption:
+            answers = self.inferProc.caption(imgFile, self.prompts, self.systemPrompt, self.rounds)
+            for name, caption in answers.items():
+                captionFile.addCaption(name, caption)
 
-            self.log(f"Batch caption task: {imgFile}")
-            captionFile = CaptionFile(imgFile)
+        if self.doTag:
+            captionFile.tags = self.inferProc.tag(imgFile)
 
-            if minicpm:
-                answers = inferProc.caption(imgFile, self.prompts, self.systemPrompt, self.rounds)
-                for name, caption in answers.items():
-                    captionFile.addCaption(name, caption)
-
-            if joytag:
-                captionFile.tags = inferProc.tag(imgFile)
-
-            if not captionFile.updateToJson():
-                self.log(f"WARNING: Failed to save caption to {captionFile.jsonPath}")
-            self.signals.progress.emit(fileNr+1, numFiles, captionFile.jsonPath)
-
-        self.log(f"Batch caption finished, processed {numFiles} files")
-        self.signals.done.emit(numFiles)
+        if captionFile.updateToJson():
+            return captionFile.jsonPath
+        else:
+            self.log(f"WARNING: Failed to save caption to {captionFile.jsonPath}")
+            return None

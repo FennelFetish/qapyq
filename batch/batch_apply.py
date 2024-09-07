@@ -1,10 +1,11 @@
+import os
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject, QMutex, QMutexLocker
-import os, traceback
+from PySide6.QtCore import Qt, Slot
 import qtlib
 from config import Config
-from template_parser import TemplateParser
 from infer import Inference
+from template_parser import TemplateParser
+from .batch_task import BatchTask
 from .captionfile import CaptionFile
 
 
@@ -124,13 +125,9 @@ class BatchApply(QtWidgets.QWidget):
             self.btnStart.setText("Abort")
             self.statusBar.showMessage("Starting batch apply ...")
 
-            files = list(self.tab.filelist.files)
-            if len(files) == 0:
-                files.append(self.tab.filelist.currentFile)
-
             template = self.txtTemplate.toPlainText()
             backupName = self.txtBackupName.text().strip() if self.chkBackup.isChecked() else None
-            self._task = BatchApplyTask(self.log, files, template, self.chkStripAround.isChecked(), self.chkStripMulti.isChecked(), backupName)
+            self._task = BatchApplyTask(self.log, self.tab.filelist, template, self.chkStripAround.isChecked(), self.chkStripMulti.isChecked(), backupName)
             self._task.signals.progress.connect(self.onProgress)
             self._task.signals.done.connect(self.onFinished)
             self._task.signals.fail.connect(self.onFail)
@@ -161,84 +158,35 @@ class BatchApply(QtWidgets.QWidget):
 
 
 
-class BatchApplyTask(QRunnable):
-    class Signals(QObject):
-        progress = Signal(int, int, str)
-        done = Signal(int)
-        fail = Signal(str)
-
-
-    def __init__(self, log, files, template, stripAround, stripMulti, backupName):
-        super().__init__()
-        self.signals = BatchApplyTask.Signals()
-        self.mutex   = QMutex()
-        self.aborted = False
-        self.log = log
-
-        self.files       = files
+class BatchApplyTask(BatchTask):
+    def __init__(self, log, filelist, template, stripAround, stripMulti, backupName):
+        super().__init__("apply", log, filelist)
         self.template    = template
         self.stripAround = stripAround
         self.stripMulti  = stripMulti
         self.backupName  = backupName
 
+    def runPrepare(self):
+        self.parser = TemplateParser(None)
+        self.parser.stripAround = self.stripAround
+        self.parser.stripMultiWhitespace = self.stripMulti
 
-    def abort(self):
-        with QMutexLocker(self.mutex):
-            self.aborted = True
+    def runProcessFile(self, imgFile) -> str:
+        captionFile = CaptionFile(imgFile)
+        if captionFile.loadFromJson():
+            txtFile = self.getTextFile(imgFile)
+            if self.backupName:
+                self.backup(txtFile, captionFile)
 
-    def isAborted(self) -> bool:
-        with QMutexLocker(self.mutex):
-            return self.aborted
+            self.parser.setup(imgFile, captionFile)
+            caption = self.parser.parse(self.template)
 
-
-    @Slot()
-    def run(self):
-        try:
-            self.log("=== Starting batch apply ===")
-            self.signals.progress.emit(0, 0, "")
-
-            self.process()
-        except Exception as ex:
-            print("Error during batch processing:")
-            traceback.print_exc()
-            self.log(f"Error during batch processing: {str(ex)}")
-            self.signals.fail.emit(f"Error during batch processing: {str(ex)}")
-
-
-    def process(self):
-        parser = TemplateParser(None)
-        parser.stripAround = self.stripAround
-        parser.stripMultiWhitespace = self.stripMulti
-
-        numFiles = len(self.files)
-        self.signals.progress.emit(0, numFiles, "")
-
-        for fileNr, imgFile in enumerate(self.files):
-            if self.isAborted():
-                self.log(f"Batch processing aborted after {fileNr} files")
-                self.signals.fail.emit(f"Batch processing aborted after {fileNr} files")
-                return
-
-            self.log(f"Batch apply task: {imgFile}")
-            captionFile = CaptionFile(imgFile)
-            if captionFile.loadFromJson():
-                txtFile = self.getTextFile(imgFile)
-                if self.backupName:
-                    self.backup(txtFile, captionFile)
-
-                parser.setup(imgFile, captionFile)
-                caption = parser.parse(self.template)
-
-                with open(txtFile, 'w') as file:
-                    file.write(caption)
-            else:
-                self.log(f"WARNING: Couldn't read captions from {captionFile.jsonPath}")
-                
-            self.signals.progress.emit(fileNr+1, numFiles, txtFile)
-
-        self.log(f"Batch apply finished, processed {numFiles} files")
-        self.signals.done.emit(numFiles)
-
+            with open(txtFile, 'w') as file:
+                file.write(caption)
+            return txtFile
+        else:
+            self.log(f"WARNING: Couldn't read captions from {captionFile.jsonPath}")
+            return None
 
     def backup(self, txtFile, captionFile):
         if os.path.exists(txtFile):
