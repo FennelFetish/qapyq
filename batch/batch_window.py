@@ -3,6 +3,7 @@ from PySide6.QtCore import Qt, Slot, QThreadPool
 from aux_window import AuxiliaryWindow
 from .batch_caption import BatchCaption
 from .batch_apply import BatchApply
+from .batch_log import BatchLog
 import qtlib
 
 
@@ -24,13 +25,17 @@ class BatchWindow(AuxiliaryWindow):
         tab.filelist.addListener(self)
         self.tab = tab
 
-        captionWidget = BatchCaption(tab, self.progressbar, self.statusBar())
-        self.applyWidget = BatchApply(tab, self.progressbar, self.statusBar())
+        logWidget = BatchLog()
+        log = logWidget.addLog
+
+        captionWidget = BatchCaption(tab, log, self.progressbar, self.statusBar())
+        self.applyWidget = BatchApply(tab, log, self.progressbar, self.statusBar())
 
         tabWidget = QtWidgets.QTabWidget()
         tabWidget.addTab(captionWidget, "Generate")
         tabWidget.addTab(QtWidgets.QWidget(), "Transform") # LLM process json
-        tabWidget.addTab(self.applyWidget, "Set Caption") # LLM process json
+        tabWidget.addTab(self.applyWidget, "Set Caption")
+        tabWidget.addTab(logWidget, "Log")
 
         self.onFileChanged(tab.filelist.getCurrentFile())
         return tabWidget

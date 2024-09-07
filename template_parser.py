@@ -2,7 +2,7 @@ import re, os
 from batch.captionfile import CaptionFile
 
 
-class PromptTemplateParser:
+class TemplateParser:
     def __init__(self, imgPath):
         self.imgPath = imgPath
         self.captionFile = None
@@ -13,6 +13,11 @@ class PromptTemplateParser:
         self._pattern = r'{{([^}]+)}}'
         self._optionalPrefix = "?"
         self._captionPrefix = "caption."
+
+    
+    def setup(self, imgPath, captionFile):
+        self.imgPath = imgPath
+        self.captionFile = captionFile
 
 
     def parse(self, text):
@@ -67,7 +72,7 @@ class PromptTemplateParser:
 
 
 if __name__ == "__main__":
-    parser = PromptTemplateParser("/home/rem/Pictures/red-tree-with-eyes.jpeg")
+    parser = TemplateParser("/home/rem/Pictures/red-tree-with-eyes.jpeg")
     prompt = "This {{folder}} is a {{?bla}} inside a {{caption.caption_round3}}.\n{{tags}}"
     prompt = parser.parse(prompt)
     print(prompt)

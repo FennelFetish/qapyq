@@ -172,9 +172,9 @@ class CaptionContainer(QtWidgets.QWidget):
     @Slot()
     def resetCaption(self):
         if os.path.exists(self.captionFile):
-            with open(self.captionFile) as file:
+            with open(self.captionFile, 'r') as file:
                 text = file.read()
-                self.setCaption(text)
+            self.setCaption(text)
             self.captionCache.setState(DataKeys.IconStates.Exists)
         else:
             self.setCaption("")

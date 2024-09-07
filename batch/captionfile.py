@@ -21,21 +21,26 @@ class CaptionFile:
         return self.captions.get(name, None)
 
     
-    def loadFromJson(self):
+    def loadFromJson(self) -> bool:
         if os.path.exists(self.jsonPath):
             with open(self.jsonPath, 'r') as file:
                 data = json.load(file)
+            if "version" not in data:
+                return False
         else:
             data = dict()
 
         self.captions = data.get("captions", {})
         self.tags     = data.get("tags", None)
+        return True
 
 
-    def updateToJson(self):
+    def updateToJson(self) -> bool:
         if os.path.exists(self.jsonPath):
             with open(self.jsonPath, 'r') as file:
                 data = json.load(file)
+            if "version" not in data:
+                return False
         else:
             data = dict()
         
@@ -49,6 +54,8 @@ class CaptionFile:
         
         with open(self.jsonPath, 'w') as file:
             json.dump(data, file, indent=4)
+        
+        return True
 
 
     def saveToJson(self):
