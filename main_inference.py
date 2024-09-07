@@ -48,7 +48,7 @@ def printErr(text):
 def handleMessage(protocol) -> bool:
     msg = protocol.readMessage()
     cmd = msg["cmd"]
-    printErr(f"Inference process received command: {cmd}")
+    #printErr(f"Inference process received command: {cmd}")
 
     if cmd == "quit":
         # No reply! It won't quit when we send something here.

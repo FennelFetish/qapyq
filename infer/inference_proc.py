@@ -1,4 +1,4 @@
-from PySide6.QtCore import QProcess, QByteArray, QMutex, QMutexLocker
+from PySide6.QtCore import QProcess, QByteArray, QMutex, QMutexLocker, QThread
 import sys, struct, msgpack
 from util import Singleton
 
@@ -16,13 +16,18 @@ class InferenceProcess(metaclass=Singleton):
 
             self.proc = QProcess()
             self.proc.setProgram(sys.executable)
-            #self.proc.setArguments(["-u", "main_inference.py"]) # Unbuffered pipes
-            self.proc.setArguments(["main_inference.py"])
+            self.proc.setArguments(["-u", "main_inference.py"]) # Unbuffered pipes
+            #self.proc.setArguments(["main_inference.py"])
             self.proc.setProcessChannelMode(QProcess.SeparateChannels)
             self.proc.readyReadStandardError.connect(self._onError)
             self.proc.finished.connect(self._onProcessEnded)
             self.proc.start()
-            self.proc.waitForStarted(10000)
+
+            while True:
+                QThread.msleep(30)
+                if self.proc.waitForStarted(0):
+                    break
+
 
     def stop(self):
         with QMutexLocker(self.mutex):
@@ -93,10 +98,10 @@ class InferenceProcess(metaclass=Singleton):
     def _onProcessEnded(self, exitCode, exitStatus):
         print(f"Inference process ended. Exit code: {exitCode}, {exitStatus}")
         # Buffers still intact
-        input = self.proc.readAllStandardOutput()
-        err = self.proc.readAllStandardError()
+        self.proc.readAllStandardOutput()
+        self.proc.readAllStandardError()
         self.proc = None
-
+        
 
     def _writeMessage(self, msg):
         data = msgpack.packb(msg)
@@ -113,8 +118,11 @@ class InferenceProcess(metaclass=Singleton):
 
     def _blockReadMessage(self, key):
         try:
-            while not self.proc.waitForReadyRead(2000):
-                pass
+            while True:
+                QThread.msleep(30)
+                if self.proc.waitForReadyRead(0):
+                    break
+
             msg = self._readMessage()
             return msg[key] if key in msg else None
         except:
