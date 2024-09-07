@@ -8,9 +8,10 @@ import traceback
 
 
 class BatchCaption(QtWidgets.QWidget):
-    def __init__(self, tab, progressBar, statusBar):
+    def __init__(self, tab, logSlot, progressBar, statusBar):
         super().__init__()
         self.tab = tab
+        self.log = logSlot
         self.progressBar: QtWidgets.QProgressBar = progressBar
         self.statusBar: QtWidgets.QStatusBar = statusBar
 
@@ -28,14 +29,14 @@ class BatchCaption(QtWidgets.QWidget):
         layout.setAlignment(Qt.AlignTop)
         layout.setColumnStretch(0, 0)
 
-        self.txtSystemPrompt = QtWidgets.QTextEdit(Config.inferSystemPrompt)
+        self.txtSystemPrompt = QtWidgets.QPlainTextEdit(Config.inferSystemPrompt)
         qtlib.setMonospace(self.txtSystemPrompt)
         qtlib.setTextEditHeight(self.txtSystemPrompt, 5)
         qtlib.setShowWhitespace(self.txtSystemPrompt)
         layout.addWidget(QtWidgets.QLabel("System Prompt:"), 0, 0, Qt.AlignTop)
         layout.addWidget(self.txtSystemPrompt, 0, 1)
 
-        self.txtPrompts = QtWidgets.QTextEdit(Config.inferPrompt)
+        self.txtPrompts = QtWidgets.QPlainTextEdit(Config.inferPrompt)
         qtlib.setMonospace(self.txtPrompts)
         qtlib.setTextEditHeight(self.txtPrompts, 10)
         qtlib.setShowWhitespace(self.txtPrompts)
@@ -99,7 +100,7 @@ class BatchCaption(QtWidgets.QWidget):
             self._task.abort()
         else:
             self.btnGenerate.setText("Abort")
-            self.statusBar.showMessage("Starting batch processing ...")
+            self.statusBar.showMessage("Starting batch caption ...")
 
             files = list(self.tab.filelist.files)
             if len(files) == 0:
@@ -111,7 +112,7 @@ class BatchCaption(QtWidgets.QWidget):
             else:
                 prompts, sysPrompt = None, None
 
-            self._task = BatchCaptionTask(self.tab.filelist.files, prompts, sysPrompt, self.chkTag.isChecked())
+            self._task = BatchCaptionTask(self.log, self.tab.filelist.files, prompts, sysPrompt, self.chkTag.isChecked())
             self._task.rounds = self.spinRounds.value()
             self._task.tagThreshold = self.spinTagThreshold.value()
             self._task.signals.progress.connect(self.onProgress)
@@ -151,11 +152,12 @@ class BatchCaptionTask(QRunnable):
         fail = Signal(str)
 
 
-    def __init__(self, files, prompts, systemPrompt, doTag):
+    def __init__(self, log, files, prompts, systemPrompt, doTag):
         super().__init__()
         self.signals = BatchCaptionTask.Signals()
         self.mutex = QMutex()
         self.aborted = False
+        self.log = log
 
         self.files = files
         self.prompts = prompts
@@ -178,7 +180,7 @@ class BatchCaptionTask(QRunnable):
     @Slot()
     def run(self):
         try:
-            print("Starting batch caption ...")
+            self.log("=== Starting batch caption ===")
             self.signals.progress.emit(0, 0, "")
 
             inference = Inference()
@@ -195,6 +197,7 @@ class BatchCaptionTask(QRunnable):
         except Exception as ex:
             print("Error during batch processing:")
             traceback.print_exc()
+            self.log(f"Error during batch processing: {str(ex)}")
             self.signals.fail.emit(f"Error during batch processing: {str(ex)}")
 
 
@@ -204,11 +207,11 @@ class BatchCaptionTask(QRunnable):
 
         for fileNr, imgFile in enumerate(self.files):
             if self.isAborted():
-                print("Aborted")
+                self.log(f"Batch processing aborted after {fileNr} files")
                 self.signals.fail.emit(f"Batch processing aborted after {fileNr} files")
                 return
 
-            print("Batch caption task:", imgFile)
+            self.log(f"Batch caption task: {imgFile}")
             captionFile = CaptionFile(imgFile)
 
             if minicpm:
@@ -219,7 +222,9 @@ class BatchCaptionTask(QRunnable):
             if joytag:
                 captionFile.tags = inferProc.tag(imgFile)
 
-            captionFile.updateToJson()
+            if not captionFile.updateToJson():
+                self.log(f"WARNING: Failed to save caption to {captionFile.jsonPath}")
             self.signals.progress.emit(fileNr+1, numFiles, captionFile.jsonPath)
 
+        self.log(f"Batch caption finished, processed {numFiles} files")
         self.signals.done.emit(numFiles)
