@@ -80,7 +80,7 @@ class Bubble(QtWidgets.QFrame):
         if editable:
             self.textField = qtlib.DynamicLineEdit()
         else:
-            self.textField = QtWidgets.QLabel()
+            self.textField = qtlib.EllipsisLabel(80)
             self.textField.setContentsMargins(0, 0, 4, 0)
         qtlib.setMonospace(self.textField)
 
