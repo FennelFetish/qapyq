@@ -5,6 +5,7 @@ from config import Config
 from infer import Inference
 from .batch_task import BatchTask
 from .captionfile import CaptionFile
+from infer.inference_settings import InferenceSettingsWidget
 
 
 class BatchCaption(QtWidgets.QWidget):
@@ -15,9 +16,14 @@ class BatchCaption(QtWidgets.QWidget):
         self.progressBar: QtWidgets.QProgressBar = progressBar
         self.statusBar: QtWidgets.QStatusBar = statusBar
 
+        self.inferSettings = InferenceSettingsWidget()
+
+        self.captionGroup = self._buildCaptionSettings()
+        self.tagGroup = self._buildTagSettings()
+
         layout = QtWidgets.QVBoxLayout()
-        layout.addWidget(self._buildCaptionSettings())
-        layout.addWidget(self._buildTagSettings())
+        layout.addWidget(self.captionGroup)
+        layout.addWidget(self.tagGroup)
         layout.addWidget(self._buildGenerateSettings())
         self.setLayout(layout)
 
@@ -27,21 +33,23 @@ class BatchCaption(QtWidgets.QWidget):
     def _buildCaptionSettings(self):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignTop)
+        layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnStretch(0, 0)
 
         self.txtSystemPrompt = QtWidgets.QPlainTextEdit(Config.inferSystemPrompt)
         qtlib.setMonospace(self.txtSystemPrompt)
-        qtlib.setTextEditHeight(self.txtSystemPrompt, 5)
+        qtlib.setTextEditHeight(self.txtSystemPrompt, 5, maxHeight=True)
         qtlib.setShowWhitespace(self.txtSystemPrompt)
         layout.addWidget(QtWidgets.QLabel("System Prompt:"), 0, 0, Qt.AlignTop)
         layout.addWidget(self.txtSystemPrompt, 0, 1)
+        layout.setRowStretch(0, 0.3)
 
         self.txtPrompts = QtWidgets.QPlainTextEdit(Config.inferPrompt)
         qtlib.setMonospace(self.txtPrompts)
-        qtlib.setTextEditHeight(self.txtPrompts, 10)
         qtlib.setShowWhitespace(self.txtPrompts)
         layout.addWidget(QtWidgets.QLabel("Prompt(s):"), 1, 0, Qt.AlignTop)
         layout.addWidget(self.txtPrompts, 1, 1)
+        layout.setRowStretch(1, 2)
 
         self.spinRounds = QtWidgets.QSpinBox()
         self.spinRounds.setRange(1, 100)
@@ -49,11 +57,10 @@ class BatchCaption(QtWidgets.QWidget):
         layout.addWidget(QtWidgets.QLabel("Rounds:"), 2, 0, Qt.AlignTop)
         layout.addWidget(self.spinRounds, 2, 1)
 
-        self.chkCaption = QtWidgets.QCheckBox("Generate Caption")
-        self.chkCaption.setChecked(True)
-        layout.addWidget(self.chkCaption, 3, 1)
+        layout.addWidget(self.inferSettings, 3, 0, 1, 2)
 
         groupBox = QtWidgets.QGroupBox("MiniCPM")
+        groupBox.setCheckable(True)
         groupBox.setLayout(layout)
         return groupBox
 
@@ -61,6 +68,7 @@ class BatchCaption(QtWidgets.QWidget):
     def _buildTagSettings(self):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignTop)
+        layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 1)
 
@@ -71,11 +79,8 @@ class BatchCaption(QtWidgets.QWidget):
         layout.addWidget(QtWidgets.QLabel("Threshold:"), 0, 0, Qt.AlignTop)
         layout.addWidget(self.spinTagThreshold, 0, 1)
 
-        self.chkTag = QtWidgets.QCheckBox("Generate Tags")
-        self.chkTag.setChecked(True)
-        layout.addWidget(self.chkTag, 1, 1)
-
         groupBox = QtWidgets.QGroupBox("JoyTag")
+        groupBox.setCheckable(True)
         groupBox.setLayout(layout)
         return groupBox
 
@@ -85,7 +90,7 @@ class BatchCaption(QtWidgets.QWidget):
         layout.setAlignment(Qt.AlignTop)
         layout.setColumnStretch(0, 0)
 
-        self.btnGenerate = QtWidgets.QPushButton("Start")
+        self.btnGenerate = QtWidgets.QPushButton("Start Batch Caption")
         self.btnGenerate.clicked.connect(self.startStop)
         layout.addWidget(self.btnGenerate, 1, 0, 1, 2)
 
@@ -102,13 +107,15 @@ class BatchCaption(QtWidgets.QWidget):
             self.btnGenerate.setText("Abort")
             self.statusBar.showMessage("Starting batch caption ...")
 
-            if self.chkCaption.isChecked():
+            if self.captionGroup.isChecked():
                 prompts = util.parsePrompts(self.txtPrompts.toPlainText())
                 sysPrompt = self.txtSystemPrompt.toPlainText()
             else:
                 prompts, sysPrompt = None, None
 
-            self._task = BatchCaptionTask(self.log, self.tab.filelist, prompts, sysPrompt, self.chkTag.isChecked())
+            config = self.inferSettings.toDict()
+
+            self._task = BatchCaptionTask(self.log, self.tab.filelist, prompts, sysPrompt, self.tagGroup.isChecked(), config)
             self._task.rounds = self.spinRounds.value()
             self._task.tagThreshold = self.spinTagThreshold.value()
             self._task.signals.progress.connect(self.onProgress)
@@ -135,19 +142,21 @@ class BatchCaption(QtWidgets.QWidget):
             self.statusBar.showMessage("Wrote " + jsonFile)
 
     def taskDone(self):
-        self.btnGenerate.setText("Start")
+        self.btnGenerate.setText("Start Batch Caption")
+        self.progressBar.setRange(0, 1)
         self.progressBar.reset()
         self._task = None
 
 
 
 class BatchCaptionTask(BatchTask):
-    def __init__(self, log, filelist, prompts, systemPrompt, doTag):
+    def __init__(self, log, filelist, prompts, systemPrompt, doTag, config={}):
         super().__init__("caption", log, filelist)
         self.prompts      = prompts
         self.systemPrompt = systemPrompt
         self.doCaption    = prompts is not None
         self.doTag        = doTag
+        self.config       = config
 
         self.rounds: int = 1
         self.tagThreshold: float = 0.4
@@ -159,7 +168,7 @@ class BatchCaptionTask(BatchTask):
         self.inferProc.start()
 
         if self.doCaption:
-            if not self.inferProc.setupCaption():
+            if not self.inferProc.setupCaption(self.config):
                 raise RuntimeError("Couldn't load caption model")
         if self.doTag:
             if not self.inferProc.setupTag(threshold=self.tagThreshold):

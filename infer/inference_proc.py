@@ -54,10 +54,11 @@ class InferenceProcess(metaclass=Singleton):
             return self._blockReadMessage("cmd")
 
 
-    def setupCaption(self):
+    def setupCaption(self, config: dict={}):
         with QMutexLocker(self.mutex):
             self._writeMessage({
                 "cmd": "setup_caption",
+                "config": config
             })
             return self._blockReadMessage("cmd")
 

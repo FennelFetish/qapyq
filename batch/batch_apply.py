@@ -29,6 +29,7 @@ class BatchApply(QtWidgets.QWidget):
     def _buildFormatSettings(self):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignTop)
+        layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 0)
         layout.setColumnStretch(2, 1)
@@ -70,10 +71,12 @@ class BatchApply(QtWidgets.QWidget):
     def _buildBackupSettings(self):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignTop)
+        layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnStretch(0, 0)
 
-        self.txtBackupName = QtWidgets.QLineEdit()
+        self.txtBackupName = QtWidgets.QLineEdit("backup")
         self.txtBackupName.setEnabled(False)
+        qtlib.setMonospace(self.txtBackupName)
         layout.addWidget(QtWidgets.QLabel("Store as:"), 0, 0, Qt.AlignTop)
         layout.addWidget(self.txtBackupName, 0, 1)
 
@@ -90,7 +93,7 @@ class BatchApply(QtWidgets.QWidget):
         layout.setAlignment(Qt.AlignTop)
         layout.setColumnStretch(0, 0)
 
-        self.btnStart = QtWidgets.QPushButton("Start")
+        self.btnStart = QtWidgets.QPushButton("Start Batch Apply")
         self.btnStart.clicked.connect(self.startStop)
         layout.addWidget(self.btnStart, 1, 0, 1, 2)
 
@@ -152,7 +155,8 @@ class BatchApply(QtWidgets.QWidget):
             self.statusBar.showMessage("Wrote " + textFile)
 
     def taskDone(self):
-        self.btnStart.setText("Start")
+        self.btnStart.setText("Start Batch Apply")
+        self.progressBar.setRange(0, 1)
         self.progressBar.reset()
         self._task = None
 

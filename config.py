@@ -22,16 +22,21 @@ class Config:
 
     inferSystemPrompt       = "You are an assistant that perfectly describes scenes in concise English language. You're always certain and you don't guess. " \
                             + "You are never confused or distracted by semblance. You state facts. Refer to a person using gendered pronouns like she/he. " \
-                            + "Don't format your response into numered lists or bullet points."
+                            + "Don't format your response into numered lists or bullet points. You never speak for USER."
 
     inferPrompt             = "Describe the image in detail."
     inferTagThreshold       = 0.4
+
+    inferConfig             = dict()
     
     # Batch
-    batchTemplate           = "{{?caption.caption}}\n{{?tags}}"
+    batchTemplate           = "{{?captions.caption}}\n{{?tags}}"
 
     # Window state
     windowStates            = dict()
+
+    # Misc static
+    batchWinLegendWidth     = 120
 
 
     @classmethod
@@ -62,6 +67,8 @@ class Config:
         cls.inferPrompt           = data.get("infer_prompt", cls.inferPrompt)
         cls.inferTagThreshold     = float(data.get("infer_tag_threshold", cls.inferTagThreshold))
 
+        cls.inferConfig           = data.get("infer_config", cls.inferConfig)
+
         cls.batchTemplate         = data.get("batch_template", cls.batchTemplate)
 
         cls.windowStates          = data.get("window_states", dict())
@@ -89,6 +96,8 @@ class Config:
         data["infer_system_prompt"]         = cls.inferSystemPrompt
         data["infer_prompt"]                = cls.inferPrompt
         data["infer_tag_threshold"]         = cls.inferTagThreshold
+
+        data["infer_config"]                = cls.inferConfig
 
         data["batch_template"]              = cls.batchTemplate
 

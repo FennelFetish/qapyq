@@ -1,4 +1,4 @@
-import base64, io, os
+import base64, io, os, random
 from llama_cpp import Llama
 from llama_cpp.llama_chat_format import Llava15ChatHandler
 from PySide6.QtGui import QImage
@@ -6,23 +6,49 @@ from PySide6.QtCore import QBuffer
 
 
 class MiniCPM:
-    def __init__(self, modelPath, clipPath):
+    def __init__(self, modelPath, clipPath, config:dict=None):
         self.chat_handler = Llava15ChatHandler(clip_model_path=clipPath, verbose=False)
+
+        self.config = {
+            "max_tokens": 1024,
+            "temperature": 0.1, #0.15
+            "top_p": 0.95,
+            "top_k": 60,
+            "min_p": 0.05,
+            "repeat_penalty": 1.05
+        }
+
+        ctx = 32768
+        if config:
+            ctx = config.get("n_ctx", 32768)
+            self.setConfig(config)
 
         self.llm = Llama(
             model_path=modelPath,
             n_gpu_layers=-1,
-            n_ctx=32768, # n_ctx should be increased to accommodate the image embedding
+            n_ctx=ctx, # n_ctx should be increased to accommodate the image embedding
             n_batch=512,
             n_threads=12,
             flash_attn=True,
+            seed=self.getSeed(),
             chat_handler=self.chat_handler,
-            #logits_all=True,# needed to make llava work
+            #logits_all=True,# needed to make llava work (DEPRECATED - set llama_batch.logits instead)
             verbose=False
         )
 
+
     def __del__(self):
         self.llm.close()
+
+
+    def setConfig(self, config: dict):
+        if "n_ctx" in config:
+            del config["n_ctx"]
+        self.config.update(config)
+
+
+    def getSeed(self):
+        return random.randint(0, 2147483647)
 
 
     def imageToBase64(self, imgPath):
@@ -41,61 +67,36 @@ class MiniCPM:
         return f"data:image/png;base64,{base64Data}"
 
 
-    def caption(self, imgPath, prompt, systemPrompt=None):
-        imgURI = self.imageToBase64(imgPath)
-        
-        messages = []
-        if systemPrompt:
-            systemPrompt = systemPrompt.strip() + "\n"
-            messages.append({"role": "system", "content": systemPrompt})
-
-        prompt = prompt.strip() + "\n"
-        messages.append({
-            "role": "user",
-            "content": [
-                {"type" : "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": imgURI } }
-            ]
-        })
-
-        completion = self.llm.create_chat_completion(
-            messages = messages,
-            temperature=0.15, top_k=60, min_p=0.1,
-            max_tokens=1024
-        )
-
-        return [choice["message"]["content"] for choice in completion["choices"]]
-
-
-    def captionMulti(self, imgPath, prompts: dict, systemPrompt=None, rounds=1) -> dict:
+    def caption(self, imgPath, prompts: dict, systemPrompt=None, rounds=1) -> dict:
         imgURI = self.imageToBase64(imgPath)
         answers = {}
 
         for r in range(rounds):
             messages = []
             if systemPrompt:
-                messages.append({"role": "system", "content": systemPrompt.strip()+"\n"})
+                messages.append( {"role": "system", "content": systemPrompt.strip()} )
 
             firstPrompt = True
             for name, prompt in prompts.items():
-                prompt = prompt.strip() + "\n"
+                prompt = prompt.strip() #+ "\n"
 
                 content = [ {"type" : "text", "text": prompt} ]
                 if firstPrompt:
-                    content.append( {"type": "image_url", "image_url": {"url": imgURI } } )
+                    content.append( {"type": "image_url", "image_url": {"url": imgURI}} )
                     firstPrompt = False
 
-                messages.append( { "role": "user", "content": content} )
+                messages.append( {"role": "user", "content": content} )
 
                 completion = self.llm.create_chat_completion(
                     messages = messages,
-                    temperature=0.15, top_k=60, min_p=0.1,
-                    max_tokens=1024
+                    stop=["USER:"],
+                    seed=self.getSeed(),
+                    **self.config
                 )
 
                 msg = completion["choices"][0]["message"]
                 answer = msg["content"].strip()
-                messages.append( { "role": msg["role"], "content": answer+"\n"} )
+                messages.append( { "role": msg["role"], "content": f"{answer}\n"} )
 
                 if r > 0:
                     name = f"{name}_round{r}"

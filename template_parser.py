@@ -12,7 +12,7 @@ class TemplateParser:
 
         self._pattern = r'{{([^}]+)}}'
         self._optionalPrefix = "?"
-        self._captionPrefix = "caption."
+        self._captionPrefix = "captions."
 
     
     def setup(self, imgPath, captionFile):
@@ -73,6 +73,6 @@ class TemplateParser:
 
 if __name__ == "__main__":
     parser = TemplateParser("/home/rem/Pictures/red-tree-with-eyes.jpeg")
-    prompt = "This {{folder}} is a {{?bla}} inside a {{caption.caption_round3}}.\n{{tags}}"
+    prompt = "This {{folder}} is a {{?bla}} inside a {{captions.caption_round3}}.\n{{tags}}"
     prompt = parser.parse(prompt)
     print(prompt)

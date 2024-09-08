@@ -16,14 +16,17 @@ class DynamicLineEdit(QtWidgets.QLineEdit):
 
 
 
-def setTextEditHeight(textEdit, numRows):
+def setTextEditHeight(textEdit, numRows, maxHeight=False):
     lineHeight = textEdit.fontMetrics().lineSpacing()
     docMargin = textEdit.document().documentMargin()
     frameWidth = textEdit.frameWidth()
     margins = textEdit.contentsMargins()
 
     height = lineHeight*numRows + 2*(docMargin + frameWidth) + margins.top() + margins.bottom()
-    textEdit.setFixedHeight(height)
+    if maxHeight:
+        textEdit.setMaximumHeight(height)
+    else:
+        textEdit.setFixedHeight(height)
 
 def setMonospace(textWidget, fontSizeFactor=1.0, bold=False):
     font = textWidget.font()

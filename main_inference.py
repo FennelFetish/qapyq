@@ -6,11 +6,13 @@ minicpm = None
 joytag  = None
 
 
-def loadMiniCpm():
+def loadMiniCpm(config: dict = None):
     global minicpm
     if not minicpm:
         from infer.minicpm import MiniCPM
-        minicpm = MiniCPM(Config.inferCaptionModelPath, Config.inferCaptionClipPath)
+        minicpm = MiniCPM(Config.inferCaptionModelPath, Config.inferCaptionClipPath, config)
+    elif config:
+        minicpm.setConfig(config)
     return minicpm
 
 def loadJoytag():
@@ -63,8 +65,7 @@ def handleMessage(protocol) -> bool:
         protocol.writeMessage({"cmd": cmd})
 
     elif cmd == "setup_caption":
-        minicpm = loadMiniCpm()
-        # TODO: settings
+        minicpm = loadMiniCpm(msg.get("config", {}))
         protocol.writeMessage({"cmd": cmd})
 
     elif cmd == "setup_tag":
@@ -73,7 +74,7 @@ def handleMessage(protocol) -> bool:
     
     elif cmd == "caption":
         img = msg["img"]
-        captions = loadMiniCpm().captionMulti(img, msg["prompts"], msg["sysPrompt"], int(msg["rounds"]))
+        captions = loadMiniCpm().caption(img, msg["prompts"], msg["sysPrompt"], int(msg["rounds"]))
         protocol.writeMessage({
             "cmd": cmd,
             "img": img,
