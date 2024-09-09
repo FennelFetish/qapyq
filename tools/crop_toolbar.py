@@ -42,13 +42,13 @@ class CropToolBar(QtWidgets.QToolBar):
     def _buildTargetSize(self):
         self.spinW = QtWidgets.QSpinBox()
         self.spinW.setRange(1, 16384)
-        self.spinW.setSingleStep(64)
+        self.spinW.setSingleStep(Config.cropSizeStep)
         self.spinW.setValue(512)
         self.spinW.valueChanged.connect(self.updateSize)
 
         self.spinH = QtWidgets.QSpinBox()
         self.spinH.setRange(1, 16384)
-        self.spinH.setSingleStep(64)
+        self.spinH.setSingleStep(Config.cropSizeStep)
         self.spinH.setValue(512)
         self.spinH.valueChanged.connect(self.updateSize)
 

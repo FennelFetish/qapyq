@@ -6,27 +6,22 @@ from PySide6.QtCore import QBuffer
 
 
 class MiniCPM:
-    def __init__(self, modelPath, clipPath, config:dict=None):
-        self.chat_handler = Llava15ChatHandler(clip_model_path=clipPath, verbose=False)
-
+    def __init__(self, modelPath, clipPath, config:dict={}):
         self.config = {
             "max_tokens": 1024,
-            "temperature": 0.1, #0.15
+            "temperature": 0.15,
             "top_p": 0.95,
             "top_k": 60,
             "min_p": 0.05,
             "repeat_penalty": 1.05
         }
 
-        ctx = 32768
-        if config:
-            ctx = config.get("n_ctx", 32768)
-            self.setConfig(config)
+        self.chat_handler = Llava15ChatHandler(clip_model_path=clipPath, verbose=False)
 
         self.llm = Llama(
             model_path=modelPath,
-            n_gpu_layers=-1,
-            n_ctx=ctx, # n_ctx should be increased to accommodate the image embedding
+            n_gpu_layers=config.get("n_gpu_layers", -1),
+            n_ctx=config.get("n_ctx", 32768), # n_ctx should be increased to accommodate the image embedding
             n_batch=512,
             n_threads=12,
             flash_attn=True,
@@ -36,6 +31,9 @@ class MiniCPM:
             verbose=False
         )
 
+        self.setConfig(config)
+        self.stop = ["USER:", "ASSISTANT:"]
+
 
     def __del__(self):
         self.llm.close()
@@ -44,6 +42,8 @@ class MiniCPM:
     def setConfig(self, config: dict):
         if "n_ctx" in config:
             del config["n_ctx"]
+        if "n_gpu_layers" in config:
+            del config["n_gpu_layers"]
         self.config.update(config)
 
 
@@ -78,7 +78,7 @@ class MiniCPM:
 
             firstPrompt = True
             for name, prompt in prompts.items():
-                prompt = prompt.strip() #+ "\n"
+                prompt = prompt.strip()
 
                 content = [ {"type" : "text", "text": prompt} ]
                 if firstPrompt:
@@ -89,7 +89,7 @@ class MiniCPM:
 
                 completion = self.llm.create_chat_completion(
                     messages = messages,
-                    stop=["USER:"],
+                    stop=self.stop,
                     seed=self.getSeed(),
                     **self.config
                 )

@@ -1,15 +1,30 @@
-from PySide6 import QtWidgets
+from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot
+import superqt
 from config import Config
 
 
-class InferenceSettingsWidget(QtWidgets.QGroupBox):
+class InferenceSettingsWidget(superqt.QCollapsible):
     def __init__(self):
         super().__init__("Sample Settings")
-        spacerHeight = 6
+
+        winColor = QtWidgets.QApplication.palette().color(QtGui.QPalette.Base)
+        self.setStyleSheet("QCollapsible{border: 2px groove " + winColor.name() + "; border-radius: 3px}")
+
+        layout = self._build()
+        self.loadFromConfig()
+
+        widget = QtWidgets.QWidget()
+        widget.setLayout(layout)
+        self.addWidget(widget)
+
+
+    def _build(self):
+        spacerHeight = 8
 
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignTop)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnMinimumWidth(2, Config.batchWinLegendWidth)
         layout.setColumnMinimumWidth(4, Config.batchWinLegendWidth)
@@ -32,6 +47,12 @@ class InferenceSettingsWidget(QtWidgets.QGroupBox):
         layout.addWidget(QtWidgets.QLabel("Context Tokens:"), 0, 2, Qt.AlignTop)
         layout.addWidget(self.tokensContext, 0, 3)
 
+        self.gpuLayers = QtWidgets.QSpinBox()
+        self.gpuLayers.setRange(-1, 999)
+        self.gpuLayers.setSingleStep(1)
+        layout.addWidget(QtWidgets.QLabel("GPU Layers:"), 0, 4, Qt.AlignTop)
+        layout.addWidget(self.gpuLayers, 0, 5)
+
         layout.setRowMinimumHeight(1, spacerHeight)
 
         self.temperature = QtWidgets.QDoubleSpinBox()
@@ -47,17 +68,17 @@ class InferenceSettingsWidget(QtWidgets.QGroupBox):
         layout.addWidget(self.topK, 2, 3)
 
 
-        self.topP = QtWidgets.QDoubleSpinBox()
-        self.topP.setRange(0.0, 1.0)
-        self.topP.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Top P:"), 3, 0, Qt.AlignTop)
-        layout.addWidget(self.topP, 3, 1)
-
         self.minP = QtWidgets.QDoubleSpinBox()
         self.minP.setRange(0.0, 1.0)
         self.minP.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Min P:"), 3, 2, Qt.AlignTop)
-        layout.addWidget(self.minP, 3, 3)
+        layout.addWidget(QtWidgets.QLabel("Min P:"), 3, 0, Qt.AlignTop)
+        layout.addWidget(self.minP, 3, 1)
+
+        self.topP = QtWidgets.QDoubleSpinBox()
+        self.topP.setRange(0.0, 1.0)
+        self.topP.setSingleStep(0.05)
+        layout.addWidget(QtWidgets.QLabel("Top P:"), 3, 2, Qt.AlignTop)
+        layout.addWidget(self.topP, 3, 3)
 
         self.typicalP = QtWidgets.QDoubleSpinBox()
         self.typicalP.setRange(0.0, 1.0)
@@ -67,25 +88,24 @@ class InferenceSettingsWidget(QtWidgets.QGroupBox):
 
         layout.setRowMinimumHeight(4, spacerHeight)
 
-        self.repeatPenalty = QtWidgets.QDoubleSpinBox()
-        self.repeatPenalty.setRange(1.0, 3.0)
-        self.repeatPenalty.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Repetition Penalty:"), 5, 0, Qt.AlignTop)
-        layout.addWidget(self.repeatPenalty, 5, 1)
-
         self.freqPenalty = QtWidgets.QDoubleSpinBox()
         self.freqPenalty.setRange(-2.0, 2.0)
         self.freqPenalty.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Freqency Penalty:"), 5, 2, Qt.AlignTop)
-        layout.addWidget(self.freqPenalty, 5, 3)
+        layout.addWidget(QtWidgets.QLabel("Freqency Penalty:"), 5, 0, Qt.AlignTop)
+        layout.addWidget(self.freqPenalty, 5, 1)
 
         self.presencePenalty = QtWidgets.QDoubleSpinBox()
         self.presencePenalty.setRange(-2.0, 2.0)
         self.presencePenalty.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Presence Penalty:"), 5, 4, Qt.AlignTop)
-        layout.addWidget(self.presencePenalty, 5, 5)
+        layout.addWidget(QtWidgets.QLabel("Presence Penalty:"), 5, 2, Qt.AlignTop)
+        layout.addWidget(self.presencePenalty, 5, 3)
 
-        layout.setRowMinimumHeight(6, spacerHeight)
+        self.repeatPenalty = QtWidgets.QDoubleSpinBox()
+        self.repeatPenalty.setRange(1.0, 3.0)
+        self.repeatPenalty.setSingleStep(0.05)
+        layout.addWidget(QtWidgets.QLabel("Repetition Penalty:"), 5, 4, Qt.AlignTop)
+        layout.addWidget(self.repeatPenalty, 5, 5)
+
 
         self.microstatMode = QtWidgets.QSpinBox()
         self.microstatMode.setRange(0, 2)
@@ -104,7 +124,6 @@ class InferenceSettingsWidget(QtWidgets.QGroupBox):
         layout.addWidget(QtWidgets.QLabel("Microstat Eta:"), 7, 4, Qt.AlignTop)
         layout.addWidget(self.microstatEta, 7, 5)
 
-        layout.setRowMinimumHeight(8, spacerHeight)
 
         self.tfsZ = QtWidgets.QDoubleSpinBox()
         self.tfsZ.setRange(0.0, 1.0)
@@ -126,9 +145,8 @@ class InferenceSettingsWidget(QtWidgets.QGroupBox):
         self.btnLoadDefaults.clicked.connect(self.defaultValues)
         layout.addWidget(self.btnLoadDefaults, 11, 4, 1, 2)
 
-        self.loadFromConfig()
-        self.setLayout(layout)
-        
+        return layout
+
 
     @Slot()
     def defaultValues(self):
@@ -145,6 +163,7 @@ class InferenceSettingsWidget(QtWidgets.QGroupBox):
     
     def fromDict(self, settings: dict):
         self.tokensContext.setValue(settings.get("n_ctx", 32768))
+        self.gpuLayers.setValue(settings.get("n_gpu_layers", -1))
 
         self.tokensMax.setValue(settings.get("max_tokens", 1024))
         self.temperature.setValue(settings.get("temperature", 0.1))
@@ -167,6 +186,7 @@ class InferenceSettingsWidget(QtWidgets.QGroupBox):
     def toDict(self):
         return {
             "n_ctx": self.tokensContext.value(),
+            "n_gpu_layers": self.gpuLayers.value(),
 
             "max_tokens": self.tokensMax.value(),
             "temperature": self.temperature.value(),

@@ -267,7 +267,7 @@ class CropTool(ViewTool):
         if self._waitForConfirmation:
             return True
         
-        change = round(self._imgview.image.pixmap().height() * Config.cropSelectionChange)
+        change = round(self._imgview.image.pixmap().height() * Config.cropWheelStep)
         if (event.modifiers() & Qt.ShiftModifier) == Qt.ShiftModifier:
             change = 1
 

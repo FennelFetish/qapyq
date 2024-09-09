@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt, Signal, Slot
 import qtlib, util
 from config import Config
 from .caption_preset import CaptionPreset
+from infer.inference_settings import InferenceSettingsWidget
 
 CaptionControlGroup = ForwardRef('CaptionControlGroup')
 
@@ -148,8 +149,10 @@ class CaptionControl(QtWidgets.QTabWidget):
         txtPrompt.setText(Config.inferPrompt)
         qtlib.setMonospace(txtPrompt)
 
+        inferSettings = InferenceSettingsWidget()
+
         self.btnGenerate = QtWidgets.QPushButton("Generate")
-        self.btnGenerate.clicked.connect(lambda: self.generate(txtPrompt.toPlainText(), txtSysPrompt.toPlainText()))
+        self.btnGenerate.clicked.connect(lambda: self.generate(txtPrompt.toPlainText(), txtSysPrompt.toPlainText(), inferSettings.toDict()))
 
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignTop)
@@ -160,27 +163,27 @@ class CaptionControl(QtWidgets.QTabWidget):
         layout.addWidget(QtWidgets.QLabel("Prompt:"), 1, 0, Qt.AlignTop)
         layout.addWidget(txtPrompt, 1, 1)
 
-        layout.addWidget(self.btnGenerate, 2, 1, 1, 2)
+        layout.addWidget(inferSettings, 2, 0, 1, 2)
+        layout.addWidget(self.btnGenerate, 3, 0, 1, 2)
 
         widget = QtWidgets.QWidget()
         widget.setLayout(layout)
         return widget
     
-    def generate(self, prompt, sysPrompt):
+    def generate(self, prompt, sysPrompt, config={}):
         self.btnGenerate.setEnabled(False)
 
         file = self._container.tab.imgview.image.filepath
         prompts = util.parsePrompts(prompt)
 
         from infer import Inference
-        infer = Inference()
-        infer.startProcess()
-        infer.captionAsync(self.generateCallback, file, prompts, sysPrompt)
+        failHandler = lambda: self.generateCallback(None, None)
+        Inference().captionAsync(self.generateCallback, failHandler, file, prompts, sysPrompt, config)
 
     @Slot()
     def generateCallback(self, imgPath, captions: dict):
         self.btnGenerate.setEnabled(True)
-        if imgPath == self._container.tab.imgview.image.filepath:
+        if captions and imgPath == self._container.tab.imgview.image.filepath:
             parts = (cap for name, cap in captions.items())
             text = os.linesep.join(parts)
             self._container.txtCaption.setPlainText(text)

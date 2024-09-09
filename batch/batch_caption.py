@@ -150,7 +150,7 @@ class BatchCaption(QtWidgets.QWidget):
 
 
 class BatchCaptionTask(BatchTask):
-    def __init__(self, log, filelist, prompts, systemPrompt, doTag, config={}):
+    def __init__(self, log, filelist, prompts, systemPrompt, doTag, config):
         super().__init__("caption", log, filelist)
         self.prompts      = prompts
         self.systemPrompt = systemPrompt
