@@ -1,6 +1,8 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
+import superqt
 import cv2 as cv
+import qtlib
 from config import Config
 
 
@@ -29,8 +31,12 @@ class CropToolBar(QtWidgets.QToolBar):
         layout.addWidget(self._buildTargetSize())
         layout.addWidget(self._buildSelectionSize())
         layout.addWidget(self._buildRotation())
-        layout.addWidget(self._buildSave())
-        layout.addWidget(self._buildDestination())
+        layout.addWidget(self._buildExport())
+
+        self.txtPathSample = QtWidgets.QTextEdit()
+        self.txtPathSample.setReadOnly(True)
+        qtlib.setMonospace(self.txtPathSample, 0.9)
+        layout.addWidget(self.txtPathSample)
 
         widget = QtWidgets.QWidget()
         widget.setLayout(layout)
@@ -168,6 +174,16 @@ class CropToolBar(QtWidgets.QToolBar):
         group.setLayout(layout)
         return group
 
+    def _buildExport(self):
+        group = superqt.QCollapsible("Export Settings")
+        group.layout().setContentsMargins(2, 2, 2, 0)
+        group.setFrameStyle(QtWidgets.QFrame.NoFrame)
+        group.setLineWidth(0)
+
+        group.addWidget(self._buildSave())
+        group.addWidget(self._buildDestination())
+        return group
+
     def _buildSave(self):
         self.cboInterpUp = QtWidgets.QComboBox()
         self.cboInterpUp.addItems(INTERP_MODES.keys())
@@ -187,7 +203,7 @@ class CropToolBar(QtWidgets.QToolBar):
         layout.addRow("Interp 🠗:", self.cboInterpDown)
         layout.addRow("Format:", self.cboFormat)
 
-        group = QtWidgets.QGroupBox("Save Params")
+        group = QtWidgets.QGroupBox("Parameter")
         group.setLayout(layout)
         return group
 
@@ -204,18 +220,14 @@ class CropToolBar(QtWidgets.QToolBar):
         self.spinSubfolders = QtWidgets.QSpinBox()
         self.spinSubfolders.valueChanged.connect(self.updateExport)
 
-        self.txtPathSample = QtWidgets.QTextEdit()
-        self.txtPathSample.setReadOnly(True)
-
         layout = QtWidgets.QFormLayout()
         layout.setContentsMargins(1, 1, 1, 1)
         layout.addRow(self.btnChoosePath)
         layout.addRow("Folder Skip:", self.spinFolderSkip)
         layout.addRow("Folder Names:", self.spinFolderNames)
         layout.addRow("Subfolders:", self.spinSubfolders)
-        layout.addRow(self.txtPathSample)
 
-        group = QtWidgets.QGroupBox("Save Destination")
+        group = QtWidgets.QGroupBox("Destination")
         group.setLayout(layout)
         return group
 
