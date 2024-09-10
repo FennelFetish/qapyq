@@ -3,55 +3,6 @@ from PySide6.QtCore import Qt, Slot, Signal, QRect, QSize, QMimeData
 import os
 
 
-class DynamicLineEdit(QtWidgets.QLineEdit):
-    def __init__(self):
-        super().__init__()
-        self.textChanged.connect(self.updateWidth)
-        self.extraWidth = 8
-    
-    @Slot()
-    def updateWidth(self):
-        width = self.fontMetrics().boundingRect(self.text()).width() + self.extraWidth
-        width = max(width, self.minimumSizeHint().width())
-        self.setFixedWidth(width)
-
-
-
-class EllipsisLabel(QtWidgets.QLabel):
-    def __init__(self, maxLength: int):
-        super().__init__()
-        self.maxLength = maxLength
-
-    def setText(self, text):
-        text = text.strip().replace(os.linesep, " ")
-        if len(text) > self.maxLength:
-            partLength = max((self.maxLength-5) // 2, 10)
-            wordsLeft  = text[:partLength].split(" ")
-            wordsRight = text[-partLength:].split(" ")
-
-            left = ""
-            lenLeft = 0
-            for word in wordsLeft:
-                lenWord = len(word)
-                if lenLeft + 1 + lenWord > partLength:
-                    break
-                left += word + " "
-                lenLeft += lenWord + 1
-
-            right = ""
-            lenRight = 0
-            for word in reversed(wordsRight):
-                lenWord = len(word)
-                if lenRight + 1 + lenWord > partLength:
-                    break
-                right = " " + word + right
-                lenRight += lenWord + 1
-
-            text = left + "..." + right
-        super().setText(text)
-
-
-
 def setTextEditHeight(textEdit, numRows, maxHeight=False):
     lineHeight = textEdit.fontMetrics().lineSpacing()
     docMargin = textEdit.document().documentMargin()
@@ -79,6 +30,59 @@ def setShowWhitespace(textEdit):
     opt = doc.defaultTextOption()
     opt.setFlags(QtGui.QTextOption.ShowTabsAndSpaces)
     doc.setDefaultTextOption(opt)
+
+
+
+class DynamicLineEdit(QtWidgets.QLineEdit):
+    def __init__(self):
+        super().__init__()
+        self.textChanged.connect(self.updateWidth)
+        self.extraWidth = 8
+    
+    @Slot()
+    def updateWidth(self):
+        width = self.fontMetrics().boundingRect(self.text()).width() + self.extraWidth
+        width = max(width, self.minimumSizeHint().width())
+        self.setFixedWidth(width)
+
+
+
+class EllipsisLabel(QtWidgets.QLabel):
+    _ellipsis = "…"
+    _ellipsisLength = len(_ellipsis) + 2
+
+    def __init__(self, maxLength: int):
+        super().__init__()
+        self.maxLength = maxLength
+
+    def setText(self, text):
+        text = text.strip().replace(os.linesep, " ")
+        if len(text) > self.maxLength:
+            partLength = max((self.maxLength - EllipsisLabel._ellipsisLength) // 2, 10)
+            wordsLeft  = text[:partLength].split(" ")
+            wordsRight = text[-partLength:].split(" ")
+
+            left = ""
+            lenLeft = 0
+            for word in wordsLeft:
+                lenWord = len(word)
+                if lenLeft + 1 + lenWord > partLength:
+                    break
+                left += word + " "
+                lenLeft += lenWord + 1
+
+            right = ""
+            lenRight = 0
+            for word in reversed(wordsRight):
+                lenWord = len(word)
+                if lenRight + 1 + lenWord > partLength:
+                    break
+                right = " " + word + right
+                lenRight += lenWord + 1
+
+            text = left + EllipsisLabel._ellipsis + right
+        super().setText(text)
+
 
 
 class EditablePushButton(QtWidgets.QWidget):

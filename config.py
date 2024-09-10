@@ -1,7 +1,7 @@
 class Config:
     # Paths
     pathConfig              = "./pyimgset_config.json"
-    pathExport              = "./export/"
+    pathExport              = "."
 
     # View
     viewZoomFactor          = 1.15

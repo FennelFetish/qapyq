@@ -8,10 +8,13 @@ class InferenceSettingsWidget(superqt.QCollapsible):
     def __init__(self):
         super().__init__("Sample Settings")
 
+        self.layout().setContentsMargins(6, 2, 4, 0)
+
         winColor = QtWidgets.QApplication.palette().color(QtGui.QPalette.Base)
         self.setStyleSheet("QCollapsible{border: 2px groove " + winColor.name() + "; border-radius: 3px}")
 
         layout = self._build()
+        layout.setContentsMargins(0, 0, 0, 4)
         self.loadFromConfig()
 
         widget = QtWidgets.QWidget()
@@ -24,7 +27,6 @@ class InferenceSettingsWidget(superqt.QCollapsible):
 
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignTop)
-        layout.setContentsMargins(0, 0, 0, 0)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnMinimumWidth(2, Config.batchWinLegendWidth)
         layout.setColumnMinimumWidth(4, Config.batchWinLegendWidth)
