@@ -28,9 +28,10 @@ class Inference(metaclass=Singleton):
         self.threadPool.start(task)
         return task 
 
-    def tagAsync(self, handler, imgPath):
-        task = JoytagInferenceTask(self.proc, imgPath)
+    def tagAsync(self, handler, failHandler, imgPath, threshold):
+        task = JoytagInferenceTask(self.proc, imgPath, threshold)
         task.signals.done.connect(handler)
+        task.signals.fail.connect(failHandler)
         self.threadPool.start(task)
         return task
 
@@ -72,16 +73,18 @@ class JoytagInferenceTask(QRunnable):
         done = Signal(str, str)
         fail = Signal()
 
-    def __init__(self, proc, imgPath):
+    def __init__(self, proc, imgPath, threshold):
         super().__init__()
         self.signals = JoytagInferenceTask.Signals()
         self.proc = proc
         self.imgPath = imgPath
+        self.threshold = threshold
 
     @Slot()
     def run(self):
         try:
             self.proc.start()
+            self.proc.setupTag(self.threshold)
             tags = self.proc.tag(self.imgPath)
             if tags != None:
                 self.signals.done.emit(self.imgPath, tags)

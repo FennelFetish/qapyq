@@ -42,6 +42,8 @@ class CaptionControl(QtWidgets.QTabWidget):
     separatorChanged = Signal(str)
     controlUpdated = Signal()
     needsRulesApplied = Signal()
+    captionGenerated = Signal(str)
+
 
     def __init__(self, container):
         super().__init__()
@@ -137,56 +139,87 @@ class CaptionControl(QtWidgets.QTabWidget):
         return widget
 
     def _buildGenerate(self):
-        # Save to json
-
-        txtSysPrompt = QtWidgets.QTextEdit()
-        qtlib.setTextEditHeight(txtSysPrompt, 3)
-        txtSysPrompt.setText(Config.inferSystemPrompt)
-        qtlib.setMonospace(txtSysPrompt)
-
-        txtPrompt = QtWidgets.QTextEdit()
-        qtlib.setTextEditHeight(txtPrompt, 3)
-        txtPrompt.setText(Config.inferPrompt)
-        qtlib.setMonospace(txtPrompt)
-
-        inferSettings = InferenceSettingsWidget()
-
-        self.btnGenerate = QtWidgets.QPushButton("Generate")
-        self.btnGenerate.clicked.connect(lambda: self.generate(txtPrompt.toPlainText(), txtSysPrompt.toPlainText(), inferSettings.toDict()))
-
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignTop)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(2, 0)
+        layout.setColumnStretch(3, 1)
 
+        txtSysPrompt = QtWidgets.QTextEdit()
+        txtSysPrompt.setText(Config.inferSystemPrompt)
+        qtlib.setMonospace(txtSysPrompt)
+        qtlib.setTextEditHeight(txtSysPrompt, 3)
         layout.addWidget(QtWidgets.QLabel("Sys Prompt:"), 0, 0, Qt.AlignTop)
-        layout.addWidget(txtSysPrompt, 0, 1)
-
+        layout.addWidget(txtSysPrompt, 0, 1, 1, 3)
+        
+        txtPrompt = QtWidgets.QTextEdit()
+        txtPrompt.setText(Config.inferPrompt)
+        qtlib.setMonospace(txtPrompt)
+        qtlib.setTextEditHeight(txtPrompt, 3)
         layout.addWidget(QtWidgets.QLabel("Prompt:"), 1, 0, Qt.AlignTop)
-        layout.addWidget(txtPrompt, 1, 1)
+        layout.addWidget(txtPrompt, 1, 1, 1, 3)
 
-        layout.addWidget(inferSettings, 2, 0, 1, 2)
-        layout.addWidget(self.btnGenerate, 3, 0, 1, 2)
+        inferSettings = InferenceSettingsWidget()
+        layout.addWidget(inferSettings, 2, 0, 1, 4)
+
+        spinTagThreshold = QtWidgets.QDoubleSpinBox()
+        spinTagThreshold.setRange(0.0, 1.0)
+        spinTagThreshold.setSingleStep(0.05)
+        spinTagThreshold.setValue(Config.inferTagThreshold)
+        layout.addWidget(QtWidgets.QLabel("Tag Threshold:"), 3, 0, Qt.AlignTop)
+        layout.addWidget(spinTagThreshold, 3, 1, 1, 3)
+
+        self.btnGenerateCap = QtWidgets.QPushButton("Append Caption")
+        self.btnGenerateCap.clicked.connect(lambda: self.generateCaption(txtPrompt.toPlainText(), txtSysPrompt.toPlainText(), inferSettings.toDict()))
+        layout.addWidget(self.btnGenerateCap, 4, 0, 1, 2)
+
+        self.btnGenerateTags = QtWidgets.QPushButton("Append Tags")
+        self.btnGenerateTags.clicked.connect(lambda: self.generateTags(spinTagThreshold.value()))
+        layout.addWidget(self.btnGenerateTags, 4, 2, 1, 2)
 
         widget = QtWidgets.QWidget()
         widget.setLayout(layout)
         return widget
     
-    def generate(self, prompt, sysPrompt, config={}):
-        self.btnGenerate.setEnabled(False)
+    def generateCaption(self, prompt, sysPrompt, config={}):
+        self.btnGenerateCap.setEnabled(False)
+        self.btnGenerateTags.setEnabled(False)
 
         file = self._container.tab.imgview.image.filepath
         prompts = util.parsePrompts(prompt)
 
         from infer import Inference
-        failHandler = lambda: self.generateCallback(None, None)
-        Inference().captionAsync(self.generateCallback, failHandler, file, prompts, sysPrompt, config)
+        failHandler = lambda: self.onCaptionGenerated(None, None)
+        Inference().captionAsync(self.onCaptionGenerated, failHandler, file, prompts, sysPrompt, config)
 
     @Slot()
-    def generateCallback(self, imgPath, captions: dict):
-        self.btnGenerate.setEnabled(True)
+    def onCaptionGenerated(self, imgPath, captions: dict):
+        self.btnGenerateCap.setEnabled(True)
+        self.btnGenerateTags.setEnabled(True)
+
         if captions and imgPath == self._container.tab.imgview.image.filepath:
             parts = (cap for name, cap in captions.items())
             text = os.linesep.join(parts)
-            self._container.txtCaption.setPlainText(text)
+            self.captionGenerated.emit(text)
+
+    def generateTags(self, threshold):
+        self.btnGenerateCap.setEnabled(False)
+        self.btnGenerateTags.setEnabled(False)
+
+        file = self._container.tab.imgview.image.filepath
+
+        from infer import Inference
+        failHandler = lambda: self.onTagsGenerated(None, None)
+        Inference().tagAsync(self.onTagsGenerated, failHandler, file, threshold)
+
+    @Slot()
+    def onTagsGenerated(self, imgPath, tags: str):
+        self.btnGenerateCap.setEnabled(True)
+        self.btnGenerateTags.setEnabled(True)
+
+        if tags and imgPath == self._container.tab.imgview.image.filepath:
+            self.captionGenerated.emit(tags)
 
 
     def setText(self, text):

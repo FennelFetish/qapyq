@@ -18,6 +18,7 @@ class CaptionContainer(QtWidgets.QWidget):
 
         self.captionControl = CaptionControl(self)
         self.captionControl.captionClicked.connect(self.appendToCaption)
+        self.captionControl.captionGenerated.connect(self.appendToCaption)
         self.captionControl.separatorChanged.connect(self._onSeparatorChanged)
         self.captionControl.controlUpdated.connect(self.onControlUpdated)
         self.captionControl.needsRulesApplied.connect(self.applyRulesIfAuto)
