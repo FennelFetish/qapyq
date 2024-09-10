@@ -8,13 +8,13 @@ class InferenceSettingsWidget(superqt.QCollapsible):
     def __init__(self):
         super().__init__("Sample Settings")
 
-        self.layout().setContentsMargins(6, 2, 4, 0)
+        self.layout().setContentsMargins(6, 4, 6, 0)
 
         winColor = QtWidgets.QApplication.palette().color(QtGui.QPalette.Base)
         self.setStyleSheet("QCollapsible{border: 2px groove " + winColor.name() + "; border-radius: 3px}")
 
         layout = self._build()
-        layout.setContentsMargins(0, 0, 0, 4)
+        layout.setContentsMargins(0, 0, 0, 6)
         self.loadFromConfig()
 
         widget = QtWidgets.QWidget()
@@ -28,14 +28,20 @@ class InferenceSettingsWidget(superqt.QCollapsible):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
-        layout.setColumnMinimumWidth(2, Config.batchWinLegendWidth)
-        layout.setColumnMinimumWidth(4, Config.batchWinLegendWidth)
+        layout.setColumnMinimumWidth(2, 16)
+        layout.setColumnMinimumWidth(3, Config.batchWinLegendWidth)
+        layout.setColumnMinimumWidth(5, 16)
+        layout.setColumnMinimumWidth(6, Config.batchWinLegendWidth)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 1)
         layout.setColumnStretch(2, 0)
-        layout.setColumnStretch(3, 1)
-        layout.setColumnStretch(4, 0)
-        layout.setColumnStretch(5, 1)
+
+        layout.setColumnStretch(3, 0)
+        layout.setColumnStretch(4, 1)
+        layout.setColumnStretch(5, 0)
+
+        layout.setColumnStretch(6, 0)
+        layout.setColumnStretch(7, 1)
 
         self.tokensMax = QtWidgets.QSpinBox()
         self.tokensMax.setRange(10, 5000)
@@ -46,14 +52,14 @@ class InferenceSettingsWidget(superqt.QCollapsible):
         self.tokensContext = QtWidgets.QSpinBox()
         self.tokensContext.setRange(512, 1024000)
         self.tokensContext.setSingleStep(512)
-        layout.addWidget(QtWidgets.QLabel("Context Tokens:"), 0, 2, Qt.AlignTop)
-        layout.addWidget(self.tokensContext, 0, 3)
+        layout.addWidget(QtWidgets.QLabel("Context Tokens:"), 0, 3, Qt.AlignTop)
+        layout.addWidget(self.tokensContext, 0, 4)
 
         self.gpuLayers = QtWidgets.QSpinBox()
         self.gpuLayers.setRange(-1, 999)
         self.gpuLayers.setSingleStep(1)
-        layout.addWidget(QtWidgets.QLabel("GPU Layers:"), 0, 4, Qt.AlignTop)
-        layout.addWidget(self.gpuLayers, 0, 5)
+        layout.addWidget(QtWidgets.QLabel("GPU Layers:"), 0, 6, Qt.AlignTop)
+        layout.addWidget(self.gpuLayers, 0, 7)
 
         layout.setRowMinimumHeight(1, spacerHeight)
 
@@ -66,8 +72,8 @@ class InferenceSettingsWidget(superqt.QCollapsible):
         self.topK = QtWidgets.QSpinBox()
         self.topK.setRange(0, 120)
         self.topK.setSingleStep(5)
-        layout.addWidget(QtWidgets.QLabel("Top K:"), 2, 2, Qt.AlignTop)
-        layout.addWidget(self.topK, 2, 3)
+        layout.addWidget(QtWidgets.QLabel("Top K:"), 2, 3, Qt.AlignTop)
+        layout.addWidget(self.topK, 2, 4)
 
 
         self.minP = QtWidgets.QDoubleSpinBox()
@@ -79,14 +85,14 @@ class InferenceSettingsWidget(superqt.QCollapsible):
         self.topP = QtWidgets.QDoubleSpinBox()
         self.topP.setRange(0.0, 1.0)
         self.topP.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Top P:"), 3, 2, Qt.AlignTop)
-        layout.addWidget(self.topP, 3, 3)
+        layout.addWidget(QtWidgets.QLabel("Top P:"), 3, 3, Qt.AlignTop)
+        layout.addWidget(self.topP, 3, 4)
 
         self.typicalP = QtWidgets.QDoubleSpinBox()
         self.typicalP.setRange(0.0, 1.0)
         self.typicalP.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Typical P:"), 3, 4, Qt.AlignTop)
-        layout.addWidget(self.typicalP, 3, 5)
+        layout.addWidget(QtWidgets.QLabel("Typical P:"), 3, 6, Qt.AlignTop)
+        layout.addWidget(self.typicalP, 3, 7)
 
         layout.setRowMinimumHeight(4, spacerHeight)
 
@@ -99,14 +105,14 @@ class InferenceSettingsWidget(superqt.QCollapsible):
         self.presencePenalty = QtWidgets.QDoubleSpinBox()
         self.presencePenalty.setRange(-2.0, 2.0)
         self.presencePenalty.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Presence Penalty:"), 5, 2, Qt.AlignTop)
-        layout.addWidget(self.presencePenalty, 5, 3)
+        layout.addWidget(QtWidgets.QLabel("Presence Penalty:"), 5, 3, Qt.AlignTop)
+        layout.addWidget(self.presencePenalty, 5, 4)
 
         self.repeatPenalty = QtWidgets.QDoubleSpinBox()
         self.repeatPenalty.setRange(1.0, 3.0)
         self.repeatPenalty.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Repetition Penalty:"), 5, 4, Qt.AlignTop)
-        layout.addWidget(self.repeatPenalty, 5, 5)
+        layout.addWidget(QtWidgets.QLabel("Repetition Penalty:"), 5, 6, Qt.AlignTop)
+        layout.addWidget(self.repeatPenalty, 5, 7)
 
 
         self.microstatMode = QtWidgets.QSpinBox()
@@ -117,14 +123,14 @@ class InferenceSettingsWidget(superqt.QCollapsible):
         self.microstatTau = QtWidgets.QDoubleSpinBox()
         self.microstatTau.setRange(0.0, 20.0)
         self.microstatTau.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Microstat Tau:"), 7, 2, Qt.AlignTop)
-        layout.addWidget(self.microstatTau, 7, 3)
+        layout.addWidget(QtWidgets.QLabel("Microstat Tau:"), 7, 3, Qt.AlignTop)
+        layout.addWidget(self.microstatTau, 7, 4)
 
         self.microstatEta = QtWidgets.QDoubleSpinBox()
         self.microstatEta.setRange(0.0, 1.0)
         self.microstatEta.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Microstat Eta:"), 7, 4, Qt.AlignTop)
-        layout.addWidget(self.microstatEta, 7, 5)
+        layout.addWidget(QtWidgets.QLabel("Microstat Eta:"), 7, 6, Qt.AlignTop)
+        layout.addWidget(self.microstatEta, 7, 7)
 
 
         self.tfsZ = QtWidgets.QDoubleSpinBox()
@@ -141,11 +147,11 @@ class InferenceSettingsWidget(superqt.QCollapsible):
 
         self.btnLoad = QtWidgets.QPushButton("Load from Config")
         self.btnLoad.clicked.connect(self.loadFromConfig)
-        layout.addWidget(self.btnLoad, 11, 2, 1, 2)
+        layout.addWidget(self.btnLoad, 11, 3, 1, 2)
 
         self.btnLoadDefaults = QtWidgets.QPushButton("Reset to Defaults")
         self.btnLoadDefaults.clicked.connect(self.defaultValues)
-        layout.addWidget(self.btnLoadDefaults, 11, 4, 1, 2)
+        layout.addWidget(self.btnLoadDefaults, 11, 6, 1, 2)
 
         return layout
 
@@ -167,7 +173,7 @@ class InferenceSettingsWidget(superqt.QCollapsible):
         self.tokensContext.setValue(settings.get("n_ctx", 32768))
         self.gpuLayers.setValue(settings.get("n_gpu_layers", -1))
 
-        self.tokensMax.setValue(settings.get("max_tokens", 1024))
+        self.tokensMax.setValue(settings.get("max_tokens", 1000))
         self.temperature.setValue(settings.get("temperature", 0.1))
         self.topP.setValue(settings.get("top_p", 0.95))
         self.topK.setValue(settings.get("top_k", 40))
