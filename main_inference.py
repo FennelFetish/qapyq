@@ -4,6 +4,7 @@ from config import Config
 
 minicpm = None
 joytag  = None
+llm     = None
 
 
 def loadMiniCpm(config: dict = None):
@@ -21,6 +22,15 @@ def loadJoytag():
         from infer.joytag import JoyTag
         joytag = JoyTag(Config.inferTagModelPath)
     return joytag
+
+def loadLLM(config: dict = None):
+    global llm
+    if not llm:
+        from infer.llm import LLM
+        llm = LLM(Config.inferLLMPath, config)
+    elif config:
+        llm.setConfig(config)
+    return llm
 
 
 
@@ -64,14 +74,24 @@ def handleMessage(protocol) -> bool:
         loadJoytag()
         protocol.writeMessage({"cmd": cmd})
 
+    elif cmd == "prepare_llm":
+        loadLLM()
+        protocol.writeMessage({"cmd": cmd})
+
+
     elif cmd == "setup_caption":
-        minicpm = loadMiniCpm(msg.get("config", {}))
+        loadMiniCpm(msg.get("config", {}))
         protocol.writeMessage({"cmd": cmd})
 
     elif cmd == "setup_tag":
         loadJoytag().threshold = float(msg["threshold"])
         protocol.writeMessage({"cmd": cmd})
-    
+
+    elif cmd == "setup_llm":
+        loadLLM(msg.get("config", {}))
+        protocol.writeMessage({"cmd": cmd})
+
+
     elif cmd == "caption":
         img = msg["img"]
         captions = loadMiniCpm().caption(img, msg["prompts"], msg["sysPrompt"], int(msg["rounds"]))
@@ -88,6 +108,13 @@ def handleMessage(protocol) -> bool:
             "cmd": cmd,
             "img": img,
             "tags": tags
+        })
+
+    elif cmd == "answer":
+        answers = loadLLM().answer(msg["prompts"], msg["sysPrompt"], int(msg["rounds"]))
+        protocol.writeMessage({
+            "cmd": cmd,
+            "answers": answers
         })
 
     return True

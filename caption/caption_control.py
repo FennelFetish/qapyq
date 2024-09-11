@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt, Signal, Slot
 import qtlib, util
 from config import Config
 from .caption_preset import CaptionPreset
-from infer.inference_settings import InferenceSettingsWidget
+from infer import InferenceSettingsWidget
 
 CaptionControlGroup = ForwardRef('CaptionControlGroup')
 

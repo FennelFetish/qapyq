@@ -1,6 +1,6 @@
 import base64, io, os, random
 from llama_cpp import Llama
-from llama_cpp.llama_chat_format import Llava15ChatHandler
+from llama_cpp.llama_chat_format import MiniCPMv26ChatHandler
 from PySide6.QtGui import QImage
 from PySide6.QtCore import QBuffer
 
@@ -16,7 +16,7 @@ class MiniCPM:
             "repeat_penalty": 1.05
         }
 
-        self.chat_handler = Llava15ChatHandler(clip_model_path=clipPath, verbose=False)
+        self.chat_handler = MiniCPMv26ChatHandler(clip_model_path=clipPath, verbose=False)
 
         self.llm = Llama(
             model_path=modelPath,

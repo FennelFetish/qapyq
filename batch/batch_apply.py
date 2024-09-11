@@ -17,9 +17,11 @@ class BatchApply(QtWidgets.QWidget):
         self.progressBar: QtWidgets.QProgressBar = progressBar
         self.statusBar: QtWidgets.QStatusBar = statusBar
 
+        self.backupSettings = self._buildBackupSettings()
+
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self._buildFormatSettings())
-        layout.addWidget(self._buildBackupSettings())
+        layout.addWidget(self.backupSettings)
         layout.addWidget(self._buildApplySettings())
         self.setLayout(layout)
 
@@ -63,6 +65,7 @@ class BatchApply(QtWidgets.QWidget):
         layout.addWidget(self.chkStripMulti, 2, 2)
 
         #self.chkApplyRules = QtWidgets.QCheckBox("Apply Caption Rules")
+        # checkbox: delete json afterwards
 
         groupBox = QtWidgets.QGroupBox("Format")
         groupBox.setLayout(layout)
@@ -73,18 +76,17 @@ class BatchApply(QtWidgets.QWidget):
         layout.setAlignment(Qt.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 0)
+        layout.setColumnStretch(2, 1)
 
         self.txtBackupName = QtWidgets.QLineEdit("backup")
-        self.txtBackupName.setEnabled(False)
         qtlib.setMonospace(self.txtBackupName)
         layout.addWidget(QtWidgets.QLabel("Store as:"), 0, 0, Qt.AlignTop)
         layout.addWidget(self.txtBackupName, 0, 1)
 
-        self.chkBackup = QtWidgets.QCheckBox("Enable backup from .txt into .json file")
-        self.chkBackup.checkStateChanged.connect(lambda state: self.txtBackupName.setEnabled(state == Qt.Checked))
-        layout.addWidget(self.chkBackup, 1, 1)
-
-        groupBox = QtWidgets.QGroupBox("Backup")
+        groupBox = QtWidgets.QGroupBox("Backup (txt → json)")
+        groupBox.setCheckable(True)
+        groupBox.setChecked(False)
         groupBox.setLayout(layout)
         return groupBox
 
@@ -129,7 +131,7 @@ class BatchApply(QtWidgets.QWidget):
             self.statusBar.showMessage("Starting batch apply ...")
 
             template = self.txtTemplate.toPlainText()
-            backupName = self.txtBackupName.text().strip() if self.chkBackup.isChecked() else None
+            backupName = self.txtBackupName.text().strip() if self.backupSettings.isChecked() else None
             self._task = BatchApplyTask(self.log, self.tab.filelist, template, self.chkStripAround.isChecked(), self.chkStripMulti.isChecked(), backupName)
             self._task.signals.progress.connect(self.onProgress)
             self._task.signals.done.connect(self.onFinished)

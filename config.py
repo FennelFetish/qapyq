@@ -20,10 +20,11 @@ class Config:
     inferCaptionModelPath   = "./models/MiniCPM-V-2.6_Q8_0.gguf"
     inferCaptionClipPath    = "./models/MiniCPM-V-2.6_mmproj-model-f16.gguf"
     inferTagModelPath       = "./models/joytag"
+    inferLLMPath            = "./models/gemma2.gguf"
 
     inferSystemPrompt       = "You are an assistant that perfectly describes scenes in concise English language. You're always certain and you don't guess. " \
                             + "You are never confused or distracted by semblance. You state facts. Refer to a person using gendered pronouns like she/he. " \
-                            + "Don't format your response into numered lists or bullet points. You never speak for USER."
+                            + "Don't format your response into numered lists or bullet points."
 
     inferPrompt             = "Describe the image in detail."
     inferConfig             = dict()
@@ -63,6 +64,7 @@ class Config:
         cls.inferCaptionModelPath = data.get("infer_caption_model_path", cls.inferCaptionModelPath)
         cls.inferCaptionClipPath  = data.get("infer_caption_clip_path", cls.inferCaptionClipPath)
         cls.inferTagModelPath     = data.get("infer_tag_model_path", cls.inferTagModelPath)
+        cls.inferLLMPath          = data.get("infer_llm_path", cls.inferLLMPath)
 
         cls.inferSystemPrompt     = data.get("infer_system_prompt", cls.inferSystemPrompt)
         cls.inferPrompt           = data.get("infer_prompt", cls.inferPrompt)
@@ -93,6 +95,7 @@ class Config:
         data["infer_caption_model_path"]    = cls.inferCaptionModelPath
         data["infer_caption_clip_path"]     = cls.inferCaptionClipPath
         data["infer_tag_model_path"]        = cls.inferTagModelPath
+        data["infer_llm_path"]              = cls.inferLLMPath
 
         data["infer_system_prompt"]         = cls.inferSystemPrompt
         data["infer_prompt"]                = cls.inferPrompt

@@ -53,6 +53,11 @@ class InferenceProcess(metaclass=Singleton):
             self._writeMessage({"cmd": "prepare_tag"})
             return self._blockReadMessage("cmd")
 
+    def prepareLLM(self):
+        with QMutexLocker(self.mutex):
+            self._writeMessage({"cmd": "prepare_llm"})
+            return self._blockReadMessage("cmd")
+
 
     def setupCaption(self, config: dict={}):
         with QMutexLocker(self.mutex):
@@ -67,6 +72,14 @@ class InferenceProcess(metaclass=Singleton):
             self._writeMessage({
                 "cmd": "setup_tag",
                 "threshold": threshold
+            })
+            return self._blockReadMessage("cmd")
+
+    def setupLLM(self, config: dict={}):
+        with QMutexLocker(self.mutex):
+            self._writeMessage({
+                "cmd": "setup_llm",
+                "config": config
             })
             return self._blockReadMessage("cmd")
 
@@ -89,6 +102,16 @@ class InferenceProcess(metaclass=Singleton):
                 "img": imgPath
             })
             return self._blockReadMessage("tags")
+
+    def answer(self, prompts: dict, sysPrompt=None, rounds=1) -> dict:
+        with QMutexLocker(self.mutex):
+            self._writeMessage({
+                "cmd": "answer",
+                "prompts": prompts,
+                "sysPrompt": sysPrompt,
+                "rounds": rounds
+            })
+            return self._blockReadMessage("answers")
 
 
     def _onError(self):

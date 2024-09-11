@@ -5,8 +5,9 @@ from config import Config
 
 
 class InferenceSettingsWidget(superqt.QCollapsible):
-    def __init__(self):
-        super().__init__("Sample Settings")
+    def __init__(self, configKey="minicpm"):
+        super().__init__(f"Sample Settings ({configKey})")
+        self.configKey = configKey
 
         self.layout().setContentsMargins(6, 4, 6, 0)
 
@@ -70,7 +71,7 @@ class InferenceSettingsWidget(superqt.QCollapsible):
         layout.addWidget(self.temperature, 2, 1)
 
         self.topK = QtWidgets.QSpinBox()
-        self.topK.setRange(0, 120)
+        self.topK.setRange(0, 200)
         self.topK.setSingleStep(5)
         layout.addWidget(QtWidgets.QLabel("Top K:"), 2, 3, Qt.AlignTop)
         layout.addWidget(self.topK, 2, 4)
@@ -162,11 +163,11 @@ class InferenceSettingsWidget(superqt.QCollapsible):
 
     @Slot()
     def saveToConfig(self):
-        Config.inferConfig.update(self.toDict())
+        Config.inferConfig[self.configKey] = self.toDict()
 
     @Slot()
     def loadFromConfig(self):
-        self.fromDict(Config.inferConfig)
+        self.fromDict( Config.inferConfig.get(self.configKey, {}) )
 
     
     def fromDict(self, settings: dict):

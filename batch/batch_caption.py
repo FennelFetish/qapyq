@@ -5,7 +5,7 @@ from config import Config
 from infer import Inference
 from .batch_task import BatchTask
 from .captionfile import CaptionFile
-from infer.inference_settings import InferenceSettingsWidget
+from infer import InferenceSettingsWidget
 
 
 class BatchCaption(QtWidgets.QWidget):
@@ -35,20 +35,22 @@ class BatchCaption(QtWidgets.QWidget):
         layout.setAlignment(Qt.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 0)
+        layout.setColumnStretch(2, 1)
 
         self.txtSystemPrompt = QtWidgets.QPlainTextEdit(Config.inferSystemPrompt)
         qtlib.setMonospace(self.txtSystemPrompt)
         qtlib.setTextEditHeight(self.txtSystemPrompt, 5, maxHeight=True)
         qtlib.setShowWhitespace(self.txtSystemPrompt)
         layout.addWidget(QtWidgets.QLabel("System Prompt:"), 0, 0, Qt.AlignTop)
-        layout.addWidget(self.txtSystemPrompt, 0, 1)
+        layout.addWidget(self.txtSystemPrompt, 0, 1, 1, 2)
         layout.setRowStretch(0, 0.3)
 
         self.txtPrompts = QtWidgets.QPlainTextEdit(Config.inferPrompt)
         qtlib.setMonospace(self.txtPrompts)
         qtlib.setShowWhitespace(self.txtPrompts)
         layout.addWidget(QtWidgets.QLabel("Prompt(s):"), 1, 0, Qt.AlignTop)
-        layout.addWidget(self.txtPrompts, 1, 1)
+        layout.addWidget(self.txtPrompts, 1, 1, 1, 2)
         layout.setRowStretch(1, 2)
 
         self.spinRounds = QtWidgets.QSpinBox()
@@ -57,7 +59,7 @@ class BatchCaption(QtWidgets.QWidget):
         layout.addWidget(QtWidgets.QLabel("Rounds:"), 2, 0, Qt.AlignTop)
         layout.addWidget(self.spinRounds, 2, 1)
 
-        layout.addWidget(self.inferSettings, 3, 0, 1, 2)
+        layout.addWidget(self.inferSettings, 3, 0, 1, 3)
 
         groupBox = QtWidgets.QGroupBox("MiniCPM")
         groupBox.setCheckable(True)
@@ -70,7 +72,8 @@ class BatchCaption(QtWidgets.QWidget):
         layout.setAlignment(Qt.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnStretch(0, 0)
-        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(1, 0)
+        layout.setColumnStretch(2, 1)
 
         self.spinTagThreshold = QtWidgets.QDoubleSpinBox()
         self.spinTagThreshold.setValue(Config.inferTagThreshold)
@@ -90,9 +93,9 @@ class BatchCaption(QtWidgets.QWidget):
         layout.setAlignment(Qt.AlignTop)
         layout.setColumnStretch(0, 0)
 
-        self.btnGenerate = QtWidgets.QPushButton("Start Batch Caption")
-        self.btnGenerate.clicked.connect(self.startStop)
-        layout.addWidget(self.btnGenerate, 1, 0, 1, 2)
+        self.btnStart = QtWidgets.QPushButton("Start Batch Caption")
+        self.btnStart.clicked.connect(self.startStop)
+        layout.addWidget(self.btnStart, 1, 0, 1, 2)
 
         widget = QtWidgets.QWidget()
         widget.setLayout(layout)
@@ -104,7 +107,7 @@ class BatchCaption(QtWidgets.QWidget):
         if self._task:
             self._task.abort()
         else:
-            self.btnGenerate.setText("Abort")
+            self.btnStart.setText("Abort")
             self.statusBar.showMessage("Starting batch caption ...")
 
             if self.captionGroup.isChecked():
@@ -142,7 +145,7 @@ class BatchCaption(QtWidgets.QWidget):
             self.statusBar.showMessage("Wrote " + jsonFile)
 
     def taskDone(self):
-        self.btnGenerate.setText("Start Batch Caption")
+        self.btnStart.setText("Start Batch Caption")
         self.progressBar.setRange(0, 1)
         self.progressBar.reset()
         self._task = None

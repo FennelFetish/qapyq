@@ -26,8 +26,12 @@ def isValidColor(color):
     return colorPattern.match(color) is not None
 
 
-def parsePrompts(text) -> dict:
-    defaultName = "caption"
+# TODO: Don't return caption names starting with '?'
+# TODO: Start new message history with '===name==='
+def parsePrompts(text, defaultName="caption") -> dict:
+    if not defaultName:
+        defaultName = "caption"
+
     namePattern = r"^---(.*?)---$"
     currentName = defaultName
     currentPrompt = []
@@ -43,11 +47,12 @@ def parsePrompts(text) -> dict:
                 currentPrompt.clear()
 
             nameMatch = re.match(namePattern, line)
-            currentName = nameMatch.group(1).strip() if nameMatch else defaultName
+            newName = nameMatch.group(1).strip() if nameMatch else defaultName
+            currentName = newName
 
             appendNr = 1
             while currentName in prompts:
-                currentName = f"{currentName}_{appendNr}"
+                currentName = f"{newName}_{appendNr}"
                 appendNr += 1
         else:
             currentPrompt.append(line)
