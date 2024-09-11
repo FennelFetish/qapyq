@@ -3,6 +3,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QTimer
 import random
 from .view import ViewTool
+from imgview import ImgItem
 from config import Config
 
 
@@ -28,6 +29,10 @@ class SlideshowTool(ViewTool):
         self._toolbar.setFloatable(False)
         self._toolbar.setMovable(False)
 
+        self._oldPixmap = None
+        self._oldImageItem = None
+        self._fade = Config.slideshowFade
+
 
     @Slot()
     def setInterval(self, seconds):
@@ -38,6 +43,10 @@ class SlideshowTool(ViewTool):
     def setShuffle(self, shuffle):
         self.resetHistory()
         self._shuffle = shuffle
+
+    @Slot()
+    def setFade(self, fade):
+        self._fade = fade
 
 
     @Slot()
@@ -86,10 +95,17 @@ class SlideshowTool(ViewTool):
 
 
     def onFileChanged(self, currentFile):
-        pass
+        if self._fade and self._oldPixmap:
+            self._oldImageItem.setPixmap(self._oldPixmap)
+            self._oldImageItem.updateTransform(self._imgview.viewport().rect(), 0)
+            self._oldImageItem.startAnim()
+        self._oldPixmap = self._imgview.image.pixmap()
 
     def onFileListChanged(self, currentFile):
         self.resetHistory()
+
+        self._oldPixmap = None
+        self.onFileChanged(currentFile)
 
 
     def getToolbar(self):
@@ -103,6 +119,10 @@ class SlideshowTool(ViewTool):
 
         self._cursor = imgview.cursor()
 
+        self._oldImageItem = FadeImgItem()
+        imgview.scene().addItem(self._oldImageItem)
+        self._oldPixmap = imgview.image.pixmap()
+
     def onDisabled(self, imgview):
         self._playTimer.stop()
         self.resetHistory()
@@ -111,6 +131,10 @@ class SlideshowTool(ViewTool):
 
         imgview.setCursor(self._cursor)
         self._cursor = None
+
+        imgview.scene().removeItem(self._oldImageItem)
+        self._oldImageItem = None
+        self._oldPixmap = None
 
 
     def onMouseMove(self, event):
@@ -205,6 +229,11 @@ class SlideshowToolbar(QtWidgets.QToolBar):
         chkShuffle.setFocusPolicy(Qt.NoFocus)
         chkShuffle.stateChanged.connect(self._slideshowTool.setShuffle)
 
+        chkFade = QtWidgets.QCheckBox()
+        chkFade.setChecked(Config.slideshowFade)
+        chkFade.setFocusPolicy(Qt.NoFocus)
+        chkFade.stateChanged.connect(self._slideshowTool.setFade)
+
         layout = QtWidgets.QGridLayout()
         layout.setContentsMargins(1, 1, 1, 1)
         layout.setColumnStretch(0, 0)
@@ -218,6 +247,10 @@ class SlideshowToolbar(QtWidgets.QToolBar):
         lblShuffle = QtWidgets.QLabel("Shuffle:")
         layout.addWidget(lblShuffle, 2, 0)
         layout.addWidget(chkShuffle, 2, 1)
+
+        lblFade = QtWidgets.QLabel("Fade:")
+        layout.addWidget(lblFade, 3, 0)
+        layout.addWidget(chkFade, 3, 1)
 
         group = QtWidgets.QGroupBox("Slideshow")
         group.setLayout(layout)
@@ -253,3 +286,26 @@ class SlideshowToolbar(QtWidgets.QToolBar):
 
     def leaveEvent(self, event):
         self.startHideTimeout()
+
+
+
+class FadeImgItem(ImgItem):
+    def __init__(self):
+        super().__init__()
+
+        self.timer = QTimer()
+        self.timer.setInterval(30)
+        self.timer.timeout.connect(self.anim)
+
+    def startAnim(self):
+        self.setVisible(True)
+        self.setOpacity(1.0)
+        self.timer.start()
+
+    def anim(self):
+        opacity = self.opacity() - 0.12
+        if opacity <= 0.0:
+            self.timer.stop()
+            self.setVisible(False)
+        else:
+            self.setOpacity(opacity)

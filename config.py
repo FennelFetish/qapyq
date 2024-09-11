@@ -10,6 +10,7 @@ class Config:
     # Slideshow
     slideshowInterval       = 4.0
     slideshowShuffle        = False
+    slideshowFade           = True
 
     # Crop
     cropSizePresets         = ["512x512", "512x768", "768x768", "768x1152", "1024x1024", "1024x1536"]
@@ -31,7 +32,7 @@ class Config:
     inferTagThreshold       = 0.4
     
     # Batch
-    batchTemplate           = "{{?captions.caption}}\n{{?tags}}"
+    batchTemplate           = "{{?captions.target}}\n{{?tags}}"
 
     # Window state
     windowStates            = dict()
@@ -56,6 +57,7 @@ class Config:
 
         cls.slideshowInterval     = float(data.get("slideshow_interval", cls.slideshowInterval))
         cls.slideshowShuffle      = bool(data.get("slideshow_shuffle", cls.slideshowShuffle))
+        cls.slideshowFade         = bool(data.get("slideshow_fade", cls.slideshowFade))
 
         cls.cropSizePresets       = data.get("crop_size_presets", cls.cropSizePresets)
         cls.cropSizeStep          = int(data.get("crop_size_step", cls.cropSizeStep))
@@ -87,6 +89,7 @@ class Config:
 
         data["slideshow_interval"]          = cls.slideshowInterval
         data["slideshow_shuffle"]           = cls.slideshowShuffle
+        data["slideshow_fade"]              = cls.slideshowFade
 
         data["crop_size_presets"]           = cls.cropSizePresets
         data["crop_size_step"]              = cls.cropSizeStep
