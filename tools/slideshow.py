@@ -101,6 +101,9 @@ class SlideshowTool(ViewTool):
             self._oldImageItem.startAnim()
         self._oldPixmap = self._imgview.image.pixmap()
 
+        if self._playTimer.isActive():
+            self._playTimer.start()
+
     def onFileListChanged(self, currentFile):
         self.resetHistory()
 
@@ -158,9 +161,6 @@ class SlideshowTool(ViewTool):
             self.next()
         else:
             self.prev()
-        
-        if self._playTimer.isActive():
-            self._playTimer.start()
         return True
 
     def onMouseEnter(self, event):
@@ -180,12 +180,8 @@ class SlideshowTool(ViewTool):
             self._toolbar.showBriefly()
         elif key == Qt.Key_Left:
             self.prev()
-            if self._playTimer.isActive():
-                self._playTimer.start()
         elif key == Qt.Key_Right:
             self.next()
-            if self._playTimer.isActive():
-                self._playTimer.start()
         elif key == Qt.Key_Up:
             self._toolbar.adjustInterval(1)
         elif key == Qt.Key_Down:
