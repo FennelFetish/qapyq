@@ -28,6 +28,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.buildTabs()
         self.addTab()
 
+        self._fullscreenTab = None
+
         if not aux_window.loadWindowPos(self, "main", False):
             aux_window.setWindowDimensions(self, 0.5, 1, 0, 0)
 
@@ -76,6 +78,16 @@ class MainWindow(QtWidgets.QMainWindow):
         tab = self.tabWidget.currentWidget()
         tab.setTool(toolName)
         self.toolbar.setTool(toolName)
+
+    
+    @Slot()
+    def toggleFullscreen(self):
+        if self._fullscreenTab:
+            self._fullscreenTab.toggleFullscreen()
+            self._fullscreenTab = None
+        else:
+            self._fullscreenTab = self.tabWidget.currentWidget()
+            self._fullscreenTab.toggleFullscreen()
 
     
     @Slot()
@@ -141,6 +153,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def closeEvent(self, event):
         aux_window.saveWindowPos(self, "main")
+        if self._fullscreenTab:
+            self._fullscreenTab.close()
+        
         if self.galleryWindow:
             self.galleryWindow.close()
         if self.batchWindow:
@@ -154,13 +169,19 @@ class MainMenu(QtWidgets.QMenu):
     def __init__(self, mainWindow):
         super().__init__()
 
+        actFullscreen = QtGui.QAction("Toggle &Fullscreen", self)
+        actFullscreen.setShortcutContext(Qt.ApplicationShortcut)
+        actFullscreen.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_F))
+        actFullscreen.triggered.connect(mainWindow.toggleFullscreen)
+
         actModelConfig = QtGui.QAction("Model Settings", self)
 
         actQuit = QtGui.QAction("&Quit", self)
+        actQuit.setShortcutContext(Qt.ApplicationShortcut)
         actQuit.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_Q))
         actQuit.triggered.connect(mainWindow.close)
 
-        #menuFile = self.addMenu("&File")
+        self.addAction(actFullscreen)
         self.addAction(actModelConfig)
         self.addSeparator()
         self.addAction(actQuit)
@@ -177,10 +198,12 @@ class MainToolBar(QtWidgets.QToolBar):
         self.actMenu = self.addAction("☰")
         self.actMenu.setMenu(menu)
         self.actMenu.triggered.connect(self.showMenu)
+
         self.addSeparator()
 
         self.buildToolButtons(mainWindow)
         self.setTool("view")
+
         self.addSeparator()
 
         self.actToggleGallery = self.addAction("Gallery")
@@ -344,11 +367,6 @@ class ImgTab(QtWidgets.QMainWindow):
         self.imgview.setFocus()
         self.setWindowState(winState ^ Qt.WindowFullScreen)
         self.setVisible(True)
-
-
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key_F:
-            self.toggleFullscreen()
 
 
 
