@@ -1,1 +1,1 @@
-from .batch_window import BatchContent
+from .batch_container import BatchContainer

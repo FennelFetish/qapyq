@@ -95,8 +95,8 @@ class MainWindow(QtWidgets.QMainWindow):
     @Slot()
     def toggleGallery(self):
         if self.galleryWindow is None:
-            from gallery import GalleryContent
-            self.galleryWindow = aux_window.AuxiliaryWindow(GalleryContent, "Gallery", "gallery")
+            from gallery import Gallery
+            self.galleryWindow = aux_window.AuxiliaryWindow(Gallery, "Gallery", "gallery")
             self.galleryWindow.closed.connect(self.onGalleryClosed)
             self.galleryWindow.show()
 
@@ -115,8 +115,8 @@ class MainWindow(QtWidgets.QMainWindow):
     @Slot()
     def toggleBatchWindow(self):
         if self.batchWindow is None:
-            from batch import BatchContent
-            self.batchWindow = aux_window.AuxiliaryWindow(BatchContent, "Batch", "batch")
+            from batch import BatchContainer
+            self.batchWindow = aux_window.AuxiliaryWindow(BatchContainer, "Batch", "batch")
             self.batchWindow.closed.connect(self.onBatchWindowClosed)
             self.batchWindow.show()
 
@@ -280,20 +280,14 @@ class ImgTab(QtWidgets.QMainWindow):
 
         self.imgview = ImgView(self.filelist)
         self.export = Export()
+        self._windowContent = dict()
+
         self.tools = dict()
         self._toolbar = None
         self.toolName = None
         self.setTool("view")
 
-        self._windowContent = dict()
-
-        layout = QtWidgets.QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.imgview)
-
-        widget = QtWidgets.QWidget()
-        widget.setLayout(layout)
-        self.setCentralWidget(widget)
+        self.setCentralWidget(self.imgview)
 
 
     def onFileChanged(self, currentFile):

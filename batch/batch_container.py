@@ -6,7 +6,7 @@ from .batch_log import BatchLog
 import qtlib
 
 
-class BatchContent(QtWidgets.QTabWidget):
+class BatchContainer(QtWidgets.QTabWidget):
     def __init__(self, tab):
         super().__init__()
         self.tab = tab
