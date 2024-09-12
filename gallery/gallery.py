@@ -5,6 +5,7 @@ from filelist import DataKeys
 import os
 import qtlib
 
+# TODO: RowView with captions
 
 class ImageIcon:
     Caption = "caption"
@@ -253,7 +254,7 @@ class GalleryItem(QtWidgets.QWidget):
         self._height = 100
         self.setMinimumSize(100, 100)
 
-        ThumbnailCache.updateThumbnail(self.gallery.filelist, self, file)
+        #ThumbnailCache.updateThumbnail(self.gallery.filelist, self, file)
         self._checkIcons(file)
 
     def _checkIcons(self, file):
@@ -335,6 +336,7 @@ class GalleryItem(QtWidgets.QWidget):
             imgH = w * aspect
             painter.drawPixmap(x, y, w, imgH, self._pixmap)
         else:
+            ThumbnailCache.updateThumbnail(self.gallery.filelist, self, self.file)
             imgH = 0
 
         # Draw icons

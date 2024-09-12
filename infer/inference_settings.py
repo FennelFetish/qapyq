@@ -5,7 +5,7 @@ from config import Config
 
 
 class InferenceSettingsWidget(superqt.QCollapsible):
-    def __init__(self, configKey="minicpm"):
+    def __init__(self, configKey="caption"):
         super().__init__(f"Sample Settings ({configKey})")
         self.configKey = configKey
 

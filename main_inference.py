@@ -55,6 +55,7 @@ class Protocol:
 
 def printErr(text):
     sys.stderr.write(text + os.linesep)
+    sys.stderr.flush()
 
 
 def handleMessage(protocol) -> bool:
