@@ -1,7 +1,7 @@
 import os
 import sys
 from PySide6 import QtGui, QtWidgets
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, QPoint
 from export import Export
 from filelist import FileList
 from imgview import ImgView
@@ -21,13 +21,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("pyImgSet")
         self.setAttribute(Qt.WA_QuitOnClose)
 
-        self.toolbar = MainToolBar(self)
+        self.menu = MainMenu(self)
+        self.toolbar = MainToolBar(self, self.menu)
         self.addToolBar(self.toolbar)
 
         self.buildTabs()
         self.addTab()
-
-        #self.buildMenu()
 
         if not aux_window.loadWindowPos(self, "main", False):
             aux_window.setWindowDimensions(self, 0.5, 1, 0, 0)
@@ -42,16 +41,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabWidget.currentChanged.connect(self.onTabChanged)
         self.tabWidget.tabCloseRequested.connect(self.closeTab)
         self.setCentralWidget(self.tabWidget)
-
-    def buildMenu(self):
-        actQuit = QtGui.QAction("&Quit", self)
-        actQuit.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_Q))
-        actQuit.triggered.connect(self.close)
-
-        menuFile = self.menuBar().addMenu("&File")
-        menuFile.addAction(actQuit)
-
-        menuEdit = self.menuBar().addMenu("&Edit")
 
     @Slot()
     def addTab(self):
@@ -161,11 +150,34 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 
-class MainToolBar(QtWidgets.QToolBar):
+class MainMenu(QtWidgets.QMenu):
     def __init__(self, mainWindow):
         super().__init__()
+
+        actModelConfig = QtGui.QAction("Model Settings", self)
+
+        actQuit = QtGui.QAction("&Quit", self)
+        actQuit.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_Q))
+        actQuit.triggered.connect(mainWindow.close)
+
+        #menuFile = self.addMenu("&File")
+        self.addAction(actModelConfig)
+        self.addSeparator()
+        self.addAction(actQuit)
+
+
+
+class MainToolBar(QtWidgets.QToolBar):
+    def __init__(self, mainWindow, menu):
+        super().__init__("Main Toolbar")
         self.mainWindow = mainWindow
         self.setFloatable(False)
+        self.setContextMenuPolicy(Qt.PreventContextMenu)
+
+        self.actMenu = self.addAction("☰")
+        self.actMenu.setMenu(menu)
+        self.actMenu.triggered.connect(self.showMenu)
+        self.addSeparator()
 
         self.buildToolButtons(mainWindow)
         self.setTool("view")
@@ -216,6 +228,12 @@ class MainToolBar(QtWidgets.QToolBar):
 
         if toolName in self._toolActions:
             self._toolActions[toolName].setChecked(True)
+
+    @Slot()
+    def showMenu(self):
+        widget = self.widgetForAction(self.actMenu)
+        pos = widget.mapToGlobal(QPoint(0, widget.height()))
+        self.actMenu.menu().popup(pos)
 
     @Slot()
     def clearModels(self):
