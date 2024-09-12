@@ -1,1 +1,1 @@
-from .caption_window import CaptionWindow
+from .caption import CaptionContainer

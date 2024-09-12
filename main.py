@@ -51,12 +51,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabWidget.setCurrentIndex(index)
         tab.imgview.setFocus()
 
-
     @Slot()
     def closeTab(self, index):
         # TODO: Proper cleanup, something's hanging there
         tab = self.tabWidget.widget(index)
-        tab.imgview.tool.onDisabled(tab.imgview)
+        tab.onTabClosed()
+        
         self.tabWidget.removeTab(index)
         if self.tabWidget.count() == 0:
             self.addTab()
@@ -67,6 +67,8 @@ class MainWindow(QtWidgets.QMainWindow):
         tab = self.tabWidget.currentWidget()
         if self.galleryWindow:
             self.galleryWindow.setTab(tab)
+        if self.batchWindow:
+            self.batchWindow.setTab(tab)
         if self.captionWindow:
             self.captionWindow.setTab(tab)
 
@@ -92,10 +94,9 @@ class MainWindow(QtWidgets.QMainWindow):
     
     @Slot()
     def toggleGallery(self):
-        # TODO: Keep GalleryWindow instance? Toggle via show/hide?
         if self.galleryWindow is None:
-            from gallery import GalleryWindow
-            self.galleryWindow = GalleryWindow()
+            from gallery import GalleryContent
+            self.galleryWindow = aux_window.AuxiliaryWindow(GalleryContent, "Gallery", "gallery")
             self.galleryWindow.closed.connect(self.onGalleryClosed)
             self.galleryWindow.show()
 
@@ -114,8 +115,8 @@ class MainWindow(QtWidgets.QMainWindow):
     @Slot()
     def toggleBatchWindow(self):
         if self.batchWindow is None:
-            from batch import BatchWindow
-            self.batchWindow = BatchWindow()
+            from batch import BatchContent
+            self.batchWindow = aux_window.AuxiliaryWindow(BatchContent, "Batch", "batch")
             self.batchWindow.closed.connect(self.onBatchWindowClosed)
             self.batchWindow.show()
 
@@ -134,8 +135,8 @@ class MainWindow(QtWidgets.QMainWindow):
     @Slot()
     def toggleCaptionWindow(self):
         if self.captionWindow is None:
-            from caption import CaptionWindow
-            self.captionWindow = CaptionWindow()
+            from caption import CaptionContainer
+            self.captionWindow = aux_window.AuxiliaryWindow(CaptionContainer, "Caption", "caption")
             self.captionWindow.closed.connect(self.onCaptionWindowClosed)
             self.captionWindow.show()
 
@@ -279,15 +280,18 @@ class ImgTab(QtWidgets.QMainWindow):
 
         self.imgview = ImgView(self.filelist)
         self.export = Export()
-        self.tools = {}
+        self.tools = dict()
         self._toolbar = None
         self.toolName = None
         self.setTool("view")
 
-        widget = QtWidgets.QWidget()
+        self._windowContent = dict()
+
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.imgview)
+
+        widget = QtWidgets.QWidget()
         widget.setLayout(layout)
         self.setCentralWidget(widget)
 
@@ -348,6 +352,15 @@ class ImgTab(QtWidgets.QMainWindow):
         return self.imgview.tool
 
 
+    def getWindowContent(self, windowName):
+        return self._windowContent.get(windowName, None)
+
+    def setWindowContent(self, windowName, content):
+        if windowName in self._windowContent:
+            self._windowContent[windowName].deleteLater()
+        self._windowContent[windowName] = content
+
+
     def toggleFullscreen(self):
         winState = self.windowState()
         if winState & Qt.WindowFullScreen:
@@ -367,6 +380,13 @@ class ImgTab(QtWidgets.QMainWindow):
         self.imgview.setFocus()
         self.setWindowState(winState ^ Qt.WindowFullScreen)
         self.setVisible(True)
+
+    
+    def onTabClosed(self):
+        self.imgview.tool.onDisabled(self.imgview)
+
+        for winContent in self._windowContent.values():
+            winContent.deleteLater()
 
 
 

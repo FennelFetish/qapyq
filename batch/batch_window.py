@@ -1,6 +1,4 @@
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, QThreadPool
-from aux_window import AuxiliaryWindow
 from .batch_caption import BatchCaption
 from .batch_transform import BatchTransform
 from .batch_apply import BatchApply
@@ -8,45 +6,29 @@ from .batch_log import BatchLog
 import qtlib
 
 
-
-class BatchWindow(AuxiliaryWindow):
-    def __init__(self):
-        super().__init__("Batch", "batch")
-
-        # ProgressBar on status bar
-        self.progressbar = QtWidgets.QProgressBar()
-        statusBar = qtlib.ColoredMessageStatusBar()
-        statusBar.addPermanentWidget(self.progressbar)
-        self.setStatusBar(statusBar)
-
-        self.tab = None
-
-    
-    def setupContent(self, tab) -> object:
-        tab.filelist.addListener(self)
+class BatchContent(QtWidgets.QTabWidget):
+    def __init__(self, tab):
+        super().__init__()
         self.tab = tab
+        
+        self.progressbar = QtWidgets.QProgressBar()
+        self.statusBar = qtlib.ColoredMessageStatusBar()
+        self.statusBar.addPermanentWidget(self.progressbar)
 
         logWidget = BatchLog()
         log = logWidget.addLog
 
-        captionWidget        = BatchCaption(tab, log, self.progressbar, self.statusBar())
-        self.transformWidget = BatchTransform(tab, log, self.progressbar, self.statusBar())
-        self.applyWidget     = BatchApply(tab, log, self.progressbar, self.statusBar())
+        captionWidget        = BatchCaption(tab, log, self.progressbar, self.statusBar)
+        self.transformWidget = BatchTransform(tab, log, self.progressbar, self.statusBar)
+        self.applyWidget     = BatchApply(tab, log, self.progressbar, self.statusBar)
 
-        tabWidget = QtWidgets.QTabWidget()
-        tabWidget.addTab(captionWidget, "Caption (json)")
-        tabWidget.addTab(self.transformWidget, "Transform (json → json)") # LLM process json
-        tabWidget.addTab(self.applyWidget, "Apply (json → txt)")
-        tabWidget.addTab(logWidget, "Log")
+        self.addTab(captionWidget, "Caption (json)")
+        self.addTab(self.transformWidget, "Transform (json → json)") # LLM process json
+        self.addTab(self.applyWidget, "Apply (json → txt)")
+        self.addTab(logWidget, "Log")
 
+        tab.filelist.addListener(self)
         self.onFileChanged(tab.filelist.getCurrentFile())
-        return tabWidget
-
-
-    def teardownContent(self, content):
-        self.tab.filelist.removeListener(self)
-        self.tab = None
-        self.applyWidget = None
 
 
     def onFileChanged(self, currentFile):

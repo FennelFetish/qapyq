@@ -60,6 +60,10 @@ class CaptionContainer(QtWidgets.QWidget):
         layout.addWidget(self.btnSave, 3, 2)
         layout.setRowStretch(3, 0)
         self.setLayout(layout)
+
+        tab.filelist.addListener(self)
+        self.onFileChanged( tab.filelist.getCurrentFile() )
+
     
     def _setSaveButtonStyle(self, changed: bool):
         if changed:

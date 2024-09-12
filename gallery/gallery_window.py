@@ -1,26 +1,28 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
 from .gallery import Gallery
-from aux_window import AuxiliaryWindow
 import qtlib
 
 
 # Contains directory tree toolbar
 
-class GalleryWindow(AuxiliaryWindow):
-    def __init__(self):
-        super().__init__("Gallery", "gallery")
+class GalleryContent(QtWidgets.QWidget):
+    def __init__(self, tab):
+        super().__init__()
+        self.tab = tab
         self.gallery = None
         self.rowToHeader = dict()
 
         self.chkFollowSelection = QtWidgets.QCheckBox("Follow Selection")
         self.chkFollowSelection.setChecked(True)
 
-        statusBar = QtWidgets.QStatusBar()
-        statusBar.addPermanentWidget(self.chkFollowSelection)
-        self.setStatusBar(statusBar)
+        self.statusBar = QtWidgets.QStatusBar()
+        self.statusBar.addPermanentWidget(self.chkFollowSelection)
 
-    def setupContent(self, tab) -> object:
+        self._build()
+
+
+    def _build(self):
         self.cboFolders = QtWidgets.QComboBox()
         self.cboFolders.currentIndexChanged.connect(self.onFolderSelected)
         qtlib.setMonospace(self.cboFolders)
@@ -31,9 +33,10 @@ class GalleryWindow(AuxiliaryWindow):
         self.scrollArea.setWidgetResizable(True)
         self.scrollArea.verticalScrollBar().valueChanged.connect(self.updateComboboxFolder)
 
-        self.gallery = Gallery(tab)
-        self.gallery.filelist.addListener(self.gallery)
-        self.gallery.filelist.addDataListener(self.gallery)
+        self.gallery = Gallery(self.tab)
+        self.tab.filelist.addListener(self.gallery)
+        self.tab.filelist.addDataListener(self.gallery)
+        
         self.gallery.adjustGrid(self.width()-40) # Adjust grid before connecting slot onHeadersUpdated()
         self.gallery.headersUpdated.connect(self.onHeadersUpdated)
         self.gallery.reloadImages() # Slot onHeadersUpdated() needs access to cboFolders and scrollArea
@@ -44,21 +47,13 @@ class GalleryWindow(AuxiliaryWindow):
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.cboFolders)
         layout.addWidget(self.scrollArea)
+        self.setLayout(layout)
 
-        widget = QtWidgets.QWidget()
-        widget.setLayout(layout)
-        return widget
 
     def updateStatusBar(self, numFolders):
         numFiles = self.gallery.filelist.getNumFiles()
-        statusBar = self.statusBar()
-        statusBar.showMessage(f"{numFiles} Images in {numFolders} Folders")
+        self.statusBar.showMessage(f"{numFiles} Images in {numFolders} Folders")
 
-    def teardownContent(self, content):
-        self.gallery.filelist.removeListener(self.gallery)
-        self.gallery.filelist.removeDataListener(self.gallery)
-        self.gallery = None
-        self.rowToHeader.clear()
 
     def resizeEvent(self, event):
         if self.gallery:

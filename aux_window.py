@@ -6,43 +6,52 @@ from config import Config
 class AuxiliaryWindow(QtWidgets.QMainWindow):
     closed = Signal()
 
-    def __init__(self, title, configKey):
+    def __init__(self, contentClass, title, configKey):
         super().__init__()
         self.setWindowTitle(title)
+        self.contentClass = contentClass
+        self.configKey = configKey
         self.tab = None
-        self._configKey = configKey
+        
         loadWindowPos(self, configKey)
 
     
     def setupContent(self, tab) -> object:
-        return None
-
-    def teardownContent(self, content):
-        pass
+        return self.contentClass(tab)
     
+    def removeContent(self):
+        # Prevent deletion of content
+        self.takeCentralWidget()
+        
+        if statusBar := self.statusBar():
+            statusBar.setParent(None)
+            self.setStatusBar(None)
+
 
     def setTab(self, tab):
         if tab is self.tab:
             return
         self.tab = tab
-        
-        if content := self.takeCentralWidget():
-            self.teardownContent(content)
-            content.deleteLater()
+
+        self.removeContent()
         
         if tab:
-            content = self.setupContent(tab)
+            content = tab.getWindowContent(self.configKey)
+            if not content:
+                content = self.setupContent(tab)
+                tab.setWindowContent(self.configKey, content)
+            
             self.setCentralWidget(content)
 
-    
+            if hasattr(content, "statusBar"):
+                self.setStatusBar(content.statusBar)
+
+
     def closeEvent(self, event):
-        saveWindowPos(self, self._configKey)
-
-        if content := self.takeCentralWidget():
-            self.teardownContent(content)
-            content.deleteLater()
-
+        saveWindowPos(self, self.configKey)
+        self.removeContent()
         self.tab = None
+        
         super().closeEvent(event)
         self.closed.emit()
 
