@@ -179,7 +179,7 @@ class BatchTransform(QtWidgets.QWidget):
             self._task.signals.progress.connect(self.onProgress)
             self._task.signals.done.connect(self.onFinished)
             self._task.signals.fail.connect(self.onFail)
-            Inference().threadPool.start(self._task)
+            Inference().queueTask(self._task)
 
     @Slot()
     def onFinished(self, numFiles):

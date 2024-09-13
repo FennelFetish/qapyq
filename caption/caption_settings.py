@@ -90,6 +90,10 @@ class CaptionSettings(QtWidgets.QWidget):
     def suffix(self) -> str:
         return self.txtSuffix.toPlainText()
 
+    @property
+    def separator(self) -> str:
+        return self.txtSeparator.text()
+
 
     @property
     def isAutoApplyRules(self) -> bool:

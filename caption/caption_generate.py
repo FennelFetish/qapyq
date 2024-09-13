@@ -1,8 +1,8 @@
 import os
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject
 import qtlib, util
-from infer import InferenceSettingsWidget
+from infer import Inference, InferenceSettingsWidget
 from config import Config
 
 
@@ -18,81 +18,135 @@ class CaptionGenerate(QtWidgets.QWidget):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignTop)
         layout.setColumnStretch(0, 0)
-        layout.setColumnStretch(1, 1)
-        layout.setColumnStretch(2, 0)
-        layout.setColumnStretch(3, 1)
+        layout.setColumnStretch(1, 0)
+        layout.setColumnStretch(2, 1)
+        layout.setColumnStretch(3, 0)
+        layout.setColumnStretch(4, 0)
+        layout.setColumnStretch(5, 0)
 
-        txtSysPrompt = QtWidgets.QTextEdit()
-        txtSysPrompt.setText(Config.inferSystemPrompt)
-        qtlib.setMonospace(txtSysPrompt)
-        qtlib.setTextEditHeight(txtSysPrompt, 3)
+        self.txtSysPrompt = QtWidgets.QTextEdit()
+        self.txtSysPrompt.setText(Config.inferSystemPrompt)
+        qtlib.setMonospace(self.txtSysPrompt)
+        qtlib.setTextEditHeight(self.txtSysPrompt, 3)
         layout.addWidget(QtWidgets.QLabel("Sys Prompt:"), 0, 0, Qt.AlignTop)
-        layout.addWidget(txtSysPrompt, 0, 1, 1, 3)
+        layout.addWidget(self.txtSysPrompt, 0, 1, 1, 5)
         
-        txtPrompt = QtWidgets.QTextEdit()
-        txtPrompt.setText(Config.inferPrompt)
-        qtlib.setMonospace(txtPrompt)
-        qtlib.setTextEditHeight(txtPrompt, 3)
+        self.txtPrompt = QtWidgets.QTextEdit()
+        self.txtPrompt.setText(Config.inferPrompt)
+        qtlib.setMonospace(self.txtPrompt)
+        qtlib.setTextEditHeight(self.txtPrompt, 3)
         layout.addWidget(QtWidgets.QLabel("Prompt:"), 1, 0, Qt.AlignTop)
-        layout.addWidget(txtPrompt, 1, 1, 1, 3)
+        layout.addWidget(self.txtPrompt, 1, 1, 1, 5)
 
-        inferSettings = InferenceSettingsWidget()
-        layout.addWidget(inferSettings, 2, 0, 1, 4)
+        self.inferSettings = InferenceSettingsWidget()
+        layout.addWidget(self.inferSettings, 2, 0, 1, 6)
 
-        spinTagThreshold = QtWidgets.QDoubleSpinBox()
-        spinTagThreshold.setRange(0.0, 1.0)
-        spinTagThreshold.setSingleStep(0.05)
-        spinTagThreshold.setValue(Config.inferTagThreshold)
+        self.spinTagThreshold = QtWidgets.QDoubleSpinBox()
+        self.spinTagThreshold.setRange(0.0, 1.0)
+        self.spinTagThreshold.setSingleStep(0.05)
+        self.spinTagThreshold.setValue(Config.inferTagThreshold)
         layout.addWidget(QtWidgets.QLabel("Tag Threshold:"), 3, 0, Qt.AlignTop)
-        layout.addWidget(spinTagThreshold, 3, 1, 1, 3)
+        layout.addWidget(self.spinTagThreshold, 3, 1)
 
-        self.btnGenerateCap = QtWidgets.QPushButton("Append Caption")
-        self.btnGenerateCap.clicked.connect(lambda: self.generateCaption(txtPrompt.toPlainText(), txtSysPrompt.toPlainText(), inferSettings.toDict()))
-        layout.addWidget(self.btnGenerateCap, 4, 0, 1, 2)
+        self.cboMode = QtWidgets.QComboBox()
+        self.cboMode.addItem("Append")
+        self.cboMode.addItem("Prepend")
+        self.cboMode.addItem("Replace")
+        layout.addWidget(self.cboMode, 3, 3)
 
-        self.btnGenerateTags = QtWidgets.QPushButton("Append Tags")
-        self.btnGenerateTags.clicked.connect(lambda: self.generateTags(spinTagThreshold.value()))
-        layout.addWidget(self.btnGenerateTags, 4, 2, 1, 2)
+        self.cboCapTag = QtWidgets.QComboBox()
+        self.cboCapTag.addItem("Caption")
+        self.cboCapTag.addItem("Tags")
+        self.cboCapTag.addItem("Caption, Tags")
+        self.cboCapTag.addItem("Tags, Caption")
+        layout.addWidget(self.cboCapTag, 3, 4)
+
+        self.btnGenerate = QtWidgets.QPushButton("Generate")
+        #self.btnGenerate.clicked.connect(lambda: self.generateCaption(txtPrompt.toPlainText(), txtSysPrompt.toPlainText(), inferSettings.toDict()))
+        self.btnGenerate.clicked.connect(self.generate)
+        layout.addWidget(self.btnGenerate, 3, 5)
 
         self.setLayout(layout)
 
 
-    def generateCaption(self, prompt, sysPrompt, config={}):
-        self.btnGenerateCap.setEnabled(False)
-        self.btnGenerateTags.setEnabled(False)
+    def generate(self):
+        self.btnGenerate.setEnabled(False)
 
         file = self.ctx.tab.imgview.image.filepath
-        prompts = util.parsePrompts(prompt)
+        content = self.cboCapTag.currentText().lower().split(", ")
 
-        from infer import Inference
-        failHandler = lambda: self.onCaptionGenerated(None, None)
-        Inference().captionAsync(self.onCaptionGenerated, failHandler, file, prompts, sysPrompt, config)
+        task = InferenceTask(file, content)
+        task.tagThreshold = self.spinTagThreshold.value()
+        task.signals.done.connect(self.onGenerated)
+        task.signals.fail.connect(self.onFail)
 
-    @Slot()
-    def onCaptionGenerated(self, imgPath, captions: dict):
-        self.btnGenerateCap.setEnabled(True)
-        self.btnGenerateTags.setEnabled(True)
-
-        if captions and imgPath == self.ctx.tab.imgview.image.filepath:
-            parts = (cap for name, cap in captions.items())
-            text = os.linesep.join(parts)
-            self.ctx.captionGenerated.emit(text)
-
-
-    def generateTags(self, threshold):
-        self.btnGenerateCap.setEnabled(False)
-        self.btnGenerateTags.setEnabled(False)
-
-        file = self.ctx.tab.imgview.image.filepath
-
-        from infer import Inference
-        failHandler = lambda: self.onTagsGenerated(None, None)
-        Inference().tagAsync(self.onTagsGenerated, failHandler, file, threshold)
+        if "caption" in content:
+            task.prompts = util.parsePrompts(self.txtPrompt.toPlainText())
+            task.systemPrompt = self.txtSysPrompt.toPlainText()
+            task.config = self.inferSettings.toDict()
+        
+        Inference().queueTask(task)
 
     @Slot()
-    def onTagsGenerated(self, imgPath, tags: str):
-        self.btnGenerateCap.setEnabled(True)
-        self.btnGenerateTags.setEnabled(True)
+    def onGenerated(self, imgPath, text):
+        self.btnGenerate.setEnabled(True)
 
-        if tags and imgPath == self.ctx.tab.imgview.image.filepath:
-            self.ctx.captionGenerated.emit(tags)
+        if text and imgPath == self.ctx.tab.imgview.image.filepath:
+            mode = self.cboMode.currentText()
+            self.ctx.captionGenerated.emit(text, mode)
+
+    def onFail(self):
+        self.btnGenerate.setEnabled(True)
+
+
+
+class InferenceTask(QRunnable):
+    class Signals(QObject):
+        done = Signal(str, str)
+        fail = Signal()
+
+    def __init__(self, imgPath, content: [str]):
+        super().__init__()
+        self.signals = InferenceTask.Signals()
+        self.imgPath = imgPath
+        self.content = content
+
+        self.prompts      = None
+        self.systemPrompt = None
+        self.config       = None
+
+        self.tagThreshold = None
+
+
+    @Slot()
+    def run(self):
+        try:
+            inferProc = Inference().proc
+            inferProc.start()
+
+            results = []
+
+            for c in self.content:
+                if c == "caption":
+                    inferProc.setupCaption(self.config)
+                    captions = inferProc.caption(self.imgPath, self.prompts, self.systemPrompt)
+                    if captions != None:
+                        parts = (cap for name, cap in captions.items())
+                        results.append( os.linesep.join(parts) )
+                    else:
+                        self.signals.fail.emit()
+                
+                if c == "tags":
+                    inferProc.setupTag(self.tagThreshold)
+                    tags = inferProc.tag(self.imgPath)
+                    if tags != None:
+                        results.append(tags)
+                    else:
+                        self.signals.fail.emit()
+
+            text = os.linesep.join(results)
+            self.signals.done.emit(self.imgPath, text)
+        except Exception as ex:
+            print("Error during inference:")
+            print(ex)
+            self.signals.fail.emit()

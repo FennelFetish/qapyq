@@ -124,7 +124,7 @@ class BatchCaption(QtWidgets.QWidget):
             self._task.signals.progress.connect(self.onProgress)
             self._task.signals.done.connect(self.onFinished)
             self._task.signals.fail.connect(self.onFail)
-            Inference().threadPool.start(self._task)
+            Inference().queueTask(self._task)
 
     @Slot()
     def onFinished(self, numFiles):
@@ -166,8 +166,7 @@ class BatchCaptionTask(BatchTask):
 
 
     def runPrepare(self):
-        inference = Inference()
-        self.inferProc = inference.proc
+        self.inferProc = Inference().proc
         self.inferProc.start()
 
         if self.doCaption:

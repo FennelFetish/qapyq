@@ -98,7 +98,7 @@ class CaptionGroups(QtWidgets.QWidget):
 
 
     def updateSelectedState(self, text):
-        separator = self.ctx.settings.txtSeparator.text().strip()
+        separator = self.ctx.settings.separator.strip()
         captions = { c.strip() for c in text.split(separator) }
 
         for i in range(self.groupLayout.count()):

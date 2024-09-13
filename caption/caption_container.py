@@ -15,7 +15,7 @@ class CaptionContext(QtWidgets.QTabWidget):
     separatorChanged    = Signal(str)
     controlUpdated      = Signal()
     needsRulesApplied   = Signal()
-    captionGenerated    = Signal(str)
+    captionGenerated    = Signal(str, str)
 
 
     def __init__(self, tab, getSelectedCaption):
@@ -48,7 +48,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self._build(self.ctx)
 
         self.ctx.captionClicked.connect(self.appendToCaption)
-        self.ctx.captionGenerated.connect(self.appendToCaption)
+        self.ctx.captionGenerated.connect(self._onCaptionGenerated)
         self.ctx.separatorChanged.connect(self._onSeparatorChanged)
         self.ctx.controlUpdated.connect(self.onControlUpdated)
         self.ctx.needsRulesApplied.connect(self.applyRulesIfAuto)
@@ -139,6 +139,23 @@ class CaptionContainer(QtWidgets.QWidget):
         caption += text
         self.setCaption(caption)
 
+        if self.ctx.settings.isAutoApplyRules:
+            self.applyRules()
+
+    @Slot()
+    def _onCaptionGenerated(self, text, mode):
+        caption = self.txtCaption.toPlainText()
+        if caption:
+            if mode == "Append":
+                caption += os.linesep + text
+            elif mode == "Prepend":
+                caption = text + os.linesep + caption
+            elif mode == "Replace":
+                caption = text
+        else:
+            caption = text
+
+        self.setCaption(caption)
         if self.ctx.settings.isAutoApplyRules:
             self.applyRules()
 
