@@ -5,6 +5,7 @@ from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import QRect, QSize, Qt, Slot, Signal
 import qtlib, util
 
+# TODO: Nested bubbles for expressions like: (blue (starry:0.8) sky:1.2)
 
 class CaptionBubbles(qtlib.ReorderWidget):
     remove = Signal(int)
@@ -14,7 +15,7 @@ class CaptionBubbles(qtlib.ReorderWidget):
         super().__init__()
         self.text = ""
         self.separator = ','
-        self._captionColors = captionColors
+        self._getColors = captionColors
         self.showWeights = showWeights
         self.showRemove = showRemove
         self.editable = editable
@@ -42,7 +43,7 @@ class CaptionBubbles(qtlib.ReorderWidget):
 
     def updateBubbles(self):
         self.clearLayout()
-        colors = self._captionColors()
+        colors = self._getColors()
         for i, caption in enumerate(self.text.split(self.separator)):
             caption = caption.strip()
             bubble = Bubble(i, self.remove, self.showWeights, self.showRemove, self.editable)
