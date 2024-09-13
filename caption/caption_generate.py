@@ -62,7 +62,6 @@ class CaptionGenerate(QtWidgets.QWidget):
         layout.addWidget(self.cboCapTag, 3, 4)
 
         self.btnGenerate = QtWidgets.QPushButton("Generate")
-        #self.btnGenerate.clicked.connect(lambda: self.generateCaption(txtPrompt.toPlainText(), txtSysPrompt.toPlainText(), inferSettings.toDict()))
         self.btnGenerate.clicked.connect(self.generate)
         layout.addWidget(self.btnGenerate, 3, 5)
 

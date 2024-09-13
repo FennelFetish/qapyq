@@ -411,12 +411,10 @@ def main() -> int:
     win = MainWindow(app)
     win.show()
 
-    if len(sys.argv) > 1:
+    loadPath = sys.argv[1] if len(sys.argv) > 1 else Config.pathDebugLoad
+    if loadPath:
         tab = win.tabWidget.currentWidget()
-        tab.filelist.load(sys.argv[1])
-    # else:
-    #     tab = win.tabWidget.currentWidget()
-    #     tab.filelist.load("/home/rem/Pictures/red-tree-with-eyes.jpeg")
+        tab.filelist.load(loadPath)
 
     return app.exec()
 

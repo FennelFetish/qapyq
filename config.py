@@ -2,6 +2,7 @@ class Config:
     # Paths
     pathConfig              = "./pyimgset_config.json"
     pathExport              = "."
+    pathDebugLoad           = ""
 
     # View
     viewZoomFactor          = 1.15
@@ -51,6 +52,7 @@ class Config:
             data = dict()
 
         cls.pathExport            = data.get("path_export", cls.pathExport)
+        cls.pathDebugLoad         = data.get("path_debug_load", cls.pathDebugLoad)
 
         cls.viewZoomFactor        = float(data.get("view_zoom_factor", cls.viewZoomFactor))
         cls.viewZoomMinimum       = float(data.get("view_zoom_minimum", cls.viewZoomMinimum))
@@ -83,6 +85,7 @@ class Config:
         import json
         data = dict()
         data["path_export"]                 = cls.pathExport
+        data["path_debug_load"]             = cls.pathDebugLoad
 
         data["view_zoom_factor"]            = cls.viewZoomFactor
         data["view_zoom_minimum"]           = cls.viewZoomMinimum
