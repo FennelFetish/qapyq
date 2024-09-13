@@ -7,6 +7,7 @@ class DataKeys:
     CaptionState    = "caption_state"
     CropState       = "crop_state"
     Thumbnail       = "thumbnail"
+    ThumbnailRequestTime = "thumbnail_time"
 
     class IconStates(enum.Enum):
         Exists  = "exists"
@@ -179,11 +180,13 @@ class FileList:
             l.onFileListChanged(self.currentFile)
 
 
-    def setData(self, file, key, data):
+    def setData(self, file, key, data, notify=True):
         if file not in self.fileData:
             self.fileData[file] = {}
         self.fileData[file][key] = data
-        self.notifyDataChanged(file, key)
+
+        if notify:
+            self.notifyDataChanged(file, key)
 
     def getData(self, file, key):
         if file not in self.fileData:
@@ -191,12 +194,15 @@ class FileList:
         d = self.fileData[file]
         return d[key] if key in d else None
 
-    def removeData(self, file, key):
+    def removeData(self, file, key, notify=True):
         if file not in self.fileData:
             return
         d = self.fileData[file]
-        if key in d:
-            del d[key]
+        if key not in d:
+            return
+
+        del d[key]
+        if notify:
             self.notifyDataChanged(file, key)
 
 

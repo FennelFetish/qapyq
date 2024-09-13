@@ -37,7 +37,7 @@ class Gallery(QtWidgets.QWidget):
         self.tab.filelist.addListener(self.galleryGrid)
         self.tab.filelist.addDataListener(self.galleryGrid)
 
-        self.galleryGrid.adjustGrid(self.width()-40) # Adjust grid before connecting slot onHeadersUpdated()
+        #self.galleryGrid.adjustGrid(self.width()) # Adjust grid before connecting slot onHeadersUpdated()
         self.galleryGrid.headersUpdated.connect(self.onHeadersUpdated)
         self.galleryGrid.reloadImages() # Slot onHeadersUpdated() needs access to cboFolders and scrollArea
         self.galleryGrid.reloaded.connect(self.scrollTop)
@@ -45,6 +45,7 @@ class Gallery(QtWidgets.QWidget):
         self.scrollArea.setWidget(self.galleryGrid)
 
         layout = QtWidgets.QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.cboFolders)
         layout.addWidget(self.scrollArea)
         self.setLayout(layout)
@@ -56,10 +57,9 @@ class Gallery(QtWidgets.QWidget):
 
 
     def resizeEvent(self, event):
-        if self.galleryGrid:
-            #self.gallery.setMaximumWidth(event.size().width())
-            self.galleryGrid.adjustGrid(event.size().width()-40)
-        #super().resizeEvent(event)
+        if self.galleryGrid and self.isVisible():
+            self.galleryGrid.adjustGrid()
+
 
     @Slot()
     def onHeadersUpdated(self, headers: dict):
@@ -76,7 +76,6 @@ class Gallery(QtWidgets.QWidget):
         self.updateComboboxFolder(self.scrollArea.verticalScrollBar().value())
         self.updateStatusBar(len(headers))
         
-    
     @Slot()
     def onFolderSelected(self, index):
         row = self.cboFolders.itemData(index)

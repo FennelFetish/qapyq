@@ -35,6 +35,9 @@ class Config:
     # Batch
     batchTemplate           = "{{?captions.target}}\n{{?tags}}"
 
+    # Gallery
+    galleryThumbnailSize    = 192
+
     # Window state
     windowStates            = dict()
 
@@ -77,6 +80,8 @@ class Config:
 
         cls.batchTemplate         = data.get("batch_template", cls.batchTemplate)
 
+        cls.galleryThumbnailSize  = int(data.get("gallery_thumbnail_size", cls.galleryThumbnailSize))
+
         cls.windowStates          = data.get("window_states", dict())
 
 
@@ -109,6 +114,8 @@ class Config:
         data["infer_tag_threshold"]         = cls.inferTagThreshold
 
         data["batch_template"]              = cls.batchTemplate
+
+        data["gallery_thumbnail_size"]      = cls.galleryThumbnailSize
 
         data["window_states"]               = cls.windowStates
 

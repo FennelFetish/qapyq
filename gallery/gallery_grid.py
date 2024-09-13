@@ -46,7 +46,7 @@ class GalleryGrid(QtWidgets.QWidget):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignTop)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(20)
+        layout.setSpacing(4)
         self.setLayout(layout)
 
     def reloadImages(self):
@@ -134,17 +134,14 @@ class GalleryGrid(QtWidgets.QWidget):
         item.setCompare(True)
         self._selectedCompare = item
 
-    def adjustGrid(self, widgetWidth):
-        w = widgetWidth * 0.9
-        cols = int(w // ThumbnailCache.THUMBNAIL_SIZE)
-        cols -= 1
+    def adjustGrid(self):
+        layout = self.layout()
+        cols = int(self.width() // (ThumbnailCache.THUMBNAIL_SIZE+layout.spacing()))
         cols = max(cols, 1)
         if cols == self.columns:
             return
-    
         self.columns = cols
-        layout = self.layout()
-
+        
         items = []
         for i in reversed(range(layout.count())):
             items.append(layout.takeAt(i))
@@ -251,10 +248,9 @@ class GalleryGridItem(QtWidgets.QWidget):
         self.selectionStyle: int = 0
         self.icons = {}
 
-        self._height = 100
-        self.setMinimumSize(100, 100)
+        self._height = 32
+        self.setMinimumSize(32, 32)
 
-        #ThumbnailCache.updateThumbnail(self.gallery.filelist, self, file)
         self._checkIcons(file)
 
     def _checkIcons(self, file):
