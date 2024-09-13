@@ -1,0 +1,5 @@
+# MiniCPM
+# pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121 --upgrade --force-reinstall --no-cache-dir
+
+--index-url https://abetlen.github.io/llama-cpp-python/whl/cu121
+llama-cpp-python>=0.2.90

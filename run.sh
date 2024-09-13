@@ -1,19 +1,12 @@
 #!/bin/bash
 
-# === Setup ===
-#python -m venv venv
-#source venv/bin/activate
-#pip install -r requirements.txt
-
-
-# Set path to the virtual environment
-venv_path="./venv"
+venv_name="venv"
+venv_path="./${venv_name}"
 
 # Activate the virtual environment
 if [ -z "${VIRTUAL_ENV}" ]; then
     source "${venv_path}/bin/activate"
 fi
-echo "venv: ${VIRTUAL_ENV}"
 
 # Set path to preferred Python version within the virtual environment
 python_path="${venv_path}/bin/python"

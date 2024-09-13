@@ -1,15 +1,11 @@
+# GUI
 PySide6
 superqt
-#pillow
+
+# Image
 opencv-python
 numpy
+#pillow
+
+# Inter-process communication
 msgpack
-
-# MiniCPM
-# pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121 --upgrade --force-reinstall --no-cache-dir
-
-# JoyTag -> 2GB+ dependecies!
-torch
-torchvision
-transformers
-einops
