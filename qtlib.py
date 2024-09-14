@@ -403,8 +403,9 @@ class ReorderWidget(QtWidgets.QWidget):
 
 
 class ColoredMessageStatusBar(QtWidgets.QStatusBar):
-    def __init__(self):
+    def __init__(self, additionalStyleSheet=""):
         super().__init__()
+        self.additionalStyleSheet = additionalStyleSheet + ";"
         self.updateStyleSheet()
 
     def showMessage(self, text, timeout=0):
@@ -420,7 +421,7 @@ class ColoredMessageStatusBar(QtWidgets.QStatusBar):
 
     def updateStyleSheet(self, color=None):
         colorStr = f"color: {color}" if color else ""
-        self.setStyleSheet("QStatusBar{border-top: 1px outset black;" + colorStr + "}")
+        self.setStyleSheet("QStatusBar{" + self.additionalStyleSheet + colorStr + "}")
 
 
 

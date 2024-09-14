@@ -52,6 +52,26 @@ class MainWindow(QtWidgets.QMainWindow):
         tab.imgview.setFocus()
 
     @Slot()
+    def switchTab(self):
+        fullscreen = False
+        if self._fullscreenTab:
+            fullscreen = True
+            self.toggleFullscreen()
+        
+        index = self.tabWidget.currentIndex()
+        index = (index + 1) % self.tabWidget.count()
+        self.tabWidget.setCurrentIndex(index)
+
+        if fullscreen:
+            self.toggleFullscreen()
+
+    @Slot()
+    def closeCurrentTab(self):
+        if self._fullscreenTab:
+            self.toggleFullscreen()
+        self.closeTab( self.tabWidget.currentIndex() )
+
+    @Slot()
     def closeTab(self, index):
         # TODO: Proper cleanup, something's hanging there
         tab = self.tabWidget.widget(index)
@@ -175,17 +195,47 @@ class MainMenu(QtWidgets.QMenu):
         actFullscreen.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_F))
         actFullscreen.triggered.connect(mainWindow.toggleFullscreen)
 
-        actModelConfig = QtGui.QAction("Model Settings", self)
+        actAddTab = QtGui.QAction("New Tab", self)
+        actAddTab.setShortcutContext(Qt.ApplicationShortcut)
+        actAddTab.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_T))
+        actAddTab.triggered.connect(mainWindow.addTab)
 
+        actSwitchTab = QtGui.QAction("Switch Tab", self)
+        actSwitchTab.setShortcutContext(Qt.ApplicationShortcut)
+        actSwitchTab.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_Tab))
+        actSwitchTab.triggered.connect(mainWindow.switchTab)
+
+        actCloseTab = QtGui.QAction("Close Tab", self)
+        actCloseTab.setShortcutContext(Qt.ApplicationShortcut)
+        actCloseTab.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_W))
+        actCloseTab.triggered.connect(mainWindow.closeCurrentTab)
+
+        actClearVram = QtGui.QAction("Clear VRAM", self)
+        actClearVram.triggered.connect(self.clearVram)
+
+        actModelConfig = QtGui.QAction("Model Settings", self)
+        actModelConfig.setEnabled(False)
+        
         actQuit = QtGui.QAction("&Quit", self)
         actQuit.setShortcutContext(Qt.ApplicationShortcut)
         actQuit.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_Q))
         actQuit.triggered.connect(mainWindow.close)
 
         self.addAction(actFullscreen)
+        self.addSeparator()
+        self.addAction(actAddTab)
+        self.addAction(actSwitchTab)
+        self.addAction(actCloseTab)
+        self.addSeparator()
         self.addAction(actModelConfig)
+        self.addAction(actClearVram)
         self.addSeparator()
         self.addAction(actQuit)
+
+    @Slot()
+    def clearVram(self):
+        from infer import Inference
+        Inference().quitProcess()
 
 
 
@@ -221,9 +271,6 @@ class MainToolBar(QtWidgets.QToolBar):
 
         self.addWidget(qtlib.SpacerWidget())
 
-        actClearModels = self.addAction("Clear VRAM")
-        actClearModels.triggered.connect(self.clearModels)
-
         actAddTab = self.addAction("Add Tab")
         actAddTab.triggered.connect(mainWindow.addTab)
 
@@ -258,11 +305,6 @@ class MainToolBar(QtWidgets.QToolBar):
         widget = self.widgetForAction(self.actMenu)
         pos = widget.mapToGlobal(QPoint(0, widget.height()))
         self.actMenu.menu().popup(pos)
-
-    @Slot()
-    def clearModels(self):
-        from infer import Inference
-        Inference().quitProcess()
 
 
 
@@ -386,7 +428,7 @@ class ImgTab(QtWidgets.QMainWindow):
 
 class TabStatusBar(qtlib.ColoredMessageStatusBar):
     def __init__(self, tab):
-        super().__init__()
+        super().__init__("border-top: 1px outset black")
         self.tab = tab
         self.setSizeGripEnabled(False)
         self.setContentsMargins(6, 0, 6, 0)
