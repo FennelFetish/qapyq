@@ -108,7 +108,6 @@ class BatchCaption(QtWidgets.QWidget):
             self._task.abort()
         else:
             self.btnStart.setText("Abort")
-            self.statusBar.showMessage("Starting batch caption ...")
 
             if self.captionGroup.isChecked():
                 prompts = util.parsePrompts(self.txtPrompts.toPlainText())
@@ -122,6 +121,7 @@ class BatchCaption(QtWidgets.QWidget):
             self._task.rounds = self.spinRounds.value()
             self._task.tagThreshold = self.spinTagThreshold.value()
             self._task.signals.progress.connect(self.onProgress)
+            self._task.signals.progressMessage.connect(self.onProgressMessage)
             self._task.signals.done.connect(self.onFinished)
             self._task.signals.fail.connect(self.onFail)
             Inference().queueTask(self._task)
@@ -143,6 +143,10 @@ class BatchCaption(QtWidgets.QWidget):
 
         if jsonFile:
             self.statusBar.showMessage("Wrote " + jsonFile)
+
+    @Slot()
+    def onProgressMessage(self, message):
+        self.statusBar.showMessage(message)
 
     def taskDone(self):
         self.btnStart.setText("Start Batch Caption")
@@ -170,9 +174,11 @@ class BatchCaptionTask(BatchTask):
         self.inferProc.start()
 
         if self.doCaption:
+            self.signals.progressMessage.emit("Loading caption model ...")
             if not self.inferProc.setupCaption(self.config):
                 raise RuntimeError("Couldn't load caption model")
         if self.doTag:
+            self.signals.progressMessage.emit("Loading tag model ...")
             if not self.inferProc.setupTag(threshold=self.tagThreshold):
                 raise RuntimeError("Couldn't load tag model")
 
@@ -182,14 +188,24 @@ class BatchCaptionTask(BatchTask):
 
         if self.doCaption:
             answers = self.inferProc.caption(imgFile, self.prompts, self.systemPrompt, self.rounds)
-            for name, caption in answers.items():
-                captionFile.addCaption(name, caption)
+            if answers:
+                for name, caption in answers.items():
+                    if caption:
+                        captionFile.addCaption(name, caption)
+                    else:
+                        self.log(f"WARNING: Caption '{name}' is empty for {imgFile}, ignoring")
+            else:
+                self.log(f"WARNING: No captions returned for {imgFile}")
 
         if self.doTag:
-            captionFile.tags = self.inferProc.tag(imgFile)
+            tags = self.inferProc.tag(imgFile)
+            if tags:
+                captionFile.tags = tags
+            else:
+                self.log(f"WARNING: No tags returned for {imgFile}, ignoring")
 
         if captionFile.updateToJson():
             return captionFile.jsonPath
         else:
-            self.log(f"WARNING: Failed to save caption to {captionFile.jsonPath}")
+            self.log(f"WARNING: Failed to save captions to {captionFile.jsonPath}")
             return None

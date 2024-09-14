@@ -164,7 +164,6 @@ class BatchTransform(QtWidgets.QWidget):
             self._task.abort()
         else:
             self.btnStart.setText("Abort")
-            self.statusBar.showMessage("Starting batch caption ...")
 
             storeName = self.txtTargetName.text().strip()
             prompts   = util.parsePrompts(self.txtPromptTemplate.toPlainText(), storeName)
@@ -177,6 +176,7 @@ class BatchTransform(QtWidgets.QWidget):
             self._task.stripMulti = self.chkStripMulti.isChecked()
             self._task.rounds = self.spinRounds.value()
             self._task.signals.progress.connect(self.onProgress)
+            self._task.signals.progressMessage.connect(self.onProgressMessage)
             self._task.signals.done.connect(self.onFinished)
             self._task.signals.fail.connect(self.onFail)
             Inference().queueTask(self._task)
@@ -198,6 +198,10 @@ class BatchTransform(QtWidgets.QWidget):
 
         if jsonFile:
             self.statusBar.showMessage("Wrote " + jsonFile)
+
+    @Slot()
+    def onProgressMessage(self, message):
+        self.statusBar.showMessage(message)
 
     def taskDone(self):
         self.btnStart.setText("Start Batch Caption")
@@ -224,6 +228,7 @@ class BatchTransformTask(BatchTask):
         self.inferProc = inference.proc
         self.inferProc.start()
 
+        self.signals.progressMessage.emit("Loading LLM ...")
         if not self.inferProc.setupLLM(self.config):
             raise RuntimeError("Couldn't load LLM")
 
@@ -242,8 +247,14 @@ class BatchTransformTask(BatchTask):
         prompts = {name: self.parser.parse(prompt) for name, prompt in self.prompts.items()}
 
         answers = self.inferProc.answer(prompts, self.systemPrompt, self.rounds)
-        for name, caption in answers.items():
-            captionFile.addCaption(name, caption)
+        if answers:
+            for name, caption in answers.items():
+                if caption:
+                    captionFile.addCaption(name, caption)
+                else:
+                    self.log(f"WARNING: Caption '{name}' is empty for {imgFile}, ignoring")
+        else:
+            self.log(f"WARNING: No answers returned for {imgFile}")
 
         if captionFile.updateToJson():
             return captionFile.jsonPath

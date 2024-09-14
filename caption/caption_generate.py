@@ -1,4 +1,4 @@
-import os
+import os, traceback
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject
 import qtlib, util
@@ -48,6 +48,11 @@ class CaptionGenerate(QtWidgets.QWidget):
         layout.addWidget(QtWidgets.QLabel("Tag Threshold:"), 3, 0, Qt.AlignTop)
         layout.addWidget(self.spinTagThreshold, 3, 1)
 
+        self.statusBar = qtlib.ColoredMessageStatusBar()
+        self.statusBar.layout().setContentsMargins(50, 0, 8, 0)
+        self.statusBar.setSizeGripEnabled(False)
+        layout.addWidget(self.statusBar, 3, 2)
+
         self.cboMode = QtWidgets.QComboBox()
         self.cboMode.addItem("Append")
         self.cboMode.addItem("Prepend")
@@ -70,12 +75,14 @@ class CaptionGenerate(QtWidgets.QWidget):
 
     def generate(self):
         self.btnGenerate.setEnabled(False)
+        self.statusBar.showMessage("Starting ...")
 
         file = self.ctx.tab.imgview.image.filepath
         content = self.cboCapTag.currentText().lower().split(", ")
 
         task = InferenceTask(file, content)
         task.tagThreshold = self.spinTagThreshold.value()
+        task.signals.progress.connect(self.onProgress)
         task.signals.done.connect(self.onGenerated)
         task.signals.fail.connect(self.onFail)
 
@@ -87,22 +94,33 @@ class CaptionGenerate(QtWidgets.QWidget):
         Inference().queueTask(task)
 
     @Slot()
+    def onProgress(self, message):
+        self.statusBar.showMessage(message)
+
+    @Slot()
     def onGenerated(self, imgPath, text):
         self.btnGenerate.setEnabled(True)
 
-        if text and imgPath == self.ctx.tab.imgview.image.filepath:
-            mode = self.cboMode.currentText()
-            self.ctx.captionGenerated.emit(text, mode)
+        if imgPath == self.ctx.tab.imgview.image.filepath:
+            if text:
+                mode = self.cboMode.currentText()
+                self.ctx.captionGenerated.emit(text, mode)
+                self.statusBar.showColoredMessage("Done", True)
+            else:
+                self.statusBar.showColoredMessage("Finished with empty result", False, 0)
 
-    def onFail(self):
+    @Slot()
+    def onFail(self, errorMsg):
         self.btnGenerate.setEnabled(True)
+        self.statusBar.showColoredMessage(errorMsg, False, 0)
 
 
 
 class InferenceTask(QRunnable):
     class Signals(QObject):
+        progress = Signal(str)
         done = Signal(str, str)
-        fail = Signal()
+        fail = Signal(str)
 
     def __init__(self, imgPath, content: [str]):
         super().__init__()
@@ -124,28 +142,34 @@ class InferenceTask(QRunnable):
             inferProc.start()
 
             results = []
-
             for c in self.content:
                 if c == "caption":
-                    inferProc.setupCaption(self.config)
-                    captions = inferProc.caption(self.imgPath, self.prompts, self.systemPrompt)
-                    if captions != None:
-                        parts = (cap for name, cap in captions.items())
-                        results.append( os.linesep.join(parts) )
-                    else:
-                        self.signals.fail.emit()
-                
-                if c == "tags":
-                    inferProc.setupTag(self.tagThreshold)
-                    tags = inferProc.tag(self.imgPath)
-                    if tags != None:
-                        results.append(tags)
-                    else:
-                        self.signals.fail.emit()
+                    results.append( self.runCaption(inferProc) )
+                elif c == "tags":
+                    results.append( self.runTags(inferProc) )
 
             text = os.linesep.join(results)
             self.signals.done.emit(self.imgPath, text)
         except Exception as ex:
-            print("Error during inference:")
-            print(ex)
-            self.signals.fail.emit()
+            errorMsg = f"Error during inference: {str(ex)}"
+            print(errorMsg)
+            traceback.print_exc()
+            self.signals.fail.emit(errorMsg)
+
+    def runCaption(self, inferProc) -> str:
+        self.signals.progress.emit("Loading caption model ...")
+        if not inferProc.setupCaption(self.config):
+            raise RuntimeError("Couldn't load caption model")
+
+        self.signals.progress.emit("Generating caption ...")
+        captions = inferProc.caption(self.imgPath, self.prompts, self.systemPrompt)
+        parts = (cap for name, cap in captions.items())
+        return os.linesep.join(parts)
+
+    def runTags(self, inferProc) -> str:
+        self.signals.progress.emit("Loading tag model ...")
+        if not inferProc.setupTag(self.tagThreshold):
+            raise RuntimeError("Couldn't load tag model")
+        
+        self.signals.progress.emit("Generating tags ...")
+        return inferProc.tag(self.imgPath)

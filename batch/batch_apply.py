@@ -128,12 +128,12 @@ class BatchApply(QtWidgets.QWidget):
             self._task.abort()
         else:
             self.btnStart.setText("Abort")
-            self.statusBar.showMessage("Starting batch apply ...")
 
             template = self.txtTemplate.toPlainText()
             backupName = self.txtBackupName.text().strip() if self.backupSettings.isChecked() else None
             self._task = BatchApplyTask(self.log, self.tab.filelist, template, self.chkStripAround.isChecked(), self.chkStripMulti.isChecked(), backupName)
             self._task.signals.progress.connect(self.onProgress)
+            self._task.signals.progressMessage.connect(self.onProgressMessage)
             self._task.signals.done.connect(self.onFinished)
             self._task.signals.fail.connect(self.onFail)
             Inference().queueTask(self._task)
@@ -155,6 +155,10 @@ class BatchApply(QtWidgets.QWidget):
 
         if textFile:
             self.statusBar.showMessage("Wrote " + textFile)
+
+    @Slot()
+    def onProgressMessage(self, message):
+        self.statusBar.showMessage(message)
 
     def taskDone(self):
         self.btnStart.setText("Start Batch Apply")

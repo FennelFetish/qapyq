@@ -5,6 +5,7 @@ import traceback
 class BatchTask(QRunnable):
     class Signals(QObject):
         progress = Signal(int, int, str)  # current, total, file
+        progressMessage = Signal(str)     # message
         done = Signal(int)                # total
         fail = Signal(str)                # error message
 
@@ -36,6 +37,7 @@ class BatchTask(QRunnable):
     def run(self):
         try:
             self.log(f"=== Starting batch {self.name} ===")
+            self.signals.progressMessage.emit(f"Starting batch {self.name} ...")
             self.signals.progress.emit(0, 0, None)
 
             self.runPrepare()
