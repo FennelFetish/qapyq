@@ -8,10 +8,8 @@ class InferenceSettingsWidget(superqt.QCollapsible):
     TITLE      = "Sample Settings"
     PRESET_KEY = "sample_config"
 
-    def __init__(self, configAttr="inferCaptionPresets"):
+    def __init__(self):
         super().__init__(InferenceSettingsWidget.TITLE)
-        self.configAttr = configAttr
-
         self.layout().setContentsMargins(6, 4, 6, 0)
 
         winColor = QtWidgets.QApplication.palette().color(QtGui.QPalette.Base)
@@ -205,7 +203,8 @@ from .model_settings import ModelSettingsWindow
 
 class InferencePresetWidget(InferenceSettingsWidget):
     def __init__(self, configAttr="inferCaptionPresets"):
-        super().__init__(configAttr)
+        super().__init__()
+        self.configAttr = configAttr
         self.reloadPresetList()
 
         ModelSettingsWindow.signals.presetListUpdated.connect(self._onPresetListChanged)
@@ -238,12 +237,18 @@ class InferencePresetWidget(InferenceSettingsWidget):
     def showModelSettings(self, link):
         ModelSettingsWindow.openInstance(self)
 
+    def updateTitle(self, name):
+        title = InferenceSettingsWidget.TITLE
+        if name:
+            title += f": {name}"
+        self.setText(title)
+
 
     def reloadPresetList(self, selectName: str = None):
         self.preset.clear()
 
-        attr: dict = getattr(Config, self.configAttr, {})
-        for name in sorted(attr.keys()):
+        presets: dict = getattr(Config, self.configAttr)
+        for name in sorted(presets.keys()):
             self.preset.addItem(name)
         
         if selectName:
@@ -256,9 +261,10 @@ class InferencePresetWidget(InferenceSettingsWidget):
         
         self.preset.setCurrentIndex(index)
 
+
     @Slot()
     def _onPresetChanged(self, name):
-        self.setText(f"{InferenceSettingsWidget.TITLE}: {name}")
+        self.updateTitle(name)
         self.loadFromConfig()
 
     @Slot()
@@ -271,23 +277,20 @@ class InferencePresetWidget(InferenceSettingsWidget):
             finally:
                 self.preset.blockSignals(False)
 
+            self.updateTitle( self.preset.currentText() )
+
 
     @Slot()
     def loadFromConfig(self):
         empty    = {}
-        attr: dict     = getattr(Config, self.configAttr, empty)
-        preset: dict   = attr.get(self.preset.currentText(), empty)
+        presets: dict  = getattr(Config, self.configAttr, empty)
+        preset: dict   = presets.get(self.preset.currentText(), empty)
         settings: dict = preset.get(InferenceSettingsWidget.PRESET_KEY, empty)
         self.fromDict(settings)
 
     @Slot()
     def saveToConfig(self):
-        try:
-            attr: dict = getattr(Config, self.configAttr)
-        except AttributeError as ex:
-            print("Couldn't save sample config:", str(ex))
-            return
-
-        preset: dict = attr.get(self.preset.currentText())
+        presets: dict = getattr(Config, self.configAttr)
+        preset: dict = presets.get(self.preset.currentText())
         if preset != None:
             preset[InferenceSettingsWidget.PRESET_KEY] = self.toDict()
