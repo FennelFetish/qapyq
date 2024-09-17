@@ -6,8 +6,8 @@ from config import Config
 class AuxiliaryWindow(QtWidgets.QMainWindow):
     closed = Signal()
 
-    def __init__(self, contentClass, title, configKey):
-        super().__init__()
+    def __init__(self, parent, contentClass, title, configKey):
+        super().__init__(parent)
         self.setWindowTitle(title)
         self.contentClass = contentClass
         self.configKey = configKey

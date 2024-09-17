@@ -3,15 +3,17 @@ from PySide6.QtCore import Qt, Slot, Signal, QRect, QSize, QMimeData
 import os
 
 
-def setTextEditHeight(textEdit, numRows, maxHeight=False):
+def setTextEditHeight(textEdit, numRows, mode=None):
     lineHeight = textEdit.fontMetrics().lineSpacing()
     docMargin = textEdit.document().documentMargin()
     frameWidth = textEdit.frameWidth()
     margins = textEdit.contentsMargins()
 
     height = lineHeight*numRows + 2*(docMargin + frameWidth) + margins.top() + margins.bottom()
-    if maxHeight:
+    if mode == "max":
         textEdit.setMaximumHeight(height)
+    elif mode == "min":
+        textEdit.setMinimumHeight(height)
     else:
         textEdit.setFixedHeight(height)
 

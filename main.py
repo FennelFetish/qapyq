@@ -116,7 +116,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def toggleGallery(self):
         if self.galleryWindow is None:
             from gallery import Gallery
-            self.galleryWindow = aux_window.AuxiliaryWindow(Gallery, "Gallery", "gallery")
+            self.galleryWindow = aux_window.AuxiliaryWindow(self, Gallery, "Gallery", "gallery")
             self.galleryWindow.closed.connect(self.onGalleryClosed)
             self.galleryWindow.show()
 
@@ -136,7 +136,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def toggleBatchWindow(self):
         if self.batchWindow is None:
             from batch import BatchContainer
-            self.batchWindow = aux_window.AuxiliaryWindow(BatchContainer, "Batch", "batch")
+            self.batchWindow = aux_window.AuxiliaryWindow(self, BatchContainer, "Batch", "batch")
             self.batchWindow.closed.connect(self.onBatchWindowClosed)
             self.batchWindow.show()
 
@@ -156,7 +156,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def toggleCaptionWindow(self):
         if self.captionWindow is None:
             from caption import CaptionContainer
-            self.captionWindow = aux_window.AuxiliaryWindow(CaptionContainer, "Caption", "caption")
+            self.captionWindow = aux_window.AuxiliaryWindow(self, CaptionContainer, "Caption", "caption")
             self.captionWindow.closed.connect(self.onCaptionWindowClosed)
             self.captionWindow.show()
 
@@ -183,6 +183,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.batchWindow.close()
         if self.captionWindow:
             self.captionWindow.close()
+
+        from infer.model_settings import ModelSettingsWindow
+        ModelSettingsWindow.closeInstance()
 
 
 
@@ -213,8 +216,11 @@ class MainMenu(QtWidgets.QMenu):
         actClearVram = QtGui.QAction("Clear VRAM", self)
         actClearVram.triggered.connect(self.clearVram)
 
-        actModelConfig = QtGui.QAction("Model Settings", self)
-        actModelConfig.setEnabled(False)
+        actModelConfig = QtGui.QAction("Model Settings...", self)
+        actModelConfig.triggered.connect(self.showModelSettings)
+
+        actPromptConfig = QtGui.QAction("Prompt Presets...", self)
+        actPromptConfig.setEnabled(False)
         
         actQuit = QtGui.QAction("&Quit", self)
         actQuit.setShortcutContext(Qt.ApplicationShortcut)
@@ -228,6 +234,7 @@ class MainMenu(QtWidgets.QMenu):
         self.addAction(actCloseTab)
         self.addSeparator()
         self.addAction(actModelConfig)
+        self.addAction(actPromptConfig)
         self.addAction(actClearVram)
         self.addSeparator()
         self.addAction(actQuit)
@@ -236,6 +243,11 @@ class MainMenu(QtWidgets.QMenu):
     def clearVram(self):
         from infer import Inference
         Inference().quitProcess()
+
+    @Slot()
+    def showModelSettings(self):
+        from infer.model_settings import ModelSettingsWindow
+        ModelSettingsWindow.openInstance(self)
 
 
 

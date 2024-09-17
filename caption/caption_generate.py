@@ -2,7 +2,7 @@ import os, traceback
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject
 import qtlib, util
-from infer import Inference, InferenceSettingsWidget
+from infer import Inference, InferencePresetWidget
 from config import Config
 
 
@@ -38,7 +38,7 @@ class CaptionGenerate(QtWidgets.QWidget):
         layout.addWidget(QtWidgets.QLabel("Prompt:"), 1, 0, Qt.AlignTop)
         layout.addWidget(self.txtPrompt, 1, 1, 1, 5)
 
-        self.inferSettings = InferenceSettingsWidget()
+        self.inferSettings = InferencePresetWidget()
         layout.addWidget(self.inferSettings, 2, 0, 1, 6)
 
         self.spinTagThreshold = QtWidgets.QDoubleSpinBox()

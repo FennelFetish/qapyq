@@ -3,7 +3,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
 import qtlib, util
 from config import Config
-from infer import Inference, InferenceSettingsWidget
+from infer import Inference, InferencePresetWidget
 from .batch_task import BatchTask
 from .captionfile import CaptionFile
 from template_parser import TemplateParser
@@ -32,7 +32,7 @@ class BatchTransform(QtWidgets.QWidget):
         self.progressBar: QtWidgets.QProgressBar = progressBar
         self.statusBar: QtWidgets.QStatusBar = statusBar
 
-        self.inferSettings = InferenceSettingsWidget("llm")
+        self.inferSettings = InferencePresetWidget("inferLLMPresets")
 
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self._buildLLMSettings())
@@ -54,28 +54,30 @@ class BatchTransform(QtWidgets.QWidget):
 
         self.txtSystemPrompt = QtWidgets.QPlainTextEdit(BatchTransform.SYS_PROMPT)
         qtlib.setMonospace(self.txtSystemPrompt)
-        qtlib.setTextEditHeight(self.txtSystemPrompt, 5, maxHeight=True)
+        qtlib.setTextEditHeight(self.txtSystemPrompt, 5, "min")
         qtlib.setShowWhitespace(self.txtSystemPrompt)
         layout.addWidget(QtWidgets.QLabel("System Prompt:"), 0, 0, Qt.AlignTop)
         layout.addWidget(self.txtSystemPrompt, 0, 1, 1, 2)
-        layout.setRowStretch(0, 0.3)
+        layout.setRowStretch(0, 1)
 
         self.txtPromptTemplate = QtWidgets.QPlainTextEdit()
         self.txtPromptTemplate.setPlainText(BatchTransform.PROMPT_TPL)
         qtlib.setMonospace(self.txtPromptTemplate)
-        qtlib.setTextEditHeight(self.txtPromptTemplate, 10)
+        qtlib.setTextEditHeight(self.txtPromptTemplate, 10, "min")
         qtlib.setShowWhitespace(self.txtPromptTemplate)
         self.txtPromptTemplate.textChanged.connect(self._updatePreview)
         layout.addWidget(QtWidgets.QLabel("Prompt(s) Template:"), 1, 0, Qt.AlignTop)
         layout.addWidget(self.txtPromptTemplate, 1, 1, 1, 2)
+        layout.setRowStretch(1, 2)
 
         self.txtPromptPreview = QtWidgets.QPlainTextEdit()
         self.txtPromptPreview.setReadOnly(True)
         qtlib.setMonospace(self.txtPromptPreview)
+        qtlib.setTextEditHeight(self.txtPromptPreview, 5, "min")
         qtlib.setShowWhitespace(self.txtPromptPreview)
         layout.addWidget(QtWidgets.QLabel("Prompt Preview:"), 2, 0, Qt.AlignTop)
         layout.addWidget(self.txtPromptPreview, 2, 1, 1, 2)
-        #layout.setRowStretch(1, 2)
+        layout.setRowStretch(2, 4)
 
         self.chkStripAround = QtWidgets.QCheckBox("Surrounding whitespace")
         self.chkStripAround.setChecked(True)
@@ -91,7 +93,7 @@ class BatchTransform(QtWidgets.QWidget):
 
         self.txtTargetName = QtWidgets.QLineEdit("target")
         qtlib.setMonospace(self.txtTargetName)
-        layout.addWidget(QtWidgets.QLabel("Store as:"), 4, 0, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Default storage key:"), 4, 0, Qt.AlignTop)
         layout.addWidget(self.txtTargetName, 4, 1)
 
         self.spinRounds = QtWidgets.QSpinBox()

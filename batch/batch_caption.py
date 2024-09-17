@@ -2,10 +2,9 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import QMutex, QMutexLocker, QObject, QRunnable, Qt, Signal, Slot
 import qtlib, util
 from config import Config
-from infer import Inference
+from infer import Inference, InferencePresetWidget
 from .batch_task import BatchTask
 from .captionfile import CaptionFile
-from infer import InferenceSettingsWidget
 
 
 class BatchCaption(QtWidgets.QWidget):
@@ -16,7 +15,7 @@ class BatchCaption(QtWidgets.QWidget):
         self.progressBar: QtWidgets.QProgressBar = progressBar
         self.statusBar: QtWidgets.QStatusBar = statusBar
 
-        self.inferSettings = InferenceSettingsWidget()
+        self.inferSettings = InferencePresetWidget()
 
         self.captionGroup = self._buildCaptionSettings()
         self.tagGroup = self._buildTagSettings()
@@ -40,28 +39,34 @@ class BatchCaption(QtWidgets.QWidget):
 
         self.txtSystemPrompt = QtWidgets.QPlainTextEdit(Config.inferSystemPrompt)
         qtlib.setMonospace(self.txtSystemPrompt)
-        qtlib.setTextEditHeight(self.txtSystemPrompt, 5, maxHeight=True)
+        qtlib.setTextEditHeight(self.txtSystemPrompt, 5, "min")
         qtlib.setShowWhitespace(self.txtSystemPrompt)
         layout.addWidget(QtWidgets.QLabel("System Prompt:"), 0, 0, Qt.AlignTop)
         layout.addWidget(self.txtSystemPrompt, 0, 1, 1, 2)
-        layout.setRowStretch(0, 0.3)
+        layout.setRowStretch(0, 1)
 
         self.txtPrompts = QtWidgets.QPlainTextEdit(Config.inferPrompt)
         qtlib.setMonospace(self.txtPrompts)
+        qtlib.setTextEditHeight(self.txtPrompts, 10, "min")
         qtlib.setShowWhitespace(self.txtPrompts)
         layout.addWidget(QtWidgets.QLabel("Prompt(s):"), 1, 0, Qt.AlignTop)
         layout.addWidget(self.txtPrompts, 1, 1, 1, 2)
-        layout.setRowStretch(1, 2)
+        layout.setRowStretch(1, 6)
+
+        self.txtTargetName = QtWidgets.QLineEdit("caption")
+        qtlib.setMonospace(self.txtTargetName)
+        layout.addWidget(QtWidgets.QLabel("Default storage key:"), 2, 0, Qt.AlignTop)
+        layout.addWidget(self.txtTargetName, 2, 1)
 
         self.spinRounds = QtWidgets.QSpinBox()
         self.spinRounds.setRange(1, 100)
         self.spinRounds.setValue(1)
-        layout.addWidget(QtWidgets.QLabel("Rounds:"), 2, 0, Qt.AlignTop)
-        layout.addWidget(self.spinRounds, 2, 1)
+        layout.addWidget(QtWidgets.QLabel("Rounds:"), 3, 0, Qt.AlignTop)
+        layout.addWidget(self.spinRounds, 3, 1)
 
-        layout.addWidget(self.inferSettings, 3, 0, 1, 3)
+        layout.addWidget(self.inferSettings, 4, 0, 1, 3)
 
-        groupBox = QtWidgets.QGroupBox("MiniCPM")
+        groupBox = QtWidgets.QGroupBox("Generate Captions")
         groupBox.setCheckable(True)
         groupBox.setLayout(layout)
         return groupBox
@@ -82,7 +87,7 @@ class BatchCaption(QtWidgets.QWidget):
         layout.addWidget(QtWidgets.QLabel("Threshold:"), 0, 0, Qt.AlignTop)
         layout.addWidget(self.spinTagThreshold, 0, 1)
 
-        groupBox = QtWidgets.QGroupBox("JoyTag")
+        groupBox = QtWidgets.QGroupBox("Generate Tags")
         groupBox.setCheckable(True)
         groupBox.setLayout(layout)
         return groupBox
@@ -110,7 +115,8 @@ class BatchCaption(QtWidgets.QWidget):
             self.btnStart.setText("Abort")
 
             if self.captionGroup.isChecked():
-                prompts = util.parsePrompts(self.txtPrompts.toPlainText())
+                storeName = self.txtTargetName.text().strip()
+                prompts = util.parsePrompts(self.txtPrompts.toPlainText(), storeName)
                 sysPrompt = self.txtSystemPrompt.toPlainText()
             else:
                 prompts, sysPrompt = None, None

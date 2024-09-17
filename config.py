@@ -29,8 +29,9 @@ class Config:
                             + "Don't format your response into numered lists or bullet points."
 
     inferPrompt             = "Describe the image in detail."
-    inferConfig             = dict()
     inferTagThreshold       = 0.4
+    inferCaptionPresets     = dict()
+    inferLLMPresets         = dict()
     
     # Batch
     batchTemplate           = "{{?captions.target}}\n{{?tags}}"
@@ -42,7 +43,7 @@ class Config:
     windowStates            = dict()
 
     # Misc static
-    batchWinLegendWidth     = 120
+    batchWinLegendWidth     = 130
 
 
     @classmethod
@@ -75,14 +76,16 @@ class Config:
 
         cls.inferSystemPrompt     = data.get("infer_system_prompt", cls.inferSystemPrompt)
         cls.inferPrompt           = data.get("infer_prompt", cls.inferPrompt)
-        cls.inferConfig           = data.get("infer_config", cls.inferConfig)
         cls.inferTagThreshold     = float(data.get("infer_tag_threshold", cls.inferTagThreshold))
+
+        cls.inferCaptionPresets   = data.get("infer_caption_presets", cls.inferCaptionPresets)
+        cls.inferLLMPresets       = data.get("infer_llm_presets", cls.inferLLMPresets)
 
         cls.batchTemplate         = data.get("batch_template", cls.batchTemplate)
 
         cls.galleryThumbnailSize  = int(data.get("gallery_thumbnail_size", cls.galleryThumbnailSize))
 
-        cls.windowStates          = data.get("window_states", dict())
+        cls.windowStates          = data.get("window_states", cls.windowStates)
 
 
     @classmethod
@@ -110,8 +113,10 @@ class Config:
 
         data["infer_system_prompt"]         = cls.inferSystemPrompt
         data["infer_prompt"]                = cls.inferPrompt
-        data["infer_config"]                = cls.inferConfig
         data["infer_tag_threshold"]         = cls.inferTagThreshold
+
+        data["infer_caption_presets"]       = cls.inferCaptionPresets
+        data["infer_llm_presets"]           = cls.inferLLMPresets
 
         data["batch_template"]              = cls.batchTemplate
 

@@ -5,9 +5,12 @@ from config import Config
 
 
 class InferenceSettingsWidget(superqt.QCollapsible):
-    def __init__(self, configKey="caption"):
-        super().__init__(f"Sample Settings ({configKey})")
-        self.configKey = configKey
+    TITLE      = "Sample Settings"
+    PRESET_KEY = "sample_config"
+
+    def __init__(self, configAttr="inferCaptionPresets"):
+        super().__init__(InferenceSettingsWidget.TITLE)
+        self.configAttr = configAttr
 
         self.layout().setContentsMargins(6, 4, 6, 0)
 
@@ -16,7 +19,6 @@ class InferenceSettingsWidget(superqt.QCollapsible):
 
         layout = self._build()
         layout.setContentsMargins(0, 0, 0, 6)
-        self.loadFromConfig()
 
         widget = QtWidgets.QWidget()
         widget.setLayout(layout)
@@ -47,133 +49,117 @@ class InferenceSettingsWidget(superqt.QCollapsible):
         self.tokensMax = QtWidgets.QSpinBox()
         self.tokensMax.setRange(10, 5000)
         self.tokensMax.setSingleStep(10)
-        layout.addWidget(QtWidgets.QLabel("Max Tokens:"), 0, 0, Qt.AlignTop)
-        layout.addWidget(self.tokensMax, 0, 1)
 
-        self.tokensContext = QtWidgets.QSpinBox()
-        self.tokensContext.setRange(512, 1024000)
-        self.tokensContext.setSingleStep(512)
-        layout.addWidget(QtWidgets.QLabel("Context Tokens:"), 0, 3, Qt.AlignTop)
-        layout.addWidget(self.tokensContext, 0, 4)
+        self._buildFirstRow(layout, QtWidgets.QLabel("Max Tokens:"), self.tokensMax)
 
-        self.gpuLayers = QtWidgets.QSpinBox()
-        self.gpuLayers.setRange(-1, 999)
-        self.gpuLayers.setSingleStep(1)
-        layout.addWidget(QtWidgets.QLabel("GPU Layers:"), 0, 6, Qt.AlignTop)
-        layout.addWidget(self.gpuLayers, 0, 7)
+        row = 1
+        layout.setRowMinimumHeight(row, spacerHeight)
 
-        layout.setRowMinimumHeight(1, spacerHeight)
-
+        row += 1
         self.temperature = QtWidgets.QDoubleSpinBox()
         self.temperature.setRange(0.0, 5.0)
         self.temperature.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Temperature:"), 2, 0, Qt.AlignTop)
-        layout.addWidget(self.temperature, 2, 1)
+        layout.addWidget(QtWidgets.QLabel("Temperature:"), row, 0, Qt.AlignTop)
+        layout.addWidget(self.temperature, row, 1)
 
         self.topK = QtWidgets.QSpinBox()
         self.topK.setRange(0, 200)
         self.topK.setSingleStep(5)
-        layout.addWidget(QtWidgets.QLabel("Top K:"), 2, 3, Qt.AlignTop)
-        layout.addWidget(self.topK, 2, 4)
+        layout.addWidget(QtWidgets.QLabel("Top K:"), row, 3, Qt.AlignTop)
+        layout.addWidget(self.topK, row, 4)
 
-
+        row += 1
         self.minP = QtWidgets.QDoubleSpinBox()
         self.minP.setRange(0.0, 1.0)
         self.minP.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Min P:"), 3, 0, Qt.AlignTop)
-        layout.addWidget(self.minP, 3, 1)
+        layout.addWidget(QtWidgets.QLabel("Min P:"), row, 0, Qt.AlignTop)
+        layout.addWidget(self.minP, row, 1)
 
         self.topP = QtWidgets.QDoubleSpinBox()
         self.topP.setRange(0.0, 1.0)
         self.topP.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Top P:"), 3, 3, Qt.AlignTop)
-        layout.addWidget(self.topP, 3, 4)
+        layout.addWidget(QtWidgets.QLabel("Top P:"), row, 3, Qt.AlignTop)
+        layout.addWidget(self.topP, row, 4)
 
         self.typicalP = QtWidgets.QDoubleSpinBox()
         self.typicalP.setRange(0.0, 1.0)
         self.typicalP.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Typical P:"), 3, 6, Qt.AlignTop)
-        layout.addWidget(self.typicalP, 3, 7)
+        layout.addWidget(QtWidgets.QLabel("Typical P:"), row, 6, Qt.AlignTop)
+        layout.addWidget(self.typicalP, row, 7)
 
-        layout.setRowMinimumHeight(4, spacerHeight)
+        row += 1
+        layout.setRowMinimumHeight(row, spacerHeight)
 
+        row += 1
         self.freqPenalty = QtWidgets.QDoubleSpinBox()
         self.freqPenalty.setRange(-2.0, 2.0)
         self.freqPenalty.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Freqency Penalty:"), 5, 0, Qt.AlignTop)
-        layout.addWidget(self.freqPenalty, 5, 1)
+        layout.addWidget(QtWidgets.QLabel("Freqency Penalty:"), row, 0, Qt.AlignTop)
+        layout.addWidget(self.freqPenalty, row, 1)
 
         self.presencePenalty = QtWidgets.QDoubleSpinBox()
         self.presencePenalty.setRange(-2.0, 2.0)
         self.presencePenalty.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Presence Penalty:"), 5, 3, Qt.AlignTop)
-        layout.addWidget(self.presencePenalty, 5, 4)
+        layout.addWidget(QtWidgets.QLabel("Presence Penalty:"), row, 3, Qt.AlignTop)
+        layout.addWidget(self.presencePenalty, row, 4)
 
         self.repeatPenalty = QtWidgets.QDoubleSpinBox()
         self.repeatPenalty.setRange(1.0, 3.0)
         self.repeatPenalty.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Repetition Penalty:"), 5, 6, Qt.AlignTop)
-        layout.addWidget(self.repeatPenalty, 5, 7)
+        layout.addWidget(QtWidgets.QLabel("Repetition Penalty:"), row, 6, Qt.AlignTop)
+        layout.addWidget(self.repeatPenalty, row, 7)
 
-
+        row += 1
         self.microstatMode = QtWidgets.QSpinBox()
         self.microstatMode.setRange(0, 2)
-        layout.addWidget(QtWidgets.QLabel("Microstat Mode:"), 7, 0, Qt.AlignTop)
-        layout.addWidget(self.microstatMode, 7, 1)
+        layout.addWidget(QtWidgets.QLabel("Microstat Mode:"), row, 0, Qt.AlignTop)
+        layout.addWidget(self.microstatMode, row, 1)
 
         self.microstatTau = QtWidgets.QDoubleSpinBox()
         self.microstatTau.setRange(0.0, 20.0)
         self.microstatTau.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Microstat Tau:"), 7, 3, Qt.AlignTop)
-        layout.addWidget(self.microstatTau, 7, 4)
+        layout.addWidget(QtWidgets.QLabel("Microstat Tau:"), row, 3, Qt.AlignTop)
+        layout.addWidget(self.microstatTau, row, 4)
 
         self.microstatEta = QtWidgets.QDoubleSpinBox()
         self.microstatEta.setRange(0.0, 1.0)
         self.microstatEta.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Microstat Eta:"), 7, 6, Qt.AlignTop)
-        layout.addWidget(self.microstatEta, 7, 7)
+        layout.addWidget(QtWidgets.QLabel("Microstat Eta:"), row, 6, Qt.AlignTop)
+        layout.addWidget(self.microstatEta, row, 7)
 
-
+        row += 1
         self.tfsZ = QtWidgets.QDoubleSpinBox()
         self.tfsZ.setRange(0.0, 1.0)
         self.tfsZ.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("TFS Z:"), 9, 0, Qt.AlignTop)
-        layout.addWidget(self.tfsZ, 9, 1)
+        layout.addWidget(QtWidgets.QLabel("TFS Z:"), row, 0, Qt.AlignTop)
+        layout.addWidget(self.tfsZ, row, 1)
 
-        layout.setRowMinimumHeight(10, spacerHeight)
+        row += 1
+        layout.setRowMinimumHeight(row, spacerHeight)
 
-        self.btnSave = QtWidgets.QPushButton("Save to Config")
-        self.btnSave.clicked.connect(self.saveToConfig)
-        layout.addWidget(self.btnSave, 11, 0, 1, 2)
-
-        self.btnLoad = QtWidgets.QPushButton("Load from Config")
-        self.btnLoad.clicked.connect(self.loadFromConfig)
-        layout.addWidget(self.btnLoad, 11, 3, 1, 2)
+        row += 1
+        self._buildButtons(layout, row)
 
         self.btnLoadDefaults = QtWidgets.QPushButton("Reset to Defaults")
-        self.btnLoadDefaults.clicked.connect(self.defaultValues)
-        layout.addWidget(self.btnLoadDefaults, 11, 6, 1, 2)
+        self.btnLoadDefaults.clicked.connect(self.setDefaultValues)
+        layout.addWidget(self.btnLoadDefaults, row, 6, 1, 2)
 
         return layout
 
+    def _buildFirstRow(self, layout, lblTokensMax, tokensMax):
+        layout.addWidget(lblTokensMax, 0, 0, Qt.AlignTop)
+        layout.addWidget(tokensMax, 0, 1)
+
+    def _buildButtons(self, layout, row: int):
+        pass
+
 
     @Slot()
-    def defaultValues(self):
+    def setDefaultValues(self):
         self.fromDict({})
 
-    @Slot()
-    def saveToConfig(self):
-        Config.inferConfig[self.configKey] = self.toDict()
 
-    @Slot()
-    def loadFromConfig(self):
-        self.fromDict( Config.inferConfig.get(self.configKey, {}) )
-
-    
     def fromDict(self, settings: dict):
-        self.tokensContext.setValue(settings.get("n_ctx", 32768))
-        self.gpuLayers.setValue(settings.get("n_gpu_layers", -1))
-
         self.tokensMax.setValue(settings.get("max_tokens", 1000))
         self.temperature.setValue(settings.get("temperature", 0.1))
         self.topP.setValue(settings.get("top_p", 0.95))
@@ -194,9 +180,6 @@ class InferenceSettingsWidget(superqt.QCollapsible):
 
     def toDict(self):
         return {
-            "n_ctx": self.tokensContext.value(),
-            "n_gpu_layers": self.gpuLayers.value(),
-
             "max_tokens": self.tokensMax.value(),
             "temperature": self.temperature.value(),
             "top_p": self.topP.value(),
@@ -214,3 +197,97 @@ class InferenceSettingsWidget(superqt.QCollapsible):
 
             "tfs_z": self.tfsZ.value()
         }
+
+
+
+# ModelSettingsWindow depends on InferenceSettingsWidget above
+from .model_settings import ModelSettingsWindow
+
+class InferencePresetWidget(InferenceSettingsWidget):
+    def __init__(self, configAttr="inferCaptionPresets"):
+        super().__init__(configAttr)
+        self.reloadPresetList()
+
+        ModelSettingsWindow.signals.presetListUpdated.connect(self._onPresetListChanged)
+
+
+    def _buildFirstRow(self, layout, lblTokensMax, tokensMax):
+        lblPreset = QtWidgets.QLabel("<a href='model_settings'>Preset</a>:")
+        lblPreset.linkActivated.connect(self.showModelSettings)
+
+        layout.addWidget(lblPreset, 0, 0, Qt.AlignTop)
+
+        self.preset = QtWidgets.QComboBox()
+        self.preset.currentTextChanged.connect(self._onPresetChanged)
+        layout.addWidget(self.preset, 0, 1)
+
+        layout.addWidget(lblTokensMax, 0, 3, Qt.AlignTop)
+        layout.addWidget(tokensMax, 0, 4)
+
+    def _buildButtons(self, layout, row: int):
+        self.btnSave = QtWidgets.QPushButton("Save to Preset")
+        self.btnSave.clicked.connect(self.saveToConfig)
+        layout.addWidget(self.btnSave, row, 0, 1, 2)
+
+        self.btnLoad = QtWidgets.QPushButton("Load from Preset")
+        self.btnLoad.clicked.connect(self.loadFromConfig)
+        layout.addWidget(self.btnLoad, row, 3, 1, 2)
+
+
+    @Slot()
+    def showModelSettings(self, link):
+        ModelSettingsWindow.openInstance(self)
+
+
+    def reloadPresetList(self, selectName: str = None):
+        self.preset.clear()
+
+        attr: dict = getattr(Config, self.configAttr, {})
+        for name in sorted(attr.keys()):
+            self.preset.addItem(name)
+        
+        if selectName:
+            index = self.preset.findText(selectName)
+        elif self.preset.count() > 0:
+            index = 0
+        else:
+            self.setDefaultValues()
+            index = -1
+        
+        self.preset.setCurrentIndex(index)
+
+    @Slot()
+    def _onPresetChanged(self, name):
+        self.setText(f"{InferenceSettingsWidget.TITLE}: {name}")
+        self.loadFromConfig()
+
+    @Slot()
+    def _onPresetListChanged(self, attr):
+        if attr == self.configAttr:
+            try:
+                currentName = self.preset.currentText()
+                self.preset.blockSignals(True)
+                self.reloadPresetList(currentName)
+            finally:
+                self.preset.blockSignals(False)
+
+
+    @Slot()
+    def loadFromConfig(self):
+        empty    = {}
+        attr: dict     = getattr(Config, self.configAttr, empty)
+        preset: dict   = attr.get(self.preset.currentText(), empty)
+        settings: dict = preset.get(InferenceSettingsWidget.PRESET_KEY, empty)
+        self.fromDict(settings)
+
+    @Slot()
+    def saveToConfig(self):
+        try:
+            attr: dict = getattr(Config, self.configAttr)
+        except AttributeError as ex:
+            print("Couldn't save sample config:", str(ex))
+            return
+
+        preset: dict = attr.get(self.preset.currentText())
+        if preset != None:
+            preset[InferenceSettingsWidget.PRESET_KEY] = self.toDict()

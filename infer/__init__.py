@@ -1,2 +1,2 @@
 from .inference import Inference
-from .inference_settings import InferenceSettingsWidget
+from .inference_settings import InferenceSettingsWidget, InferencePresetWidget
