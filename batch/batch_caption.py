@@ -55,7 +55,7 @@ class BatchCaption(QtWidgets.QWidget):
 
         self.txtTargetName = QtWidgets.QLineEdit("caption")
         qtlib.setMonospace(self.txtTargetName)
-        layout.addWidget(QtWidgets.QLabel("Default storage key:"), 2, 0, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Default storage key:"), 2, 0)
         layout.addWidget(self.txtTargetName, 2, 1)
 
         self.chkStorePrompts = QtWidgets.QCheckBox("Store Prompts")
@@ -64,7 +64,7 @@ class BatchCaption(QtWidgets.QWidget):
         self.spinRounds = QtWidgets.QSpinBox()
         self.spinRounds.setRange(1, 100)
         self.spinRounds.setValue(1)
-        layout.addWidget(QtWidgets.QLabel("Rounds:"), 3, 0, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Rounds:"), 3, 0)
         layout.addWidget(self.spinRounds, 3, 1)
 
         layout.addWidget(self.inferSettings, 4, 0, 1, 3)
@@ -87,7 +87,7 @@ class BatchCaption(QtWidgets.QWidget):
         self.spinTagThreshold.setValue(Config.inferTagThreshold)
         self.spinTagThreshold.setRange(0.0, 1.0)
         self.spinTagThreshold.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Threshold:"), 0, 0, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Threshold:"), 0, 0)
         layout.addWidget(self.spinTagThreshold, 0, 1)
 
         groupBox = QtWidgets.QGroupBox("Generate Tags")

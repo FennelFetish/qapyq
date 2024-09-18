@@ -62,22 +62,22 @@ class CaptionSettings(QtWidgets.QWidget):
         rowLayout = QtWidgets.QHBoxLayout()
         rowLayout.addWidget(self.chkAutoApply)
         rowLayout.addWidget(self.chkRemoveDup)
-        layout.addLayout(rowLayout, 2, 0, 1, 2, Qt.AlignTop)
+        layout.addLayout(rowLayout, 2, 1)
 
         btnAddBanned = QtWidgets.QPushButton("Ban")
         btnAddBanned.setFixedWidth(50)
         btnAddBanned.setFocusPolicy(Qt.NoFocus)
         btnAddBanned.clicked.connect(self.addBanned)
-        layout.addWidget(btnAddBanned, 2, 2, Qt.AlignTop)
+        layout.addWidget(btnAddBanned, 2, 2)
         
         # Row 3
         self.btnLoad = QtWidgets.QPushButton("Load preset ...")
         self.btnLoad.clicked.connect(self.loadPreset)
-        layout.addWidget(self.btnLoad, 3, 0, 1, 2, Qt.AlignTop)
+        layout.addWidget(self.btnLoad, 3, 0, 1, 2)
 
         self.btnSave = QtWidgets.QPushButton("Save preset as ...")
         self.btnSave.clicked.connect(self.savePreset)
-        layout.addWidget(self.btnSave, 3, 2, 1, 2, Qt.AlignTop)
+        layout.addWidget(self.btnSave, 3, 2, 1, 2)
 
         self.setLayout(layout)
 

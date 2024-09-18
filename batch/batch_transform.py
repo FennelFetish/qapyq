@@ -87,19 +87,19 @@ class BatchTransform(QtWidgets.QWidget):
         self.chkStripMulti.setChecked(False)
         self.chkStripMulti.checkStateChanged.connect(self._updateParser)
 
-        layout.addWidget(QtWidgets.QLabel("Strip:"), 3, 0, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Strip:"), 3, 0)
         layout.addWidget(self.chkStripAround, 3, 1)
         layout.addWidget(self.chkStripMulti, 3, 2)
 
         self.txtTargetName = QtWidgets.QLineEdit("target")
         qtlib.setMonospace(self.txtTargetName)
-        layout.addWidget(QtWidgets.QLabel("Default storage key:"), 4, 0, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Default storage key:"), 4, 0)
         layout.addWidget(self.txtTargetName, 4, 1)
 
         self.spinRounds = QtWidgets.QSpinBox()
         self.spinRounds.setRange(1, 100)
         self.spinRounds.setValue(1)
-        layout.addWidget(QtWidgets.QLabel("Rounds:"), 5, 0, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Rounds:"), 5, 0)
         layout.addWidget(self.spinRounds, 5, 1)
 
         layout.addWidget(self.inferSettings, 6, 0, 1, 3)

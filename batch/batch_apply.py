@@ -63,7 +63,7 @@ class BatchApply(QtWidgets.QWidget):
         self.chkStripMulti.setChecked(True)
         self.chkStripMulti.checkStateChanged.connect(self._updateParser)
 
-        layout.addWidget(QtWidgets.QLabel("Strip:"), 2, 0, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Strip:"), 2, 0)
         layout.addWidget(self.chkStripAround, 2, 1)
         layout.addWidget(self.chkStripMulti, 2, 2)
 
@@ -84,7 +84,7 @@ class BatchApply(QtWidgets.QWidget):
 
         self.txtBackupName = QtWidgets.QLineEdit("backup")
         qtlib.setMonospace(self.txtBackupName)
-        layout.addWidget(QtWidgets.QLabel("Store as:"), 0, 0, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Store as:"), 0, 0)
         layout.addWidget(self.txtBackupName, 0, 1)
 
         groupBox = QtWidgets.QGroupBox("Backup (txt → json)")

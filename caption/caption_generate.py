@@ -45,7 +45,7 @@ class CaptionGenerate(QtWidgets.QWidget):
         self.spinTagThreshold.setRange(0.0, 1.0)
         self.spinTagThreshold.setSingleStep(0.05)
         self.spinTagThreshold.setValue(Config.inferTagThreshold)
-        layout.addWidget(QtWidgets.QLabel("Tag Threshold:"), 3, 0, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Tag Threshold:"), 3, 0)
         layout.addWidget(self.spinTagThreshold, 3, 1)
 
         self.statusBar = qtlib.ColoredMessageStatusBar()
