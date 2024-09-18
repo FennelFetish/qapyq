@@ -2,19 +2,34 @@ import sys, struct, msgpack, traceback, os
 from config import Config
 
 
-minicpm = None
+backend = None
 joytag  = None
-llm     = None
 
 
-def loadMiniCpm(config: dict = None):
-    global minicpm
-    if not minicpm:
-        from infer.minicpm import MiniCPM
-        minicpm = MiniCPM(config)
+def loadBackend(config: dict):
+    if not config:
+        raise ValueError("Cannot load backend without config")
+
+    match config.get("backend"):
+        case "minicpm":
+            from infer.backend_llamacpp import LlamaCppVisionBackend
+            from llama_cpp.llama_chat_format import MiniCPMv26ChatHandler
+            return LlamaCppVisionBackend(config, MiniCPMv26ChatHandler)
+        case "gguf":
+            from infer.backend_llamacpp import LlamaCppBackend
+            return LlamaCppBackend(config)
+    
+    raise ValueError(f"Unknown backend: {config.get('backend')}")
+
+
+def getBackend(config: dict = None):
+    global backend
+    if backend == None:
+        backend = loadBackend(config)
     elif config:
-        minicpm.setConfig(config)
-    return minicpm
+        backend.setConfig(config)
+    return backend
+
 
 def loadJoytag():
     global joytag
@@ -22,15 +37,6 @@ def loadJoytag():
         from infer.joytag import JoyTag
         joytag = JoyTag(Config.inferTagModelPath)
     return joytag
-
-def loadLLM(config: dict = None):
-    global llm
-    if not llm:
-        from infer.llm import LLM
-        llm = LLM(config)
-    elif config:
-        llm.setConfig(config)
-    return llm
 
 
 
@@ -59,53 +65,52 @@ def printErr(text):
 
 
 def handleMessage(protocol) -> bool:
-    msg = protocol.readMessage()
-    cmd = msg["cmd"]
-    #printErr(f"Inference process received command: {cmd}")
+    msg: dict = protocol.readMessage()
+    cmd: str = msg["cmd"]
 
-    if cmd == "quit":
-        # No reply! It won't quit when we send something here.
-        return False
-
-
-    elif cmd == "setup_caption":
-        loadMiniCpm(msg.get("config", {}))
-        protocol.writeMessage({"cmd": cmd})
-
-    elif cmd == "setup_tag":
-        loadJoytag().threshold = float(msg["threshold"])
-        protocol.writeMessage({"cmd": cmd})
-
-    elif cmd == "setup_llm":
-        loadLLM(msg.get("config", {}))
-        protocol.writeMessage({"cmd": cmd})
+    match cmd:
+        case "quit":
+            # No reply! It won't quit when we send something here.
+            return False
 
 
-    elif cmd == "caption":
-        img = msg["img"]
-        captions = loadMiniCpm().caption(img, msg["prompts"], msg["sysPrompt"], int(msg["rounds"]))
-        protocol.writeMessage({
-            "cmd": cmd,
-            "img": img,
-            "captions": captions
-            # TODO: Also return used prompts (optional)
-        })
-    
-    elif cmd == "tag":
-        img = msg["img"]
-        tags = loadJoytag().caption(img)
-        protocol.writeMessage({
-            "cmd": cmd,
-            "img": img,
-            "tags": tags
-        })
+        case "setup_caption":
+            getBackend(msg.get("config", {}))
+            protocol.writeMessage({"cmd": cmd})
 
-    elif cmd == "answer":
-        answers = loadLLM().answer(msg["prompts"], msg["sysPrompt"], int(msg["rounds"]))
-        protocol.writeMessage({
-            "cmd": cmd,
-            "answers": answers
-        })
+        case "setup_tag":
+            loadJoytag().threshold = float(msg["threshold"])
+            protocol.writeMessage({"cmd": cmd})
+
+        case "setup_llm":
+            getBackend(msg.get("config", {}))
+            protocol.writeMessage({"cmd": cmd})
+
+
+        case "caption":
+            img = msg["img"]
+            captions = getBackend().caption(img, msg["prompts"], msg["sysPrompt"], int(msg["rounds"]))
+            protocol.writeMessage({
+                "cmd": cmd,
+                "img": img,
+                "captions": captions
+            })
+        
+        case "tag":
+            img = msg["img"]
+            tags = loadJoytag().caption(img)
+            protocol.writeMessage({
+                "cmd": cmd,
+                "img": img,
+                "tags": tags
+            })
+
+        case "answer":
+            answers = getBackend().answer(msg["prompts"], msg["sysPrompt"], int(msg["rounds"]))
+            protocol.writeMessage({
+                "cmd": cmd,
+                "answers": answers
+            })
 
     return True
 

@@ -24,8 +24,8 @@ class Config:
     inferTagModelPath       = "./models/joytag"
     inferLLMPath            = "./models/gemma2.gguf"
 
-    inferSystemPrompt       = "You are an assistant that perfectly describes scenes in concise English language. You're always certain and you don't guess. " \
-                            + "You are never confused or distracted by semblance. You state facts. Refer to a person using gendered pronouns like she/he. " \
+    inferSystemPrompt       = "You are an assistant that perfectly describes scenes in concise English language. " \
+                            + "You always express yourself in a well-assured way. Refer to a person using gendered pronouns like she/he. " \
                             + "Don't format your response into numered lists or bullet points."
 
     inferPrompt             = "Describe the image in detail."
