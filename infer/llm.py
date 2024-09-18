@@ -1,24 +1,32 @@
-import base64, io, os, random
+import random
 from llama_cpp import Llama
+from config import Config
 
 
 class LLM:
-    def __init__(self, modelPath, config:dict={}):
+    def __init__(self, config: dict = {}):
         self.config = {
             "max_tokens": 600,
             "temperature": 0.15,
             "top_p": 0.95,
-            "top_k": 60,
+            "top_k": 40,
             "min_p": 0.05,
-            "repeat_penalty": 1.05
+            "typical_p": 1.0,
+            "presence_penalty": 0.0,
+            "frequency_penalty": 0.0,
+            "repeat_penalty": 1.05,
+            "mirostat_mode": 0,
+            "mirostat_tau": 5.0,
+            "mirostat_eta": 0.1,
+            "tfs_z": 1.0
         }
 
         self.llm = Llama(
-            model_path=modelPath,
-            n_gpu_layers=config.get("n_gpu_layers", -1),
-            n_ctx=config.get("n_ctx", 8192), # n_ctx should be increased to accommodate the image embedding
-            n_batch=512,
-            n_threads=12,
+            model_path=config.get("model_path"),
+            n_gpu_layers=config.get("gpu_layers", -1),
+            n_ctx=config.get("ctx_length", 8192),
+            n_batch=config.get("batch_size", 512),
+            n_threads=config.get("num_threads", 15),
             flash_attn=True,
             seed=self.getSeed(),
             verbose=False
@@ -32,10 +40,7 @@ class LLM:
 
 
     def setConfig(self, config: dict):
-        if "n_ctx" in config:
-            del config["n_ctx"]
-        if "n_gpu_layers" in config:
-            del config["n_gpu_layers"]
+        config = config.get(Config.INFER_PRESET_SAMPLECFG_KEY, {})
         self.config.update(config)
 
 

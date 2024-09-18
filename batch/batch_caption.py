@@ -121,7 +121,7 @@ class BatchCaption(QtWidgets.QWidget):
             else:
                 prompts, sysPrompt = None, None
 
-            config = self.inferSettings.toDict()
+            config = self.inferSettings.getInferenceConfig()
 
             self._task = BatchCaptionTask(self.log, self.tab.filelist, prompts, sysPrompt, self.tagGroup.isChecked(), config)
             self._task.rounds = self.spinRounds.value()

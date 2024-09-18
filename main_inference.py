@@ -11,7 +11,7 @@ def loadMiniCpm(config: dict = None):
     global minicpm
     if not minicpm:
         from infer.minicpm import MiniCPM
-        minicpm = MiniCPM(Config.inferCaptionModelPath, Config.inferCaptionClipPath, config)
+        minicpm = MiniCPM(config)
     elif config:
         minicpm.setConfig(config)
     return minicpm
@@ -27,7 +27,7 @@ def loadLLM(config: dict = None):
     global llm
     if not llm:
         from infer.llm import LLM
-        llm = LLM(Config.inferLLMPath, config)
+        llm = LLM(config)
     elif config:
         llm.setConfig(config)
     return llm
@@ -67,18 +67,6 @@ def handleMessage(protocol) -> bool:
         # No reply! It won't quit when we send something here.
         return False
 
-    elif cmd == "prepare_caption":
-        loadMiniCpm()
-        protocol.writeMessage({"cmd": cmd})
-
-    elif cmd == "prepare_tag":
-        loadJoytag()
-        protocol.writeMessage({"cmd": cmd})
-
-    elif cmd == "prepare_llm":
-        loadLLM()
-        protocol.writeMessage({"cmd": cmd})
-
 
     elif cmd == "setup_caption":
         loadMiniCpm(msg.get("config", {}))
@@ -100,6 +88,7 @@ def handleMessage(protocol) -> bool:
             "cmd": cmd,
             "img": img,
             "captions": captions
+            # TODO: Also return used prompts (optional)
         })
     
     elif cmd == "tag":

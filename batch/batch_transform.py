@@ -171,7 +171,7 @@ class BatchTransform(QtWidgets.QWidget):
             prompts   = util.parsePrompts(self.txtPromptTemplate.toPlainText(), storeName)
             sysPrompt = self.txtSystemPrompt.toPlainText()
 
-            config = self.inferSettings.toDict()
+            config = self.inferSettings.getInferenceConfig()
 
             self._task = BatchTransformTask(self.log, self.tab.filelist, prompts, sysPrompt, config)
             self._task.stripAround = self.chkStripAround.isChecked()

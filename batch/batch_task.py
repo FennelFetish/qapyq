@@ -41,6 +41,7 @@ class BatchTask(QRunnable):
             self.signals.progress.emit(0, 0, None)
 
             self.runPrepare()
+            self.signals.progressMessage.emit("Processing ...")
             self.processAll()
         except Exception as ex:
             print(f"Error during batch {self.name}:")

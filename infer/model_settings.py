@@ -92,7 +92,7 @@ class CaptionModelSettings(QtWidgets.QWidget):
         self.cboPreset.setEditable(True)
         self.cboPreset.editTextChanged.connect(self._onPresetNameEdited)
         self.cboPreset.currentIndexChanged.connect(self.loadPreset)
-        layout.addWidget(QtWidgets.QLabel("Preset Name:"), row, 0, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Preset Name:"), row, 0)
         layout.addWidget(self.cboPreset, row, 1, 1, 4)
 
         self.btnSave = QtWidgets.QPushButton("Save")
@@ -113,12 +113,12 @@ class CaptionModelSettings(QtWidgets.QWidget):
         for name, data in self.backends.items():
             self.cboBackend.addItem(f"{name} ({data[1]})", userData=data)
         self.cboBackend.currentIndexChanged.connect(self._onBackendChanged)
-        layout.addWidget(QtWidgets.QLabel("Backend:"), row, 0, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Backend:"), row, 0)
         layout.addWidget(self.cboBackend, row, 1, 1, 5)
 
         row += 1
         self.txtPath = QtWidgets.QLineEdit()
-        layout.addWidget(QtWidgets.QLabel("Model Path:"), row, 0, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Model Path:"), row, 0)
         layout.addWidget(self.txtPath, row, 1, 1, 5)
 
         btnChooseModel = QtWidgets.QPushButton("Choose...")
@@ -132,7 +132,7 @@ class CaptionModelSettings(QtWidgets.QWidget):
             row += 1
             self.lblProjectorPath = QtWidgets.QLabel("Projector Path:")
             self.txtProjectorPath = QtWidgets.QLineEdit()
-            layout.addWidget(self.lblProjectorPath, row, 0, Qt.AlignTop)
+            layout.addWidget(self.lblProjectorPath, row, 0)
             layout.addWidget(self.txtProjectorPath, row, 1, 1, 5)
 
             self.btnChooseProjector = QtWidgets.QPushButton("Choose...")
@@ -143,13 +143,13 @@ class CaptionModelSettings(QtWidgets.QWidget):
         self.spinGpuLayers = QtWidgets.QSpinBox()
         self.spinGpuLayers.setRange(-1, 999)
         self.spinGpuLayers.setSingleStep(1)
-        layout.addWidget(QtWidgets.QLabel("GPU Layers:"), row, 0, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("GPU Layers:"), row, 0)
         layout.addWidget(self.spinGpuLayers, row, 1)
 
         self.spinCtxLen = QtWidgets.QSpinBox()
         self.spinCtxLen.setRange(512, 10_240_000)
         self.spinCtxLen.setSingleStep(512)
-        layout.addWidget(QtWidgets.QLabel("Context Length:"), row, 3, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Context Length:"), row, 3)
         layout.addWidget(self.spinCtxLen, row, 4, 1, 2)
 
         row += 1
@@ -157,14 +157,14 @@ class CaptionModelSettings(QtWidgets.QWidget):
         self.spinThreadCount = QtWidgets.QSpinBox()
         self.spinThreadCount.setRange(1, 128)
         self.spinThreadCount.setSingleStep(1)
-        layout.addWidget(self.lblThreadCount, row, 0, Qt.AlignTop)
+        layout.addWidget(self.lblThreadCount, row, 0)
         layout.addWidget(self.spinThreadCount, row, 1)
 
         self.lblBatchSize = QtWidgets.QLabel("Batch Size:")
         self.spinBatchSize = QtWidgets.QSpinBox()
         self.spinBatchSize.setRange(1, 16384)
         self.spinBatchSize.setSingleStep(64)
-        layout.addWidget(self.lblBatchSize, row, 3, Qt.AlignTop)
+        layout.addWidget(self.lblBatchSize, row, 3)
         layout.addWidget(self.spinBatchSize, row, 4, 1, 2)
 
         # TODO: Prompts?
@@ -277,15 +277,15 @@ class CaptionModelSettings(QtWidgets.QWidget):
 
         self.txtPath.setText(settings.get("model_path", ""))
         self.spinGpuLayers.setValue(settings.get("gpu_layers", -1))
-        self.spinCtxLen.setValue(settings.get("ctx_length", 8192))
+        self.spinCtxLen.setValue(settings.get("ctx_length", 32768))
 
         if self.projector:
             self.txtProjectorPath.setText(settings.get("proj_path", ""))
         
-        self.spinThreadCount.setValue(settings.get("num_threads", 12))
+        self.spinThreadCount.setValue(settings.get("num_threads", 15))
         self.spinBatchSize.setValue(settings.get("batch_size", 512))
 
-        sampleSettings = settings.get(InferenceSettingsWidget.PRESET_KEY, {})
+        sampleSettings = settings.get(Config.INFER_PRESET_SAMPLECFG_KEY, {})
         self.inferSettings.fromDict(sampleSettings)
 
 
@@ -305,5 +305,5 @@ class CaptionModelSettings(QtWidgets.QWidget):
             settings["num_threads"] = self.spinThreadCount.value()
             settings["batch_size"]  = self.spinBatchSize.value()
         
-        settings[InferenceSettingsWidget.PRESET_KEY] = self.inferSettings.toDict()
+        settings[Config.INFER_PRESET_SAMPLECFG_KEY] = self.inferSettings.toDict()
         return settings

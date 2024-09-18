@@ -32,6 +32,7 @@ class Config:
     inferTagThreshold       = 0.4
     inferCaptionPresets     = dict()
     inferLLMPresets         = dict()
+    INFER_PRESET_SAMPLECFG_KEY = "sample_config"
     
     # Batch
     batchTemplate           = "{{?captions.target}}\n{{?tags}}"

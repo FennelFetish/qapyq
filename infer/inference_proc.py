@@ -1,12 +1,15 @@
 from PySide6.QtCore import QProcess, QByteArray, QMutex, QMutexLocker, QThread
-import sys, struct, msgpack
+import sys, struct, msgpack, copy
 from util import Singleton
+from config import Config
 
 
 class InferenceProcess(metaclass=Singleton):
     def __init__(self):
         self.proc = None
         self.mutex = QMutex()
+
+        self.currentConfig = dict()
 
 
     def start(self):
@@ -30,6 +33,7 @@ class InferenceProcess(metaclass=Singleton):
 
 
     def stop(self):
+        self.currentConfig = dict()
         with QMutexLocker(self.mutex):
             if self.proc:
                 self._writeMessage({"cmd": "quit"})
@@ -43,23 +47,15 @@ class InferenceProcess(metaclass=Singleton):
                 self.proc.terminate()
 
 
-    def prepareCaption(self):
-        with QMutexLocker(self.mutex):
-            self._writeMessage({"cmd": "prepare_caption"})
-            return self._blockReadMessage("cmd")
-
-    def prepareTag(self):
-        with QMutexLocker(self.mutex):
-            self._writeMessage({"cmd": "prepare_tag"})
-            return self._blockReadMessage("cmd")
-
-    def prepareLLM(self):
-        with QMutexLocker(self.mutex):
-            self._writeMessage({"cmd": "prepare_llm"})
-            return self._blockReadMessage("cmd")
+    def updateConfig(self, config):
+        if not self._isSameConfig(config):
+            self.stop()
+            self.start()
+        self._setCurrentConfig(config)
 
 
-    def setupCaption(self, config: dict={}):
+    def setupCaption(self, config: dict):
+        self.updateConfig(config)
         with QMutexLocker(self.mutex):
             self._writeMessage({
                 "cmd": "setup_caption",
@@ -75,7 +71,8 @@ class InferenceProcess(metaclass=Singleton):
             })
             return self._blockReadMessage("cmd")
 
-    def setupLLM(self, config: dict={}):
+    def setupLLM(self, config: dict):
+        self.updateConfig(config)
         with QMutexLocker(self.mutex):
             self._writeMessage({
                 "cmd": "setup_llm",
@@ -148,6 +145,16 @@ class InferenceProcess(metaclass=Singleton):
                     break
 
             msg = self._readMessage()
-            return msg[key] if key in msg else None
+            return msg.get(key)
         except:
             return None
+
+
+    def _isSameConfig(self, config: dict):
+        diff = [ k for k, v in self.currentConfig.items() if config.get(k) != v ]
+        return len(diff) == 0
+
+    def _setCurrentConfig(self, config: dict):
+        self.currentConfig = copy.deepcopy(config)
+        if Config.INFER_PRESET_SAMPLECFG_KEY in self.currentConfig:
+            del self.currentConfig[Config.INFER_PRESET_SAMPLECFG_KEY]

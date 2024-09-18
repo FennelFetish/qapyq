@@ -89,7 +89,7 @@ class CaptionGenerate(QtWidgets.QWidget):
         if "caption" in content:
             task.prompts = util.parsePrompts(self.txtPrompt.toPlainText())
             task.systemPrompt = self.txtSysPrompt.toPlainText()
-            task.config = self.inferSettings.toDict()
+            task.config = self.inferSettings.getInferenceConfig()
         
         Inference().queueTask(task)
 
