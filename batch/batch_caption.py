@@ -58,6 +58,9 @@ class BatchCaption(QtWidgets.QWidget):
         layout.addWidget(QtWidgets.QLabel("Default storage key:"), 2, 0, Qt.AlignTop)
         layout.addWidget(self.txtTargetName, 2, 1)
 
+        self.chkStorePrompts = QtWidgets.QCheckBox("Store Prompts")
+        layout.addWidget(self.chkStorePrompts, 2, 2)
+
         self.spinRounds = QtWidgets.QSpinBox()
         self.spinRounds.setRange(1, 100)
         self.spinRounds.setValue(1)
@@ -126,6 +129,7 @@ class BatchCaption(QtWidgets.QWidget):
             self._task = BatchCaptionTask(self.log, self.tab.filelist, prompts, sysPrompt, self.tagGroup.isChecked(), config)
             self._task.rounds = self.spinRounds.value()
             self._task.tagThreshold = self.spinTagThreshold.value()
+            self._task.storePrompts = self.chkStorePrompts.isChecked()
             self._task.signals.progress.connect(self.onProgress)
             self._task.signals.progressMessage.connect(self.onProgressMessage)
             self._task.signals.done.connect(self.onFinished)
@@ -163,7 +167,7 @@ class BatchCaption(QtWidgets.QWidget):
 
 
 class BatchCaptionTask(BatchTask):
-    def __init__(self, log, filelist, prompts, systemPrompt, doTag, config):
+    def __init__(self, log, filelist, prompts: dict, systemPrompt: str, doTag: bool, config: dict):
         super().__init__("caption", log, filelist)
         self.prompts      = prompts
         self.systemPrompt = systemPrompt
@@ -173,6 +177,8 @@ class BatchCaptionTask(BatchTask):
 
         self.rounds: int = 1
         self.tagThreshold: float = 0.4
+
+        self.storePrompts = False
 
 
     def runPrepare(self):
@@ -189,29 +195,38 @@ class BatchCaptionTask(BatchTask):
                 raise RuntimeError("Couldn't load tag model")
 
 
-    def runProcessFile(self, imgFile) -> str:
+    def runProcessFile(self, imgFile: str) -> str:
         captionFile = CaptionFile(imgFile)
 
         if self.doCaption:
-            answers = self.inferProc.caption(imgFile, self.prompts, self.systemPrompt, self.rounds)
-            if answers:
-                for name, caption in answers.items():
-                    if caption:
-                        captionFile.addCaption(name, caption)
-                    else:
-                        self.log(f"WARNING: Caption '{name}' is empty for {imgFile}, ignoring")
-            else:
-                self.log(f"WARNING: No captions returned for {imgFile}")
+            self.runCaption(imgFile, captionFile)
 
         if self.doTag:
-            tags = self.inferProc.tag(imgFile)
-            if tags:
-                captionFile.tags = tags
-            else:
-                self.log(f"WARNING: No tags returned for {imgFile}, ignoring")
+            self.runTags(imgFile, captionFile)
 
         if captionFile.updateToJson():
             return captionFile.jsonPath
         else:
             self.log(f"WARNING: Failed to save captions to {captionFile.jsonPath}")
             return None
+
+    def runCaption(self, imgFile: str, captionFile: CaptionFile):
+        answers = self.inferProc.caption(imgFile, self.prompts, self.systemPrompt, self.rounds)
+        if not answers:
+            self.log(f"WARNING: No captions returned for {imgFile}")
+            return
+
+        for name, caption in answers.items():
+            if caption:
+                captionFile.addCaption(name, caption)
+                if self.storePrompts:
+                    captionFile.addPrompt(name, self.prompts.get(name))
+            else:
+                self.log(f"WARNING: Caption '{name}' is empty for {imgFile}, ignoring")
+        
+    def runTags(self, imgFile: str, captionFile: CaptionFile):
+        tags = self.inferProc.tag(imgFile)
+        if tags:
+            captionFile.tags = tags
+        else:
+            self.log(f"WARNING: No tags returned for {imgFile}, ignoring")

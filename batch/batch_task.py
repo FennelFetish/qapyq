@@ -1,5 +1,7 @@
+from typing import Callable
 from PySide6.QtCore import Signal, Slot, QRunnable, QObject, QMutex, QMutexLocker
 import traceback
+from filelist import FileList
 
 
 class BatchTask(QRunnable):
@@ -10,7 +12,7 @@ class BatchTask(QRunnable):
         fail = Signal(str)                # error message
 
 
-    def __init__(self, name, log, filelist):
+    def __init__(self, name: str, log: Callable, filelist: FileList):
         super().__init__()
         self._mutex   = QMutex()
         self._aborted = False
@@ -74,5 +76,5 @@ class BatchTask(QRunnable):
     def runPrepare(self):
         pass
 
-    def runProcessFile(self, imgFile) -> str:
+    def runProcessFile(self, imgFile: str) -> str:
         pass

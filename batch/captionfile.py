@@ -2,12 +2,20 @@ import json
 import os
 
 
+class Keys:
+    VERSION  = "version"
+    CAPTIONS = "captions"
+    PROMPTS  = "prompts"
+    TAGS     = "tags"
+
+
 class CaptionFile:
-    version = "1.0"
+    VERSION = "1.0"
 
 
     def __init__(self, imgPath):
         self.captions = dict()
+        self.prompts = dict()
         self.tags = None
 
         path, ext = os.path.splitext(imgPath)
@@ -20,18 +28,26 @@ class CaptionFile:
     def getCaption(self, name):
         return self.captions.get(name, None)
 
+
+    def addPrompt(self, name, prompt):
+        self.prompts[name] = prompt
+
+    def getPrompt(self, name):
+        return self.prompts.get(name, None)
+
     
     def loadFromJson(self) -> bool:
         if os.path.exists(self.jsonPath):
             with open(self.jsonPath, 'r') as file:
                 data = json.load(file)
-            if "version" not in data:
+            if Keys.VERSION not in data:
                 return False
         else:
             data = dict()
 
-        self.captions = data.get("captions", {})
-        self.tags     = data.get("tags", None)
+        self.captions = data.get(Keys.CAPTIONS, {})
+        self.prompts  = data.get(Keys.PROMPTS, {})
+        self.tags     = data.get(Keys.TAGS, None)
         return True
 
 
@@ -39,18 +55,25 @@ class CaptionFile:
         if os.path.exists(self.jsonPath):
             with open(self.jsonPath, 'r') as file:
                 data = json.load(file)
-            if "version" not in data:
+            if Keys.VERSION not in data:
                 return False
         else:
             data = dict()
         
-        captions = data.get("captions", {})
-        captions.update(self.captions)
-        data["version"]  = CaptionFile.version
-        data["captions"] = captions
+        data[Keys.VERSION] = CaptionFile.VERSION
 
-        if self.tags:
-            data["tags"] = self.tags
+        captions = data.get(Keys.CAPTIONS, {})
+        captions.update(self.captions)
+        if captions:
+            data[Keys.CAPTIONS] = captions
+
+        prompts = data.get(Keys.PROMPTS, {})
+        prompts.update(self.prompts)
+        if prompts:
+            data[Keys.PROMPTS] = prompts
+
+        if self.tags != None:
+            data[Keys.TAGS] = self.tags
         
         with open(self.jsonPath, 'w') as file:
             json.dump(data, file, indent=4)
@@ -60,9 +83,16 @@ class CaptionFile:
 
     def saveToJson(self):
         data = dict()
-        data["version"]  = CaptionFile.version
-        data["captions"] = self.captions
-        data["tags"]     = self.tags
+        data[Keys.VERSION] = CaptionFile.VERSION
+
+        if self.captions:
+            data[Keys.CAPTIONS] = self.captions
+
+        if self.prompts:
+            data[Keys.PROMPTS] = self.prompts
+        
+        if self.tags != None:
+            data[Keys.TAGS] = self.tags
 
         with open(self.jsonPath, 'w') as file:
             json.dump(data, file, indent=4)

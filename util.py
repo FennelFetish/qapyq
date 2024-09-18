@@ -28,7 +28,7 @@ def isValidColor(color):
 
 # TODO: Don't return caption names starting with '?'
 # TODO: Start new message history with '===name==='
-def parsePrompts(text, defaultName="caption") -> dict:
+def parsePrompts(text: str, defaultName="caption") -> dict:
     if not defaultName:
         defaultName = "caption"
 

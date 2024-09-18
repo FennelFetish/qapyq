@@ -13,11 +13,19 @@ class TemplateParser:
         self._pattern = r'{{([^}]+)}}'
         self._optionalPrefix = "?"
         self._captionPrefix = "captions."
+        self._promptPrefix = "prompts."
 
     
     def setup(self, imgPath, captionFile):
         self.imgPath = imgPath
         self.captionFile = captionFile
+
+
+    def getCaptionFile(self) -> CaptionFile:
+        if not self.captionFile:
+            self.captionFile = CaptionFile(self.imgPath)
+            self.captionFile.loadFromJson()
+        return self.captionFile
 
 
     def parse(self, text):
@@ -30,7 +38,7 @@ class TemplateParser:
         return prompt
 
     def _replace(self, match) -> str:
-        varOrig = match.group(1)
+        varOrig: str = match.group(1)
         var = varOrig.strip()
         optional = False
         if var.startswith(self._optionalPrefix):
@@ -42,29 +50,19 @@ class TemplateParser:
             return "" if optional else "{{" + varOrig + "}}"
         return value
 
-    def _getValue(self, var):
+    def _getValue(self, var: str):
         if var.startswith(self._captionPrefix):
             name = var[len(self._captionPrefix):]
-            return self._getCaption(name)
+            return self.getCaptionFile().getCaption(name)
+        elif var.startswith(self._promptPrefix):
+            name = var[len(self._promptPrefix):]
+            return self.getCaptionFile().getPrompt(name)
         elif var == "tags":
-            return self._getTags()
+            return self.getCaptionFile().tags
         elif var == "folder":
             return self._getFolderName()
 
         return None
-
-
-    def _getCaption(self, name):
-        if not self.captionFile:
-            self.captionFile = CaptionFile(self.imgPath)
-            self.captionFile.loadFromJson()
-        return self.captionFile.getCaption(name)
-
-    def _getTags(self):
-        if not self.captionFile:
-            self.captionFile = CaptionFile(self.imgPath)
-            self.captionFile.loadFromJson()
-        return self.captionFile.tags
 
     def _getFolderName(self):
         path = os.path.dirname(self.imgPath)
