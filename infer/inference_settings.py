@@ -204,7 +204,9 @@ class InferencePresetWidget(InferenceSettingsWidget):
     def __init__(self, configAttr="inferCaptionPresets"):
         super().__init__()
         self.configAttr = configAttr
-        self.reloadPresetList()
+
+        selectedPreset = Config.inferSelectedPresets.get(configAttr)
+        self.reloadPresetList(selectedPreset)
 
         ModelSettingsWindow.signals.presetListUpdated.connect(self._onPresetListChanged)
 
@@ -265,6 +267,7 @@ class InferencePresetWidget(InferenceSettingsWidget):
     def _onPresetChanged(self, name):
         self.updateTitle(name)
         self.loadFromConfig()
+        Config.inferSelectedPresets[self.configAttr] = name
 
     @Slot()
     def _onPresetListChanged(self, attr):

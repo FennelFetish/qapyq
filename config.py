@@ -32,6 +32,7 @@ class Config:
     inferTagThreshold       = 0.4
     inferCaptionPresets     = dict()
     inferLLMPresets         = dict()
+    inferSelectedPresets    = dict()
     INFER_PRESET_SAMPLECFG_KEY = "sample_config"
     
     # Batch
@@ -81,6 +82,7 @@ class Config:
 
         cls.inferCaptionPresets   = data.get("infer_caption_presets", cls.inferCaptionPresets)
         cls.inferLLMPresets       = data.get("infer_llm_presets", cls.inferLLMPresets)
+        cls.inferSelectedPresets  = data.get("infer_selected_presets", cls.inferSelectedPresets)
 
         cls.batchTemplate         = data.get("batch_template", cls.batchTemplate)
 
@@ -118,6 +120,7 @@ class Config:
 
         data["infer_caption_presets"]       = cls.inferCaptionPresets
         data["infer_llm_presets"]           = cls.inferLLMPresets
+        data["infer_selected_presets"]      = cls.inferSelectedPresets
 
         data["batch_template"]              = cls.batchTemplate
 
