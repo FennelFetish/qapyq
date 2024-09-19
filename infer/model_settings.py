@@ -41,24 +41,36 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("Model Settings")
         self.resize(800, self.height())
 
-        captionSettings = CaptionModelSettings("inferCaptionPresets", BackendsCaption, True)
-        llmSettings = CaptionModelSettings("inferLLMPresets", BackendsLLM, False)
+        self.captionSettings = CaptionModelSettings("inferCaptionPresets", BackendsCaption, True)
+        self.llmSettings = CaptionModelSettings("inferLLMPresets", BackendsLLM, False)
 
-        tabWidget = QtWidgets.QTabWidget()
-        tabWidget.addTab(captionSettings, "Caption")
-        tabWidget.addTab(QtWidgets.QWidget(), "Tags")
-        tabWidget.addTab(llmSettings, "LLM")
-        self.setCentralWidget(tabWidget)
+        tagSettings = TagModelSettings()
+
+        self.tabWidget = QtWidgets.QTabWidget()
+        self.tabWidget.addTab(self.captionSettings, "Caption")
+        self.tabWidget.addTab(tagSettings, "Tags")
+        self.tabWidget.addTab(self.llmSettings, "LLM")
+        self.setCentralWidget(self.tabWidget)
 
     def closeEvent(self, event):
         super().closeEvent(event)
         ModelSettingsWindow._instance = None
 
     @classmethod
-    def openInstance(cls, parent):
+    def openInstance(cls, parent, configAttr=None, presetName=None):
+        justOpened = (cls._instance is None)
+
         win = ModelSettingsWindow(parent)
         win.show()
         win.activateWindow()
+
+        if justOpened:
+            if configAttr == "inferCaptionPresets":
+                win.tabWidget.setCurrentIndex(0)
+                win.captionSettings.reloadPresetList(presetName)
+            elif configAttr == "inferLLMPresets":
+                win.tabWidget.setCurrentIndex(2)
+                win.llmSettings.reloadPresetList(presetName)
 
     @classmethod
     def closeInstance(cls):
@@ -307,3 +319,54 @@ class CaptionModelSettings(QtWidgets.QWidget):
         
         settings[Config.INFER_PRESET_SAMPLECFG_KEY] = self.inferSettings.toDict()
         return settings
+
+
+
+class TagModelSettings(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+
+        layout = QtWidgets.QGridLayout()
+        layout.setAlignment(Qt.AlignTop)
+        layout.setColumnMinimumWidth(0, 100)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 0)
+        layout.setColumnStretch(2, 1)
+        layout.setColumnStretch(3, 0)
+
+        row = 0
+        self.txtPath = QtWidgets.QLineEdit(Config.inferTagModelPath)
+        layout.addWidget(QtWidgets.QLabel("Model Path:"), row, 0)
+        layout.addWidget(self.txtPath, row, 1, 1, 2)
+
+        btnChoosePath = QtWidgets.QPushButton("Choose...")
+        btnChoosePath.clicked.connect(lambda: self._choosePath(self.txtPath))
+        layout.addWidget(btnChoosePath, row, 3)
+
+        row += 1
+        self.spinThreshold = QtWidgets.QDoubleSpinBox()
+        self.spinThreshold.setRange(0.0, 1.0)
+        self.spinThreshold.setSingleStep(0.05)
+        self.spinThreshold.setValue(Config.inferTagThreshold)
+        layout.addWidget(QtWidgets.QLabel("Tag Threshold:"), row, 0)
+        layout.addWidget(self.spinThreshold, row, 1)
+
+        btnSave = QtWidgets.QPushButton("Save")
+        btnSave.clicked.connect(self.save)
+        layout.addWidget(btnSave, row, 3)
+
+        self.setLayout(layout)
+
+
+    def _choosePath(self, target):
+        path = target.text()
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose model directory", path)
+        
+        if path:
+            target.setText(path)
+
+    
+    @Slot()
+    def save(self):
+        Config.inferTagModelPath = self.txtPath.text().strip()
+        Config.inferTagThreshold = float(self.spinThreshold.value())

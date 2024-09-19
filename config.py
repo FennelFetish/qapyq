@@ -19,17 +19,15 @@ class Config:
     cropWheelStep           = 0.02
 
     # Inference
-    inferCaptionModelPath   = "./models/MiniCPM-V-2.6_Q8_0.gguf"
-    inferCaptionClipPath    = "./models/MiniCPM-V-2.6_mmproj-model-f16.gguf"
     inferTagModelPath       = "./models/joytag"
-    inferLLMPath            = "./models/gemma2.gguf"
+    inferTagThreshold       = 0.4
 
     inferSystemPrompt       = "You are an assistant that perfectly describes scenes in concise English language. " \
                             + "You always express yourself in a well-assured way. Refer to a person using gendered pronouns like she/he. " \
                             + "Don't format your response into numered lists or bullet points."
 
     inferPrompt             = "Describe the image in detail."
-    inferTagThreshold       = 0.4
+
     inferCaptionPresets     = dict()
     inferLLMPresets         = dict()
     inferSelectedPresets    = dict()
@@ -50,7 +48,7 @@ class Config:
 
     @classmethod
     def load(cls):
-        import json, os, sys
+        import json, os
         if os.path.exists(cls.pathConfig):
             with open(cls.pathConfig, 'r') as file:
                 data = json.load(file)
@@ -71,15 +69,12 @@ class Config:
         cls.cropSizeStep          = int(data.get("crop_size_step", cls.cropSizeStep))
         cls.cropWheelStep         = float(data.get("crop_wheel_step", cls.cropWheelStep))
 
-        cls.inferCaptionModelPath = data.get("infer_caption_model_path", cls.inferCaptionModelPath)
-        cls.inferCaptionClipPath  = data.get("infer_caption_clip_path", cls.inferCaptionClipPath)
         cls.inferTagModelPath     = data.get("infer_tag_model_path", cls.inferTagModelPath)
-        cls.inferLLMPath          = data.get("infer_llm_path", cls.inferLLMPath)
+        cls.inferTagThreshold     = float(data.get("infer_tag_threshold", cls.inferTagThreshold))
 
         cls.inferSystemPrompt     = data.get("infer_system_prompt", cls.inferSystemPrompt)
         cls.inferPrompt           = data.get("infer_prompt", cls.inferPrompt)
-        cls.inferTagThreshold     = float(data.get("infer_tag_threshold", cls.inferTagThreshold))
-
+        
         cls.inferCaptionPresets   = data.get("infer_caption_presets", cls.inferCaptionPresets)
         cls.inferLLMPresets       = data.get("infer_llm_presets", cls.inferLLMPresets)
         cls.inferSelectedPresets  = data.get("infer_selected_presets", cls.inferSelectedPresets)
@@ -109,14 +104,11 @@ class Config:
         data["crop_size_step"]              = cls.cropSizeStep
         data["crop_wheel_step"]             = cls.cropWheelStep
 
-        data["infer_caption_model_path"]    = cls.inferCaptionModelPath
-        data["infer_caption_clip_path"]     = cls.inferCaptionClipPath
         data["infer_tag_model_path"]        = cls.inferTagModelPath
-        data["infer_llm_path"]              = cls.inferLLMPath
+        data["infer_tag_threshold"]         = cls.inferTagThreshold
 
         data["infer_system_prompt"]         = cls.inferSystemPrompt
         data["infer_prompt"]                = cls.inferPrompt
-        data["infer_tag_threshold"]         = cls.inferTagThreshold
 
         data["infer_caption_presets"]       = cls.inferCaptionPresets
         data["infer_llm_presets"]           = cls.inferLLMPresets

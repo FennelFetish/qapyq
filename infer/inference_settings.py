@@ -236,7 +236,7 @@ class InferencePresetWidget(InferenceSettingsWidget):
 
     @Slot()
     def showModelSettings(self, link):
-        ModelSettingsWindow.openInstance(self)
+        ModelSettingsWindow.openInstance(self, self.configAttr, self.preset.currentText())
 
     def updateTitle(self, name):
         title = InferenceSettingsWidget.TITLE
