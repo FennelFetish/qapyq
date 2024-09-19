@@ -1,5 +1,5 @@
 from transformers import Qwen2VLForConditionalGeneration, AutoProcessor, GenerationConfig
-import torch, sys, os
+import torch
 from PIL import Image
 from .backend import InferenceBackend
 
@@ -86,7 +86,7 @@ class Qwen2VLBackend(InferenceBackend):
         return {}
 
 
-
+# import sys, os
 # def printErr(text):
 #     sys.stderr.write(text + os.linesep)
 #     sys.stderr.flush()

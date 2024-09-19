@@ -15,6 +15,9 @@ def loadBackend(config: dict):
             from infer.backend_llamacpp import LlamaCppVisionBackend
             from llama_cpp.llama_chat_format import MiniCPMv26ChatHandler
             return LlamaCppVisionBackend(config, MiniCPMv26ChatHandler)
+        case "internvl2":
+            from infer.backend_internvl2 import InternVL2Backend
+            return InternVL2Backend(config)
         case "qwen2vl":
             from infer.backend_qwen2vl import Qwen2VLBackend
             return Qwen2VLBackend(config)
