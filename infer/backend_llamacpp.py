@@ -7,8 +7,6 @@ class LlamaCppBackend(InferenceBackend):
     def __init__(self, config: dict, **kwargs):
         super().__init__(config)
 
-        self.stop: list[str] = []
-
         self.llm = Llama(
             model_path=config.get("model_path"),
             n_gpu_layers=config.get("gpu_layers", -1),
@@ -74,7 +72,7 @@ class LlamaCppBackend(InferenceBackend):
 
                 msg = completion["choices"][0]["message"]
                 answer = msg["content"].strip()
-                messages.append( { "role": msg["role"], "content": f"{answer}\n"} )
+                messages.append( {"role": msg["role"], "content": answer} )
 
                 if r > 0:
                     name = f"{name}_round{r}"
@@ -85,14 +83,15 @@ class LlamaCppBackend(InferenceBackend):
 
 
 class LlamaCppVisionBackend(LlamaCppBackend):
-    def __init__(self, config: dict, chatHandlerType):
+    def __init__(self, config: dict, chatHandlerType: type):
         chatHandler = chatHandlerType(
             clip_model_path=config.get("proj_path"),
             verbose=False
         )
 
         super().__init__(config, chat_handler=chatHandler)
-        self.stop = ["USER:", "ASSISTANT:"]
+        self.stop.append("USER:")
+        self.stop.append("ASSISTANT:")
 
 
     def caption(self, imgPath, prompts: dict, systemPrompt=None, rounds=1) -> dict:

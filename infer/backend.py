@@ -6,6 +6,8 @@ from config import Config
 
 class InferenceBackend:
     def __init__(self, config: dict):
+        self.stop: list[str] = []
+
         self.config = {
             "max_tokens": 1000,
             "temperature": 0.15,
@@ -21,7 +23,6 @@ class InferenceBackend:
             "mirostat_eta": 0.1,
             "tfs_z": 1.0
         }
-
         self.setConfig(config)
 
 
