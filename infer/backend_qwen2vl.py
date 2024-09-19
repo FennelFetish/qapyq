@@ -1,4 +1,4 @@
-from transformers import Qwen2VLForConditionalGeneration, AutoProcessor, GenerationConfig
+from transformers import Qwen2VLForConditionalGeneration, AutoProcessor, GenerationConfig, set_seed
 import torch
 from PIL import Image
 from .backend import InferenceBackend
@@ -41,6 +41,8 @@ class Qwen2VLBackend(InferenceBackend):
     def caption(self, imgPath: str, prompts: dict, systemPrompt: str = None, rounds=1) -> dict:
         image = Image.open(imgPath)
         answers = dict()
+
+        set_seed(self.randomSeed())
 
         for r in range(rounds):
             messages = []

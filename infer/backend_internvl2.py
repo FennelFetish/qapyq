@@ -1,7 +1,7 @@
 import torch
 import torchvision.transforms as T
 from torchvision.transforms.functional import InterpolationMode
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoModel, AutoTokenizer, set_seed
 #from decord import VideoReader, cpu
 from PIL import Image
 #from accelerate import infer_auto_device_map, init_empty_weights
@@ -129,6 +129,7 @@ class InternVL2Backend(InferenceBackend):
         answers = dict()
 
         self.model.system_message = systemPrompt.strip() if systemPrompt else ""
+        set_seed(self.randomSeed())
         
         for r in range(rounds):
             history = None
