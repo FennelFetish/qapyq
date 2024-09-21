@@ -35,18 +35,21 @@ class SlideshowTool(ViewTool):
 
 
     @Slot()
-    def setInterval(self, seconds):
+    def setInterval(self, seconds: float):
         ms = int(seconds*1000)
         self._playTimer.setInterval(ms)
+        Config.slideshowInterval = seconds
 
     @Slot()
-    def setShuffle(self, shuffle):
+    def setShuffle(self, shuffle: bool):
         self.resetHistory()
         self._shuffle = shuffle
+        Config.slideshowShuffle = shuffle
 
     @Slot()
-    def setFade(self, fade):
+    def setFade(self, fade: bool):
         self._fade = fade
+        Config.slideshowFade = fade
 
 
     @Slot()
@@ -55,10 +58,11 @@ class SlideshowTool(ViewTool):
             self.tab.filelist.setNextFile()
             return
 
+        self.tab.filelist._lazyLoadFolder()
         self._historyIndex += 1
         if self._historyIndex < len(self._history):
             self.tab.filelist.setCurrentIndex(self._history[self._historyIndex])
-        elif (numFiles := self.tab.filelist.getNumFiles()) > 0:
+        elif self.tab.filelist.getNumFiles() > 0:
             index = self.getRandomIndex()
             self.tab.filelist.setCurrentIndex(index)
             self._history.append(index)
@@ -69,10 +73,11 @@ class SlideshowTool(ViewTool):
             self.tab.filelist.setPrevFile()
             return
 
+        self.tab.filelist._lazyLoadFolder()
         self._historyIndex -= 1
         if self._historyIndex >= 0:
             self.tab.filelist.setCurrentIndex(self._history[self._historyIndex])
-        elif (numFiles := self.tab.filelist.getNumFiles()) > 0:
+        elif self.tab.filelist.getNumFiles() > 0:
             self._historyIndex = 0
             index = self.getRandomIndex(False)
             self.tab.filelist.setCurrentIndex(index)
@@ -90,7 +95,7 @@ class SlideshowTool(ViewTool):
         return index
 
     def resetHistory(self):
-        self._history.clear()
+        self._history = list()
         self._historyIndex = 0
 
 
