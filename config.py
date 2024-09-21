@@ -19,9 +19,6 @@ class Config:
     cropWheelStep           = 0.02
 
     # Inference
-    inferTagModelPath       = "./models/joytag"
-    inferTagThreshold       = 0.4
-
     inferSystemPrompt       = "You are an assistant that perfectly describes scenes in concise English language. " \
                             + "You always express yourself in a well-assured way. Refer to a person using gendered pronouns like she/he. " \
                             + "Don't format your response into numered lists or bullet points."
@@ -30,6 +27,7 @@ class Config:
 
     inferCaptionPresets     = dict()
     inferLLMPresets         = dict()
+    inferTagPresets         = dict()
     inferSelectedPresets    = dict()
     INFER_PRESET_SAMPLECFG_KEY = "sample_config"
     
@@ -69,14 +67,12 @@ class Config:
         cls.cropSizeStep          = int(data.get("crop_size_step", cls.cropSizeStep))
         cls.cropWheelStep         = float(data.get("crop_wheel_step", cls.cropWheelStep))
 
-        cls.inferTagModelPath     = data.get("infer_tag_model_path", cls.inferTagModelPath)
-        cls.inferTagThreshold     = float(data.get("infer_tag_threshold", cls.inferTagThreshold))
-
         cls.inferSystemPrompt     = data.get("infer_system_prompt", cls.inferSystemPrompt)
         cls.inferPrompt           = data.get("infer_prompt", cls.inferPrompt)
         
         cls.inferCaptionPresets   = data.get("infer_caption_presets", cls.inferCaptionPresets)
         cls.inferLLMPresets       = data.get("infer_llm_presets", cls.inferLLMPresets)
+        cls.inferTagPresets       = data.get("infer_tag_presets", cls.inferTagPresets)
         cls.inferSelectedPresets  = data.get("infer_selected_presets", cls.inferSelectedPresets)
 
         cls.batchTemplate         = data.get("batch_template", cls.batchTemplate)
@@ -104,14 +100,12 @@ class Config:
         data["crop_size_step"]              = cls.cropSizeStep
         data["crop_wheel_step"]             = cls.cropWheelStep
 
-        data["infer_tag_model_path"]        = cls.inferTagModelPath
-        data["infer_tag_threshold"]         = cls.inferTagThreshold
-
         data["infer_system_prompt"]         = cls.inferSystemPrompt
         data["infer_prompt"]                = cls.inferPrompt
 
         data["infer_caption_presets"]       = cls.inferCaptionPresets
         data["infer_llm_presets"]           = cls.inferLLMPresets
+        data["infer_tag_presets"]           = cls.inferTagPresets
         data["infer_selected_presets"]      = cls.inferSelectedPresets
 
         data["batch_template"]              = cls.batchTemplate

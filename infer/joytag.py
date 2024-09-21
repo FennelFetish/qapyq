@@ -8,13 +8,17 @@ import os
 
 
 class JoyTag:
-    def __init__(self, path):
-        self.model = VisionModel.load_model(path).eval().to("cuda")
+    def __init__(self, config: dict):
         self.threshold = 0.4
+        self.setConfig(config)
 
-        with open(os.path.join(path, "top_tags.txt"), 'r') as f:
+        modelDir = config.get("model_path")
+        self.model = VisionModel.load_model(modelDir).eval().to("cuda")
+        
+        with open(os.path.join(modelDir, "top_tags.txt"), 'r') as f:
             lines = (line.strip() for line in f.readlines())
             self.topTags = [line for line in lines if line]
+
 
     def __del__(self):
         if hasattr(self, "model"):
@@ -23,14 +27,18 @@ class JoyTag:
             del self.topTags
 
 
-    def caption(self, imgPath):
+    def setConfig(self, config: dict):
+        self.threshold = float(config.get("threshold", 0.4))
+
+
+    def tag(self, imgPath):
         imgMat = cv2.imread(imgPath)
         imgMat = self.padImage(imgMat, self.model.image_size)
         
         imgTensor = transforms.ToTensor()(imgMat)
         #imgTensor = transforms.functional.normalize(imgTensor, mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])
 
-        tags, scores = self.predict(imgTensor)
+        tags, scores = self.predict(imgTensor) # TODO: Replace underscored with space, exclude kaomojis
         return tags
 
 

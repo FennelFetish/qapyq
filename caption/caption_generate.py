@@ -2,7 +2,7 @@ import os, traceback
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject
 import qtlib, util
-from infer import Inference, InferencePresetWidget
+from infer import Inference, InferencePresetWidget, TagPresetWidget
 from config import Config
 
 
@@ -24,51 +24,53 @@ class CaptionGenerate(QtWidgets.QWidget):
         layout.setColumnStretch(4, 0)
         layout.setColumnStretch(5, 0)
 
+        row = 0
         self.txtSysPrompt = QtWidgets.QTextEdit()
         self.txtSysPrompt.setText(Config.inferSystemPrompt)
         qtlib.setMonospace(self.txtSysPrompt)
         qtlib.setTextEditHeight(self.txtSysPrompt, 3)
-        layout.addWidget(QtWidgets.QLabel("Sys Prompt:"), 0, 0, Qt.AlignTop)
-        layout.addWidget(self.txtSysPrompt, 0, 1, 1, 5)
+        layout.addWidget(QtWidgets.QLabel("Sys Prompt:"), row, 0, Qt.AlignTop)
+        layout.addWidget(self.txtSysPrompt, row, 1, 1, 5)
         
+        row += 1
         self.txtPrompt = QtWidgets.QTextEdit()
         self.txtPrompt.setText(Config.inferPrompt)
         qtlib.setMonospace(self.txtPrompt)
         qtlib.setTextEditHeight(self.txtPrompt, 3)
-        layout.addWidget(QtWidgets.QLabel("Prompt:"), 1, 0, Qt.AlignTop)
-        layout.addWidget(self.txtPrompt, 1, 1, 1, 5)
+        layout.addWidget(QtWidgets.QLabel("Prompt:"), row, 0, Qt.AlignTop)
+        layout.addWidget(self.txtPrompt, row, 1, 1, 5)
 
+        row += 1
         self.inferSettings = InferencePresetWidget()
-        layout.addWidget(self.inferSettings, 2, 0, 1, 6)
+        layout.addWidget(self.inferSettings, row, 0, 1, 6)
 
-        self.spinTagThreshold = QtWidgets.QDoubleSpinBox()
-        self.spinTagThreshold.setRange(0.0, 1.0)
-        self.spinTagThreshold.setSingleStep(0.05)
-        self.spinTagThreshold.setValue(Config.inferTagThreshold)
-        layout.addWidget(QtWidgets.QLabel("Tag Threshold:"), 3, 0)
-        layout.addWidget(self.spinTagThreshold, 3, 1)
+        row += 1
+        self.tagSettings = TagPresetWidget()
+        layout.addWidget(self.tagSettings, row, 0, 2, 2)
 
-        self.statusBar = qtlib.ColoredMessageStatusBar()
-        self.statusBar.layout().setContentsMargins(50, 0, 8, 0)
-        self.statusBar.setSizeGripEnabled(False)
-        layout.addWidget(self.statusBar, 3, 2)
-
+        #row += 1
         self.cboMode = QtWidgets.QComboBox()
         self.cboMode.addItem("Append")
         self.cboMode.addItem("Prepend")
         self.cboMode.addItem("Replace")
-        layout.addWidget(self.cboMode, 3, 3)
+        layout.addWidget(self.cboMode, row, 3)
 
         self.cboCapTag = QtWidgets.QComboBox()
         self.cboCapTag.addItem("Caption")
         self.cboCapTag.addItem("Tags")
         self.cboCapTag.addItem("Caption, Tags")
         self.cboCapTag.addItem("Tags, Caption")
-        layout.addWidget(self.cboCapTag, 3, 4)
+        layout.addWidget(self.cboCapTag, row, 4)
 
         self.btnGenerate = QtWidgets.QPushButton("Generate")
         self.btnGenerate.clicked.connect(self.generate)
-        layout.addWidget(self.btnGenerate, 3, 5)
+        layout.addWidget(self.btnGenerate, row, 5)
+
+        row += 1
+        self.statusBar = qtlib.ColoredMessageStatusBar()
+        self.statusBar.layout().setContentsMargins(50, 0, 8, 0)
+        self.statusBar.setSizeGripEnabled(False)
+        layout.addWidget(self.statusBar, row, 2, 1, 4)
 
         self.setLayout(layout)
 
@@ -81,7 +83,6 @@ class CaptionGenerate(QtWidgets.QWidget):
         content = self.cboCapTag.currentText().lower().split(", ")
 
         task = InferenceTask(file, content)
-        task.tagThreshold = self.spinTagThreshold.value()
         task.signals.progress.connect(self.onProgress)
         task.signals.done.connect(self.onGenerated)
         task.signals.fail.connect(self.onFail)
@@ -90,6 +91,9 @@ class CaptionGenerate(QtWidgets.QWidget):
             task.prompts = util.parsePrompts(self.txtPrompt.toPlainText())
             task.systemPrompt = self.txtSysPrompt.toPlainText()
             task.config = self.inferSettings.getInferenceConfig()
+
+        if "tags" in content:
+            task.tagConfig = self.tagSettings.getInferenceConfig()
         
         Inference().queueTask(task)
 
@@ -131,8 +135,7 @@ class InferenceTask(QRunnable):
         self.prompts      = None
         self.systemPrompt = None
         self.config       = None
-
-        self.tagThreshold = None
+        self.tagConfig    = None
 
 
     @Slot()
@@ -168,7 +171,7 @@ class InferenceTask(QRunnable):
 
     def runTags(self, inferProc) -> str:
         self.signals.progress.emit("Loading tag model ...")
-        if not inferProc.setupTag(self.tagThreshold):
+        if not inferProc.setupTag(self.tagConfig):
             raise RuntimeError("Couldn't load tag model")
         
         self.signals.progress.emit("Generating tags ...")

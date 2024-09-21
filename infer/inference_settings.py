@@ -214,7 +214,6 @@ class InferencePresetWidget(InferenceSettingsWidget):
     def _buildFirstRow(self, layout, lblTokensMax, tokensMax):
         lblPreset = QtWidgets.QLabel("<a href='model_settings'>Preset</a>:")
         lblPreset.linkActivated.connect(self.showModelSettings)
-
         layout.addWidget(lblPreset, 0, 0)
 
         self.preset = QtWidgets.QComboBox()

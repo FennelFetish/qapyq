@@ -1,8 +1,8 @@
 from PySide6 import QtWidgets
-from PySide6.QtCore import QMutex, QMutexLocker, QObject, QRunnable, Qt, Signal, Slot
+from PySide6.QtCore import Qt, Slot
 import qtlib, util
 from config import Config
-from infer import Inference, InferencePresetWidget
+from infer import Inference, InferencePresetWidget, TagPresetWidget
 from .batch_task import BatchTask
 from .captionfile import CaptionFile
 
@@ -16,6 +16,7 @@ class BatchCaption(QtWidgets.QWidget):
         self.statusBar: QtWidgets.QStatusBar = statusBar
 
         self.inferSettings = InferencePresetWidget()
+        self.tagSettings = TagPresetWidget()
 
         self.captionGroup = self._buildCaptionSettings()
         self.tagGroup = self._buildTagSettings()
@@ -83,12 +84,13 @@ class BatchCaption(QtWidgets.QWidget):
         layout.setColumnStretch(1, 0)
         layout.setColumnStretch(2, 1)
 
-        self.spinTagThreshold = QtWidgets.QDoubleSpinBox()
-        self.spinTagThreshold.setValue(Config.inferTagThreshold)
-        self.spinTagThreshold.setRange(0.0, 1.0)
-        self.spinTagThreshold.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Threshold:"), 0, 0)
-        layout.addWidget(self.spinTagThreshold, 0, 1)
+        layout.addWidget(self.tagSettings, 0, 0, 1, 2)
+
+        self.txtTagTargetName = QtWidgets.QLineEdit("tags")
+        self.txtTagTargetName.setEnabled(False)
+        qtlib.setMonospace(self.txtTagTargetName)
+        layout.addWidget(QtWidgets.QLabel("Storage key:"), 1, 0)
+        layout.addWidget(self.txtTagTargetName, 1, 1)
 
         groupBox = QtWidgets.QGroupBox("Generate Tags")
         groupBox.setCheckable(True)
@@ -117,24 +119,26 @@ class BatchCaption(QtWidgets.QWidget):
         else:
             self.btnStart.setText("Abort")
 
-            if self.captionGroup.isChecked():
-                storeName = self.txtTargetName.text().strip()
-                prompts = util.parsePrompts(self.txtPrompts.toPlainText(), storeName)
-                sysPrompt = self.txtSystemPrompt.toPlainText()
-            else:
-                prompts, sysPrompt = None, None
-
-            config = self.inferSettings.getInferenceConfig()
-
-            self._task = BatchCaptionTask(self.log, self.tab.filelist, prompts, sysPrompt, self.tagGroup.isChecked(), config)
+            self._task = BatchCaptionTask(self.log, self.tab.filelist)
             self._task.rounds = self.spinRounds.value()
-            self._task.tagThreshold = self.spinTagThreshold.value()
             self._task.storePrompts = self.chkStorePrompts.isChecked()
+
             self._task.signals.progress.connect(self.onProgress)
             self._task.signals.progressMessage.connect(self.onProgressMessage)
             self._task.signals.done.connect(self.onFinished)
             self._task.signals.fail.connect(self.onFail)
+
+            if self.captionGroup.isChecked():
+                storeName = self.txtTargetName.text().strip()
+                self._task.prompts = util.parsePrompts(self.txtPrompts.toPlainText(), storeName)
+                self._task.systemPrompt = self.txtSystemPrompt.toPlainText()
+                self._task.config = self.inferSettings.getInferenceConfig()
+
+            if self.tagGroup.isChecked():
+                self._task.tagConfig = self.tagSettings.getInferenceConfig()
+
             Inference().queueTask(self._task)
+
 
     @Slot()
     def onFinished(self, numFiles):
@@ -167,21 +171,25 @@ class BatchCaption(QtWidgets.QWidget):
 
 
 class BatchCaptionTask(BatchTask):
-    def __init__(self, log, filelist, prompts: dict, systemPrompt: str, doTag: bool, config: dict):
+    def __init__(self, log, filelist):
         super().__init__("caption", log, filelist)
-        self.prompts      = prompts
-        self.systemPrompt = systemPrompt
-        self.doCaption    = prompts is not None
-        self.doTag        = doTag
-        self.config       = config
+        self.prompts      = None
+        self.systemPrompt = None
+        self.config       = None
+        self.tagConfig    = None
 
         self.rounds: int = 1
-        self.tagThreshold: float = 0.4
+        self.storePrompts: bool = False
 
-        self.storePrompts = False
+        self.doCaption = False
+        self.doTag = False
+        self.inferProc = None
 
 
     def runPrepare(self):
+        self.doCaption = self.prompts is not None
+        self.doTag = self.tagConfig is not None
+
         self.inferProc = Inference().proc
         self.inferProc.start()
 
@@ -191,7 +199,7 @@ class BatchCaptionTask(BatchTask):
                 raise RuntimeError("Couldn't load caption model")
         if self.doTag:
             self.signals.progressMessage.emit("Loading tag model ...")
-            if not self.inferProc.setupTag(threshold=self.tagThreshold):
+            if not self.inferProc.setupTag(self.tagConfig):
                 raise RuntimeError("Couldn't load tag model")
 
 

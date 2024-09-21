@@ -3,7 +3,7 @@ from config import Config
 
 
 backend = None
-joytag  = None
+tag = None
 
 
 def loadBackend(config: dict):
@@ -24,7 +24,7 @@ def loadBackend(config: dict):
         case "gguf":
             from infer.backend_llamacpp import LlamaCppBackend
             return LlamaCppBackend(config)
-    
+
     raise ValueError(f"Unknown backend: {config.get('backend')}")
 
 
@@ -37,12 +37,29 @@ def getBackend(config: dict = None):
     return backend
 
 
-def loadJoytag():
-    global joytag
-    if not joytag:
-        from infer.joytag import JoyTag
-        joytag = JoyTag(Config.inferTagModelPath)
-    return joytag
+
+def loadTag(config: dict):
+    if not config:
+        raise ValueError("Cannot load tagging backend without config")
+
+    match config.get("backend"):
+        case "joytag":
+            from infer.joytag import JoyTag
+            return JoyTag(config)
+        case "wd":
+            from infer.tag_wd import WDTag
+            return WDTag(config)
+
+    raise ValueError(f"Unknown tagging backend: {config.get('backend')}")
+
+
+def getTag(config: dict = None):
+    global tag
+    if tag == None:
+        tag = loadTag(config)
+    elif config:
+        tag.setConfig(config)
+    return tag
 
 
 
@@ -85,7 +102,7 @@ def handleMessage(protocol) -> bool:
             protocol.writeMessage({"cmd": cmd})
 
         case "setup_tag":
-            loadJoytag().threshold = float(msg["threshold"])
+            getTag(msg.get("config", {}))
             protocol.writeMessage({"cmd": cmd})
 
         case "setup_llm":
@@ -104,7 +121,7 @@ def handleMessage(protocol) -> bool:
         
         case "tag":
             img = msg["img"]
-            tags = loadJoytag().caption(img)
+            tags = getTag().tag(img)
             protocol.writeMessage({
                 "cmd": cmd,
                 "img": img,

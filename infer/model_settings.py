@@ -7,6 +7,9 @@ from config import Config
 class BackendTypes:
     LLAMA_CPP    = "llama.cpp"
     TRANSFORMERS = "transformers"
+    ONNX         = "onnx"
+    TORCH        = "torch"
+
 
 BackendsCaption = {
     "MiniCPM-V-2.6": ("minicpm", BackendTypes.LLAMA_CPP),
@@ -17,6 +20,12 @@ BackendsCaption = {
 BackendsLLM = {
     "GGUF": ("gguf", BackendTypes.LLAMA_CPP)
 }
+
+BackendsTag = {
+    "WD": ("wd", BackendTypes.ONNX),
+    "JoyTag": ("joytag", BackendTypes.TORCH)
+}
+
 
 
 class ModelSettingsSignals(QObject):
@@ -41,14 +50,14 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("Model Settings")
         self.resize(800, self.height())
 
-        self.captionSettings = CaptionModelSettings("inferCaptionPresets", BackendsCaption, True)
-        self.llmSettings = CaptionModelSettings("inferLLMPresets", BackendsLLM, False)
+        self.captionSettings = CaptionModelSettings("inferCaptionPresets", BackendsCaption)
+        self.llmSettings = LLMModelSettings("inferLLMPresets", BackendsLLM)
 
-        tagSettings = TagModelSettings()
+        self.tagSettings = TagModelSettings("inferTagPresets", BackendsTag)
 
         self.tabWidget = QtWidgets.QTabWidget()
         self.tabWidget.addTab(self.captionSettings, "Caption")
-        self.tabWidget.addTab(tagSettings, "Tags")
+        self.tabWidget.addTab(self.tagSettings, "Tags")
         self.tabWidget.addTab(self.llmSettings, "LLM")
         self.setCentralWidget(self.tabWidget)
 
@@ -71,6 +80,9 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
             elif configAttr == "inferLLMPresets":
                 win.tabWidget.setCurrentIndex(2)
                 win.llmSettings.reloadPresetList(presetName)
+            elif configAttr == "inferTagPresets":
+                win.tabWidget.setCurrentIndex(1)
+                win.tagSettings.reloadPresetList(presetName)
 
     @classmethod
     def closeInstance(cls):
@@ -79,13 +91,17 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
 
 
 
-class CaptionModelSettings(QtWidgets.QWidget):
-    def __init__(self, configAttr: str, backends: dict, projector: bool):
+
+class BaseSettingsWidget(QtWidgets.QWidget):
+    def __init__(self, configAttr: str, backends: dict):
         super().__init__()
         self.configAttr = configAttr
         self.backends = backends
-        self.projector = projector
 
+        self._build()
+
+
+    def _build(self) -> None:
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignTop)
         layout.setColumnMinimumWidth(0, 100)
@@ -107,13 +123,15 @@ class CaptionModelSettings(QtWidgets.QWidget):
         layout.addWidget(QtWidgets.QLabel("Preset Name:"), row, 0)
         layout.addWidget(self.cboPreset, row, 1, 1, 4)
 
-        self.btnSave = QtWidgets.QPushButton("Save")
+        self.btnSave = QtWidgets.QPushButton("Create")
+        self.btnSave.setEnabled(False)
         #self.btnSave.setFixedWidth(100)
         self.btnSave.clicked.connect(self.savePreset)
         layout.addWidget(self.btnSave, row, 5, Qt.AlignRight)
 
         #row += 1
         self.btnDelete = QtWidgets.QPushButton("Delete")
+        self.btnDelete.setEnabled(False)
         self.btnDelete.clicked.connect(self.deletePreset)
         layout.addWidget(self.btnDelete, row, 6)
 
@@ -134,24 +152,123 @@ class CaptionModelSettings(QtWidgets.QWidget):
         layout.addWidget(self.txtPath, row, 1, 1, 5)
 
         btnChooseModel = QtWidgets.QPushButton("Choose...")
-        if self.projector:
-            btnChooseModel.clicked.connect(lambda: self._choosePath(self.txtPath, self.txtProjectorPath))
-        else:
-            btnChooseModel.clicked.connect(lambda: self._choosePath(self.txtPath, None))
+        btnChooseModel.clicked.connect(lambda: self._choosePath(self.txtPath))
         layout.addWidget(btnChooseModel, row, 6)
 
-        if self.projector:
-            row += 1
-            self.lblProjectorPath = QtWidgets.QLabel("Projector Path:")
-            self.txtProjectorPath = QtWidgets.QLineEdit()
-            layout.addWidget(self.lblProjectorPath, row, 0)
-            layout.addWidget(self.txtProjectorPath, row, 1, 1, 5)
+        self.build(layout, row+1)
+        self.setLayout(layout)
 
-            self.btnChooseProjector = QtWidgets.QPushButton("Choose...")
-            self.btnChooseProjector.clicked.connect(lambda: self._choosePath(self.txtProjectorPath, self.txtPath))
-            layout.addWidget(self.btnChooseProjector, row, 6)
+        self.fromDict({})
+        self.reloadPresetList()
 
-        row += 1
+
+    def build(self, layout: QtWidgets.QGridLayout, row: int) -> None:
+        raise NotImplementedError()
+
+
+    def fromDict(self, settings: dict) -> None:
+        # Find backend index
+        backend = settings.get("backend", "")
+        for i in range(self.cboBackend.count()):
+            if self.cboBackend.itemData(i)[0] == backend:
+                self.cboBackend.setCurrentIndex(i)
+
+        self.txtPath.setText(settings.get("model_path", ""))
+
+
+    def toDict(self) -> dict:
+        backend, backendType = self.cboBackend.currentData()
+        return {
+            "backend": backend,
+            "model_path": self.txtPath.text()
+        }
+
+
+    def reloadPresetList(self, selectName: str = None) -> None:
+        self.cboPreset.clear()
+
+        presets: dict = getattr(Config, self.configAttr)
+        for name in sorted(presets.keys()):
+            self.cboPreset.addItem(name)
+        
+        if selectName:
+            index = self.cboPreset.findText(selectName)
+        elif self.cboPreset.count() > 0:
+            index = 0
+        else:
+            self.fromDict({})
+            index = -1
+        
+        self.cboPreset.setCurrentIndex(index)
+
+    @Slot()
+    def savePreset(self) -> None:
+        if not (name := self.cboPreset.currentText().strip()):
+            return
+
+        presets: dict = getattr(Config, self.configAttr)
+        newPreset = (name not in presets)
+        presets[name] = self.toDict()
+        self.reloadPresetList(name)
+        self._onPresetNameEdited(name)
+        if newPreset:
+            ModelSettingsWindow.signals.presetListUpdated.emit(self.configAttr)
+
+    @Slot()
+    def deletePreset(self) -> None:
+        name = self.cboPreset.currentText().strip()
+        presets: dict = getattr(Config, self.configAttr)
+        if name in presets:
+            del presets[name]
+            self.reloadPresetList()
+            ModelSettingsWindow.signals.presetListUpdated.emit(self.configAttr)
+
+    @Slot()
+    def loadPreset(self, index: int) -> None:
+        presets: dict = getattr(Config, self.configAttr)
+        name = self.cboPreset.itemText(index)
+        settings = presets.get(name, {})
+        self.fromDict(settings)
+
+    @Slot()
+    def _onPresetNameEdited(self, text: str) -> None:
+        presets: dict = getattr(Config, self.configAttr, None)
+        if presets and text in presets:
+            self.btnSave.setText("Overwrite")
+            self.btnDelete.setEnabled(True)
+        else:
+            self.btnSave.setText("Create")
+            self.btnDelete.setEnabled(False)
+
+        self.btnSave.setEnabled(bool(text))
+
+
+    @Slot()
+    def _onBackendChanged(self, index) -> None:
+        pass
+
+
+    def _choosePath(self, target: QtWidgets.QLineEdit, altTarget: QtWidgets.QLineEdit | None = None) -> None:
+        path = target.text()
+        if not path and altTarget:
+            path = altTarget.text()
+
+        backend, backendType = self.cboBackend.currentData()
+        if backendType in [BackendTypes.LLAMA_CPP, BackendTypes.ONNX]:
+            path, filter = QtWidgets.QFileDialog.getOpenFileName(self, "Choose model file", path)
+        else:
+            path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose model directory", path)
+        
+        if path:
+            target.setText(path)
+
+
+
+class LLMModelSettings(BaseSettingsWidget):
+    def __init__(self, configAttr: str, backends: dict):
+        super().__init__(configAttr, backends)
+        
+    def build(self, layout: QtWidgets.QGridLayout, row: int):
         self.spinGpuLayers = QtWidgets.QSpinBox()
         self.spinGpuLayers.setRange(-1, 999)
         self.spinGpuLayers.setSingleStep(1)
@@ -185,135 +302,37 @@ class CaptionModelSettings(QtWidgets.QWidget):
         self.inferSettings = InferenceSettingsWidget()
         layout.addWidget(self.inferSettings, row, 0, 1, 7)
 
-        self.setLayout(layout)
-
-        self.fromDict({})
-        self.reloadPresetList()
-
-
-    def reloadPresetList(self, selectName: str = None):
-        self.cboPreset.clear()
-
-        presets: dict = getattr(Config, self.configAttr)
-        for name in sorted(presets.keys()):
-            self.cboPreset.addItem(name)
-        
-        if selectName:
-            index = self.cboPreset.findText(selectName)
-        elif self.cboPreset.count() > 0:
-            index = 0
-        else:
-            self.fromDict({})
-            index = -1
-        
-        self.cboPreset.setCurrentIndex(index)
-
-    @Slot()
-    def savePreset(self):
-        if not (name := self.cboPreset.currentText().strip()):
-            return
-
-        presets: dict = getattr(Config, self.configAttr)
-        newPreset = (name not in presets)
-        presets[name] = self.toDict()
-        self.reloadPresetList(name)
-        self._onPresetNameEdited(name)
-        if newPreset:
-            ModelSettingsWindow.signals.presetListUpdated.emit(self.configAttr)
-
-    @Slot()
-    def deletePreset(self):
-        name = self.cboPreset.currentText().strip()
-        presets: dict = getattr(Config, self.configAttr)
-        if name in presets:
-            del presets[name]
-            self.reloadPresetList()
-            ModelSettingsWindow.signals.presetListUpdated.emit(self.configAttr)
-
-    @Slot()
-    def loadPreset(self, index):
-        presets: dict = getattr(Config, self.configAttr)
-        name = self.cboPreset.itemText(index)
-        settings = presets.get(name, {})
-        self.fromDict(settings)
-
-    @Slot()
-    def _onPresetNameEdited(self, text: str):
-        presets: dict = getattr(Config, self.configAttr, None)
-        if presets and text in presets:
-            self.btnSave.setText("Overwrite")
-            self.btnDelete.setEnabled(True)
-        else:
-            self.btnSave.setText("Create")
-            self.btnDelete.setEnabled(False)
-
-
     @Slot()
     def _onBackendChanged(self, index):
         widgets = [
             self.lblBatchSize, self.spinBatchSize,
-            self.lblThreadCount, self.spinThreadCount,
-            self.btnChooseProjector
+            self.lblThreadCount, self.spinThreadCount
         ]
-
-        if self.projector:
-            widgets += [self.lblProjectorPath, self.txtProjectorPath]
 
         backend, backendType = self.cboBackend.currentData()
         enabled = (backendType == BackendTypes.LLAMA_CPP)
         for w in widgets:
             w.setEnabled(enabled)
 
+    def fromDict(self, settings: dict) -> None:
+        super().fromDict(settings)
 
-    def _choosePath(self, target, otherPath):
-        path = target.text()
-        if not path and otherPath:
-            path = otherPath.text()
-
-        backend, backendType = self.cboBackend.currentData()
-        if backendType == BackendTypes.LLAMA_CPP:
-            path, filter = QtWidgets.QFileDialog.getOpenFileName(self, "Choose model file", path)
-        else:
-            path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose model directory", path)
-        
-        if path:
-            target.setText(path)
-
-
-    def fromDict(self, settings: dict):
-        # Find backend index
-        backend = settings.get("backend", "")
-        for i in range(self.cboBackend.count()):
-            if self.cboBackend.itemData(i)[0] == backend:
-                self.cboBackend.setCurrentIndex(i)
-
-        self.txtPath.setText(settings.get("model_path", ""))
         self.spinGpuLayers.setValue(settings.get("gpu_layers", -1))
         self.spinCtxLen.setValue(settings.get("ctx_length", 32768))
 
-        if self.projector:
-            self.txtProjectorPath.setText(settings.get("proj_path", ""))
-        
         self.spinThreadCount.setValue(settings.get("num_threads", 15))
         self.spinBatchSize.setValue(settings.get("batch_size", 512))
 
         sampleSettings = settings.get(Config.INFER_PRESET_SAMPLECFG_KEY, {})
         self.inferSettings.fromDict(sampleSettings)
 
-
     def toDict(self) -> dict:
-        backend, backendType = self.cboBackend.currentData()
-        settings = {
-            "backend":      backend,
-            "model_path":   self.txtPath.text(),
-            "gpu_layers":   self.spinGpuLayers.value(),
-            "ctx_length":   self.spinCtxLen.value()
-        }
+        settings = super().toDict()
+        settings["gpu_layers"] = self.spinGpuLayers.value()
+        settings["ctx_length"] = self.spinCtxLen.value()
 
+        backend, backendType = self.cboBackend.currentData()
         if backendType == BackendTypes.LLAMA_CPP:
-            if self.projector:
-                settings["proj_path"] = self.txtProjectorPath.text()
-            
             settings["num_threads"] = self.spinThreadCount.value()
             settings["batch_size"]  = self.spinBatchSize.value()
         
@@ -322,51 +341,94 @@ class CaptionModelSettings(QtWidgets.QWidget):
 
 
 
-class TagModelSettings(QtWidgets.QWidget):
-    def __init__(self):
-        super().__init__()
+class CaptionModelSettings(LLMModelSettings):
+    def __init__(self, configAttr: str, backends: dict):
+        super().__init__(configAttr, backends)
 
-        layout = QtWidgets.QGridLayout()
-        layout.setAlignment(Qt.AlignTop)
-        layout.setColumnMinimumWidth(0, 100)
-        layout.setColumnStretch(0, 0)
-        layout.setColumnStretch(1, 0)
-        layout.setColumnStretch(2, 1)
-        layout.setColumnStretch(3, 0)
+    def build(self, layout: QtWidgets.QGridLayout, row: int):
+        self.lblProjectorPath = QtWidgets.QLabel("Projector Path:")
+        self.txtProjectorPath = QtWidgets.QLineEdit()
+        layout.addWidget(self.lblProjectorPath, row, 0)
+        layout.addWidget(self.txtProjectorPath, row, 1, 1, 5)
 
-        row = 0
-        self.txtPath = QtWidgets.QLineEdit(Config.inferTagModelPath)
-        layout.addWidget(QtWidgets.QLabel("Model Path:"), row, 0)
-        layout.addWidget(self.txtPath, row, 1, 1, 2)
+        self.btnChooseProjector = QtWidgets.QPushButton("Choose...")
+        self.btnChooseProjector.clicked.connect(lambda: self._choosePath(self.txtProjectorPath, self.txtPath))
+        layout.addWidget(self.btnChooseProjector, row, 6)
+        
+        super().build(layout, row+1)
 
-        btnChoosePath = QtWidgets.QPushButton("Choose...")
-        btnChoosePath.clicked.connect(lambda: self._choosePath(self.txtPath))
-        layout.addWidget(btnChoosePath, row, 3)
+    @Slot()
+    def _onBackendChanged(self, index):
+        super()._onBackendChanged(index)
+
+        backend, backendType = self.cboBackend.currentData()
+        enabled = (backendType == BackendTypes.LLAMA_CPP)
+        for w in [self.lblProjectorPath, self.txtProjectorPath, self.btnChooseProjector]:
+            w.setEnabled(enabled)
+
+    def _choosePath(self, target: QtWidgets.QLineEdit, altTarget: QtWidgets.QLineEdit | None = None):
+        altTarget = self.txtProjectorPath if target == self.txtPath else self.txtPath
+        super()._choosePath(target, altTarget)
+
+    def fromDict(self, settings: dict) -> None:
+        super().fromDict(settings)
+        self.txtProjectorPath.setText(settings.get("proj_path", ""))
+
+    def toDict(self) -> dict:
+        settings = super().toDict()
+        backend, backendType = self.cboBackend.currentData()
+        if backendType == BackendTypes.LLAMA_CPP:
+            settings["proj_path"] = self.txtProjectorPath.text()
+            
+        return settings
+
+
+
+class TagModelSettings(BaseSettingsWidget):
+    def __init__(self, configAttr: str, backends: dict):
+        super().__init__(configAttr, backends)
+
+    def build(self, layout: QtWidgets.QGridLayout, row: int):
+        self.lblTagListPath = QtWidgets.QLabel("Tag List Path:")
+        self.txtTagListPath = QtWidgets.QLineEdit()
+        layout.addWidget(self.lblTagListPath, row, 0)
+        layout.addWidget(self.txtTagListPath, row, 1, 1, 5)
+
+        self.btnChooseTagList = QtWidgets.QPushButton("Choose...")
+        self.btnChooseTagList.clicked.connect(lambda: self._choosePath(self.txtTagListPath, self.txtPath))
+        layout.addWidget(self.btnChooseTagList, row, 6)
 
         row += 1
         self.spinThreshold = QtWidgets.QDoubleSpinBox()
-        self.spinThreshold.setRange(0.0, 1.0)
+        self.spinThreshold.setRange(0.01, 1.0)
         self.spinThreshold.setSingleStep(0.05)
-        self.spinThreshold.setValue(Config.inferTagThreshold)
         layout.addWidget(QtWidgets.QLabel("Tag Threshold:"), row, 0)
         layout.addWidget(self.spinThreshold, row, 1)
 
-        btnSave = QtWidgets.QPushButton("Save")
-        btnSave.clicked.connect(self.save)
-        layout.addWidget(btnSave, row, 3)
-
-        self.setLayout(layout)
-
-
-    def _choosePath(self, target):
-        path = target.text()
-        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose model directory", path)
-        
-        if path:
-            target.setText(path)
-
-    
     @Slot()
-    def save(self):
-        Config.inferTagModelPath = self.txtPath.text().strip()
-        Config.inferTagThreshold = float(self.spinThreshold.value())
+    def _onBackendChanged(self, index):
+        super()._onBackendChanged(index)
+
+        backend, backendType = self.cboBackend.currentData()
+        enabled = (backendType == BackendTypes.ONNX)
+        for w in [self.lblTagListPath, self.txtTagListPath, self.btnChooseTagList]:
+            w.setEnabled(enabled)
+
+    def _choosePath(self, target: QtWidgets.QLineEdit, altTarget: QtWidgets.QLineEdit | None = None):
+        altTarget = self.txtTagListPath if target == self.txtPath else self.txtPath
+        super()._choosePath(target, altTarget)
+
+    def fromDict(self, settings: dict) -> None:
+        super().fromDict(settings)
+        self.txtTagListPath.setText(settings.get("csv_path", ""))
+        self.spinThreshold.setValue(settings.get("threshold", 0.35))
+
+    def toDict(self) -> dict:
+        settings = super().toDict()
+
+        backend, backendType = self.cboBackend.currentData()
+        if backendType == BackendTypes.ONNX:
+            settings["csv_path"] = self.txtTagListPath.text()
+
+        settings["threshold"] = self.spinThreshold.value()
+        return settings

@@ -63,11 +63,11 @@ class InferenceProcess(metaclass=Singleton):
             })
             return self._blockReadMessage("cmd")
 
-    def setupTag(self, threshold=0.4):
+    def setupTag(self, config: dict):
         with QMutexLocker(self.mutex):
             self._writeMessage({
                 "cmd": "setup_tag",
-                "threshold": threshold
+                "config": config
             })
             return self._blockReadMessage("cmd")
 
