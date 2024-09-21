@@ -332,7 +332,8 @@ class ReorderWidget(QtWidgets.QWidget):
             actions |= Qt.DropAction.MoveAction
         result = drag.exec(actions) # Blocking call
 
-        print(f"Drag result: {result}")
+        # TODO: Prevent removal of elements when dragged into another application
+        #print(f"Drag result: {result}")
         if result == Qt.MoveAction:
             self.layout().removeWidget(widget)
             widget.deleteLater()

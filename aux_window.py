@@ -13,7 +13,8 @@ class AuxiliaryWindow(QtWidgets.QMainWindow):
         self.configKey = configKey
         self.tab = None
         
-        loadWindowPos(self, configKey)
+        if not loadWindowPos(self, configKey):
+            setWindowDimensions(self, 0.5, 1.0, 0.5, 0.0)
 
     
     def setupContent(self, tab) -> object:
@@ -61,16 +62,14 @@ def saveWindowPos(win, configKey):
     size, pos = win.size(), win.pos()
     Config.windowStates[configKey] = (size.width(), size.height(), pos.x(), pos.y())
 
-def loadWindowPos(win, configKey, defaultOnFail=True):
-    if configKey in Config.windowStates:
-        w, h, x, y = Config.windowStates.get(configKey)
-        win.resize(int(w), int(h))
-        win.move(int(x), int(y))
-        return True
+def loadWindowPos(win, configKey):
+    if configKey not in Config.windowStates:
+        return False
 
-    if defaultOnFail:
-        setWindowDimensions(win, 0.5, 1.0, 0.5, 0.0)
-    return False
+    w, h, x, y = Config.windowStates.get(configKey)
+    win.resize(int(w), int(h))
+    win.move(int(x), int(y))
+    return True
 
 
 def setWindowDimensions(win, sizeX, sizeY, posX, posY):

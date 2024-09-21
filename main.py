@@ -30,7 +30,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._fullscreenTab = None
 
-        if not aux_window.loadWindowPos(self, "main", False):
+        if not aux_window.loadWindowPos(self, "main"):
             aux_window.setWindowDimensions(self, 0.5, 1, 0, 0)
 
     def buildTabs(self):
@@ -334,7 +334,7 @@ class ImgTab(QtWidgets.QMainWindow):
 
         self.imgview = ImgView(self.filelist)
         self.export = Export()
-        self._windowContent = dict()
+        self._windowContent: dict[str, QtWidgets.QWidget] = dict()
 
         self.tools = dict()
         self._toolbar = None
@@ -368,22 +368,23 @@ class ImgTab(QtWidgets.QMainWindow):
             self._toolbar.show()
 
     def createTool(self, toolName: str):
-        if toolName == "view":
+        match toolName:
+            case "view":
                 from tools import ViewTool
                 return ViewTool(self)
-        elif toolName == "slideshow":
+            case "slideshow":
                 from tools import SlideshowTool
                 return SlideshowTool(self)
-        elif toolName == "measure":
+            case "measure":
                 from tools import MeasureTool
                 return MeasureTool(self)
-        elif toolName == "compare":
+            case "compare":
                 from tools import CompareTool
                 return CompareTool(self)
-        elif toolName == "crop":
+            case "crop":
                 from tools import CropTool
                 return CropTool(self)
-        elif toolName == "mask":
+            case "mask":
                 from tools import MaskTool
                 return MaskTool(self)
         
@@ -400,10 +401,10 @@ class ImgTab(QtWidgets.QMainWindow):
         return self.imgview.tool
 
 
-    def getWindowContent(self, windowName):
+    def getWindowContent(self, windowName: str):
         return self._windowContent.get(windowName, None)
 
-    def setWindowContent(self, windowName, content):
+    def setWindowContent(self, windowName: str, content: QtWidgets.QWidget):
         if windowName in self._windowContent:
             self._windowContent[windowName].deleteLater()
         self._windowContent[windowName] = content
@@ -460,16 +461,17 @@ class TabStatusBar(qtlib.ColoredMessageStatusBar):
 
 
 
+def loadInitialImage(win: MainWindow):
+    loadPath = sys.argv[1] if len(sys.argv) > 1 else Config.pathDebugLoad
+    if loadPath:
+        tab: ImgTab = win.tabWidget.currentWidget()
+        tab.filelist.load(loadPath)
+
 def main() -> int:
     app = QtWidgets.QApplication([])
     win = MainWindow(app)
     win.show()
-
-    loadPath = sys.argv[1] if len(sys.argv) > 1 else Config.pathDebugLoad
-    if loadPath:
-        tab = win.tabWidget.currentWidget()
-        tab.filelist.load(loadPath)
-
+    loadInitialImage(win)
     return app.exec()
 
 if __name__ == "__main__":
