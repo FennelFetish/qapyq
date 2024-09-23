@@ -87,10 +87,12 @@ class BatchCaption(QtWidgets.QWidget):
         layout.addWidget(self.tagSettings, 0, 0, 1, 2)
 
         self.txtTagTargetName = QtWidgets.QLineEdit("tags")
-        self.txtTagTargetName.setEnabled(False)
         qtlib.setMonospace(self.txtTagTargetName)
         layout.addWidget(QtWidgets.QLabel("Storage key:"), 1, 0)
         layout.addWidget(self.txtTagTargetName, 1, 1)
+
+        # TODO: Apply rules. Or separate batch tab? Also: Merge tags from different models? (easy with the remove duplicate option)
+        # Separate tab probably better
 
         groupBox = QtWidgets.QGroupBox("Generate Tags")
         groupBox.setCheckable(True)
@@ -136,6 +138,7 @@ class BatchCaption(QtWidgets.QWidget):
 
             if self.tagGroup.isChecked():
                 self._task.tagConfig = self.tagSettings.getInferenceConfig()
+                self._task.tagName = self.txtTagTargetName.text().strip()
 
             Inference().queueTask(self._task)
 
@@ -176,7 +179,9 @@ class BatchCaptionTask(BatchTask):
         self.prompts      = None
         self.systemPrompt = None
         self.config       = None
+
         self.tagConfig    = None
+        self.tagName      = None
 
         self.rounds: int = 1
         self.storePrompts: bool = False
@@ -201,6 +206,8 @@ class BatchCaptionTask(BatchTask):
             self.signals.progressMessage.emit("Loading tag model ...")
             if not self.inferProc.setupTag(self.tagConfig):
                 raise RuntimeError("Couldn't load tag model")
+            if not self.tagName:
+                self.tagName = "tags"
 
 
     def runProcessFile(self, imgFile: str) -> str:
@@ -235,6 +242,6 @@ class BatchCaptionTask(BatchTask):
     def runTags(self, imgFile: str, captionFile: CaptionFile):
         tags = self.inferProc.tag(imgFile)
         if tags:
-            captionFile.tags = tags
+            captionFile.addTags(self.tagName, tags)
         else:
             self.log(f"WARNING: No tags returned for {imgFile}, ignoring")

@@ -186,20 +186,20 @@ class BatchApplyTask(BatchTask):
 
     def runProcessFile(self, imgFile) -> str:
         captionFile = CaptionFile(imgFile)
-        if captionFile.loadFromJson():
-            txtFile = self.getTextFile(imgFile)
-            if self.backupName:
-                self.backup(txtFile, captionFile)
-
-            self.parser.setup(imgFile, captionFile)
-            caption = self.parser.parse(self.template)
-
-            with open(txtFile, 'w') as file:
-                file.write(caption)
-            return txtFile
-        else:
+        if not captionFile.loadFromJson():
             self.log(f"WARNING: Couldn't read captions from {captionFile.jsonPath}")
             return None
+
+        txtFile = self.getTextFile(imgFile)
+        if self.backupName:
+            self.backup(txtFile, captionFile)
+
+        self.parser.setup(imgFile, captionFile)
+        caption = self.parser.parse(self.template)
+
+        with open(txtFile, 'w') as file:
+            file.write(caption)
+        return txtFile
 
     def backup(self, txtFile, captionFile):
         if os.path.exists(txtFile):

@@ -14,6 +14,7 @@ class TemplateParser:
         self._optionalPrefix = "?"
         self._captionPrefix = "captions."
         self._promptPrefix = "prompts."
+        self._tagPrefix = "tags."
 
     
     def setup(self, imgPath, captionFile):
@@ -54,11 +55,15 @@ class TemplateParser:
         if var.startswith(self._captionPrefix):
             name = var[len(self._captionPrefix):]
             return self.getCaptionFile().getCaption(name)
+
         elif var.startswith(self._promptPrefix):
             name = var[len(self._promptPrefix):]
             return self.getCaptionFile().getPrompt(name)
-        elif var == "tags":
-            return self.getCaptionFile().tags
+
+        elif var.startswith(self._tagPrefix):
+            name = var[len(self._tagPrefix):]
+            return self.getCaptionFile().getTags(name)
+
         elif var == "folder":
             return self._getFolderName()
 

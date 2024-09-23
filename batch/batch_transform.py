@@ -22,7 +22,7 @@ class BatchTransform(QtWidgets.QWidget):
                + "{{?captions.caption_round1}}\n\n" \
                + "{{?captions.caption_round2}}\n\n" \
                + "{{?captions.caption_round3}}\n\n" \
-               + "Booru Tags: {{?tags}}"
+               + "Booru Tags: {{?tags.tags}}"
 
 
     def __init__(self, tab, logSlot, progressBar, statusBar):

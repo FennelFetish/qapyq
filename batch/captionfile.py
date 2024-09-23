@@ -16,7 +16,7 @@ class CaptionFile:
     def __init__(self, imgPath):
         self.captions = dict()
         self.prompts = dict()
-        self.tags = None
+        self.tags = dict()
 
         path, ext = os.path.splitext(imgPath)
         self.jsonPath = f"{path}.json"
@@ -35,6 +35,13 @@ class CaptionFile:
     def getPrompt(self, name):
         return self.prompts.get(name, None)
 
+
+    def addTags(self, name, tags):
+        self.tags[name] = tags
+
+    def getTags(self, name):
+        return self.tags.get(name, None)
+
     
     def loadFromJson(self) -> bool:
         if os.path.exists(self.jsonPath):
@@ -43,11 +50,11 @@ class CaptionFile:
             if Keys.VERSION not in data:
                 return False
         else:
-            data = dict()
+            return False
 
         self.captions = data.get(Keys.CAPTIONS, {})
         self.prompts  = data.get(Keys.PROMPTS, {})
-        self.tags     = data.get(Keys.TAGS, None)
+        self.tags     = data.get(Keys.TAGS, {})
         return True
 
 
@@ -72,8 +79,10 @@ class CaptionFile:
         if prompts:
             data[Keys.PROMPTS] = prompts
 
-        if self.tags != None:
-            data[Keys.TAGS] = self.tags
+        tags = data.get(Keys.TAGS, {})
+        tags.update(self.tags)
+        if tags:
+            data[Keys.TAGS] = tags
         
         with open(self.jsonPath, 'w') as file:
             json.dump(data, file, indent=4)
@@ -91,7 +100,7 @@ class CaptionFile:
         if self.prompts:
             data[Keys.PROMPTS] = self.prompts
         
-        if self.tags != None:
+        if self.tags:
             data[Keys.TAGS] = self.tags
 
         with open(self.jsonPath, 'w') as file:
