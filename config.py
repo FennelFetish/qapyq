@@ -39,6 +39,7 @@ class Config:
 
     # Window state
     windowStates            = dict()
+    windowOpen              = []
 
     # Misc static
     batchWinLegendWidth     = 130
@@ -80,6 +81,7 @@ class Config:
         cls.galleryThumbnailSize  = int(data.get("gallery_thumbnail_size", cls.galleryThumbnailSize))
 
         cls.windowStates          = data.get("window_states", cls.windowStates)
+        cls.windowOpen            = data.get("window_open", cls.windowOpen)
 
 
     @classmethod
@@ -113,6 +115,7 @@ class Config:
         data["gallery_thumbnail_size"]      = cls.galleryThumbnailSize
 
         data["window_states"]               = cls.windowStates
+        data["window_open"]                 = cls.windowOpen
 
         with open(cls.pathConfig, 'w') as file:
             json.dump(data, file, indent=4)

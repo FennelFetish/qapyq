@@ -122,6 +122,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             tab = self.tabWidget.currentWidget()
             self.galleryWindow.setTab(tab)
+            self.toolbar.actToggleGallery.setChecked(True)
         else:
             self.galleryWindow.close()
     
@@ -142,6 +143,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             tab = self.tabWidget.currentWidget()
             self.batchWindow.setTab(tab)
+            self.toolbar.actToggleBatch.setChecked(True)
         else:
             self.batchWindow.close()
     
@@ -162,6 +164,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             tab = self.tabWidget.currentWidget()
             self.captionWindow.setTab(tab)
+            self.toolbar.actToggleCaption.setChecked(True)
         else:
             self.captionWindow.close()
 
@@ -177,12 +180,12 @@ class MainWindow(QtWidgets.QMainWindow):
         if self._fullscreenTab:
             self._fullscreenTab.close()
         
-        if self.galleryWindow:
-            self.galleryWindow.close()
-        if self.batchWindow:
-            self.batchWindow.close()
-        if self.captionWindow:
-            self.captionWindow.close()
+        openWindows = []
+        for win in [self.galleryWindow, self.batchWindow, self.captionWindow]:
+            if win:
+                openWindows.append(win.configKey)
+                win.close()
+        Config.windowOpen = openWindows
 
         from infer.model_settings import ModelSettingsWindow
         ModelSettingsWindow.closeInstance()
@@ -467,11 +470,20 @@ def loadInitialImage(win: MainWindow):
         tab: ImgTab = win.tabWidget.currentWidget()
         tab.filelist.load(loadPath)
 
+def restoreWindows(win: MainWindow):
+    if "gallery" in Config.windowOpen:
+        win.toggleGallery()
+    if "batch" in Config.windowOpen:
+        win.toggleBatchWindow()
+    if "caption" in Config.windowOpen:
+        win.toggleCaptionWindow()
+
 def main() -> int:
     app = QtWidgets.QApplication([])
     win = MainWindow(app)
     win.show()
     loadInitialImage(win)
+    restoreWindows(win)
     return app.exec()
 
 if __name__ == "__main__":
