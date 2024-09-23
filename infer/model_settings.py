@@ -161,27 +161,8 @@ class BaseSettingsWidget(QtWidgets.QWidget):
         self.fromDict({})
         self.reloadPresetList()
 
-
     def build(self, layout: QtWidgets.QGridLayout, row: int) -> None:
         raise NotImplementedError()
-
-
-    def fromDict(self, settings: dict) -> None:
-        # Find backend index
-        backend = settings.get("backend", "")
-        for i in range(self.cboBackend.count()):
-            if self.cboBackend.itemData(i)[0] == backend:
-                self.cboBackend.setCurrentIndex(i)
-
-        self.txtPath.setText(settings.get("model_path", ""))
-
-
-    def toDict(self) -> dict:
-        backend, backendType = self.cboBackend.currentData()
-        return {
-            "backend": backend,
-            "model_path": self.txtPath.text()
-        }
 
 
     def reloadPresetList(self, selectName: str = None) -> None:
@@ -242,11 +223,9 @@ class BaseSettingsWidget(QtWidgets.QWidget):
 
         self.btnSave.setEnabled(bool(text))
 
-
     @Slot()
     def _onBackendChanged(self, index) -> None:
         pass
-
 
     def _choosePath(self, target: QtWidgets.QLineEdit, altTarget: QtWidgets.QLineEdit | None = None) -> None:
         path = target.text()
@@ -262,6 +241,22 @@ class BaseSettingsWidget(QtWidgets.QWidget):
         if path:
             target.setText(path)
 
+
+    def fromDict(self, settings: dict) -> None:
+        # Find backend index
+        backend = settings.get("backend", "")
+        for i in range(self.cboBackend.count()):
+            if self.cboBackend.itemData(i)[0] == backend:
+                self.cboBackend.setCurrentIndex(i)
+
+        self.txtPath.setText(settings.get("model_path", ""))
+
+    def toDict(self) -> dict:
+        backend, backendType = self.cboBackend.currentData()
+        return {
+            "backend": backend,
+            "model_path": self.txtPath.text()
+        }
 
 
 class LLMModelSettings(BaseSettingsWidget):
