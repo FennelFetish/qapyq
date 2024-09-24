@@ -1,5 +1,5 @@
-from PySide6.QtCore import Qt, Slot, Signal, QThreadPool, QObject, QRunnable
-from PySide6.QtGui import QPixmap, QImage
+from PySide6.QtCore import Slot, Signal, QSize, QThreadPool, QObject, QRunnable
+from PySide6.QtGui import QPixmap, QImageReader
 from filelist import DataKeys
 from config import Config
 import time
@@ -29,12 +29,13 @@ class ThumbnailCache:
         task.signals.done.connect(cls._onThumbnailLoaded)
         QThreadPool.globalInstance().start(task)
 
-    @classmethod
-    def _onThumbnailLoaded(cls, filelist, target, file, img):
+    @staticmethod
+    def _onThumbnailLoaded(filelist, target, file, img):
         pixmap = QPixmap.fromImage(img)
         filelist.setData(file, DataKeys.Thumbnail, pixmap)
         filelist.removeData(file, DataKeys.ThumbnailRequestTime, False)
         target.pixmap = pixmap
+        del img
 
 
 
@@ -52,7 +53,14 @@ class ThumbnailTask(QRunnable):
     @Slot()
     def run(self):
         # QPixmap is not threadsafe, loading as QImage instead
-        size = ThumbnailCache.THUMBNAIL_SIZE
-        img = QImage(self.file)
-        img = img.scaled(size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+        reader = QImageReader(self.file)
+        reader.setQuality(100)
+        imgSize = reader.size()
+
+        targetWidth = int(ThumbnailCache.THUMBNAIL_SIZE * 1.25)
+        targetHeight = targetWidth * (imgSize.height() / imgSize.width())
+        targetHeight = int(targetHeight + 0.5)
+        reader.setScaledSize(QSize(targetWidth, targetHeight))
+
+        img = reader.read()
         self.signals.done.emit(self.filelist, self.target, self.file, img)
