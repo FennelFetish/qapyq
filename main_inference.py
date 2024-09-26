@@ -44,7 +44,7 @@ def loadTag(config: dict):
 
     match config.get("backend"):
         case "joytag":
-            from infer.joytag import JoyTag
+            from infer.tag_joytag import JoyTag
             return JoyTag(config)
         case "wd":
             from infer.tag_wd import WDTag
@@ -110,6 +110,7 @@ def handleMessage(protocol) -> bool:
             protocol.writeMessage({"cmd": cmd})
 
 
+        # TODO: Cache image
         case "caption":
             img = msg["img"]
             captions = getBackend().caption(img, msg["prompts"], msg["sysPrompt"], int(msg["rounds"]))
@@ -119,6 +120,7 @@ def handleMessage(protocol) -> bool:
                 "captions": captions
             })
         
+        # TODO: Cache image
         case "tag":
             img = msg["img"]
             tags = getTag().tag(img)

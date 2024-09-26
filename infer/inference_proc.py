@@ -9,8 +9,8 @@ class InferenceProcess(metaclass=Singleton):
         self.proc = None
         self.mutex = QMutex()
 
-        self.currentConfig = dict()
-        self.currentTagBackend = None
+        self.currentLLMConfig = dict()
+        self.currentTagConfig = dict()
 
 
     def start(self):
@@ -33,8 +33,8 @@ class InferenceProcess(metaclass=Singleton):
 
 
     def stop(self):
-        self.currentConfig = dict()
-        self.currentTagBackend = None
+        self.currentLLMConfig = dict()
+        self.currentTagConfig = dict()
 
         with QMutexLocker(self.mutex):
             if self.proc:
@@ -49,27 +49,23 @@ class InferenceProcess(metaclass=Singleton):
                 self.proc.terminate()
 
 
-    def updateBackend(self, config: dict):
-        diffKeys = [ k for k, v in self.currentConfig.items() if config.get(k) != v ]
-        if len(diffKeys) > 0:
+    def updateBackend(self, config: dict, configAttr: str) -> None:
+        currentConfig: dict = getattr(self, configAttr)
+        diff = ( True for k, v in currentConfig.items() if config.get(k) != v )
+        if any(diff):
             self.stop()
             self.start()
 
         # Remove sampling settings so they are not included in the check above
-        self.currentConfig = copy.deepcopy(config)
-        if Config.INFER_PRESET_SAMPLECFG_KEY in self.currentConfig:
-            del self.currentConfig[Config.INFER_PRESET_SAMPLECFG_KEY]
-
-    def updateTagBackend(self, config: dict):
-        backend = config.get("backend")
-        if self.currentTagBackend and self.currentTagBackend != backend:
-            self.stop()
-            self.start()
-        self.currentTagBackend = backend
+        currentConfig = copy.deepcopy(config)
+        if Config.INFER_PRESET_SAMPLECFG_KEY in currentConfig:
+            del currentConfig[Config.INFER_PRESET_SAMPLECFG_KEY]
+        setattr(self, configAttr, currentConfig)
 
 
+    # TODO: Catch error when loading models and don't set config
     def setupCaption(self, config: dict):
-        self.updateBackend(config)
+        self.updateBackend(config, "currentLLMConfig")
         with QMutexLocker(self.mutex):
             self._writeMessage({
                 "cmd": "setup_caption",
@@ -78,7 +74,7 @@ class InferenceProcess(metaclass=Singleton):
             return self._blockReadMessage("cmd")
 
     def setupTag(self, config: dict):
-        self.updateTagBackend(config)
+        self.updateBackend(config, "currentTagConfig")
         with QMutexLocker(self.mutex):
             self._writeMessage({
                 "cmd": "setup_tag",
@@ -87,7 +83,7 @@ class InferenceProcess(metaclass=Singleton):
             return self._blockReadMessage("cmd")
 
     def setupLLM(self, config: dict):
-        self.updateBackend(config)
+        self.updateBackend(config, "currentLLMConfig")
         with QMutexLocker(self.mutex):
             self._writeMessage({
                 "cmd": "setup_llm",

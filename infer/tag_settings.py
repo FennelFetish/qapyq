@@ -78,16 +78,26 @@ class TagPresetWidget(QtWidgets.QWidget):
         Config.inferSelectedPresets[self.configAttr] = name
 
 
+    def fromDict(self, settings: dict) -> None:
+        self.threshold.setValue(settings.get("threshold", 0.35))
+
+    def toDict(self) -> dict:
+        return {
+            "threshold": self.threshold.value()
+        }
+
+
     @Slot()
     def loadFromConfig(self):
-        empty    = {}
+        empty: dict    = {}
         presets: dict  = getattr(Config, self.configAttr, empty)
         preset: dict   = presets.get(self.preset.currentText(), empty)
-        self.threshold.setValue(preset.get("threshold", 0.35))
+        sampleSettings: dict = preset.get(Config.INFER_PRESET_SAMPLECFG_KEY, empty)
+        self.fromDict(sampleSettings)
 
     def getInferenceConfig(self):
         presets: dict = getattr(Config, self.configAttr)
         preset: dict = presets.get(self.preset.currentText(), {})
-        preset = copy.deepcopy(preset)
-        preset["threshold"] = self.threshold.value()
+        preset: dict = copy.deepcopy(preset)
+        preset[Config.INFER_PRESET_SAMPLECFG_KEY] = self.toDict()
         return preset

@@ -416,7 +416,9 @@ class TagModelSettings(BaseSettingsWidget):
     def fromDict(self, settings: dict) -> None:
         super().fromDict(settings)
         self.txtTagListPath.setText(settings.get("csv_path", ""))
-        self.spinThreshold.setValue(settings.get("threshold", 0.35))
+
+        sampleSettings = settings.get(Config.INFER_PRESET_SAMPLECFG_KEY, {})
+        self.spinThreshold.setValue(sampleSettings.get("threshold", 0.35))
 
     def toDict(self) -> dict:
         settings = super().toDict()
@@ -425,5 +427,7 @@ class TagModelSettings(BaseSettingsWidget):
         if backendType == BackendTypes.ONNX:
             settings["csv_path"] = self.txtTagListPath.text()
 
-        settings["threshold"] = self.spinThreshold.value()
+        settings[Config.INFER_PRESET_SAMPLECFG_KEY] = {
+            "threshold": self.spinThreshold.value()
+        }
         return settings
