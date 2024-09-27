@@ -20,8 +20,8 @@ class LlamaCppBackend(InferenceBackend):
             **kwargs
         )
 
-    def __del__(self):
-        self.llm.close()
+    # def __del__(self):
+    #     self.llm.close()
 
 
     def answer(self, prompts: dict, systemPrompt=None, rounds=1):
@@ -35,21 +35,12 @@ class LlamaCppBackend(InferenceBackend):
         try:
             return self._answer(userContentFunc, prompts, systemPrompt, rounds)
         except ValueError as ex:
-            if str(ex).startswith("System role not supported"):
+            if str(ex).startswith("System role not supported"): # TODO: Always same error string?
                 # Fallback: Include system prompt in first user message
-                prompts = self._mergeSystemPrompt(prompts, systemPrompt)
+                prompts = self.mergeSystemPrompt(prompts, systemPrompt)
                 return self._answer(userContentFunc, prompts, None, rounds)
             else:
                 raise ex
-
-
-    def _mergeSystemPrompt(self, prompts, systemPrompt) -> dict:
-        name, prompt  = next(iter(prompts.items())) # First entry
-        prompts[name] = "# System Instructions:\n" \
-                      + systemPrompt + "\n\n" \
-                      + "# Prompt:\n" \
-                      + prompt
-        return prompts
 
 
     def _answer(self, userContentFunc: Callable, prompts: dict, systemPrompt: str | None, rounds: int):

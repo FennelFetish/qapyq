@@ -21,6 +21,9 @@ def loadBackend(config: dict):
         case "qwen2vl":
             from infer.backend_qwen2vl import Qwen2VLBackend
             return Qwen2VLBackend(config)
+        case "ovis16":
+            from infer.backend_ovis16 import Ovis16Backend
+            return Ovis16Backend(config)
         case "gguf":
             from infer.backend_llamacpp import LlamaCppBackend
             return LlamaCppBackend(config)

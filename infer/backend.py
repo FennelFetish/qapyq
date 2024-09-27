@@ -31,11 +31,13 @@ class InferenceBackend:
         self.config.update(config)
 
 
-    def randomSeed(self):
+    @staticmethod
+    def randomSeed():
         return random.randint(0, 2147483647)
 
 
-    def imageToBase64(self, imgPath):
+    @staticmethod
+    def imageToBase64(imgPath: str):
         if imgPath.lower().endswith(".png"):
             with open(imgPath, "rb") as img:
                 imgData = img.read()
@@ -49,6 +51,16 @@ class InferenceBackend:
 
         base64Data = base64.b64encode(imgData).decode('utf-8')
         return f"data:image/png;base64,{base64Data}"
+
+
+    @staticmethod
+    def mergeSystemPrompt(prompts, systemPrompt) -> dict:
+        name, prompt  = next(iter(prompts.items())) # First entry
+        prompts[name] = "# System Instructions:\n" \
+                      + systemPrompt + "\n\n" \
+                      + "# Prompt:\n" \
+                      + prompt
+        return prompts
 
 
     def caption(self, imgPath: str, prompts: dict, systemPrompt=None, rounds=1) -> dict:
