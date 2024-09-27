@@ -15,8 +15,8 @@ class BatchContainer(QtWidgets.QTabWidget):
         self.statusBar = qtlib.ColoredMessageStatusBar()
         self.statusBar.addPermanentWidget(self.progressbar)
 
-        logWidget = BatchLog()
-        log = logWidget.addLog
+        self.logWidget = BatchLog()
+        log = self.logWidget.addLog
 
         captionWidget        = BatchCaption(tab, log, self.progressbar, self.statusBar)
         self.transformWidget = BatchTransform(tab, log, self.progressbar, self.statusBar)
@@ -25,7 +25,7 @@ class BatchContainer(QtWidgets.QTabWidget):
         self.addTab(captionWidget, "Caption (json)")
         self.addTab(self.transformWidget, "Transform (json → json)") # LLM process json
         self.addTab(self.applyWidget, "Apply (json → txt)")
-        self.addTab(logWidget, "Log")
+        self.addTab(self.logWidget, "Log")
 
         tab.filelist.addListener(self)
         self.onFileChanged(tab.filelist.getCurrentFile())
@@ -34,6 +34,7 @@ class BatchContainer(QtWidgets.QTabWidget):
     def onFileChanged(self, currentFile):
         self.transformWidget.onFileChanged(currentFile)
         self.applyWidget.onFileChanged(currentFile)
+        self.logWidget.onFileChanged(currentFile)
 
     def onFileListChanged(self, currentFile):
         self.onFileChanged(currentFile)

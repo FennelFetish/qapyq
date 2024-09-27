@@ -71,11 +71,11 @@ class CaptionSettings(QtWidgets.QWidget):
         layout.addWidget(btnAddBanned, 2, 2)
         
         # Row 3
-        self.btnLoad = QtWidgets.QPushButton("Load preset ...")
+        self.btnLoad = QtWidgets.QPushButton("Load preset...")
         self.btnLoad.clicked.connect(self.loadPreset)
         layout.addWidget(self.btnLoad, 3, 0, 1, 2)
 
-        self.btnSave = QtWidgets.QPushButton("Save preset as ...")
+        self.btnSave = QtWidgets.QPushButton("Save preset as...")
         self.btnSave.clicked.connect(self.savePreset)
         layout.addWidget(self.btnSave, 3, 2, 1, 2)
 
