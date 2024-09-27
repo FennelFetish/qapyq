@@ -18,13 +18,31 @@ class Config:
     cropSizeStep            = 64
     cropWheelStep           = 0.02
 
+    # Prompts
+    promptCaptionPresets    = dict()
+    promptCaptionDefault = {
+        "system_prompt": "You are an assistant that perfectly describes scenes in concise English language. " \
+                       + "You always express yourself in a well-assured way. Refer to a person using gendered pronouns like she/he. " \
+                       + "Don't format your response into numered lists or bullet points.",
+        "prompts": "Describe the image in detail."
+    }
+
+    promptLLMPresets        = dict()
+    promptLLMDefault = {
+        "system_prompt": "Your task is to summarize image captions. I will provide multiple descriptions of the same image separated by a line with dash. " \
+                       + "I will also include a list of booru tags that accurately categorize the image. " \
+                       + "Use your full knowledge about booru tags and use them to inform your summary.\n\n" \
+                       \
+                       + "You will summarize my descriptions and condense all provided information into one paragraph. " \
+                       + "The resulting description must encompass all the details provided in my original input. " \
+                       + "You may rephrase my input, but never invent anything new. Your output will never contain new information.",
+        "prompts": "{{?captions.caption}}\n-\n" \
+                 + "{{?captions.caption_round1}}\n-\n" \
+                 + "{{?captions.caption_round2}}\n-\n" \
+                 + "{{?tags.tags}}"
+    }
+
     # Inference
-    inferSystemPrompt       = "You are an assistant that perfectly describes scenes in concise English language. " \
-                            + "You always express yourself in a well-assured way. Refer to a person using gendered pronouns like she/he. " \
-                            + "Don't format your response into numered lists or bullet points."
-
-    inferPrompt             = "Describe the image in detail."
-
     inferCaptionPresets     = dict()
     inferLLMPresets         = dict()
     inferTagPresets         = dict()
@@ -32,7 +50,7 @@ class Config:
     INFER_PRESET_SAMPLECFG_KEY = "sample_config"
     
     # Batch
-    batchTemplate           = "{{?captions.target}}\n{{?tags}}"
+    batchTemplate           = "{{?captions.target}}\n{{?tags.tags}}"
 
     # Gallery
     galleryThumbnailSize    = 192
@@ -68,8 +86,8 @@ class Config:
         cls.cropSizeStep          = int(data.get("crop_size_step", cls.cropSizeStep))
         cls.cropWheelStep         = float(data.get("crop_wheel_step", cls.cropWheelStep))
 
-        cls.inferSystemPrompt     = data.get("infer_system_prompt", cls.inferSystemPrompt)
-        cls.inferPrompt           = data.get("infer_prompt", cls.inferPrompt)
+        cls.promptCaptionPresets  = data.get("prompt_caption_presets", cls.promptCaptionPresets)
+        cls.promptLLMPresets      = data.get("prompt_llm_presets", cls.promptLLMPresets)
         
         cls.inferCaptionPresets   = data.get("infer_caption_presets", cls.inferCaptionPresets)
         cls.inferLLMPresets       = data.get("infer_llm_presets", cls.inferLLMPresets)
@@ -102,8 +120,8 @@ class Config:
         data["crop_size_step"]              = cls.cropSizeStep
         data["crop_wheel_step"]             = cls.cropWheelStep
 
-        data["infer_system_prompt"]         = cls.inferSystemPrompt
-        data["infer_prompt"]                = cls.inferPrompt
+        data["prompt_caption_presets"]      = cls.promptCaptionPresets
+        data["prompt_llm_presets"]          = cls.promptLLMPresets
 
         data["infer_caption_presets"]       = cls.inferCaptionPresets
         data["infer_llm_presets"]           = cls.inferLLMPresets

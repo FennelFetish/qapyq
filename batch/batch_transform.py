@@ -1,30 +1,14 @@
-import os
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
-import qtlib, util
+import qtlib
 from config import Config
-from infer import Inference, InferencePresetWidget
+from infer import Inference, InferencePresetWidget, PromptWidget
 from .batch_task import BatchTask
 from .captionfile import CaptionFile
 from template_parser import TemplateParser
 
 
 class BatchTransform(QtWidgets.QWidget):
-    SYS_PROMPT = "Your task is to summarize image captions. I will provide multiple descriptions of the same image separated by empty lines. " \
-               + "I will also include a list of booru tags that accurately categorize the image. " \
-               + "Use your full knowledge about booru tags and use them to inform your summary.\n\n" \
-               \
-               + "You will summarize my descriptions and condense all provided information into one paragraph. " \
-               + "The resulting description must encompass all the details provided in my original input. " \
-               + "You may rephrase my input, but never invent anything new. Your output will never contain new information."
-
-    PROMPT_TPL = "{{?captions.caption}}\n\n" \
-               + "{{?captions.caption_round1}}\n\n" \
-               + "{{?captions.caption_round2}}\n\n" \
-               + "{{?captions.caption_round3}}\n\n" \
-               + "Booru Tags: {{?tags.tags}}"
-
-
     def __init__(self, tab, logSlot, progressBar, statusBar):
         super().__init__()
         self.tab = tab
@@ -36,7 +20,6 @@ class BatchTransform(QtWidgets.QWidget):
 
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self._buildLLMSettings())
-        #layout.addWidget(self._buildPreview())
         layout.addWidget(self._buildTransformSettings())
         self.setLayout(layout)
 
@@ -52,33 +35,27 @@ class BatchTransform(QtWidgets.QWidget):
         layout.setColumnStretch(1, 0)
         layout.setColumnStretch(2, 1)
 
-        self.txtSystemPrompt = QtWidgets.QPlainTextEdit(BatchTransform.SYS_PROMPT)
-        qtlib.setMonospace(self.txtSystemPrompt)
-        qtlib.setTextEditHeight(self.txtSystemPrompt, 5, "min")
-        qtlib.setShowWhitespace(self.txtSystemPrompt)
-        layout.addWidget(QtWidgets.QLabel("System Prompt:"), 0, 0, Qt.AlignTop)
-        layout.addWidget(self.txtSystemPrompt, 0, 1, 1, 2)
-        layout.setRowStretch(0, 1)
+        row = 0
+        self.promptWidget = PromptWidget("promptLLMPresets", "promptLLMDefault", "Prompt(s) Template:")
+        qtlib.setTextEditHeight(self.promptWidget.txtSystemPrompt, 5, "min")
+        qtlib.setTextEditHeight(self.promptWidget.txtPrompts, 10, "min")
+        self.promptWidget.txtPrompts.textChanged.connect(self._updatePreview)
+        self.promptWidget.layout().setRowStretch(1, 1)
+        self.promptWidget.layout().setRowStretch(2, 2)
+        layout.addWidget(self.promptWidget, row, 0, 1, 3)
+        layout.setRowStretch(row, 3)
 
-        self.txtPromptTemplate = QtWidgets.QPlainTextEdit()
-        self.txtPromptTemplate.setPlainText(BatchTransform.PROMPT_TPL)
-        qtlib.setMonospace(self.txtPromptTemplate)
-        qtlib.setTextEditHeight(self.txtPromptTemplate, 10, "min")
-        qtlib.setShowWhitespace(self.txtPromptTemplate)
-        self.txtPromptTemplate.textChanged.connect(self._updatePreview)
-        layout.addWidget(QtWidgets.QLabel("Prompt(s) Template:"), 1, 0, Qt.AlignTop)
-        layout.addWidget(self.txtPromptTemplate, 1, 1, 1, 2)
-        layout.setRowStretch(1, 2)
-
+        row += 1
         self.txtPromptPreview = QtWidgets.QPlainTextEdit()
         self.txtPromptPreview.setReadOnly(True)
         qtlib.setMonospace(self.txtPromptPreview)
         qtlib.setTextEditHeight(self.txtPromptPreview, 5, "min")
         qtlib.setShowWhitespace(self.txtPromptPreview)
-        layout.addWidget(QtWidgets.QLabel("Prompt Preview:"), 2, 0, Qt.AlignTop)
-        layout.addWidget(self.txtPromptPreview, 2, 1, 1, 2)
-        layout.setRowStretch(2, 4)
+        layout.addWidget(QtWidgets.QLabel("Prompt(s) Preview:"), row, 0, Qt.AlignTop)
+        layout.addWidget(self.txtPromptPreview, row, 1, 1, 2)
+        layout.setRowStretch(row, 4)
 
+        row += 1
         self.chkStripAround = QtWidgets.QCheckBox("Surrounding whitespace")
         self.chkStripAround.setChecked(True)
         self.chkStripAround.checkStateChanged.connect(self._updateParser)
@@ -87,46 +64,29 @@ class BatchTransform(QtWidgets.QWidget):
         self.chkStripMulti.setChecked(False)
         self.chkStripMulti.checkStateChanged.connect(self._updateParser)
 
-        layout.addWidget(QtWidgets.QLabel("Strip:"), 3, 0)
-        layout.addWidget(self.chkStripAround, 3, 1)
-        layout.addWidget(self.chkStripMulti, 3, 2)
+        layout.addWidget(QtWidgets.QLabel("Strip:"), row, 0)
+        layout.addWidget(self.chkStripAround, row, 1)
+        layout.addWidget(self.chkStripMulti, row, 2)
 
+        row += 1
         self.txtTargetName = QtWidgets.QLineEdit("target")
         qtlib.setMonospace(self.txtTargetName)
-        layout.addWidget(QtWidgets.QLabel("Default storage key:"), 4, 0)
-        layout.addWidget(self.txtTargetName, 4, 1)
+        layout.addWidget(QtWidgets.QLabel("Default storage key:"), row, 0)
+        layout.addWidget(self.txtTargetName, row, 1)
 
+        row += 1
         self.spinRounds = QtWidgets.QSpinBox()
         self.spinRounds.setRange(1, 100)
         self.spinRounds.setValue(1)
-        layout.addWidget(QtWidgets.QLabel("Rounds:"), 5, 0)
-        layout.addWidget(self.spinRounds, 5, 1)
+        layout.addWidget(QtWidgets.QLabel("Rounds:"), row, 0)
+        layout.addWidget(self.spinRounds, row, 1)
 
-        layout.addWidget(self.inferSettings, 6, 0, 1, 3)
+        row += 1
+        layout.addWidget(self.inferSettings, row, 0, 1, 3)
 
         groupBox = QtWidgets.QGroupBox("LLM")
         groupBox.setLayout(layout)
         return groupBox
-
-    # def _buildPreview(self):
-    #     layout = QtWidgets.QGridLayout()
-    #     layout.setAlignment(Qt.AlignTop)
-    #     layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
-    #     layout.setColumnStretch(0, 0)
-
-    #     self.txtPreview = QtWidgets.QPlainTextEdit()
-    #     self.txtPreview.setReadOnly(True)
-    #     qtlib.setMonospace(self.txtPreview)
-    #     qtlib.setShowWhitespace(self.txtPreview)
-    #     layout.addWidget(QtWidgets.QLabel("Preview:"), 0, 0, Qt.AlignTop)
-    #     layout.addWidget(self.txtPreview, 0, 1, 1, 2)
-
-    #     btnGeneratePreview = QtWidgets.QPushButton("Generate Preview")
-    #     layout.addWidget(btnGeneratePreview, 1, 0, 1, 2)
-
-    #     groupBox = QtWidgets.QGroupBox("Preview")
-    #     groupBox.setLayout(layout)
-    #     return groupBox
 
 
     def _buildTransformSettings(self):
@@ -155,7 +115,7 @@ class BatchTransform(QtWidgets.QWidget):
 
 
     def _updatePreview(self):
-        text = self.txtPromptTemplate.toPlainText()
+        text = self.promptWidget.prompts
         preview = self._parser.parse(text)
         self.txtPromptPreview.setPlainText(preview)
 
@@ -168,8 +128,8 @@ class BatchTransform(QtWidgets.QWidget):
             self.btnStart.setText("Abort")
 
             storeName = self.txtTargetName.text().strip()
-            prompts   = util.parsePrompts(self.txtPromptTemplate.toPlainText(), storeName)
-            sysPrompt = self.txtSystemPrompt.toPlainText()
+            prompts = self.promptWidget.getParsedPrompts(storeName)
+            sysPrompt = self.promptWidget.systemPrompt
 
             config = self.inferSettings.getInferenceConfig()
 

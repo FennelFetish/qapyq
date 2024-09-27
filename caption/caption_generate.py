@@ -1,9 +1,8 @@
 import os, traceback
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject
-import qtlib, util
-from infer import Inference, InferencePresetWidget, TagPresetWidget
-from config import Config
+from infer import Inference, InferencePresetWidget, TagPresetWidget, PromptWidget
+import qtlib
 
 
 class CaptionGenerate(QtWidgets.QWidget):
@@ -25,20 +24,10 @@ class CaptionGenerate(QtWidgets.QWidget):
         layout.setColumnStretch(5, 0)
 
         row = 0
-        self.txtSysPrompt = QtWidgets.QTextEdit()
-        self.txtSysPrompt.setText(Config.inferSystemPrompt)
-        qtlib.setMonospace(self.txtSysPrompt)
-        qtlib.setTextEditHeight(self.txtSysPrompt, 3)
-        layout.addWidget(QtWidgets.QLabel("Sys Prompt:"), row, 0, Qt.AlignTop)
-        layout.addWidget(self.txtSysPrompt, row, 1, 1, 5)
-        
-        row += 1
-        self.txtPrompt = QtWidgets.QTextEdit()
-        self.txtPrompt.setText(Config.inferPrompt)
-        qtlib.setMonospace(self.txtPrompt)
-        qtlib.setTextEditHeight(self.txtPrompt, 3)
-        layout.addWidget(QtWidgets.QLabel("Prompt:"), row, 0, Qt.AlignTop)
-        layout.addWidget(self.txtPrompt, row, 1, 1, 5)
+        self.promptWidget = PromptWidget("promptCaptionPresets", "promptCaptionDefault")
+        qtlib.setTextEditHeight(self.promptWidget.txtSystemPrompt, 3)
+        qtlib.setTextEditHeight(self.promptWidget.txtPrompts, 3)
+        layout.addWidget(self.promptWidget, row, 0, 1, 6)
 
         row += 1
         self.inferSettings = InferencePresetWidget()
@@ -88,8 +77,8 @@ class CaptionGenerate(QtWidgets.QWidget):
         task.signals.fail.connect(self.onFail)
 
         if "caption" in content:
-            task.prompts = util.parsePrompts(self.txtPrompt.toPlainText())
-            task.systemPrompt = self.txtSysPrompt.toPlainText()
+            task.prompts = self.promptWidget.getParsedPrompts()
+            task.systemPrompt = self.promptWidget.systemPrompt
             task.config = self.inferSettings.getInferenceConfig()
 
         if "tags" in content:

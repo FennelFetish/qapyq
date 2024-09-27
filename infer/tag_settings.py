@@ -57,7 +57,7 @@ class TagPresetWidget(QtWidgets.QWidget):
         elif self.preset.count() > 0:
             index = 0
         else:
-            self.setDefaultValues()
+            self.fromDict({})
             index = -1
         
         self.preset.setCurrentIndex(index)

@@ -1,8 +1,8 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
-import qtlib, util
+import qtlib
 from config import Config
-from infer import Inference, InferencePresetWidget, TagPresetWidget
+from infer import Inference, InferencePresetWidget, TagPresetWidget, PromptWidget
 from .batch_task import BatchTask
 from .captionfile import CaptionFile
 
@@ -38,37 +38,32 @@ class BatchCaption(QtWidgets.QWidget):
         layout.setColumnStretch(1, 0)
         layout.setColumnStretch(2, 1)
 
-        self.txtSystemPrompt = QtWidgets.QPlainTextEdit(Config.inferSystemPrompt)
-        qtlib.setMonospace(self.txtSystemPrompt)
-        qtlib.setTextEditHeight(self.txtSystemPrompt, 5, "min")
-        qtlib.setShowWhitespace(self.txtSystemPrompt)
-        layout.addWidget(QtWidgets.QLabel("System Prompt:"), 0, 0, Qt.AlignTop)
-        layout.addWidget(self.txtSystemPrompt, 0, 1, 1, 2)
-        layout.setRowStretch(0, 1)
+        row = 0
+        self.promptWidget = PromptWidget("promptCaptionPresets", "promptCaptionDefault")
+        qtlib.setTextEditHeight(self.promptWidget.txtSystemPrompt, 5, "min")
+        qtlib.setTextEditHeight(self.promptWidget.txtPrompts, 10, "min")
+        self.promptWidget.layout().setRowStretch(1, 1)
+        self.promptWidget.layout().setRowStretch(2, 6)
+        layout.addWidget(self.promptWidget, row, 0, 1, 3)
 
-        self.txtPrompts = QtWidgets.QPlainTextEdit(Config.inferPrompt)
-        qtlib.setMonospace(self.txtPrompts)
-        qtlib.setTextEditHeight(self.txtPrompts, 10, "min")
-        qtlib.setShowWhitespace(self.txtPrompts)
-        layout.addWidget(QtWidgets.QLabel("Prompt(s):"), 1, 0, Qt.AlignTop)
-        layout.addWidget(self.txtPrompts, 1, 1, 1, 2)
-        layout.setRowStretch(1, 6)
-
+        row += 1
         self.txtTargetName = QtWidgets.QLineEdit("caption")
         qtlib.setMonospace(self.txtTargetName)
-        layout.addWidget(QtWidgets.QLabel("Default storage key:"), 2, 0)
-        layout.addWidget(self.txtTargetName, 2, 1)
+        layout.addWidget(QtWidgets.QLabel("Default storage key:"), row, 0)
+        layout.addWidget(self.txtTargetName, row, 1)
 
         self.chkStorePrompts = QtWidgets.QCheckBox("Store Prompts")
-        layout.addWidget(self.chkStorePrompts, 2, 2)
+        layout.addWidget(self.chkStorePrompts, row, 2)
 
+        row += 1
         self.spinRounds = QtWidgets.QSpinBox()
         self.spinRounds.setRange(1, 100)
         self.spinRounds.setValue(1)
-        layout.addWidget(QtWidgets.QLabel("Rounds:"), 3, 0)
-        layout.addWidget(self.spinRounds, 3, 1)
+        layout.addWidget(QtWidgets.QLabel("Rounds:"), row, 0)
+        layout.addWidget(self.spinRounds, row, 1)
 
-        layout.addWidget(self.inferSettings, 4, 0, 1, 3)
+        row += 1
+        layout.addWidget(self.inferSettings, row, 0, 1, 3)
 
         groupBox = QtWidgets.QGroupBox("Generate Captions")
         groupBox.setCheckable(True)
@@ -132,8 +127,8 @@ class BatchCaption(QtWidgets.QWidget):
 
             if self.captionGroup.isChecked():
                 storeName = self.txtTargetName.text().strip()
-                self._task.prompts = util.parsePrompts(self.txtPrompts.toPlainText(), storeName)
-                self._task.systemPrompt = self.txtSystemPrompt.toPlainText()
+                self._task.prompts = self.promptWidget.getParsedPrompts(storeName)
+                self._task.systemPrompt = self.promptWidget.systemPrompt
                 self._task.config = self.inferSettings.getInferenceConfig()
 
             if self.tagGroup.isChecked():
