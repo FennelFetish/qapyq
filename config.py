@@ -36,10 +36,10 @@ class Config:
                        + "You will summarize my descriptions and condense all provided information into one paragraph. " \
                        + "The resulting description must encompass all the details provided in my original input. " \
                        + "You may rephrase my input, but never invent anything new. Your output will never contain new information.",
-        "prompts": "{{?captions.caption}}\n-\n" \
-                 + "{{?captions.caption_round1}}\n-\n" \
-                 + "{{?captions.caption_round2}}\n-\n" \
-                 + "{{?tags.tags}}"
+        "prompts": "{{captions.caption}}\n-\n" \
+                 + "{{captions.caption_round1}}\n-\n" \
+                 + "{{captions.caption_round2}}\n-\n" \
+                 + "{{tags.tags}}"
     }
 
     # Inference
@@ -50,7 +50,7 @@ class Config:
     INFER_PRESET_SAMPLECFG_KEY = "sample_config"
     
     # Batch
-    batchTemplate           = "{{?captions.target}}\n{{?tags.tags}}"
+    batchTemplate           = "{{captions.target}}\n{{tags.tags}}"
 
     # Gallery
     galleryThumbnailSize    = 192

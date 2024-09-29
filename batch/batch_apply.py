@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt, Slot
 import qtlib
 from config import Config
 from infer import Inference
-from template_parser import TemplateParser
+from template_parser import TemplateVariableParser, VariableHighlighter
 from .batch_task import BatchTask
 from .captionfile import CaptionFile
 
@@ -26,6 +26,7 @@ class BatchApply(QtWidgets.QWidget):
         self.setLayout(layout)
 
         self._parser = None
+        self._highlighter = VariableHighlighter()
         self._task = None
 
     def _buildFormatSettings(self):
@@ -84,7 +85,7 @@ class BatchApply(QtWidgets.QWidget):
 
         self.txtBackupName = QtWidgets.QLineEdit("backup")
         qtlib.setMonospace(self.txtBackupName)
-        layout.addWidget(QtWidgets.QLabel("Store as:"), 0, 0)
+        layout.addWidget(QtWidgets.QLabel("Storage key:"), 0, 0)
         layout.addWidget(self.txtBackupName, 0, 1)
 
         groupBox = QtWidgets.QGroupBox("Backup (txt → json)")
@@ -108,7 +109,7 @@ class BatchApply(QtWidgets.QWidget):
 
 
     def onFileChanged(self, currentFile):
-        self._parser = TemplateParser(currentFile)
+        self._parser = TemplateVariableParser(currentFile)
         self._updateParser()
 
     def _updateParser(self):
@@ -121,8 +122,14 @@ class BatchApply(QtWidgets.QWidget):
     @Slot()
     def _updatePreview(self):
         text = self.txtTemplate.toPlainText()
-        preview = self._parser.parse(text)
+        preview, varPositions = self._parser.parseWithPositions(text)
         self.txtPreview.setPlainText(preview)
+
+        try:
+            self.txtTemplate.blockSignals(True)
+            self._highlighter.highlight(self.txtTemplate, self.txtPreview, varPositions)
+        finally:
+            self.txtTemplate.blockSignals(False)
 
 
     @Slot()
@@ -180,7 +187,7 @@ class BatchApplyTask(BatchTask):
         self.backupName  = backupName
 
     def runPrepare(self):
-        self.parser = TemplateParser(None)
+        self.parser = TemplateVariableParser(None)
         self.parser.stripAround = self.stripAround
         self.parser.stripMultiWhitespace = self.stripMulti
 

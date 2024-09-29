@@ -40,6 +40,7 @@ class BatchCaption(QtWidgets.QWidget):
 
         row = 0
         self.promptWidget = PromptWidget("promptCaptionPresets", "promptCaptionDefault")
+        self.promptWidget.enableHighlighting()
         qtlib.setTextEditHeight(self.promptWidget.txtSystemPrompt, 5, "min")
         qtlib.setTextEditHeight(self.promptWidget.txtPrompts, 10, "min")
         self.promptWidget.layout().setRowStretch(1, 1)
@@ -128,7 +129,7 @@ class BatchCaption(QtWidgets.QWidget):
             if self.captionGroup.isChecked():
                 storeName = self.txtTargetName.text().strip()
                 self._task.prompts = self.promptWidget.getParsedPrompts(storeName)
-                self._task.systemPrompt = self.promptWidget.systemPrompt
+                self._task.systemPrompt = self.promptWidget.systemPrompt.strip()
                 self._task.config = self.inferSettings.getInferenceConfig()
 
             if self.tagGroup.isChecked():

@@ -1,6 +1,7 @@
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QRect, QSize, QMimeData
 import os
+import util
 
 
 def setTextEditHeight(textEdit, numRows, mode=None):
@@ -433,6 +434,32 @@ class SpacerWidget(QtWidgets.QWidget):
         super().__init__()
         policy = QtWidgets.QSizePolicy.Expanding
         self.setSizePolicy(policy, policy)
+
+
+
+class ColorCharFormats:
+    def __init__(self):
+        self.defaultFormat = QtGui.QTextCharFormat()
+        self.saturation = 0.35
+
+        self._formats = []
+        self._nextHue = util.rnd01()
+        self._colorV = QtWidgets.QApplication.palette().color(QtGui.QPalette.ColorRole.Text).valueF()
+        self._colorV = max(self._colorV, 0.2)
+
+    def getFormat(self, index: int) -> QtGui.QTextCharFormat:
+        while index >= len(self._formats):
+            color= util.hsv_to_rgb(self._nextHue, self.saturation, self._colorV)
+            self._nextHue += 0.3819444
+
+            charFormat = QtGui.QTextCharFormat()
+            charFormat.setForeground(QtGui.QColor(color))
+            self._formats.append(charFormat)
+        
+        return self._formats[index]
+
+    def addFormat(self, format: QtGui.QTextCharFormat) -> None:
+        self._formats.append(format)
 
 
 

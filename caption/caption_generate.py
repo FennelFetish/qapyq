@@ -25,6 +25,7 @@ class CaptionGenerate(QtWidgets.QWidget):
 
         row = 0
         self.promptWidget = PromptWidget("promptCaptionPresets", "promptCaptionDefault")
+        self.promptWidget.enableHighlighting()
         qtlib.setTextEditHeight(self.promptWidget.txtSystemPrompt, 3)
         qtlib.setTextEditHeight(self.promptWidget.txtPrompts, 3)
         layout.addWidget(self.promptWidget, row, 0, 1, 6)
@@ -78,7 +79,7 @@ class CaptionGenerate(QtWidgets.QWidget):
 
         if "caption" in content:
             task.prompts = self.promptWidget.getParsedPrompts()
-            task.systemPrompt = self.promptWidget.systemPrompt
+            task.systemPrompt = self.promptWidget.systemPrompt.strip()
             task.config = self.inferSettings.getInferenceConfig()
 
         if "tags" in content:

@@ -1,4 +1,4 @@
-from PySide6 import QtWidgets
+from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QObject
 from config import Config
 import qtlib, util
@@ -11,7 +11,7 @@ class PromptSettingsSignals(QObject):
 class PromptWidget(QtWidgets.QWidget):
     signals = PromptSettingsSignals()
 
-    def __init__(self, presetsAttr: str, defaultAttr: str, promptsLabel="Prompt(s):"):
+    def __init__(self, presetsAttr: str, defaultAttr: str):
         super().__init__()
         self.presetsAttr = presetsAttr
         self.defaultAttr = defaultAttr
@@ -53,10 +53,12 @@ class PromptWidget(QtWidgets.QWidget):
         layout.addWidget(self.txtSystemPrompt, row, 1, 1, 4)
 
         row += 1
-        self.txtPrompts = QtWidgets.QPlainTextEdit()
+        self.lblPrompts = QtWidgets.QLabel("Prompt(s):")
+        layout.addWidget(self.lblPrompts, row, 0, Qt.AlignTop)
+
+        self.txtPrompts = QtWidgets.QTextEdit()
         qtlib.setMonospace(self.txtPrompts)
         qtlib.setShowWhitespace(self.txtPrompts)
-        layout.addWidget(QtWidgets.QLabel(promptsLabel), row, 0, Qt.AlignTop)
         layout.addWidget(self.txtPrompts, row, 1, 1, 4)
 
         self.setLayout(layout)
@@ -67,14 +69,17 @@ class PromptWidget(QtWidgets.QWidget):
 
         self.signals.presetListUpdated.connect(self._onPresetListChanged)
 
+    def enableHighlighting(self):
+        self.promptsHighlighter = PromptsHighlighter(self.txtPrompts)
+
 
     @property
     def systemPrompt(self) -> str:
-        return self.txtSystemPrompt.toPlainText().strip()
+        return self.txtSystemPrompt.toPlainText()
 
     @property
     def prompts(self) -> str:
-        return self.txtPrompts.toPlainText().strip()
+        return self.txtPrompts.toPlainText()
 
     def getParsedPrompts(self, defaultName=None) -> dict[str, str]:
         return util.parsePrompts(self.txtPrompts.toPlainText(), defaultName)
@@ -163,3 +168,28 @@ class PromptWidget(QtWidgets.QWidget):
             "system_prompt": self.txtSystemPrompt.toPlainText(),
             "prompts": self.txtPrompts.toPlainText()
         }
+
+
+
+class PromptsHighlighter(QtGui.QSyntaxHighlighter):
+    SEPARATOR = "---"
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.formats = qtlib.ColorCharFormats()
+        self.formats.addFormat(self.formats.defaultFormat)
+
+    def highlightBlock(self, text: str) -> None:
+        formatIndex = self.previousBlockState()
+        if formatIndex < 0:
+            formatIndex = 0
+        if isTitle := text.startswith(self.SEPARATOR):
+            formatIndex += 1
+        self.setCurrentBlockState(formatIndex)
+
+        format = self.formats.getFormat(formatIndex)
+        if isTitle:
+            format.setFontWeight(700)
+        else:
+            format.setFontWeight(200)
+        self.setFormat(0, len(text), format)

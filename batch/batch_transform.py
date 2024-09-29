@@ -5,7 +5,7 @@ from config import Config
 from infer import Inference, InferencePresetWidget, PromptWidget
 from .batch_task import BatchTask
 from .captionfile import CaptionFile
-from template_parser import TemplateParser
+from template_parser import TemplateVariableParser, VariableHighlighter
 
 
 class BatchTransform(QtWidgets.QWidget):
@@ -14,7 +14,7 @@ class BatchTransform(QtWidgets.QWidget):
         self.tab = tab
         self.log = logSlot
         self.progressBar: QtWidgets.QProgressBar = progressBar
-        self.statusBar: QtWidgets.QStatusBar = statusBar
+        self.statusBar: qtlib.ColoredMessageStatusBar = statusBar
 
         self.inferSettings = InferencePresetWidget("inferLLMPresets")
 
@@ -24,6 +24,7 @@ class BatchTransform(QtWidgets.QWidget):
         self.setLayout(layout)
 
         self._parser = None
+        self._highlighter = VariableHighlighter()
         self._task = None
 
 
@@ -36,9 +37,10 @@ class BatchTransform(QtWidgets.QWidget):
         layout.setColumnStretch(2, 1)
 
         row = 0
-        self.promptWidget = PromptWidget("promptLLMPresets", "promptLLMDefault", "Prompt(s) Template:")
+        self.promptWidget = PromptWidget("promptLLMPresets", "promptLLMDefault")
         qtlib.setTextEditHeight(self.promptWidget.txtSystemPrompt, 5, "min")
         qtlib.setTextEditHeight(self.promptWidget.txtPrompts, 10, "min")
+        self.promptWidget.lblPrompts.setText("Prompt(s) Template:")
         self.promptWidget.txtPrompts.textChanged.connect(self._updatePreview)
         self.promptWidget.layout().setRowStretch(1, 1)
         self.promptWidget.layout().setRowStretch(2, 2)
@@ -46,7 +48,7 @@ class BatchTransform(QtWidgets.QWidget):
         layout.setRowStretch(row, 3)
 
         row += 1
-        self.txtPromptPreview = QtWidgets.QPlainTextEdit()
+        self.txtPromptPreview = QtWidgets.QTextEdit()
         self.txtPromptPreview.setReadOnly(True)
         qtlib.setMonospace(self.txtPromptPreview)
         qtlib.setTextEditHeight(self.txtPromptPreview, 5, "min")
@@ -104,7 +106,7 @@ class BatchTransform(QtWidgets.QWidget):
 
 
     def onFileChanged(self, currentFile):
-        self._parser = TemplateParser(currentFile)
+        self._parser = TemplateVariableParser(currentFile)
         self._updateParser()
 
     def _updateParser(self):
@@ -116,8 +118,14 @@ class BatchTransform(QtWidgets.QWidget):
 
     def _updatePreview(self):
         text = self.promptWidget.prompts
-        preview = self._parser.parse(text)
+        preview, varPositions = self._parser.parseWithPositions(text)
         self.txtPromptPreview.setPlainText(preview)
+
+        try:
+            self.promptWidget.txtPrompts.blockSignals(True)
+            self._highlighter.highlight(self.promptWidget.txtPrompts, self.txtPromptPreview, varPositions)
+        finally:
+            self.promptWidget.txtPrompts.blockSignals(False)
 
 
     @Slot()
@@ -129,7 +137,7 @@ class BatchTransform(QtWidgets.QWidget):
 
             storeName = self.txtTargetName.text().strip()
             prompts = self.promptWidget.getParsedPrompts(storeName)
-            sysPrompt = self.promptWidget.systemPrompt
+            sysPrompt = self.promptWidget.systemPrompt.strip()
 
             config = self.inferSettings.getInferenceConfig()
 
@@ -194,7 +202,7 @@ class BatchTransformTask(BatchTask):
         if not self.inferProc.setupLLM(self.config):
             raise RuntimeError("Couldn't load LLM")
 
-        self.parser = TemplateParser(None)
+        self.parser = TemplateVariableParser()
         self.parser.stripAround = self.stripAround
         self.parser.stripMultiWhitespace = self.stripMulti
 
