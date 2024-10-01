@@ -96,8 +96,6 @@ class PromptWidget(QtWidgets.QWidget):
         
         text = self.txtPrompts.toPlainText()
         for line in text.splitlines():
-            line = line.strip()
-
             if line.startswith("---") or line.startswith("==="):
                 # New prompt
                 if currentPrompt:
@@ -225,10 +223,7 @@ class PromptWidget(QtWidgets.QWidget):
 
 
 
-# TODO: Grey out (?) blocks starting with '?'
 class PromptsHighlighter(QtGui.QSyntaxHighlighter):
-    SEPARATOR = "---"
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.formats = qtlib.ColorCharFormats()
@@ -238,13 +233,43 @@ class PromptsHighlighter(QtGui.QSyntaxHighlighter):
         formatIndex = self.previousBlockState()
         if formatIndex < 0:
             formatIndex = 0
-        if isTitle := text.startswith(self.SEPARATOR):
+        
+        isPromptTitle = False
+        isConvTitle = False
+        isHidden = False
+
+        if isPromptTitle := text.startswith("---"):
+            isHidden = text.lstrip("-").lstrip().startswith("?")
             formatIndex += 1
+        elif isConvTitle := text.startswith("==="):
+            isHidden = text.lstrip("=").lstrip().startswith("?")
+            formatIndex += 1
+
         self.setCurrentBlockState(formatIndex)
 
         format = self.formats.getFormat(formatIndex)
-        if isTitle:
-            format.setFontWeight(700)
-        else:
-            format.setFontWeight(200)
+        format.setFontWeight(700 if isPromptTitle else 200)
+        format.setFontUnderline(isConvTitle)
+        format.setFontItalic(isHidden)
         self.setFormat(0, len(text), format)
+
+
+    @staticmethod
+    def highlightPromptSeparators(textEdit: QtWidgets.QTextEdit):
+        format = QtGui.QTextCharFormat()
+        format.setFontWeight(700)
+
+        text = textEdit.toPlainText()
+        cursor = textEdit.textCursor()
+
+        lineStartPos = 0
+        for line in text.splitlines(True):
+            if line.startswith("---") or line.startswith("==="):
+                cursor.setPosition(lineStartPos)
+                cursor.setPosition(lineStartPos+len(line), QtGui.QTextCursor.KeepAnchor)
+
+                isHidden = line.lstrip("-=").lstrip().startswith("?")
+                format.setFontItalic(isHidden)
+                format.setFontUnderline(line.startswith("="))
+                cursor.mergeCharFormat(format)
+            lineStartPos += len(line)

@@ -2,7 +2,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
 import qtlib
 from config import Config
-from infer import Inference, InferencePresetWidget, PromptWidget
+from infer import Inference, InferencePresetWidget, PromptWidget, PromptsHighlighter
 from .batch_task import BatchTask
 from .captionfile import CaptionFile
 from template_parser import TemplateVariableParser, VariableHighlighter
@@ -124,6 +124,8 @@ class BatchTransform(QtWidgets.QWidget):
         try:
             self.promptWidget.txtPrompts.blockSignals(True)
             self._highlighter.highlight(self.promptWidget.txtPrompts, self.txtPromptPreview, varPositions)
+            PromptsHighlighter.highlightPromptSeparators(self.promptWidget.txtPrompts)
+            PromptsHighlighter.highlightPromptSeparators(self.txtPromptPreview)
         finally:
             self.promptWidget.txtPrompts.blockSignals(False)
 
