@@ -11,6 +11,12 @@ def hsv_to_rgb(h: float, s: float, v: float):
     r, g, b = int(r*255), int(g*255), int(b*255)
     return '#{:02x}{:02x}{:02x}'.format(r, g, b)
 
+def get_hue(colorHex: str) -> float:
+    r, g, b = int(colorHex[1:3], 16), int(colorHex[3:5], 16), int(colorHex[5:7], 16)
+    h, s, v = colorsys.rgb_to_hsv(r, g, b)
+    return h
+
+
 def rnd01():
     return random.uniform(0.0, 1.0)
 

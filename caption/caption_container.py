@@ -1,6 +1,6 @@
 import os
-from PySide6 import QtWidgets
-from PySide6.QtCore import Signal, Slot
+from PySide6 import QtWidgets, QtGui
+from PySide6.QtCore import Signal, Slot, QSignalBlocker
 import qtlib
 from filelist import DataKeys
 from .caption_bubbles import CaptionBubbles
@@ -91,7 +91,7 @@ class CaptionContainer(QtWidgets.QWidget):
         layout.setRowStretch(3, 0)
         self.setLayout(layout)
 
-    
+
     def _setSaveButtonStyle(self, changed: bool):
         if changed:
             self.btnSave.setStyleSheet("border: 2px solid #bb3030; border-style: outset; border-radius: 4px; padding: 2px")
@@ -103,6 +103,7 @@ class CaptionContainer(QtWidgets.QWidget):
 
     def _onCaptionEdited(self):
         text = self.txtCaption.toPlainText()
+        self._highlight(text)
         self.bubbles.setText(text)
         self.ctx.groups.updateSelectedState(text)
 
@@ -110,15 +111,33 @@ class CaptionContainer(QtWidgets.QWidget):
         self.captionCache.setState(DataKeys.IconStates.Changed)
         self._setSaveButtonStyle(True)
 
+
+    def _highlight(self, text: str):
+        formats = self.ctx.groups.getCaptionCharFormats()
+        with QSignalBlocker(self.txtCaption):
+            cursor = self.txtCaption.textCursor()
+            cursor.setPosition(0)
+            cursor.movePosition(QtGui.QTextCursor.End, QtGui.QTextCursor.KeepAnchor)
+            cursor.setCharFormat(QtGui.QTextCharFormat())
+
+            start = 0
+            sep = self.captionSeparator.strip()
+            for caption in text.split(sep):
+                if format := formats.get(caption.strip()):
+                    cursor.setPosition(start)
+                    cursor.setPosition(start+len(caption), QtGui.QTextCursor.KeepAnchor)
+                    cursor.setCharFormat(format)
+                start += len(caption) + len(sep)
+
+
     def getSelectedCaption(self):
         text = self.txtCaption.toPlainText()
         splitSeparator = self.captionSeparator.strip()
         lenSplitSeparator = len(splitSeparator)
-        splitText = text.split(splitSeparator)
         cursorPos = self.txtCaption.textCursor().position()
 
         accumulatedLength = 0
-        for part in splitText:
+        for part in text.split(splitSeparator):
             accumulatedLength += len(part) + lenSplitSeparator
             if cursorPos < accumulatedLength:
                 return part.strip()
@@ -128,8 +147,11 @@ class CaptionContainer(QtWidgets.QWidget):
 
     @Slot()
     def onControlUpdated(self):
+        text = self.txtCaption.toPlainText()
+        self._highlight(text)
         self.bubbles.updateBubbles()
-        self.ctx.groups.updateSelectedState(self.txtCaption.toPlainText())
+        self.ctx.groups.updateSelectedState(text)
+        
 
     @Slot()
     def appendToCaption(self, text):
@@ -245,7 +267,7 @@ class CaptionContainer(QtWidgets.QWidget):
     def _onSeparatorChanged(self, separator):
         self.captionSeparator = separator
         self.bubbles.separator = separator
-        self.bubbles.updateBubbles()
+        self.onControlUpdated()
 
     def onFileChanged(self, currentFile):
         filename = os.path.normpath(currentFile)

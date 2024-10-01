@@ -1,5 +1,5 @@
 from typing import ForwardRef
-from PySide6 import QtWidgets
+from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot
 import qtlib, util
 
@@ -87,6 +87,20 @@ class CaptionGroups(QtWidgets.QWidget):
             colors[banned] = "#454545"
         return colors
 
+    def getCaptionCharFormats(self) -> dict[str, QtGui.QTextCharFormat]:
+        formats = {
+            caption: group.charFormat
+            for group in self.groups
+            for caption in group.captions
+        }
+
+        bannedFormat = QtGui.QTextCharFormat()
+        bannedFormat.setForeground(QtGui.QColor.fromHsvF(0, 0, 0.5))
+        for banned in self.ctx.settings.bannedCaptions:
+            formats[banned] = bannedFormat
+        
+        return formats
+
 
     def updateSelectedState(self, text):
         separator = self.ctx.settings.separator.strip()
@@ -122,6 +136,7 @@ class CaptionControlGroup(QtWidgets.QFrame):
     def __init__(self, groups, name):
         super().__init__()
         self.groups = groups
+        self.charFormat = QtGui.QTextCharFormat()
         self.setFrameStyle(QtWidgets.QFrame.Panel | QtWidgets.QFrame.Raised)
 
         self._buildHeaderWidget(name)
@@ -187,14 +202,20 @@ class CaptionControlGroup(QtWidgets.QFrame):
 
     def updateSelectedState(self, captions: set):
         color = self.color
+        for button in self.buttons:
+            text = button.text.strip()
+            if text in captions:
+                button.setStyleSheet("color: #fff; background-color: " + color + "; border: 3px solid " + color + "; border-radius: 8px")
+            else:
+                button.setStyleSheet("color: #fff; background-color: #161616; border: 3px solid #161616; border-radius: 8px")
+
+
+    @property
+    def buttons(self):
         for i in range(self.buttonLayout.count()):
             widget = self.buttonLayout.itemAt(i).widget()
             if widget and isinstance(widget, qtlib.EditablePushButton):
-                text = widget.text.strip()
-                if text in captions:
-                    widget.setStyleSheet("color: #fff; background-color: " + color + "; border: 3px solid " + color + "; border-radius: 8px")
-                else:
-                    widget.setStyleSheet("color: #fff; background-color: #161616; border: 3px solid #161616; border-radius: 8px")
+                yield widget
 
 
     @property
@@ -212,12 +233,22 @@ class CaptionControlGroup(QtWidgets.QFrame):
     @color.setter
     def color(self, color):
         self.txtColor.setText(color)
-        
+        self._updateCharFormat(color)
+
+
     @Slot()
     def _updateColor(self, color):
         if util.isValidColor(color):
             self.txtColor.setStyleSheet(f"color: #fff; background-color: {color}")
+            self._updateCharFormat(color)
             self.groups.ctx.controlUpdated.emit()
+    
+    def _updateCharFormat(self, color):
+        colorV = QtWidgets.QApplication.palette().color(QtGui.QPalette.ColorRole.Text).valueF()
+        colorV = max(colorV, 0.2)
+        color = QtGui.QColor.fromHsvF(util.get_hue(color), 0.35, colorV)
+        self.charFormat.setForeground(QtGui.QColor(color))
+
 
     @property
     def mutuallyExclusive(self) -> bool:
@@ -229,18 +260,12 @@ class CaptionControlGroup(QtWidgets.QFrame):
 
     @property
     def captions(self) -> list:
-        captions = []
-        for i in range(self.buttonLayout.count()):
-            widget = self.buttonLayout.itemAt(i).widget()
-            if widget and isinstance(widget, qtlib.EditablePushButton):
-                captions.append(widget.text)
-        return captions
+        return [button.text for button in self.buttons]
     
     def addCaption(self, text):
         # Check if caption already exists in group
-        for i in range(self.buttonLayout.count()):
-            widget = self.buttonLayout.itemAt(i).widget()
-            if widget and isinstance(widget, qtlib.EditablePushButton) and text == widget.text:
+        for button in self.buttons:
+            if text == button.text:
                 return False
 
         button = qtlib.EditablePushButton(text, lambda w: qtlib.setMonospace(w, 1.05))
