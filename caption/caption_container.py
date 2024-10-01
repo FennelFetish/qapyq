@@ -177,10 +177,9 @@ class CaptionContainer(QtWidgets.QWidget):
         text = self.txtCaption.toPlainText()
         splitSeparator = self.captionSeparator.strip()
         captions = [c.strip() for c in text.split(splitSeparator)]
-        captionGroups = self.ctx.groups.getCaptionGroups()
 
         # Filter mutually exclusive captions before removing duplicates: This will keep the last inserted caption
-        exclusiveCaptionGroups = [group.captions for group in captionGroups if group.mutuallyExclusive]
+        exclusiveCaptionGroups = [group.captions for group in self.ctx.groups.groups if group.mutuallyExclusive]
         exclusiveFilter = MutuallyExclusiveFilter(exclusiveCaptionGroups)
         captions = exclusiveFilter.filterCaptions(captions)
 
@@ -191,7 +190,7 @@ class CaptionContainer(QtWidgets.QWidget):
         banFilter = BannedCaptionFilter(self.ctx.settings.bannedCaptions)
         captions = banFilter.filterCaptions(captions)
 
-        allCaptionGroups = [group.captions for group in captionGroups]
+        allCaptionGroups = [group.captions for group in self.ctx.groups.groups]
         sortFilter = SortCaptionFilter(allCaptionGroups, self.ctx.settings.prefix, self.ctx.settings.suffix, self.captionSeparator)
         captions = sortFilter.filterCaptions(captions)
 
@@ -280,7 +279,7 @@ class CaptionCache:
         file = self.filelist.getCurrentFile()
         self.filelist.removeData(file, DataKeys.Caption)
     
-    def setState(self, state: DataKeys.IconStates):
+    def setState(self, state: DataKeys.IconStates | None):
         file = self.filelist.getCurrentFile()
         if state:
             self.filelist.setData(file, DataKeys.CaptionState, state)

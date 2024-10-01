@@ -33,6 +33,13 @@ class CaptionGroups(QtWidgets.QWidget):
         self.setLayout(self.groupLayout)
 
 
+    @property
+    def groups(self):
+        for i in range(self.groupLayout.count()):
+            widget = self.groupLayout.itemAt(i).widget()
+            if widget and isinstance(widget, CaptionControlGroup):
+                yield widget
+
     @Slot()
     def addGroup(self):
         group = CaptionControlGroup(self, "Group")
@@ -54,15 +61,9 @@ class CaptionGroups(QtWidgets.QWidget):
             self._emitUpdatedApplyRules()
 
     def removeAllGroups(self):
-        widgets = []
-        for i in range(self.groupLayout.count()):
-            widget = self.groupLayout.itemAt(i).widget()
-            if widget and isinstance(widget, CaptionControlGroup):
-                widgets.append(widget)
-
-        for w in widgets:
-            self.groupLayout.removeWidget(w)
-            w.deleteLater()
+        for widget in list(self.groups):
+            self.groupLayout.removeWidget(widget)
+            widget.deleteLater()
 
         self.ctx.controlUpdated.emit()
 
@@ -75,22 +76,12 @@ class CaptionGroups(QtWidgets.QWidget):
             self._emitUpdatedApplyRules()
 
 
-    def getCaptionGroups(self) -> list[CaptionControlGroup]:
-        groups = []
-        for i in range(self.groupLayout.count()):
-            g = self.groupLayout.itemAt(i).widget()
-            if g and isinstance(g, CaptionControlGroup):
-                groups.append(g)
-        return groups
-
     def getCaptionColors(self):
-        colors = {}
-        for i in range(self.groupLayout.count()):
-            group = self.groupLayout.itemAt(i).widget()
-            if group and isinstance(group, CaptionControlGroup):
-                groupColor = group.color
-                for caption in group.captions:
-                    colors[caption] = groupColor
+        colors = {
+            caption: group.color
+            for group in self.groups
+            for caption in group.captions
+        }
         
         for banned in self.ctx.settings.bannedCaptions:
             colors[banned] = "#454545"
@@ -100,11 +91,8 @@ class CaptionGroups(QtWidgets.QWidget):
     def updateSelectedState(self, text):
         separator = self.ctx.settings.separator.strip()
         captions = { c.strip() for c in text.split(separator) }
-
-        for i in range(self.groupLayout.count()):
-            group = self.groupLayout.itemAt(i).widget()
-            if group and isinstance(group, CaptionControlGroup):
-                group.updateSelectedState(captions)
+        for group in self.groups:
+            group.updateSelectedState(captions)
     
 
     def _emitUpdatedApplyRules(self):
@@ -113,10 +101,8 @@ class CaptionGroups(QtWidgets.QWidget):
 
 
     def saveToPreset(self, preset):
-        for i in range(self.groupLayout.count()):
-            group = self.groupLayout.itemAt(i).widget()
-            if group and isinstance(group, CaptionControlGroup):
-                preset.addGroup(group.name, group.color, group.mutuallyExclusive, group.captions)
+        for group in self.groups:
+            preset.addGroup(group.name, group.color, group.mutuallyExclusive, group.captions)
 
     def loadFromPreset(self, preset):
         self.removeAllGroups()
