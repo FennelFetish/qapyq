@@ -1,6 +1,6 @@
 import os
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, QSignalBlocker
 import qtlib
 from config import Config
 from infer import Inference
@@ -125,11 +125,8 @@ class BatchApply(QtWidgets.QWidget):
         preview, varPositions = self._parser.parseWithPositions(text)
         self.txtPreview.setPlainText(preview)
 
-        try:
-            self.txtTemplate.blockSignals(True)
+        with QSignalBlocker(self.txtTemplate):
             self._highlighter.highlight(self.txtTemplate, self.txtPreview, varPositions)
-        finally:
-            self.txtTemplate.blockSignals(False)
 
 
     @Slot()

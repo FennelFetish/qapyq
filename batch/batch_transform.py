@@ -1,5 +1,5 @@
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, QSignalBlocker
 import qtlib
 from config import Config
 from infer import Inference, InferencePresetWidget, PromptWidget, PromptsHighlighter
@@ -48,7 +48,7 @@ class BatchTransform(QtWidgets.QWidget):
         layout.setRowStretch(row, 3)
 
         row += 1
-        self.txtPromptPreview = QtWidgets.QTextEdit()
+        self.txtPromptPreview = QtWidgets.QPlainTextEdit()
         self.txtPromptPreview.setReadOnly(True)
         qtlib.setMonospace(self.txtPromptPreview)
         qtlib.setTextEditHeight(self.txtPromptPreview, 5, "min")
@@ -121,13 +121,10 @@ class BatchTransform(QtWidgets.QWidget):
         preview, varPositions = self._parser.parseWithPositions(text)
         self.txtPromptPreview.setPlainText(preview)
 
-        try:
-            self.promptWidget.txtPrompts.blockSignals(True)
+        with QSignalBlocker(self.promptWidget.txtPrompts):
             self._highlighter.highlight(self.promptWidget.txtPrompts, self.txtPromptPreview, varPositions)
             PromptsHighlighter.highlightPromptSeparators(self.promptWidget.txtPrompts)
             PromptsHighlighter.highlightPromptSeparators(self.txtPromptPreview)
-        finally:
-            self.promptWidget.txtPrompts.blockSignals(False)
 
 
     @Slot()

@@ -1,5 +1,5 @@
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, QSignalBlocker
 import superqt, copy
 from config import Config
 
@@ -271,13 +271,9 @@ class InferencePresetWidget(InferenceSettingsWidget):
     @Slot()
     def _onPresetListChanged(self, attr):
         if attr == self.configAttr:
-            try:
-                currentName = self.preset.currentText()
-                self.preset.blockSignals(True)
+            currentName = self.preset.currentText()
+            with QSignalBlocker(self.preset):
                 self.reloadPresetList(currentName)
-            finally:
-                self.preset.blockSignals(False)
-
             self.updateTitle( self.preset.currentText() )
 
 

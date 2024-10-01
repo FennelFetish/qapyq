@@ -1,5 +1,5 @@
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, QSignalBlocker
 from .gallery_grid import GalleryGrid
 import qtlib
 
@@ -63,15 +63,12 @@ class Gallery(QtWidgets.QWidget):
 
     @Slot()
     def onHeadersUpdated(self, headers: dict):
-        try:
-            self.rowToHeader.clear()
-            self.cboFolders.blockSignals(True)
+        self.rowToHeader.clear()
+        with QSignalBlocker(self.cboFolders):
             self.cboFolders.clear()
             for i, (folder, row) in enumerate(headers.items()):
                 self.cboFolders.addItem(folder, row)
                 self.rowToHeader[row] = i
-        finally:
-            self.cboFolders.blockSignals(False)
         
         self.updateComboboxFolder(self.scrollArea.verticalScrollBar().value())
         self.updateStatusBar(len(headers))
@@ -96,11 +93,8 @@ class Gallery(QtWidgets.QWidget):
                 break
             index = i
         
-        try:
-            self.cboFolders.blockSignals(True)
+        with QSignalBlocker(self.cboFolders):
             self.cboFolders.setCurrentIndex(index)
-        finally:
-            self.cboFolders.blockSignals(False)
 
     @Slot()
     def scrollTop(self):

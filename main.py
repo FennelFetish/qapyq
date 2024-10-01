@@ -9,6 +9,9 @@ from config import Config
 import qtlib
 import aux_window
 
+from typing import ForwardRef
+ImgTab = ForwardRef('ImgTab')
+
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, app):
@@ -51,6 +54,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabWidget.setCurrentIndex(index)
         tab.imgview.setFocus()
 
+    @property
+    def currentTab(self) -> ImgTab:
+        return self.tabWidget.currentWidget()
+
     @Slot()
     def switchTab(self):
         fullscreen = False
@@ -84,21 +91,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @Slot()
     def onTabChanged(self, index):
-        tab = self.tabWidget.currentWidget()
-        if self.galleryWindow:
-            self.galleryWindow.setTab(tab)
-        if self.batchWindow:
-            self.batchWindow.setTab(tab)
-        if self.captionWindow:
-            self.captionWindow.setTab(tab)
+        tab = self.currentTab
+        for win in [self.galleryWindow, self.batchWindow, self.captionWindow]:
+            if win:
+                win.setTab(tab)
 
         self.toolbar.setTool(tab.toolName if tab else None)
         
     
     @Slot()
     def setTool(self, toolName: str):
-        tab = self.tabWidget.currentWidget()
-        tab.setTool(toolName)
+        self.currentTab.setTool(toolName)
         self.toolbar.setTool(toolName)
 
     
@@ -108,7 +111,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._fullscreenTab.toggleFullscreen()
             self._fullscreenTab = None
         else:
-            self._fullscreenTab = self.tabWidget.currentWidget()
+            self._fullscreenTab = self.currentTab
             self._fullscreenTab.toggleFullscreen()
 
     
@@ -120,8 +123,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.galleryWindow.closed.connect(self.onGalleryClosed)
             self.galleryWindow.show()
 
-            tab = self.tabWidget.currentWidget()
-            self.galleryWindow.setTab(tab)
+            self.galleryWindow.setTab(self.currentTab)
             self.toolbar.actToggleGallery.setChecked(True)
         else:
             self.galleryWindow.close()
@@ -141,8 +143,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.batchWindow.closed.connect(self.onBatchWindowClosed)
             self.batchWindow.show()
 
-            tab = self.tabWidget.currentWidget()
-            self.batchWindow.setTab(tab)
+            self.batchWindow.setTab(self.currentTab)
             self.toolbar.actToggleBatch.setChecked(True)
         else:
             self.batchWindow.close()
@@ -162,8 +163,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.captionWindow.closed.connect(self.onCaptionWindowClosed)
             self.captionWindow.show()
 
-            tab = self.tabWidget.currentWidget()
-            self.captionWindow.setTab(tab)
+            self.captionWindow.setTab(self.currentTab)
             self.toolbar.actToggleCaption.setChecked(True)
         else:
             self.captionWindow.close()
@@ -193,13 +193,26 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 class MainMenu(QtWidgets.QMenu):
-    def __init__(self, mainWindow):
+    def __init__(self, mainWindow: MainWindow):
         super().__init__()
+
+        # https://doc.qt.io/qt-6/qt.html#Key-enum
 
         actFullscreen = QtGui.QAction("Toggle &Fullscreen", self)
         actFullscreen.setShortcutContext(Qt.ApplicationShortcut)
         actFullscreen.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_F))
         actFullscreen.triggered.connect(mainWindow.toggleFullscreen)
+
+        # TODO: Don't focus MainWindow when using this shortcuts
+        # actNextImage = QtGui.QAction("Next Image", self)
+        # actNextImage.setShortcutContext(Qt.ApplicationShortcut)
+        # actNextImage.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_PageUp))
+        # actNextImage.triggered.connect(lambda: mainWindow.currentTab.filelist.setNextFile())
+
+        # actPrevImage = QtGui.QAction("Previous Image", self)
+        # actPrevImage.setShortcutContext(Qt.ApplicationShortcut)
+        # actPrevImage.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_PageDown))
+        # actPrevImage.triggered.connect(lambda: mainWindow.currentTab.filelist.setPrevFile())
 
         actAddTab = QtGui.QAction("New Tab", self)
         actAddTab.setShortcutContext(Qt.ApplicationShortcut)
@@ -231,6 +244,8 @@ class MainMenu(QtWidgets.QMenu):
         actQuit.triggered.connect(mainWindow.close)
 
         self.addAction(actFullscreen)
+        # self.addAction(actNextImage)
+        # self.addAction(actPrevImage)
         self.addSeparator()
         self.addAction(actAddTab)
         self.addAction(actSwitchTab)

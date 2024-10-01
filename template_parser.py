@@ -176,7 +176,7 @@ class VariableHighlighter:
     def __init__(self):
         self.formats = qtlib.ColorCharFormats()
 
-    def highlight(self, source: QtWidgets.QTextEdit, target: QtWidgets.QTextEdit, positions) -> None:
+    def highlight(self, source: QtWidgets.QPlainTextEdit, target: QtWidgets.QPlainTextEdit, positions) -> None:
         sourceCursor = source.textCursor()
         sourceCursor.setPosition(0)
 

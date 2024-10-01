@@ -1,5 +1,5 @@
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Slot, Signal, QObject
+from PySide6.QtCore import Qt, Slot, Signal, QObject, QSignalBlocker
 from typing import List, Dict
 from config import Config
 import qtlib
@@ -57,7 +57,7 @@ class PromptWidget(QtWidgets.QWidget):
         self.lblPrompts = QtWidgets.QLabel("Prompt(s):")
         layout.addWidget(self.lblPrompts, row, 0, Qt.AlignTop)
 
-        self.txtPrompts = QtWidgets.QTextEdit()
+        self.txtPrompts = QtWidgets.QPlainTextEdit()
         qtlib.setMonospace(self.txtPrompts)
         qtlib.setShowWhitespace(self.txtPrompts)
         layout.addWidget(self.txtPrompts, row, 1, 1, 4)
@@ -158,12 +158,9 @@ class PromptWidget(QtWidgets.QWidget):
     @Slot()
     def _onPresetListChanged(self, attr):
         if attr == self.presetsAttr:
-            try:
-                self.preset.blockSignals(True)
+            with QSignalBlocker(self.preset):
                 self.reloadPresetList(self.preset.currentText())
                 self._onPresetNameEdited(self.preset.currentText()) # Preset name may change during reload
-            finally:
-                self.preset.blockSignals(False)
 
     @Slot()
     def _onPresetNameEdited(self, text: str) -> None:
@@ -255,7 +252,7 @@ class PromptsHighlighter(QtGui.QSyntaxHighlighter):
 
 
     @staticmethod
-    def highlightPromptSeparators(textEdit: QtWidgets.QTextEdit):
+    def highlightPromptSeparators(textEdit: QtWidgets.QPlainTextEdit):
         format = QtGui.QTextCharFormat()
         format.setFontWeight(700)
 

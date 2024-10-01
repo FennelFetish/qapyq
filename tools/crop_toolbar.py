@@ -33,7 +33,7 @@ class CropToolBar(QtWidgets.QToolBar):
         layout.addWidget(self._buildRotation())
         layout.addWidget(self._buildExport())
 
-        self.txtPathSample = QtWidgets.QTextEdit()
+        self.txtPathSample = QtWidgets.QPlainTextEdit()
         self.txtPathSample.setReadOnly(True)
         qtlib.setMonospace(self.txtPathSample, 0.9)
         layout.addWidget(self.txtPathSample)
