@@ -43,8 +43,12 @@ class CaptionFile:
         return self.tags.get(name, None)
 
     
+    def jsonExists(self) -> bool:
+        return os.path.exists(self.jsonPath)
+
+
     def loadFromJson(self) -> bool:
-        if os.path.exists(self.jsonPath):
+        if self.jsonExists():
             with open(self.jsonPath, 'r') as file:
                 data = json.load(file)
             if Keys.VERSION not in data:
@@ -59,7 +63,7 @@ class CaptionFile:
 
 
     def updateToJson(self) -> bool:
-        if os.path.exists(self.jsonPath):
+        if self.jsonExists():
             with open(self.jsonPath, 'r') as file:
                 data = json.load(file)
             if Keys.VERSION not in data:
@@ -90,7 +94,7 @@ class CaptionFile:
         return True
 
 
-    def saveToJson(self):
+    def saveToJson(self) -> None:
         data = dict()
         data[Keys.VERSION] = CaptionFile.VERSION
 

@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, List, Dict
 from llama_cpp import Llama
 from .backend import InferenceBackend
 
@@ -24,34 +24,34 @@ class LlamaCppBackend(InferenceBackend):
     #     self.llm.close()
 
 
-    def answer(self, prompts: dict, systemPrompt=None, rounds=1):
+    def answer(self, prompts: List[Dict[str, str]], systemPrompt=None) -> Dict[str, str]:
         def getUserContent(prompt: str, index: int):
             return prompt.strip()
 
-        return self._tryAnswer(getUserContent, prompts, systemPrompt, rounds)
+        return self._tryAnswer(getUserContent, prompts, systemPrompt)
 
 
-    def _tryAnswer(self, userContentFunc: Callable, prompts: dict, systemPrompt, rounds):
+    def _tryAnswer(self, userContentFunc: Callable, prompts: List[Dict[str, str]], systemPrompt) -> Dict[str, str]:
         try:
-            return self._answer(userContentFunc, prompts, systemPrompt, rounds)
+            return self._answer(userContentFunc, prompts, systemPrompt)
         except ValueError as ex:
             if str(ex).startswith("System role not supported"): # TODO: Always same error string?
                 # Fallback: Include system prompt in first user message
                 prompts = self.mergeSystemPrompt(prompts, systemPrompt)
-                return self._answer(userContentFunc, prompts, None, rounds)
+                return self._answer(userContentFunc, prompts, None)
             else:
                 raise ex
 
 
-    def _answer(self, userContentFunc: Callable, prompts: dict, systemPrompt: str | None, rounds: int):
+    def _answer(self, userContentFunc: Callable, prompts: List[Dict[str, str]], systemPrompt: str | None) -> Dict[str, str]:
         answers = {}
 
-        for r in range(rounds):
+        for conversation in prompts:
             messages = []
             if systemPrompt:
                 messages.append( {"role": "system", "content": systemPrompt.strip()} )
 
-            for i, (name, prompt) in enumerate(prompts.items()):
+            for i, (name, prompt) in enumerate(conversation.items()):
                 messages.append( {"role": "user", "content": userContentFunc(prompt, i)} )
 
                 completion = self.llm.create_chat_completion(
@@ -64,9 +64,6 @@ class LlamaCppBackend(InferenceBackend):
                 msg = completion["choices"][0]["message"]
                 answer = msg["content"].strip()
                 messages.append( {"role": msg["role"], "content": answer} )
-
-                if r > 0:
-                    name = f"{name}_round{r}"
                 answers[name] = answer
         
         return answers
@@ -85,7 +82,7 @@ class LlamaCppVisionBackend(LlamaCppBackend):
         self.stop.append("ASSISTANT:")
 
 
-    def caption(self, imgPath, prompts: dict, systemPrompt=None, rounds=1) -> dict:
+    def caption(self, imgPath, prompts: List[Dict[str, str]], systemPrompt=None) -> Dict[str, str]:
         imgURI = self.imageToBase64(imgPath)
         def getUserContent(prompt: str, index: int):
             if index == 0:
@@ -96,4 +93,4 @@ class LlamaCppVisionBackend(LlamaCppBackend):
             else:
                 return prompt.strip()
 
-        return self._tryAnswer(getUserContent, prompts, systemPrompt, rounds)
+        return self._tryAnswer(getUserContent, prompts, systemPrompt)

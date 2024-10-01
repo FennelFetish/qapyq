@@ -1,7 +1,8 @@
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QObject
+from typing import List, Dict
 from config import Config
-import qtlib, util
+import qtlib
 
 
 class PromptSettingsSignals(QObject):
@@ -81,8 +82,61 @@ class PromptWidget(QtWidgets.QWidget):
     def prompts(self) -> str:
         return self.txtPrompts.toPlainText()
 
-    def getParsedPrompts(self, defaultName=None) -> dict[str, str]:
-        return util.parsePrompts(self.txtPrompts.toPlainText(), defaultName)
+
+    def getParsedPrompts(self, defaultName: str = None, rounds: int = 1) -> List[Dict[str, str]]:
+        if not defaultName:
+            defaultName = "caption"
+
+        currentName: str = defaultName
+        allNames = set()
+
+        currentPrompt: List[str] = list()               # List of text lines
+        currentConversation: Dict[str, str] = dict()    # Ordered list of prompts, name -> prompt
+        conversations: List[Dict[str, str]] = list()    # Ordered list of conversations
+        
+        text = self.txtPrompts.toPlainText()
+        for line in text.splitlines():
+            line = line.strip()
+
+            if line.startswith("---") or line.startswith("==="):
+                # New prompt
+                if currentPrompt:
+                    currentConversation[currentName] = "\n".join(currentPrompt)
+                    currentPrompt.clear()
+                    allNames.add(currentName)
+                currentName = self._getPromptName(line, defaultName, allNames)
+
+                # New conversation
+                if line[0] == '=' and currentConversation:
+                    conversations.append(currentConversation)
+                    currentConversation = dict()
+            else:
+                currentPrompt.append(line)
+
+        if currentPrompt:
+            currentConversation[currentName] = "\n".join(currentPrompt)
+        if currentConversation:
+            conversations.append(currentConversation)
+
+        # Apply rounds
+        conversations.extend([
+            {f"{name}_round{r}": prompt for name, prompt in conv.items()}
+            for r in range(2, rounds+1)
+            for conv in conversations
+        ])
+        return conversations
+
+    @staticmethod
+    def _getPromptName(line: str, defaultName: str, usedNames: set) -> str:
+        newName = line.strip("-=").strip()
+        newName = newName if newName else defaultName
+
+        name = newName
+        appendNr = 2
+        while name in usedNames:
+            name = f"{newName}_{appendNr}"
+            appendNr += 1
+        return name
 
 
     def reloadPresetList(self, selectName: str | None):
@@ -171,6 +225,7 @@ class PromptWidget(QtWidgets.QWidget):
 
 
 
+# TODO: Grey out (?) blocks starting with '?'
 class PromptsHighlighter(QtGui.QSyntaxHighlighter):
     SEPARATOR = "---"
 

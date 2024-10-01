@@ -21,6 +21,8 @@ class TemplateVariableParser:
         self._promptPrefix = "prompts."
         self._tagPrefix = "tags."
 
+        self.missingVars = list()
+
     
     def setup(self, imgPath: str, captionFile: CaptionFile):
         self.imgPath = imgPath
@@ -35,7 +37,8 @@ class TemplateVariableParser:
 
 
     def parse(self, text: str) -> str:
-        #text = text.replace('\r\n', '\n') # FIXME: Mess with positions
+        self.missingVars.clear()
+        #text = text.replace('\r\n', '\n') # FIXME: Required on windows? Messes with positions
         text = self._patternVars.sub(self._replace, text)
         if self.stripAround:
             text = text.strip()
@@ -56,7 +59,8 @@ class TemplateVariableParser:
         start = 0
         promptLen = 0
 
-        #text = text.replace('\r\n', '\n') # FIXME: Mess with positions
+        self.missingVars.clear()
+        #text = text.replace('\r\n', '\n') # FIXME: Required on windows? Messes with positions
         for match in self._patternVars.finditer(text):
             value = self._getValue(match.group(1))
             lenValue = len(value)
@@ -84,33 +88,23 @@ class TemplateVariableParser:
 
         return prompt, positions
 
-    def _stripAround(self, text: str, positions: list) -> list[str]:
+    def _stripAround(self, text: str, positions: list) -> str:
         # Strip left
-        lSpaces = 0
-        for char in text:
-            if not char.isspace():
-                break
-            lSpaces += 1
-
-        if lSpaces > 0:
-            text = text[lSpaces:]
+        lenOrig = len(text)
+        text = text.lstrip()
+        lenStripL = len(text)
+        if lSpaces := lenOrig - lenStripL:
             for pos in positions:
                 pos[2] = max(pos[2]-lSpaces, 0)
                 pos[3] = max(pos[3]-lSpaces, 0)
-        
-        # Strip right
-        rSpaces = 0
-        for char in reversed(text):
-            if not char.isspace():
-                break
-            rSpaces += 1
 
-        if rSpaces > 0:
-            text = text[:-rSpaces]
-            maxPos = len(text)
+        # Strip right
+        text = text.rstrip()
+        lenStripR = len(text)
+        if lenStripL - lenStripR:
             for pos in positions:
-                pos[2] = min(pos[2], maxPos)
-                pos[3] = min(pos[3], maxPos)
+                pos[2] = min(pos[2], lenStripR)
+                pos[3] = min(pos[3], lenStripR)
 
         return text
 
@@ -169,6 +163,7 @@ class TemplateVariableParser:
         if value:
             return value
         else:
+            self.missingVars.append(var)
             return "" if optional else "{{" + varOrig + "}}"
 
     def _getFolderName(self) -> str:

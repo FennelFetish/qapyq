@@ -1,6 +1,7 @@
 from transformers import AutoModelForCausalLM, set_seed
 from PIL import Image
 import torch
+from typing import List, Dict
 from .backend import InferenceBackend
 
 
@@ -44,33 +45,30 @@ class Ovis16Backend(InferenceBackend):
         }
 
 
-    def caption(self, imgPath: str, prompts: dict[str, str], systemPrompt: str = None, rounds=1) -> dict:
+    def caption(self, imgPath: str, prompts: List[Dict[str, str]], systemPrompt: str = None) -> Dict[str, str]:
         prompts = self.preparePrompts(prompts, systemPrompt)
         image = Image.open(imgPath)
         answers = dict()
 
         set_seed(self.randomSeed())
 
-        for r in range(rounds):
+        for conversation in prompts:
             messages = []
 
-            for i, (name, prompt) in enumerate(prompts.items()):
+            for name, prompt in conversation.items():
                 messages.append( {"from": "human", "value": prompt.strip()} )
 
                 answer = self._caption(messages, image)
                 answer = answer.strip()
                 messages.append( {"from": "gpt", "value": answer} )
-
-                if r > 0:
-                    name = f"{name}_round{r}"
                 answers[name] = answer
 
         return answers
 
 
     # TODO: Only encode image once during first iteration?
-    def _caption(self, conversation, image) -> str:
-        prompt, input_ids, pixel_values = self.model.preprocess_inputs(conversation, [image])
+    def _caption(self, messages, image) -> str:
+        prompt, input_ids, pixel_values = self.model.preprocess_inputs(messages, [image])
         attention_mask = torch.ne(input_ids, self.text_tokenizer.pad_token_id)
         input_ids = input_ids.unsqueeze(0).to(device=self.model.device)
         attention_mask = attention_mask.unsqueeze(0).to(device=self.model.device)
@@ -81,12 +79,13 @@ class Ovis16Backend(InferenceBackend):
             return self.text_tokenizer.decode(output_ids, skip_special_tokens=True)
 
 
-    def preparePrompts(self, prompts: dict, systemPrompt: str) -> dict:
+    def preparePrompts(self, prompts: List[Dict[str, str]], systemPrompt: str) -> List[Dict[str, str]]:
         if systemPrompt:
             prompts = self.mergeSystemPrompt(prompts, systemPrompt)
         
-        name, prompt  = next(iter(prompts.items())) # First entry
-        prompts[name] = f'<image>\n{prompt}'
+        for conv in prompts:
+            name, prompt  = next(iter(conv.items())) # First entry
+            conv[name] = f'<image>\n{prompt}'
         return prompts
 
 
@@ -120,7 +119,7 @@ class Ovis16Backend(InferenceBackend):
         deviceMap["visual_tokenizer.backbone.vision_model.encoder.layers.26"] = cuda
 
         # print("mkDeviceMap:")
-        # for k, v in device_map.items():
+        # for k, v in deviceMap.items():
         #     print(f"{k} -> {v}")
 
         return deviceMap

@@ -5,6 +5,7 @@ from transformers import AutoModel, AutoTokenizer, set_seed
 #from decord import VideoReader, cpu
 from PIL import Image
 #from accelerate import infer_auto_device_map, init_empty_weights
+from typing import List, Dict
 from .backend import InferenceBackend
 
 
@@ -124,20 +125,17 @@ class InternVL2Backend(InferenceBackend):
         }
 
 
-    def caption(self, imgPath: str, prompts: dict, systemPrompt: str = None, rounds=1) -> dict:
+    def caption(self, imgPath: str, prompts: List[Dict[str, str]], systemPrompt: str = None) -> Dict[str, str]:
         pixel_values = load_image(imgPath, max_num=12).to(torch.bfloat16).cuda()
         answers = dict()
 
         self.model.system_message = systemPrompt.strip() if systemPrompt else ""
         set_seed(self.randomSeed())
         
-        for r in range(rounds):
+        for conversation in prompts:
             history = None
-            for i, (name, prompt) in enumerate(prompts.items()):
+            for name, prompt in conversation.items():
                 answer, history = self.model.chat(self.tokenizer, pixel_values, prompt, generation_config=self.configDict, history=history, return_history=True)
-
-                if r > 0:
-                    name = f"{name}_round{r}"
                 answers[name] = answer
 
         return answers

@@ -13,7 +13,7 @@ class BatchCaption(QtWidgets.QWidget):
         self.tab = tab
         self.log = logSlot
         self.progressBar: QtWidgets.QProgressBar = progressBar
-        self.statusBar: QtWidgets.QStatusBar = statusBar
+        self.statusBar: qtlib.ColoredMessageStatusBar = statusBar
 
         self.inferSettings = InferencePresetWidget()
         self.tagSettings = TagPresetWidget()
@@ -36,7 +36,8 @@ class BatchCaption(QtWidgets.QWidget):
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 0)
-        layout.setColumnStretch(2, 1)
+        layout.setColumnStretch(2, 0)
+        layout.setColumnStretch(3, 1)
 
         row = 0
         self.promptWidget = PromptWidget("promptCaptionPresets", "promptCaptionDefault")
@@ -45,7 +46,7 @@ class BatchCaption(QtWidgets.QWidget):
         qtlib.setTextEditHeight(self.promptWidget.txtPrompts, 10, "min")
         self.promptWidget.layout().setRowStretch(1, 1)
         self.promptWidget.layout().setRowStretch(2, 6)
-        layout.addWidget(self.promptWidget, row, 0, 1, 3)
+        layout.addWidget(self.promptWidget, row, 0, 1, 4)
 
         row += 1
         self.txtTargetName = QtWidgets.QLineEdit("caption")
@@ -53,8 +54,14 @@ class BatchCaption(QtWidgets.QWidget):
         layout.addWidget(QtWidgets.QLabel("Default storage key:"), row, 0)
         layout.addWidget(self.txtTargetName, row, 1)
 
+        self.cboOverwriteMode = QtWidgets.QComboBox()
+        self.cboOverwriteMode.addItem("Overwrite all keys", "all")
+        self.cboOverwriteMode.addItem("Only write missing keys", "missing")
+        #self.cboOverwriteMode.addItem("Skip file if default key exists", "skip-default-exists")
+        layout.addWidget(self.cboOverwriteMode, row, 2)
+
         self.chkStorePrompts = QtWidgets.QCheckBox("Store Prompts")
-        layout.addWidget(self.chkStorePrompts, row, 2)
+        layout.addWidget(self.chkStorePrompts, row, 3)
 
         row += 1
         self.spinRounds = QtWidgets.QSpinBox()
@@ -64,7 +71,7 @@ class BatchCaption(QtWidgets.QWidget):
         layout.addWidget(self.spinRounds, row, 1)
 
         row += 1
-        layout.addWidget(self.inferSettings, row, 0, 1, 3)
+        layout.addWidget(self.inferSettings, row, 0, 1, 4)
 
         groupBox = QtWidgets.QGroupBox("Generate Captions")
         groupBox.setCheckable(True)
@@ -86,6 +93,9 @@ class BatchCaption(QtWidgets.QWidget):
         qtlib.setMonospace(self.txtTagTargetName)
         layout.addWidget(QtWidgets.QLabel("Storage key:"), 1, 0)
         layout.addWidget(self.txtTagTargetName, 1, 1)
+
+        self.chkTagSkipExisting = QtWidgets.QCheckBox("Skip file if key exists")
+        layout.addWidget(self.chkTagSkipExisting, 1, 2)
 
         # TODO: Apply rules. Or separate batch tab? Also: Merge tags from different models? (easy with the remove duplicate option)
         # Separate tab probably better
@@ -118,9 +128,6 @@ class BatchCaption(QtWidgets.QWidget):
             self.btnStart.setText("Abort")
 
             self._task = BatchCaptionTask(self.log, self.tab.filelist)
-            self._task.rounds = self.spinRounds.value()
-            self._task.storePrompts = self.chkStorePrompts.isChecked()
-
             self._task.signals.progress.connect(self.onProgress)
             self._task.signals.progressMessage.connect(self.onProgressMessage)
             self._task.signals.done.connect(self.onFinished)
@@ -128,16 +135,20 @@ class BatchCaption(QtWidgets.QWidget):
 
             if self.captionGroup.isChecked():
                 storeName = self.txtTargetName.text().strip()
-                self._task.prompts = self.promptWidget.getParsedPrompts(storeName)
+                rounds = self.spinRounds.value()
+                self._task.prompts = self.promptWidget.getParsedPrompts(storeName, rounds)
+
                 self._task.systemPrompt = self.promptWidget.systemPrompt.strip()
                 self._task.config = self.inferSettings.getInferenceConfig()
+                self._task.overwriteMode = self.cboOverwriteMode.currentData()
+                self._task.storePrompts = self.chkStorePrompts.isChecked()
 
             if self.tagGroup.isChecked():
                 self._task.tagConfig = self.tagSettings.getInferenceConfig()
                 self._task.tagName = self.txtTagTargetName.text().strip()
+                self._task.tagSkipExisting = self.chkTagSkipExisting.isChecked()
 
             Inference().queueTask(self._task)
-
 
     @Slot()
     def onFinished(self, numFiles):
@@ -175,16 +186,17 @@ class BatchCaptionTask(BatchTask):
         self.prompts      = None
         self.systemPrompt = None
         self.config       = None
+        self.overwriteMode = "all"
+        self.storePrompts: bool = False
 
         self.tagConfig    = None
         self.tagName      = None
-
-        self.rounds: int = 1
-        self.storePrompts: bool = False
+        self.tagSkipExisting = False
 
         self.doCaption = False
-        self.doTag = False
+        self.doTag     = False
         self.inferProc = None
+        self.writeKeys = None
 
 
     def runPrepare(self):
@@ -198,6 +210,9 @@ class BatchCaptionTask(BatchTask):
             self.signals.progressMessage.emit("Loading caption model ...")
             if not self.inferProc.setupCaption(self.config):
                 raise RuntimeError("Couldn't load caption model")
+            
+            self.writeKeys = {k for conv in self.prompts for k in conv.keys() if not k.startswith('?')}
+
         if self.doTag:
             self.signals.progressMessage.emit("Loading tag model ...")
             if not self.inferProc.setupTag(self.tagConfig):
@@ -208,36 +223,62 @@ class BatchCaptionTask(BatchTask):
 
     def runProcessFile(self, imgFile: str) -> str:
         captionFile = CaptionFile(imgFile)
-
-        if self.doCaption:
-            self.runCaption(imgFile, captionFile)
-
-        if self.doTag:
-            self.runTags(imgFile, captionFile)
-
-        if captionFile.updateToJson():
-            return captionFile.jsonPath
-        else:
-            self.log(f"WARNING: Failed to save captions to {captionFile.jsonPath}")
+        if captionFile.jsonExists() and not captionFile.loadFromJson():
+            self.log(f"WARNING: Failed to load captions from {captionFile.jsonPath}")
             return None
 
-    def runCaption(self, imgFile: str, captionFile: CaptionFile):
-        answers = self.inferProc.caption(imgFile, self.prompts, self.systemPrompt, self.rounds)
+        changed = False
+        if self.doCaption:
+            changed |= self.runCaption(imgFile, captionFile)
+        if self.doTag:
+            changed |= self.runTags(imgFile, captionFile)
+
+        if changed:
+            captionFile.saveToJson()
+            return captionFile.jsonPath
+        return None
+
+
+    def runCaption(self, imgFile: str, captionFile: CaptionFile) -> bool:
+        writeKeys = set(self.writeKeys)
+        if self.overwriteMode == "missing":
+            for name in captionFile.captions.keys():
+                writeKeys.discard(name)
+
+        if not writeKeys:
+            return False
+
+        answers = self.inferProc.caption(imgFile, self.prompts, self.systemPrompt)
         if not answers:
             self.log(f"WARNING: No captions returned for {imgFile}")
-            return
+            return False
 
+        changed = False
         for name, caption in answers.items():
-            if caption:
-                captionFile.addCaption(name, caption)
-                if self.storePrompts:
-                    captionFile.addPrompt(name, self.prompts.get(name))
-            else:
+            if not caption:
                 self.log(f"WARNING: Caption '{name}' is empty for {imgFile}, ignoring")
-        
-    def runTags(self, imgFile: str, captionFile: CaptionFile):
+                continue
+            if name not in writeKeys:
+                continue
+
+            captionFile.addCaption(name, caption)
+            changed = True
+
+            if self.storePrompts:
+                prompt = next((conv[name] for conv in self.prompts if name in conv), None)
+                captionFile.addPrompt(name, prompt)
+                
+        return changed
+
+
+    def runTags(self, imgFile: str, captionFile: CaptionFile) -> bool:
+        if self.tagSkipExisting and captionFile.getTags(self.tagName):
+            return False
+
         tags = self.inferProc.tag(imgFile)
         if tags:
             captionFile.addTags(self.tagName, tags)
+            return True
         else:
             self.log(f"WARNING: No tags returned for {imgFile}, ignoring")
+            return False

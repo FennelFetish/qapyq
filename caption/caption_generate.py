@@ -2,6 +2,7 @@ import os, traceback
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject
 from infer import Inference, InferencePresetWidget, TagPresetWidget, PromptWidget
+from filelist import DataKeys
 import qtlib
 
 
@@ -95,13 +96,19 @@ class CaptionGenerate(QtWidgets.QWidget):
     def onGenerated(self, imgPath, text):
         self.btnGenerate.setEnabled(True)
 
-        if imgPath == self.ctx.tab.imgview.image.filepath:
-            if text:
-                mode = self.cboMode.currentText()
-                self.ctx.captionGenerated.emit(text, mode)
-                self.statusBar.showColoredMessage("Done", True)
-            else:
-                self.statusBar.showColoredMessage("Finished with empty result", False, 0)
+        if not text:
+            self.statusBar.showColoredMessage("Finished with empty result", False, 0)
+            return
+        self.statusBar.showColoredMessage("Done", True)
+
+        filelist = self.ctx.tab.filelist
+        if imgPath == filelist.getCurrentFile():
+            mode = self.cboMode.currentText()
+            self.ctx.captionGenerated.emit(text, mode)
+        else:
+            filelist.setData(imgPath, DataKeys.Caption, text)
+            filelist.setData(imgPath, DataKeys.CaptionState, DataKeys.IconStates.Changed)
+        
 
     @Slot()
     def onFail(self, errorMsg):
@@ -156,7 +163,10 @@ class InferenceTask(QRunnable):
 
         self.signals.progress.emit("Generating caption ...")
         captions = inferProc.caption(self.imgPath, self.prompts, self.systemPrompt)
-        parts = (cap for name, cap in captions.items())
+        if not captions:
+            raise RuntimeError("Error during inference")
+
+        parts = (cap for name, cap in captions.items() if not name.startswith('?'))
         return os.linesep.join(parts)
 
     def runTags(self, inferProc) -> str:

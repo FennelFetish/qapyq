@@ -136,15 +136,16 @@ class BatchTransform(QtWidgets.QWidget):
             self.btnStart.setText("Abort")
 
             storeName = self.txtTargetName.text().strip()
-            prompts = self.promptWidget.getParsedPrompts(storeName)
+            rounds = self.spinRounds.value()
+            prompts = self.promptWidget.getParsedPrompts(storeName, rounds)
+            
             sysPrompt = self.promptWidget.systemPrompt.strip()
-
             config = self.inferSettings.getInferenceConfig()
 
             self._task = BatchTransformTask(self.log, self.tab.filelist, prompts, sysPrompt, config)
             self._task.stripAround = self.chkStripAround.isChecked()
             self._task.stripMulti = self.chkStripMulti.isChecked()
-            self._task.rounds = self.spinRounds.value()
+
             self._task.signals.progress.connect(self.onProgress)
             self._task.signals.progressMessage.connect(self.onProgressMessage)
             self._task.signals.done.connect(self.onFinished)
@@ -190,7 +191,6 @@ class BatchTransformTask(BatchTask):
 
         self.stripAround  = True
         self.stripMulti   = False
-        self.rounds: int  = 1
 
 
     def runPrepare(self):
@@ -213,21 +213,35 @@ class BatchTransformTask(BatchTask):
             self.log(f"WARNING: Couldn't read captions from {captionFile.jsonPath}")
             return None
 
-        self.parser.setup(imgFile, captionFile)
-        prompts = {name: self.parser.parse(prompt) for name, prompt in self.prompts.items()}
-
-        answers = self.inferProc.answer(prompts, self.systemPrompt, self.rounds)
-        if answers:
-            for name, caption in answers.items():
-                if caption:
-                    captionFile.addCaption(name, caption)
-                else:
-                    self.log(f"WARNING: Caption '{name}' is empty for {imgFile}, ignoring")
-        else:
+        prompts = self.parsePrompts(imgFile, captionFile)
+        answers = self.inferProc.answer(prompts, self.systemPrompt)
+        if not answers:
             self.log(f"WARNING: No answers returned for {imgFile}")
-
-        if captionFile.updateToJson():
-            return captionFile.jsonPath
-        else:
-            self.log(f"WARNING: Failed to save caption to {captionFile.jsonPath}")
             return None
+
+        for name, caption in answers.items():
+            if name.startswith('?'):
+                continue
+
+            if caption:
+                captionFile.addCaption(name, caption)
+            else:
+                self.log(f"WARNING: Caption '{name}' is empty for {imgFile}, ignoring")
+
+        captionFile.saveToJson()
+        return captionFile.jsonPath
+
+
+    def parsePrompts(self, imgFile, captionFile) -> list:
+        self.parser.setup(imgFile, captionFile)
+
+        prompts = list()
+        missingVars = list()
+        for conv in self.prompts:
+            prompts.append( {name: self.parser.parse(prompt) for name, prompt in conv.items()} )
+            missingVars.extend(self.parser.missingVars)
+
+        if missingVars:
+            self.log(f"WARNING: {imgFile} is missing values for variables: {', '.join(missingVars)}")
+
+        return prompts

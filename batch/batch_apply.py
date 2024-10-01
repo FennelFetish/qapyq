@@ -204,6 +204,9 @@ class BatchApplyTask(BatchTask):
         self.parser.setup(imgFile, captionFile)
         caption = self.parser.parse(self.template)
 
+        if self.parser.missingVars:
+            self.log(f"WARNING: {imgFile} is missing values for variables: {', '.join(self.parser.missingVars)}")
+
         with open(txtFile, 'w') as file:
             file.write(caption)
         return txtFile

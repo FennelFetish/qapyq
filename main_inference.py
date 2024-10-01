@@ -116,7 +116,7 @@ def handleMessage(protocol) -> bool:
         # TODO: Cache image
         case "caption":
             img = msg["img"]
-            captions = getBackend().caption(img, msg["prompts"], msg["sysPrompt"], int(msg["rounds"]))
+            captions = getBackend().caption(img, msg["prompts"], msg["sysPrompt"])
             protocol.writeMessage({
                 "cmd": cmd,
                 "img": img,
@@ -134,7 +134,7 @@ def handleMessage(protocol) -> bool:
             })
 
         case "answer":
-            answers = getBackend().answer(msg["prompts"], msg["sysPrompt"], int(msg["rounds"]))
+            answers = getBackend().answer(msg["prompts"], msg["sysPrompt"])
             protocol.writeMessage({
                 "cmd": cmd,
                 "answers": answers

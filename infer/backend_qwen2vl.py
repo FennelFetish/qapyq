@@ -1,6 +1,7 @@
 from transformers import Qwen2VLForConditionalGeneration, AutoProcessor, GenerationConfig, set_seed
 import torch
 from PIL import Image
+from typing import List, Dict
 from .backend import InferenceBackend
 
 
@@ -38,18 +39,18 @@ class Qwen2VLBackend(InferenceBackend):
         )
 
 
-    def caption(self, imgPath: str, prompts: dict, systemPrompt: str = None, rounds=1) -> dict:
+    def caption(self, imgPath: str, prompts: List[Dict[str, str]], systemPrompt: str = None) -> List[Dict[str, str]]:
         image = Image.open(imgPath)
         answers = dict()
 
         set_seed(self.randomSeed())
 
-        for r in range(rounds):
+        for conversation in prompts:
             messages = []
             if systemPrompt:
                 messages.append( {"role": "system", "content": systemPrompt.strip()} )
 
-            for i, (name, prompt) in enumerate(prompts.items()):
+            for i, (name, prompt) in enumerate(conversation.items()):
                 messages.append( {"role": "user", "content": self._getUserContent(prompt, i)} )
                 inputText = self.processor.apply_chat_template(messages, add_generation_prompt=True)
 
@@ -66,9 +67,6 @@ class Qwen2VLBackend(InferenceBackend):
 
                 answer = outputText[0].strip()
                 messages.append( {"role": "assistant", "content": answer} )
-
-                if r > 0:
-                    name = f"{name}_round{r}"
                 answers[name] = answer
 
         return answers
@@ -83,9 +81,6 @@ class Qwen2VLBackend(InferenceBackend):
         else:
             return prompt.strip()
 
-
-    def answer(self, prompts: dict, systemPrompt=None, rounds=1) -> dict:
-        return {}
 
 
 # import sys, os

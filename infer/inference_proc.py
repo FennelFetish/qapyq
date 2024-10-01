@@ -92,14 +92,13 @@ class InferenceProcess(metaclass=Singleton):
             return self._blockReadMessage("cmd")
 
 
-    def caption(self, imgPath, prompts: dict, sysPrompt=None, rounds=1) -> dict:
+    def caption(self, imgPath, prompts: dict, sysPrompt=None) -> dict[str, str]:
         with QMutexLocker(self.mutex):
             self._writeMessage({
                 "cmd": "caption",
                 "img": imgPath,
                 "prompts": prompts,
-                "sysPrompt": sysPrompt,
-                "rounds": rounds
+                "sysPrompt": sysPrompt
             })
             return self._blockReadMessage("captions")
 
@@ -111,13 +110,12 @@ class InferenceProcess(metaclass=Singleton):
             })
             return self._blockReadMessage("tags")
 
-    def answer(self, prompts: dict, sysPrompt=None, rounds=1) -> dict:
+    def answer(self, prompts: dict, sysPrompt=None) -> dict[str, str]:
         with QMutexLocker(self.mutex):
             self._writeMessage({
                 "cmd": "answer",
                 "prompts": prompts,
-                "sysPrompt": sysPrompt,
-                "rounds": rounds
+                "sysPrompt": sysPrompt
             })
             return self._blockReadMessage("answers")
 

@@ -21,44 +21,9 @@ def rnd(min: float, max: float):
     return random.uniform(min, max)
 
 
+validColorPattern = re.compile(r'^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$')
 def isValidColor(color):
-    colorPattern = re.compile(r'^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$')
-    return colorPattern.match(color) is not None
-
-
-# TODO: Don't return caption names starting with '?'
-# TODO: Start new message history with '===name==='
-def parsePrompts(text: str, defaultName: str = None) -> dict:
-    if not defaultName:
-        defaultName = "caption"
-
-    namePattern = r"^---(.*?)---$"
-    currentName = defaultName
-    currentPrompt = []
-    prompts = {}
-    
-    lines = text.splitlines()
-    for line in lines:
-        line = line.strip()
-
-        if line.startswith("---"):
-            if currentPrompt:
-                prompts[currentName] = "\n".join(currentPrompt)
-                currentPrompt.clear()
-
-            nameMatch = re.match(namePattern, line)
-            newName = nameMatch.group(1).strip() if nameMatch else defaultName
-            currentName = newName
-
-            appendNr = 1
-            while currentName in prompts:
-                currentName = f"{newName}_{appendNr}"
-                appendNr += 1
-        else:
-            currentPrompt.append(line)
-
-    prompts[currentName] = "\n".join(currentPrompt)
-    return prompts
+    return validColorPattern.match(color) is not None
 
 
 class Singleton(type):
