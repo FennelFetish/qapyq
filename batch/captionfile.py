@@ -1,5 +1,6 @@
 import json
 import os
+from typing import Dict
 
 
 class Keys:
@@ -14,32 +15,32 @@ class CaptionFile:
 
 
     def __init__(self, imgPath):
-        self.captions = dict()
-        self.prompts = dict()
-        self.tags = dict()
+        self.captions: Dict[str, str] = dict()
+        self.prompts: Dict[str, str] = dict()
+        self.tags: Dict[str, str] = dict()
 
         path, ext = os.path.splitext(imgPath)
         self.jsonPath = f"{path}.json"
 
 
-    def addCaption(self, name, caption):
+    def addCaption(self, name: str, caption: str):
         self.captions[name] = caption
 
-    def getCaption(self, name):
+    def getCaption(self, name: str):
         return self.captions.get(name, None)
 
 
-    def addPrompt(self, name, prompt):
+    def addPrompt(self, name: str, prompt: str):
         self.prompts[name] = prompt
 
-    def getPrompt(self, name):
+    def getPrompt(self, name: str):
         return self.prompts.get(name, None)
 
 
-    def addTags(self, name, tags):
+    def addTags(self, name: str, tags: str):
         self.tags[name] = tags
 
-    def getTags(self, name):
+    def getTags(self, name: str):
         return self.tags.get(name, None)
 
     

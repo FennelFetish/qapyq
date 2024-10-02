@@ -234,9 +234,6 @@ class MainMenu(QtWidgets.QMenu):
 
         actModelConfig = QtGui.QAction("Model Settings...", self)
         actModelConfig.triggered.connect(self.showModelSettings)
-
-        actPromptConfig = QtGui.QAction("Prompt Presets...", self)
-        actPromptConfig.setEnabled(False)
         
         actQuit = QtGui.QAction("&Quit", self)
         actQuit.setShortcutContext(Qt.ApplicationShortcut)
@@ -252,7 +249,6 @@ class MainMenu(QtWidgets.QMenu):
         self.addAction(actCloseTab)
         self.addSeparator()
         self.addAction(actModelConfig)
-        self.addAction(actPromptConfig)
         self.addAction(actClearVram)
         self.addSeparator()
         self.addAction(actQuit)
@@ -295,7 +291,7 @@ class MainToolBar(QtWidgets.QToolBar):
         self.actToggleBatch.setCheckable(True)
         self.actToggleBatch.triggered.connect(mainWindow.toggleBatchWindow)
 
-        self.actToggleCaption = self.addAction("Captions")
+        self.actToggleCaption = self.addAction("Caption")
         self.actToggleCaption.setCheckable(True)
         self.actToggleCaption.triggered.connect(mainWindow.toggleCaptionWindow)
 

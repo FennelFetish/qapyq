@@ -19,13 +19,10 @@ def setTextEditHeight(textEdit, numRows, mode=None):
         textEdit.setFixedHeight(height)
 
 def setMonospace(textWidget, fontSizeFactor=1.0, bold=False):
-    font = textWidget.font()
-    font.setStyleHint(QtGui.QFont.Monospace)
-    font.setFamily("monospace")
+    font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
     font.setBold(bold)
     if fontSizeFactor != 1.0:
-        fontSize = font.pointSizeF() * fontSizeFactor
-        font.setPointSizeF(fontSize)
+        font.setPointSizeF(font.pointSizeF() * fontSizeFactor)
     textWidget.setFont(font)
 
 def setShowWhitespace(textEdit):
@@ -34,6 +31,8 @@ def setShowWhitespace(textEdit):
     opt.setFlags(QtGui.QTextOption.ShowTabsAndSpaces)
     doc.setDefaultTextOption(opt)
 
+def setBoldFormat(charFormat: QtGui.QTextCharFormat, bold=True) -> None:
+    charFormat.setFontWeight(700 if bold else 400)
 
 
 class DynamicLineEdit(QtWidgets.QLineEdit):

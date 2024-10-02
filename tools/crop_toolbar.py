@@ -330,4 +330,4 @@ class CropToolBar(QtWidgets.QToolBar):
         export.suffix = f"_{self.spinW.value()}x{self.spinH.value()}"
 
         examplePath = export.getExportPath(self._cropTool._imgview.image.filepath)
-        self.txtPathSample.setText(examplePath)
+        self.txtPathSample.setPlainText(examplePath)

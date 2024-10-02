@@ -57,7 +57,7 @@ class PromptWidget(QtWidgets.QWidget):
         self.lblPrompts = QtWidgets.QLabel("Prompt(s):")
         layout.addWidget(self.lblPrompts, row, 0, Qt.AlignTop)
 
-        self.txtPrompts = QtWidgets.QPlainTextEdit()
+        self.txtPrompts = QtWidgets.QTextEdit()
         qtlib.setMonospace(self.txtPrompts)
         qtlib.setShowWhitespace(self.txtPrompts)
         layout.addWidget(self.txtPrompts, row, 1, 1, 4)
@@ -245,7 +245,7 @@ class PromptsHighlighter(QtGui.QSyntaxHighlighter):
         self.setCurrentBlockState(formatIndex)
 
         format = self.formats.getFormat(formatIndex)
-        format.setFontWeight(700 if isPromptTitle else 200)
+        qtlib.setBoldFormat(format, isPromptTitle)
         format.setFontUnderline(isConvTitle)
         format.setFontItalic(isHidden)
         self.setFormat(0, len(text), format)
@@ -254,7 +254,7 @@ class PromptsHighlighter(QtGui.QSyntaxHighlighter):
     @staticmethod
     def highlightPromptSeparators(textEdit: QtWidgets.QPlainTextEdit):
         format = QtGui.QTextCharFormat()
-        format.setFontWeight(700)
+        qtlib.setBoldFormat(format)
 
         text = textEdit.toPlainText()
         cursor = textEdit.textCursor()

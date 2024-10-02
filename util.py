@@ -12,7 +12,12 @@ def hsv_to_rgb(h: float, s: float, v: float):
     return '#{:02x}{:02x}{:02x}'.format(r, g, b)
 
 def get_hue(colorHex: str) -> float:
-    r, g, b = int(colorHex[1:3], 16), int(colorHex[3:5], 16), int(colorHex[5:7], 16)
+    if len(colorHex) == 7:
+        r, g, b = int(colorHex[1:3], 16), int(colorHex[3:5], 16), int(colorHex[5:7], 16)
+    elif len(colorHex) == 4:
+        r, g, b = int(colorHex[1], 16), int(colorHex[2], 16), int(colorHex[3], 16)
+    else:
+        r, g, b = 0, 0, 0
     h, s, v = colorsys.rgb_to_hsv(r, g, b)
     return h
 

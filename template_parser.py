@@ -190,7 +190,7 @@ class VariableHighlighter:
             varIndex += 1
 
             # Source (Variables)
-            format.setFontWeight(700)
+            qtlib.setBoldFormat(format)
             sourceCursor.setPosition(srcStart, QtGui.QTextCursor.KeepAnchor)
             sourceCursor.setCharFormat(defaultFormat)
 
@@ -200,7 +200,7 @@ class VariableHighlighter:
             sourceCursor.setPosition(srcEnd)
 
             # Target (Replacement)
-            format.setFontWeight(200)
+            qtlib.setBoldFormat(format, False)
             targetCursor.setPosition(targetStart, QtGui.QTextCursor.KeepAnchor)
             targetCursor.setCharFormat(defaultFormat)
 

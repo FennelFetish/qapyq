@@ -1,4 +1,6 @@
 class Config:
+    version                 = "1.0"
+
     # Paths
     pathConfig              = "./pyimgset_config.json"
     pathExport              = "."
@@ -106,6 +108,8 @@ class Config:
     def save(cls):
         import json
         data = dict()
+        data["version"]                     = cls.version
+
         data["path_export"]                 = cls.pathExport
         data["path_debug_load"]             = cls.pathDebugLoad
 
