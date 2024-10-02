@@ -20,13 +20,13 @@ class BatchContainer(QtWidgets.QTabWidget):
         log = self.logWidget.addLog
 
         captionWidget        = BatchCaption(tab, log, self.progressbar, self.statusBar)
-        self.transformWidget = BatchTransform(tab, log, self.progressbar, self.statusBar)
         self.rulesWidget     = BatchRules(tab, log, self.progressbar, self.statusBar)
+        self.transformWidget = BatchTransform(tab, log, self.progressbar, self.statusBar)
         self.applyWidget     = BatchApply(tab, log, self.progressbar, self.statusBar)
 
         self.addTab(captionWidget, "Caption (json)")
-        self.addTab(self.transformWidget, "Transform (json → json)") # LLM process json
         self.addTab(self.rulesWidget, "Rules (json → json)")
+        self.addTab(self.transformWidget, "Transform (json → json)")
         self.addTab(self.applyWidget, "Apply (json → txt)")
         self.addTab(self.logWidget, "Log")
 

@@ -1,10 +1,10 @@
 import os
 from typing import ForwardRef
-from PySide6 import QtWidgets
+from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot
 from caption import CaptionPreset, CaptionRulesProcessor
 from config import Config
-import qtlib
+import qtlib, util
 from .batch_task import BatchTask
 from .captionfile import CaptionFile
 from infer import Inference
@@ -22,23 +22,25 @@ class BatchRules(QtWidgets.QWidget):
         self.statusBar: qtlib.ColoredMessageStatusBar = statusBar
 
         self.bannedSeparator = ", "
-        self._defaultPresetPath = Config.pathExport
-
         self.captionFile: CaptionFile = None
         self._task = None
+        self._defaultPresetPath = Config.pathExport
+        self._highlightFormats = dict()
+        self._updateEnabled = True
 
         self.btnStart = QtWidgets.QPushButton("Start Batch Rules")
         self.btnStart.clicked.connect(self.startStop)
 
-        rulesWidget = self._buildRules()
-        groupsWidget = self._buildGroups()
-        settingsWidget = self._buildSettings()
-
         layout = QtWidgets.QVBoxLayout()
-        layout.addWidget(rulesWidget)
-        layout.addWidget(groupsWidget)
-        layout.addWidget(settingsWidget)
+        layout.addWidget(self._buildRules())
+        layout.addWidget(self._buildGroups())
+        layout.addWidget(self._buildSettings())
         layout.addWidget(self.btnStart)
+
+        layout.setStretch(0, 0)
+        layout.setStretch(1, 0)
+        layout.setStretch(2, 1)
+        layout.setStretch(3, 0)
         self.setLayout(layout)
 
 
@@ -52,20 +54,19 @@ class BatchRules(QtWidgets.QWidget):
         layout.setColumnStretch(3, 0)
 
         row = 0
-        btnLoadFromFile = QtWidgets.QPushButton("Load from file...")
-        btnLoadFromFile.clicked.connect(self.loadFromFile)
-        layout.addWidget(btnLoadFromFile, row, 0)
-
-        btnLoadFromCaption = QtWidgets.QPushButton("Load from Caption window")
-        btnLoadFromCaption.clicked.connect(self.loadFromCaptionWindow)
-        layout.addWidget(btnLoadFromCaption, row, 1)
-
-        row += 1
         self.txtSeparator = QtWidgets.QLineEdit(", ")
         self.txtSeparator.editingFinished.connect(self.updatePreview)
         qtlib.setMonospace(self.txtSeparator)
         layout.addWidget(QtWidgets.QLabel("Separator:"), row, 0)
         layout.addWidget(self.txtSeparator, row, 1)
+
+        btnLoadFromCaption = QtWidgets.QPushButton("Import from Caption window")
+        btnLoadFromCaption.clicked.connect(self.loadFromCaptionWindow)
+        layout.addWidget(btnLoadFromCaption, row, 2, Qt.AlignRight)
+
+        btnLoadFromFile = QtWidgets.QPushButton("Load from file...")
+        btnLoadFromFile.clicked.connect(self.loadFromFile)
+        layout.addWidget(btnLoadFromFile, row, 3)
 
         row += 1
         self.txtPrefix = QtWidgets.QPlainTextEdit()
@@ -97,7 +98,7 @@ class BatchRules(QtWidgets.QWidget):
 
         row += 1
         self.txtBanned = QtWidgets.QPlainTextEdit()
-        self.txtBanned.textChanged.connect(self.updatePreview)
+        self.txtBanned.textChanged.connect(self._onBannedChanged)
         qtlib.setMonospace(self.txtBanned)
         qtlib.setTextEditHeight(self.txtBanned, 5)
         qtlib.setShowWhitespace(self.txtBanned)
@@ -118,7 +119,6 @@ class BatchRules(QtWidgets.QWidget):
     def _buildGroups(self):
         self.groupLayout = QtWidgets.QVBoxLayout()
         self.groupLayout.setSpacing(8)
-        self.groupLayout.setContentsMargins(0, 0, 0, 0)
         groupBox = QtWidgets.QGroupBox("Groups")
         groupBox.setLayout(self.groupLayout)
         return groupBox
@@ -165,13 +165,16 @@ class BatchRules(QtWidgets.QWidget):
         layout.addWidget(self.chkSkipExisting, row, 3)
 
         row += 1
+        layout.setRowStretch(row, 1)
+
         self.txtPreview = QtWidgets.QPlainTextEdit()
         self.txtPreview.setReadOnly(True)
         qtlib.setMonospace(self.txtPreview)
-        qtlib.setTextEditHeight(self.txtPreview, 5)
+        qtlib.setTextEditHeight(self.txtPreview, 3, mode="min")
         qtlib.setShowWhitespace(self.txtPreview)
         layout.addWidget(QtWidgets.QLabel("Preview:"), row, 0, Qt.AlignTop)
         layout.addWidget(self.txtPreview, row, 1, 1, 3)
+
 
         groupBox = QtWidgets.QGroupBox("Batch Settings")
         groupBox.setLayout(layout)
@@ -181,6 +184,16 @@ class BatchRules(QtWidgets.QWidget):
     def onFileChanged(self, currentFile):
         self.captionFile = CaptionFile(currentFile)
         self.captionFile.loadFromJson()
+        self.updatePreview()
+
+
+    @property
+    def bannedCaptions(self) -> list[str]:
+        return [b.strip() for b in self.txtBanned.toPlainText().split(self.bannedSeparator.strip())]
+
+    @Slot()
+    def _onBannedChanged(self):
+        self._updateHighlightFormats()
         self.updatePreview()
 
 
@@ -206,19 +219,24 @@ class BatchRules(QtWidgets.QWidget):
 
 
     def applyPreset(self, preset):
-        self.txtPrefix.setPlainText(preset.prefix)
-        self.txtSuffix.setPlainText(preset.suffix)
-        self.txtSeparator.setText(preset.separator)
-        self.chkPrefixSeparator.setChecked(preset.prefixSeparator)
-        self.chkSuffixSeparator.setChecked(preset.suffixSeparator)
-        self.chkRemoveDup.setChecked(preset.removeDuplicates)
-        self.txtBanned.setPlainText( self.bannedSeparator.join(preset.banned) )
+        try:
+            self._updateEnabled = False
+            
+            self.txtPrefix.setPlainText(preset.prefix)
+            self.txtSuffix.setPlainText(preset.suffix)
+            self.txtSeparator.setText(preset.separator)
+            self.chkPrefixSeparator.setChecked(preset.prefixSeparator)
+            self.chkSuffixSeparator.setChecked(preset.suffixSeparator)
+            self.chkRemoveDup.setChecked(preset.removeDuplicates)
+            self.txtBanned.setPlainText( self.bannedSeparator.join(preset.banned) )
 
-        self.removeAllGroups()
-        for group in preset.groups:
-            self.addGroup(group.name, group.color, group.mutuallyExclusive, group.captions)
-        
-        self.updatePreview()
+            self.removeAllGroups()
+            for group in preset.groups:
+                self.addGroup(group.name, group.color, group.mutuallyExclusive, group.captions)
+        finally:
+            self._updateEnabled = True
+            self._updateHighlightFormats()
+            self.updatePreview()
 
     @Slot()
     def loadFromFile(self):
@@ -236,6 +254,8 @@ class BatchRules(QtWidgets.QWidget):
         if captionContainer := self.tab.getWindowContent("caption"):
             preset = captionContainer.ctx.settings.getPreset()
             self.applyPreset(preset)
+        else:
+            self.statusBar.showColoredMessage("Caption window not open", False)
 
 
     def setupProcessor(self) -> CaptionRulesProcessor:
@@ -249,11 +269,9 @@ class BatchRules(QtWidgets.QWidget):
         if suffix and self.chkSuffixSeparator.isChecked():
             suffix = separator + suffix
 
-        bannedCaptions = [b.strip() for b in self.txtBanned.toPlainText().split(self.bannedSeparator.strip())]
-
         rulesProcessor = CaptionRulesProcessor()
         rulesProcessor.setup(prefix, suffix, separator, self.chkRemoveDup.isChecked())
-        rulesProcessor.setBannedCaptions(bannedCaptions)
+        rulesProcessor.setBannedCaptions(self.bannedCaptions)
         rulesProcessor.setCaptionGroups(
             (group.captions for group in self.groups),
             (group.captions for group in self.groups if group.mutuallyExclusive)
@@ -262,8 +280,10 @@ class BatchRules(QtWidgets.QWidget):
 
     @Slot()
     def updatePreview(self):
-        text = None
+        if not self._updateEnabled:
+            return
 
+        text = None
         srcType = self.cboSrcType.currentText()
         srcKey = self.txtSourceKey.text().strip()
         if srcType == "tags":
@@ -278,6 +298,38 @@ class BatchRules(QtWidgets.QWidget):
             text = ""
         
         self.txtPreview.setPlainText(text)
+        self._highlight(text)
+
+    def _highlight(self, text: str):
+        cursor = self.txtPreview.textCursor()
+        cursor.setPosition(0)
+        cursor.movePosition(QtGui.QTextCursor.End, QtGui.QTextCursor.KeepAnchor)
+        cursor.setCharFormat(QtGui.QTextCharFormat())
+
+        start = 0
+        sep = self.txtSeparator.text().strip()
+        for caption in text.split(sep):
+            if format := self._highlightFormats.get(caption.strip()):
+                cursor.setPosition(start)
+                cursor.setPosition(start+len(caption), QtGui.QTextCursor.KeepAnchor)
+                cursor.setCharFormat(format)
+            start += len(caption) + len(sep)
+
+    def _updateHighlightFormats(self):
+        colorV = QtWidgets.QApplication.palette().color(QtGui.QPalette.ColorRole.Text).valueF()
+        colorV = max(colorV, 0.2)
+
+        self._highlightFormats.clear()
+        for group in self.groups:
+            groupFormat = QtGui.QTextCharFormat()
+            groupFormat.setForeground(QtGui.QColor.fromHsvF(util.get_hue(group.color), 0.35, colorV))
+            for cap in group.captions:
+                self._highlightFormats[cap] = groupFormat
+        
+        bannedFormat = QtGui.QTextCharFormat()
+        bannedFormat.setForeground(QtGui.QColor.fromHsvF(0, 0, 0.5))
+        for cap in self.bannedCaptions:
+            self._highlightFormats[cap] = bannedFormat
 
 
     @Slot()
@@ -333,18 +385,16 @@ class BatchRules(QtWidgets.QWidget):
 class BatchRulesGroup(QtWidgets.QWidget):
     def __init__(self, title: str, color: str, exclusive: bool, captions: list, updatePreview):
         super().__init__()
+        self.color = color
         self.captions = list(captions)
 
-        layout = QtWidgets.QGridLayout()
-        layout.setContentsMargins(8, 0, 0, 0)
-        layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
-        layout.setColumnStretch(0, 0)
-        layout.setColumnStretch(1, 1)
+        layout = QtWidgets.QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
 
         lblTitle = QtWidgets.QLabel(f"{title}:")
-        lblTitle.setContentsMargins(2, 4, 2, 2)
+        lblTitle.setMinimumWidth(Config.batchWinLegendWidth)
         qtlib.setMonospace(lblTitle, 1.0, True)
-        layout.addWidget(lblTitle, 0, 0, Qt.AlignTop)
+        layout.addWidget(lblTitle, 0, Qt.AlignTop)
 
         flowLayout = qtlib.FlowLayout(spacing=1)
 
@@ -361,7 +411,7 @@ class BatchRulesGroup(QtWidgets.QWidget):
 
         self.flowWidget = QtWidgets.QWidget()
         self.flowWidget.setLayout(flowLayout)
-        layout.addWidget(self.flowWidget, 0, 1)
+        layout.addWidget(self.flowWidget, 1)
 
         self.setLayout(layout)
 
