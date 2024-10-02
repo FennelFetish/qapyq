@@ -8,6 +8,8 @@ class CaptionPreset:
         self.prefix = ""
         self.suffix = ""
         self.separator = ", "
+        self.prefixSeparator = True
+        self.suffixSeparator = True
 
         self.autoApplyRules : bool = False
         self.removeDuplicates : bool = True
@@ -30,8 +32,10 @@ class CaptionPreset:
             "prefix": self.prefix,
             "suffix": self.suffix,
             "separator": self.separator,
-            "autoApplyRules": self.autoApplyRules,
-            "removeDuplicates": self.removeDuplicates,
+            "prefix_separator": self.prefixSeparator,
+            "suffix_separator": self.suffixSeparator,
+            "auto_apply_rules": self.autoApplyRules,
+            "remove_duplicates": self.removeDuplicates,
             "groups": groupData,
             "banned": self.banned
         }
@@ -48,8 +52,10 @@ class CaptionPreset:
         self.prefix             = data.get("prefix", "")
         self.suffix             = data.get("suffix", "")
         self.separator          = data.get("separator", ", ")
-        self.autoApplyRules     = data.get("autoApplyRules", False)
-        self.removeDuplicates   = data.get("removeDuplicates", True)
+        self.prefixSeparator    = data.get("prefix_separator", True)
+        self.suffixSeparator    = data.get("suffix_separator", True)
+        self.autoApplyRules     = data.get("auto_apply_rules", False)
+        self.removeDuplicates   = data.get("remove_duplicates", True)
         self.banned             = data.get("banned", [])
 
         if "groups" in data:
@@ -57,7 +63,7 @@ class CaptionPreset:
                 self.addGroup(
                     group.get("name", "Group"),
                     group.get("color", "#000"),
-                    group.get("mutuallyExclusive", False),
+                    group.get("mutually_exclusive", False),
                     group.get("captions", [])
                 )
 
@@ -75,6 +81,6 @@ class CaptionPresetGroup:
         return {
             "name": self.name,
             "color": self.color,
-            "mutuallyExclusive": self.mutuallyExclusive,
+            "mutually_exclusive": self.mutuallyExclusive,
             "captions": captionData
         }

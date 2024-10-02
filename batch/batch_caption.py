@@ -21,10 +21,13 @@ class BatchCaption(QtWidgets.QWidget):
         self.captionGroup = self._buildCaptionSettings()
         self.tagGroup = self._buildTagSettings()
 
+        self.btnStart = QtWidgets.QPushButton("Start Batch Caption")
+        self.btnStart.clicked.connect(self.startStop)
+
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.captionGroup)
         layout.addWidget(self.tagGroup)
-        layout.addWidget(self._buildGenerateSettings())
+        layout.addWidget(self.btnStart)
         self.setLayout(layout)
 
         self._task = None
@@ -104,20 +107,6 @@ class BatchCaption(QtWidgets.QWidget):
         groupBox.setCheckable(True)
         groupBox.setLayout(layout)
         return groupBox
-
-
-    def _buildGenerateSettings(self):
-        layout = QtWidgets.QGridLayout()
-        layout.setAlignment(Qt.AlignTop)
-        layout.setColumnStretch(0, 0)
-
-        self.btnStart = QtWidgets.QPushButton("Start Batch Caption")
-        self.btnStart.clicked.connect(self.startStop)
-        layout.addWidget(self.btnStart, 1, 0, 1, 2)
-
-        widget = QtWidgets.QWidget()
-        widget.setLayout(layout)
-        return widget
 
 
     @Slot()
@@ -267,7 +256,7 @@ class BatchCaptionTask(BatchTask):
             if self.storePrompts:
                 prompt = next((conv[name] for conv in self.prompts if name in conv), None)
                 captionFile.addPrompt(name, prompt)
-                
+        
         return changed
 
 

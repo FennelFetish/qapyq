@@ -18,9 +18,12 @@ class BatchTransform(QtWidgets.QWidget):
 
         self.inferSettings = InferencePresetWidget("inferLLMPresets")
 
+        self.btnStart = QtWidgets.QPushButton("Start Batch Transform")
+        self.btnStart.clicked.connect(self.startStop)
+
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self._buildLLMSettings())
-        layout.addWidget(self._buildTransformSettings())
+        layout.addWidget(self.btnStart)
         self.setLayout(layout)
 
         self._parser = None
@@ -89,20 +92,6 @@ class BatchTransform(QtWidgets.QWidget):
         groupBox = QtWidgets.QGroupBox("LLM")
         groupBox.setLayout(layout)
         return groupBox
-
-
-    def _buildTransformSettings(self):
-        layout = QtWidgets.QGridLayout()
-        layout.setAlignment(Qt.AlignTop)
-        layout.setColumnStretch(0, 0)
-
-        self.btnStart = QtWidgets.QPushButton("Start Batch Transform")
-        self.btnStart.clicked.connect(self.startStop)
-        layout.addWidget(self.btnStart, 1, 0, 1, 2)
-
-        widget = QtWidgets.QWidget()
-        widget.setLayout(layout)
-        return widget
 
 
     def onFileChanged(self, currentFile):
@@ -218,20 +207,24 @@ class BatchTransformTask(BatchTask):
             self.log(f"WARNING: No answers returned for {imgFile}")
             return None
 
+        changed = False
         for name, caption in answers.items():
             if name.startswith('?'):
                 continue
 
             if caption:
                 captionFile.addCaption(name, caption)
+                changed = True
             else:
                 self.log(f"WARNING: Caption '{name}' is empty for {imgFile}, ignoring")
 
-        captionFile.saveToJson()
-        return captionFile.jsonPath
+        if changed:
+            captionFile.saveToJson()
+            return captionFile.jsonPath
+        return None
 
 
-    def parsePrompts(self, imgFile, captionFile) -> list:
+    def parsePrompts(self, imgFile: str, captionFile: CaptionFile) -> list:
         self.parser.setup(imgFile, captionFile)
 
         prompts = list()
@@ -241,6 +234,6 @@ class BatchTransformTask(BatchTask):
             missingVars.extend(self.parser.missingVars)
 
         if missingVars:
-            self.log(f"WARNING: {imgFile} is missing values for variables: {', '.join(missingVars)}")
+            self.log(f"WARNING: {captionFile.jsonPath} is missing values for variables: {', '.join(missingVars)}")
 
         return prompts

@@ -1,6 +1,7 @@
 from PySide6 import QtWidgets
 from .batch_caption import BatchCaption
 from .batch_transform import BatchTransform
+from .batch_rules import BatchRules
 from .batch_apply import BatchApply
 from .batch_log import BatchLog
 import qtlib
@@ -20,10 +21,12 @@ class BatchContainer(QtWidgets.QTabWidget):
 
         captionWidget        = BatchCaption(tab, log, self.progressbar, self.statusBar)
         self.transformWidget = BatchTransform(tab, log, self.progressbar, self.statusBar)
+        self.rulesWidget     = BatchRules(tab, log, self.progressbar, self.statusBar)
         self.applyWidget     = BatchApply(tab, log, self.progressbar, self.statusBar)
 
         self.addTab(captionWidget, "Caption (json)")
         self.addTab(self.transformWidget, "Transform (json → json)") # LLM process json
+        self.addTab(self.rulesWidget, "Rules (json → json)")
         self.addTab(self.applyWidget, "Apply (json → txt)")
         self.addTab(self.logWidget, "Log")
 
@@ -33,6 +36,7 @@ class BatchContainer(QtWidgets.QTabWidget):
 
     def onFileChanged(self, currentFile):
         self.transformWidget.onFileChanged(currentFile)
+        self.rulesWidget.onFileChanged(currentFile)
         self.applyWidget.onFileChanged(currentFile)
         self.logWidget.onFileChanged(currentFile)
 

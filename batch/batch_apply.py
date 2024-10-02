@@ -19,10 +19,13 @@ class BatchApply(QtWidgets.QWidget):
 
         self.backupSettings = self._buildBackupSettings()
 
+        self.btnStart = QtWidgets.QPushButton("Start Batch Apply")
+        self.btnStart.clicked.connect(self.startStop)
+
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self._buildFormatSettings())
         layout.addWidget(self.backupSettings)
-        layout.addWidget(self._buildApplySettings())
+        layout.addWidget(self.btnStart)
         self.setLayout(layout)
 
         self._parser = None
@@ -93,19 +96,6 @@ class BatchApply(QtWidgets.QWidget):
         groupBox.setChecked(False)
         groupBox.setLayout(layout)
         return groupBox
-
-    def _buildApplySettings(self):
-        layout = QtWidgets.QGridLayout()
-        layout.setAlignment(Qt.AlignTop)
-        layout.setColumnStretch(0, 0)
-
-        self.btnStart = QtWidgets.QPushButton("Start Batch Apply")
-        self.btnStart.clicked.connect(self.startStop)
-        layout.addWidget(self.btnStart, 1, 0, 1, 2)
-
-        widget = QtWidgets.QWidget()
-        widget.setLayout(layout)
-        return widget
 
 
     def onFileChanged(self, currentFile):
@@ -202,7 +192,7 @@ class BatchApplyTask(BatchTask):
         caption = self.parser.parse(self.template)
 
         if self.parser.missingVars:
-            self.log(f"WARNING: {imgFile} is missing values for variables: {', '.join(self.parser.missingVars)}")
+            self.log(f"WARNING: {captionFile.jsonPath} is missing values for variables: {', '.join(self.parser.missingVars)}")
 
         with open(txtFile, 'w') as file:
             file.write(caption)

@@ -4,11 +4,12 @@ from PySide6.QtCore import Signal, Slot, QSignalBlocker
 import qtlib
 from filelist import DataKeys
 from .caption_bubbles import CaptionBubbles
-from .caption_filter import BannedCaptionFilter, DuplicateCaptionFilter, MutuallyExclusiveFilter, PrefixSuffixFilter, SortCaptionFilter
+from .caption_filter import CaptionRulesProcessor
 from .caption_generate import CaptionGenerate
 from .caption_groups import CaptionGroups
 from .caption_settings import CaptionSettings
 
+# TODO: Ctrl+S saves current caption
 
 class CaptionContext(QtWidgets.QTabWidget):
     captionClicked      = Signal(str)
@@ -196,33 +197,21 @@ class CaptionContainer(QtWidgets.QWidget):
 
     @Slot()
     def applyRules(self):
+        rulesProcessor = CaptionRulesProcessor()
+        rulesProcessor.setup(self.ctx.settings.prefix, self.ctx.settings.suffix, self.captionSeparator, self.ctx.settings.isRemoveDuplicates)
+        rulesProcessor.setBannedCaptions(self.ctx.settings.bannedCaptions)
+        rulesProcessor.setCaptionGroups(
+            (group.captions for group in self.ctx.groups.groups),
+            (group.captions for group in self.ctx.groups.groups if group.mutuallyExclusive)
+        )
+
         text = self.txtCaption.toPlainText()
-        splitSeparator = self.captionSeparator.strip()
-        captions = [c.strip() for c in text.split(splitSeparator)]
-
-        # Filter mutually exclusive captions before removing duplicates: This will keep the last inserted caption
-        exclusiveCaptionGroups = [group.captions for group in self.ctx.groups.groups if group.mutuallyExclusive]
-        exclusiveFilter = MutuallyExclusiveFilter(exclusiveCaptionGroups)
-        captions = exclusiveFilter.filterCaptions(captions)
-
-        if self.ctx.settings.isRemoveDuplicates:
-            dupFilter = DuplicateCaptionFilter()
-            captions = dupFilter.filterCaptions(captions)
-
-        banFilter = BannedCaptionFilter(self.ctx.settings.bannedCaptions)
-        captions = banFilter.filterCaptions(captions)
-
-        allCaptionGroups = [group.captions for group in self.ctx.groups.groups]
-        sortFilter = SortCaptionFilter(allCaptionGroups, self.ctx.settings.prefix, self.ctx.settings.suffix, self.captionSeparator)
-        captions = sortFilter.filterCaptions(captions)
-
-        presufFilter = PrefixSuffixFilter(self.ctx.settings.prefix, self.ctx.settings.suffix, self.captionSeparator)
-        captions = presufFilter.filterCaptions(captions)
+        textNew = rulesProcessor.process(text)
 
         # Only set when text has changed to prevent save button turning red
-        textNew = self.captionSeparator.join(captions)
         if textNew != text:
             self.setCaption(textNew)
+
 
     @Slot()
     def saveCaption(self):
