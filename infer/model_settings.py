@@ -166,6 +166,11 @@ class BaseSettingsWidget(QtWidgets.QWidget):
         raise NotImplementedError()
 
 
+    @property
+    def backendType(self) -> str:
+        return self.cboBackend.currentData()[1]
+
+
     def reloadPresetList(self, selectName: str = None) -> None:
         self.cboPreset.clear()
 
@@ -233,8 +238,7 @@ class BaseSettingsWidget(QtWidgets.QWidget):
         if not path and altTarget:
             path = altTarget.text()
 
-        backend, backendType = self.cboBackend.currentData()
-        if backendType in [BackendTypes.LLAMA_CPP, BackendTypes.ONNX]:
+        if self.backendType in [BackendTypes.LLAMA_CPP, BackendTypes.ONNX]:
             path, filter = QtWidgets.QFileDialog.getOpenFileName(self, "Choose model file", path)
         else:
             path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose model directory", path)
@@ -271,10 +275,11 @@ class LLMModelSettings(BaseSettingsWidget):
         layout.addWidget(QtWidgets.QLabel("GPU Layers:"), row, 0)
         layout.addWidget(self.spinGpuLayers, row, 1)
 
+        self.lblCtxLen = QtWidgets.QLabel("Context Length:")
         self.spinCtxLen = QtWidgets.QSpinBox()
         self.spinCtxLen.setRange(512, 10_240_000)
         self.spinCtxLen.setSingleStep(512)
-        layout.addWidget(QtWidgets.QLabel("Context Length:"), row, 3)
+        layout.addWidget(self.lblCtxLen, row, 3)
         layout.addWidget(self.spinCtxLen, row, 4, 1, 2)
 
         row += 1
@@ -292,8 +297,6 @@ class LLMModelSettings(BaseSettingsWidget):
         layout.addWidget(self.lblBatchSize, row, 3)
         layout.addWidget(self.spinBatchSize, row, 4, 1, 2)
 
-        # TODO: Prompts?
-
         row += 1
         self.inferSettings = InferenceSettingsWidget()
         layout.addWidget(self.inferSettings, row, 0, 1, 7)
@@ -301,12 +304,13 @@ class LLMModelSettings(BaseSettingsWidget):
     @Slot()
     def _onBackendChanged(self, index):
         widgets = [
+            self.lblCtxLen, self.spinCtxLen,
             self.lblBatchSize, self.spinBatchSize,
             self.lblThreadCount, self.spinThreadCount
         ]
 
-        backend, backendType = self.cboBackend.currentData()
-        enabled = (backendType == BackendTypes.LLAMA_CPP)
+        enabled = (self.backendType == BackendTypes.LLAMA_CPP)
+        self.inferSettings.setSupportsPenalty(enabled)
         for w in widgets:
             w.setEnabled(enabled)
 
@@ -321,14 +325,15 @@ class LLMModelSettings(BaseSettingsWidget):
 
         sampleSettings = settings.get(Config.INFER_PRESET_SAMPLECFG_KEY, {})
         self.inferSettings.fromDict(sampleSettings)
+        self.inferSettings.setSupportsPenalty(self.backendType == BackendTypes.LLAMA_CPP)
+
 
     def toDict(self) -> dict:
         settings = super().toDict()
         settings["gpu_layers"] = self.spinGpuLayers.value()
-        settings["ctx_length"] = self.spinCtxLen.value()
 
-        backend, backendType = self.cboBackend.currentData()
-        if backendType == BackendTypes.LLAMA_CPP:
+        if self.backendType == BackendTypes.LLAMA_CPP:
+            settings["ctx_length"]  = self.spinCtxLen.value()
             settings["num_threads"] = self.spinThreadCount.value()
             settings["batch_size"]  = self.spinBatchSize.value()
         
@@ -357,8 +362,7 @@ class CaptionModelSettings(LLMModelSettings):
     def _onBackendChanged(self, index):
         super()._onBackendChanged(index)
 
-        backend, backendType = self.cboBackend.currentData()
-        enabled = (backendType == BackendTypes.LLAMA_CPP)
+        enabled = (self.backendType == BackendTypes.LLAMA_CPP)
         for w in [self.lblProjectorPath, self.txtProjectorPath, self.btnChooseProjector]:
             w.setEnabled(enabled)
 
@@ -372,8 +376,7 @@ class CaptionModelSettings(LLMModelSettings):
 
     def toDict(self) -> dict:
         settings = super().toDict()
-        backend, backendType = self.cboBackend.currentData()
-        if backendType == BackendTypes.LLAMA_CPP:
+        if self.backendType == BackendTypes.LLAMA_CPP:
             settings["proj_path"] = self.txtProjectorPath.text()
             
         return settings
@@ -405,8 +408,7 @@ class TagModelSettings(BaseSettingsWidget):
     def _onBackendChanged(self, index):
         super()._onBackendChanged(index)
 
-        backend, backendType = self.cboBackend.currentData()
-        enabled = (backendType == BackendTypes.ONNX)
+        enabled = (self.backendType == BackendTypes.ONNX)
         for w in [self.lblTagListPath, self.txtTagListPath, self.btnChooseTagList]:
             w.setEnabled(enabled)
 
@@ -424,8 +426,7 @@ class TagModelSettings(BaseSettingsWidget):
     def toDict(self) -> dict:
         settings = super().toDict()
 
-        backend, backendType = self.cboBackend.currentData()
-        if backendType == BackendTypes.ONNX:
+        if self.backendType == BackendTypes.ONNX:
             settings["csv_path"] = self.txtTagListPath.text()
 
         settings[Config.INFER_PRESET_SAMPLECFG_KEY] = {

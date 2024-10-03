@@ -23,8 +23,6 @@ class InferenceSettingsWidget(superqt.QCollapsible):
 
 
     def _build(self):
-        spacerHeight = 8
-
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
@@ -49,10 +47,11 @@ class InferenceSettingsWidget(superqt.QCollapsible):
 
         self._buildFirstRow(layout, QtWidgets.QLabel("Max Tokens:"), self.tokensMax)
 
-        row = 1
-        layout.setRowMinimumHeight(row, spacerHeight)
+        # row = 1
+        # spacerHeight = 8
+        # layout.setRowMinimumHeight(row, spacerHeight)
 
-        row += 1
+        row = 1
         self.temperature = QtWidgets.QDoubleSpinBox()
         self.temperature.setRange(0.0, 5.0)
         self.temperature.setSingleStep(0.05)
@@ -84,55 +83,57 @@ class InferenceSettingsWidget(superqt.QCollapsible):
         layout.addWidget(QtWidgets.QLabel("Typical P:"), row, 6)
         layout.addWidget(self.typicalP, row, 7)
 
-        row += 1
-        layout.setRowMinimumHeight(row, spacerHeight)
+        # row += 1
+        # layout.setRowMinimumHeight(row, spacerHeight)
 
         row += 1
-        self.freqPenalty = QtWidgets.QDoubleSpinBox()
-        self.freqPenalty.setRange(-2.0, 2.0)
-        self.freqPenalty.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Freqency Penalty:"), row, 0)
-        layout.addWidget(self.freqPenalty, row, 1)
-
-        self.presencePenalty = QtWidgets.QDoubleSpinBox()
-        self.presencePenalty.setRange(-2.0, 2.0)
-        self.presencePenalty.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Presence Penalty:"), row, 3)
-        layout.addWidget(self.presencePenalty, row, 4)
-
         self.repeatPenalty = QtWidgets.QDoubleSpinBox()
         self.repeatPenalty.setRange(1.0, 3.0)
         self.repeatPenalty.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Repetition Penalty:"), row, 6)
-        layout.addWidget(self.repeatPenalty, row, 7)
+        layout.addWidget(QtWidgets.QLabel("Repetition Penalty:"), row, 0)
+        layout.addWidget(self.repeatPenalty, row, 1)
 
-        row += 1
-        self.microstatMode = QtWidgets.QSpinBox()
-        self.microstatMode.setRange(0, 2)
-        layout.addWidget(QtWidgets.QLabel("Microstat Mode:"), row, 0)
-        layout.addWidget(self.microstatMode, row, 1)
+        self.lblFreqPenalty = QtWidgets.QLabel("Freqency Penalty:")
+        layout.addWidget(self.lblFreqPenalty, row, 3)
+        self.freqPenalty = QtWidgets.QDoubleSpinBox()
+        self.freqPenalty.setRange(-2.0, 2.0)
+        self.freqPenalty.setSingleStep(0.05)
+        layout.addWidget(self.freqPenalty, row, 4)
 
-        self.microstatTau = QtWidgets.QDoubleSpinBox()
-        self.microstatTau.setRange(0.0, 20.0)
-        self.microstatTau.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Microstat Tau:"), row, 3)
-        layout.addWidget(self.microstatTau, row, 4)
+        self.lblPresencePenalty = QtWidgets.QLabel("Presence Penalty:")
+        layout.addWidget(self.lblPresencePenalty, row, 6)
+        self.presencePenalty = QtWidgets.QDoubleSpinBox()
+        self.presencePenalty.setRange(-2.0, 2.0)
+        self.presencePenalty.setSingleStep(0.05)
+        layout.addWidget(self.presencePenalty, row, 7)
 
-        self.microstatEta = QtWidgets.QDoubleSpinBox()
-        self.microstatEta.setRange(0.0, 1.0)
-        self.microstatEta.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Microstat Eta:"), row, 6)
-        layout.addWidget(self.microstatEta, row, 7)
+        #row += 1
+        # self.microstatMode = QtWidgets.QSpinBox()
+        # self.microstatMode.setRange(0, 2)
+        # layout.addWidget(QtWidgets.QLabel("Microstat Mode:"), row, 0)
+        # layout.addWidget(self.microstatMode, row, 1)
 
-        row += 1
-        self.tfsZ = QtWidgets.QDoubleSpinBox()
-        self.tfsZ.setRange(0.0, 1.0)
-        self.tfsZ.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("TFS Z:"), row, 0)
-        layout.addWidget(self.tfsZ, row, 1)
+        # self.microstatTau = QtWidgets.QDoubleSpinBox()
+        # self.microstatTau.setRange(0.0, 20.0)
+        # self.microstatTau.setSingleStep(0.05)
+        # layout.addWidget(QtWidgets.QLabel("Microstat Tau:"), row, 3)
+        # layout.addWidget(self.microstatTau, row, 4)
 
-        row += 1
-        layout.setRowMinimumHeight(row, spacerHeight)
+        # self.microstatEta = QtWidgets.QDoubleSpinBox()
+        # self.microstatEta.setRange(0.0, 1.0)
+        # self.microstatEta.setSingleStep(0.05)
+        # layout.addWidget(QtWidgets.QLabel("Microstat Eta:"), row, 6)
+        # layout.addWidget(self.microstatEta, row, 7)
+
+        #row += 1
+        # self.tfsZ = QtWidgets.QDoubleSpinBox()
+        # self.tfsZ.setRange(0.0, 1.0)
+        # self.tfsZ.setSingleStep(0.05)
+        # layout.addWidget(QtWidgets.QLabel("TFS Z:"), row, 0)
+        # layout.addWidget(self.tfsZ, row, 1)
+
+        # row += 1
+        # layout.setRowMinimumHeight(row, spacerHeight)
 
         row += 1
         self._buildButtons(layout, row)
@@ -151,6 +152,11 @@ class InferenceSettingsWidget(superqt.QCollapsible):
         pass
 
 
+    def setSupportsPenalty(self, supportsPenalty: bool):
+        for widget in (self.lblFreqPenalty, self.freqPenalty, self.lblPresencePenalty, self.presencePenalty):
+            widget.setEnabled(supportsPenalty)
+
+
     @Slot()
     def setDefaultValues(self):
         self.fromDict({})
@@ -164,19 +170,22 @@ class InferenceSettingsWidget(superqt.QCollapsible):
         self.minP.setValue(settings.get("min_p", 0.05))
         self.typicalP.setValue(settings.get("typical_p", 1.0))
 
-        self.presencePenalty.setValue(settings.get("presence_penalty", 0.0))
-        self.freqPenalty.setValue(settings.get("frequency_penalty", 0.0))
         self.repeatPenalty.setValue(settings.get("repeat_penalty", 1.05))
+        self.freqPenalty.setValue(settings.get("frequency_penalty", 0.0))
+        self.presencePenalty.setValue(settings.get("presence_penalty", 0.0))
 
-        self.microstatMode.setValue(settings.get("mirostat_mode", 0))
-        self.microstatTau.setValue(settings.get("mirostat_tau", 5.0))
-        self.microstatEta.setValue(settings.get("mirostat_eta", 0.1))
+        supportsPenalty = ("frequency_penalty" in settings) and ("presence_penalty" in settings)
+        self.setSupportsPenalty(supportsPenalty)
 
-        self.tfsZ.setValue(settings.get("tfs_z", 1.0))
+        # self.microstatMode.setValue(settings.get("mirostat_mode", 0))
+        # self.microstatTau.setValue(settings.get("mirostat_tau", 5.0))
+        # self.microstatEta.setValue(settings.get("mirostat_eta", 0.1))
+
+        # self.tfsZ.setValue(settings.get("tfs_z", 1.0))
 
 
     def toDict(self):
-        return {
+        settings = {
             "max_tokens": self.tokensMax.value(),
             "temperature": self.temperature.value(),
             "top_p": self.topP.value(),
@@ -184,16 +193,20 @@ class InferenceSettingsWidget(superqt.QCollapsible):
             "min_p": self.minP.value(),
             "typical_p": self.typicalP.value(),
 
-            "presence_penalty": self.presencePenalty.value(),
-            "frequency_penalty": self.freqPenalty.value(),
             "repeat_penalty": self.repeatPenalty.value(),
+            
+            # "mirostat_mode": self.microstatMode.value(),
+            # "mirostat_tau": self.microstatTau.value(),
+            # "mirostat_eta": self.microstatEta.value(),
 
-            "mirostat_mode": self.microstatMode.value(),
-            "mirostat_tau": self.microstatTau.value(),
-            "mirostat_eta": self.microstatEta.value(),
-
-            "tfs_z": self.tfsZ.value()
+            # "tfs_z": self.tfsZ.value()
         }
+
+        if self.freqPenalty.isEnabled() and self.presencePenalty.isEnabled():
+            settings["frequency_penalty"] = self.freqPenalty.value()
+            settings["presence_penalty"] = self.presencePenalty.value()
+
+        return settings
 
 
 
