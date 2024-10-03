@@ -28,8 +28,8 @@ class CaptionContext(QtWidgets.QTabWidget):
         self.groups   = CaptionGroups(self)
         self.generate = CaptionGenerate(self)
 
-        self.addTab(self.settings, "Settings")
-        self.addTab(self.groups, "Caption")
+        self.addTab(self.settings, "Rules")
+        self.addTab(self.groups, "Groups")
         #self.addTab(QtWidgets.QWidget(), "Variables (json)")
         #self.addTab(QtWidgets.QWidget(), "Folder Overrides") # Let variables from json override settings?
         self.addTab(self.generate, "Generate")

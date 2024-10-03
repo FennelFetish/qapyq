@@ -28,10 +28,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.toolbar = MainToolBar(self, self.menu)
         self.addToolBar(self.toolbar)
 
+        self._fullscreenTab = None
         self.buildTabs()
         self.addTab()
-
-        self._fullscreenTab = None
 
         if not aux_window.loadWindowPos(self, "main"):
             aux_window.setWindowDimensions(self, 0.5, 1, 0, 0)
@@ -49,6 +48,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @Slot()
     def addTab(self):
+        if self._fullscreenTab:
+            self.toggleFullscreen()
+
         tab = ImgTab(self.tabWidget)
         index = self.tabWidget.addTab(tab, "Empty")
         self.tabWidget.setCurrentIndex(index)
@@ -92,7 +94,7 @@ class MainWindow(QtWidgets.QMainWindow):
     @Slot()
     def onTabChanged(self, index):
         tab = self.currentTab
-        for win in [self.galleryWindow, self.batchWindow, self.captionWindow]:
+        for win in (self.galleryWindow, self.batchWindow, self.captionWindow):
             if win:
                 win.setTab(tab)
 
@@ -181,7 +183,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._fullscreenTab.close()
         
         openWindows = []
-        for win in [self.galleryWindow, self.batchWindow, self.captionWindow]:
+        for win in (self.galleryWindow, self.batchWindow, self.captionWindow):
             if win:
                 openWindows.append(win.configKey)
                 win.close()
@@ -444,7 +446,7 @@ class ImgTab(QtWidgets.QMainWindow):
         self.setWindowState(winState ^ Qt.WindowFullScreen)
         self.setVisible(True)
 
-    
+
     def onTabClosed(self):
         self.imgview.tool.onDisabled(self.imgview)
 

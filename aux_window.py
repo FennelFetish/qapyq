@@ -22,11 +22,14 @@ class AuxiliaryWindow(QtWidgets.QMainWindow):
     
     def removeContent(self):
         # Prevent deletion of content
-        self.takeCentralWidget()
+        content = self.takeCentralWidget()
+        if content:
+            content.hide()
         
         if statusBar := self.statusBar():
             statusBar.setParent(None)
             self.setStatusBar(None)
+            statusBar.hide()
 
 
     def setTab(self, tab):
@@ -42,9 +45,11 @@ class AuxiliaryWindow(QtWidgets.QMainWindow):
                 content = self.setupContent(tab)
                 tab.setWindowContent(self.configKey, content)
             
+            content.show()
             self.setCentralWidget(content)
 
             if hasattr(content, "statusBar"):
+                content.statusBar.show()
                 self.setStatusBar(content.statusBar)
 
 
