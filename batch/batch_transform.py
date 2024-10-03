@@ -37,7 +37,8 @@ class BatchTransform(QtWidgets.QWidget):
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 0)
-        layout.setColumnStretch(2, 1)
+        layout.setColumnStretch(2, 0)
+        layout.setColumnStretch(3, 1)
 
         row = 0
         self.promptWidget = PromptWidget("promptLLMPresets", "promptLLMDefault")
@@ -47,7 +48,7 @@ class BatchTransform(QtWidgets.QWidget):
         self.promptWidget.txtPrompts.textChanged.connect(self._updatePreview)
         self.promptWidget.layout().setRowStretch(1, 1)
         self.promptWidget.layout().setRowStretch(2, 2)
-        layout.addWidget(self.promptWidget, row, 0, 1, 3)
+        layout.addWidget(self.promptWidget, row, 0, 1, 4)
         layout.setRowStretch(row, 3)
 
         row += 1
@@ -57,7 +58,7 @@ class BatchTransform(QtWidgets.QWidget):
         qtlib.setTextEditHeight(self.txtPromptPreview, 5, "min")
         qtlib.setShowWhitespace(self.txtPromptPreview)
         layout.addWidget(QtWidgets.QLabel("Prompt(s) Preview:"), row, 0, Qt.AlignTop)
-        layout.addWidget(self.txtPromptPreview, row, 1, 1, 2)
+        layout.addWidget(self.txtPromptPreview, row, 1, 1, 3)
         layout.setRowStretch(row, 4)
 
         row += 1
@@ -74,10 +75,18 @@ class BatchTransform(QtWidgets.QWidget):
         layout.addWidget(self.chkStripMulti, row, 2)
 
         row += 1
-        self.txtTargetName = QtWidgets.QLineEdit("target")
+        self.txtTargetName = QtWidgets.QLineEdit("refined")
         qtlib.setMonospace(self.txtTargetName)
         layout.addWidget(QtWidgets.QLabel("Default storage key:"), row, 0)
         layout.addWidget(self.txtTargetName, row, 1)
+
+        self.cboOverwriteMode = QtWidgets.QComboBox()
+        self.cboOverwriteMode.addItem("Overwrite all keys", "all")
+        self.cboOverwriteMode.addItem("Only write missing keys", "missing")
+        layout.addWidget(self.cboOverwriteMode, row, 2)
+
+        self.chkStorePrompts = QtWidgets.QCheckBox("Store Prompts")
+        layout.addWidget(self.chkStorePrompts, row, 3)
 
         row += 1
         self.spinRounds = QtWidgets.QSpinBox()
@@ -87,9 +96,9 @@ class BatchTransform(QtWidgets.QWidget):
         layout.addWidget(self.spinRounds, row, 1)
 
         row += 1
-        layout.addWidget(self.inferSettings, row, 0, 1, 3)
+        layout.addWidget(self.inferSettings, row, 0, 1, 4)
 
-        groupBox = QtWidgets.QGroupBox("LLM")
+        groupBox = QtWidgets.QGroupBox("Transform Captions with LLM")
         groupBox.setLayout(layout)
         return groupBox
 
@@ -127,12 +136,15 @@ class BatchTransform(QtWidgets.QWidget):
             rounds = self.spinRounds.value()
             prompts = self.promptWidget.getParsedPrompts(storeName, rounds)
             
-            sysPrompt = self.promptWidget.systemPrompt.strip()
-            config = self.inferSettings.getInferenceConfig()
+            self._task = BatchTransformTask(self.log, self.tab.filelist)
+            self._task.prompts = prompts
+            self._task.systemPrompt = self.promptWidget.systemPrompt.strip()
+            self._task.config = self.inferSettings.getInferenceConfig()
 
-            self._task = BatchTransformTask(self.log, self.tab.filelist, prompts, sysPrompt, config)
-            self._task.stripAround = self.chkStripAround.isChecked()
-            self._task.stripMulti = self.chkStripMulti.isChecked()
+            self._task.overwriteMode = self.cboOverwriteMode.currentData()
+            self._task.storePrompts  = self.chkStorePrompts.isChecked()
+            self._task.stripAround   = self.chkStripAround.isChecked()
+            self._task.stripMulti    = self.chkStripMulti.isChecked()
 
             self._task.signals.progress.connect(self.onProgress)
             self._task.signals.progressMessage.connect(self.onProgressMessage)
@@ -171,28 +183,35 @@ class BatchTransform(QtWidgets.QWidget):
 
 
 class BatchTransformTask(BatchTask):
-    def __init__(self, log, filelist, prompts, systemPrompt, config):
+    def __init__(self, log, filelist):
         super().__init__("transform", log, filelist)
-        self.prompts      = prompts
-        self.systemPrompt = systemPrompt
-        self.config       = config
+        self.prompts      = None
+        self.systemPrompt = None
+        self.config       = None
 
-        self.stripAround  = True
-        self.stripMulti   = False
+        self.overwriteMode = "all"
+        self.storePrompts  = False
+        self.stripAround = True
+        self.stripMulti  = False
+
+        self.inferProc = None
+        self.varParser = None
+        self.writeKeys = None
 
 
     def runPrepare(self):
-        inference = Inference()
-        self.inferProc = inference.proc
+        self.inferProc = Inference().proc
         self.inferProc.start()
 
         self.signals.progressMessage.emit("Loading LLM ...")
         if not self.inferProc.setupLLM(self.config):
             raise RuntimeError("Couldn't load LLM")
 
-        self.parser = TemplateVariableParser()
-        self.parser.stripAround = self.stripAround
-        self.parser.stripMultiWhitespace = self.stripMulti
+        self.writeKeys = {k for conv in self.prompts for k in conv.keys() if not k.startswith('?')}
+
+        self.varParser = TemplateVariableParser()
+        self.varParser.stripAround = self.stripAround
+        self.varParser.stripMultiWhitespace = self.stripMulti
 
 
     def runProcessFile(self, imgFile) -> str:
@@ -201,37 +220,53 @@ class BatchTransformTask(BatchTask):
             self.log(f"WARNING: Couldn't read captions from {captionFile.jsonPath}")
             return None
 
-        prompts = self.parsePrompts(imgFile, captionFile)
-        answers = self.inferProc.answer(prompts, self.systemPrompt)
-        if not answers:
-            self.log(f"WARNING: No answers returned for {imgFile}")
+        writeKeys = set(self.writeKeys)
+        if self.overwriteMode == "missing":
+            for name in captionFile.captions.keys():
+                writeKeys.discard(name)
+        
+        if not writeKeys:
             return None
 
-        changed = False
-        for name, caption in answers.items():
-            if name.startswith('?'):
-                continue
-
-            if caption:
-                captionFile.addCaption(name, caption)
-                changed = True
-            else:
-                self.log(f"WARNING: Caption '{name}' is empty for {imgFile}, ignoring")
-
-        if changed:
+        if self.runAnswers(imgFile, captionFile, writeKeys):
             captionFile.saveToJson()
             return captionFile.jsonPath
         return None
 
 
+    def runAnswers(self, imgFile, captionFile: CaptionFile, writeKeys) -> bool:
+        prompts = self.parsePrompts(imgFile, captionFile)
+        answers = self.inferProc.answer(prompts, self.systemPrompt)
+        if not answers:
+            self.log(f"WARNING: No answers returned for {imgFile}")
+            return False
+
+        changed = False
+        for name, caption in answers.items():
+            if not caption:
+                self.log(f"WARNING: Caption '{name}' is empty for {imgFile}, ignoring")
+                continue
+            if name not in writeKeys:
+                continue
+
+            captionFile.addCaption(name, caption)
+            changed = True
+            
+            if self.storePrompts:
+                prompt = next((conv[name] for conv in prompts if name in conv), None)
+                captionFile.addPrompt(name, prompt)
+        
+        return changed
+
+
     def parsePrompts(self, imgFile: str, captionFile: CaptionFile) -> list:
-        self.parser.setup(imgFile, captionFile)
+        self.varParser.setup(imgFile, captionFile)
 
         prompts = list()
         missingVars = list()
         for conv in self.prompts:
-            prompts.append( {name: self.parser.parse(prompt) for name, prompt in conv.items()} )
-            missingVars.extend(self.parser.missingVars)
+            prompts.append( {name: self.varParser.parse(prompt) for name, prompt in conv.items()} )
+            missingVars.extend(self.varParser.missingVars)
 
         if missingVars:
             self.log(f"WARNING: {captionFile.jsonPath} is missing values for variables: {', '.join(missingVars)}")
