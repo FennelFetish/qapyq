@@ -43,6 +43,17 @@ class FileList:
         self.currentIndex = 0 if numFiles > 1 else -1
         self.notifyListChanged()
 
+    def loadAppend(self, paths):
+        for path in paths:
+            if os.path.isdir(path):
+                self._walkPath(path, True)
+            elif any(path.lower().endswith(ext) for ext in VALID_EXTENSION):
+                self.files.append(path)
+
+        self.files = list(set(self.files))
+        self._sortFiles()
+        self.notifyListChanged()
+
     def load(self, path):
         if os.path.isdir(path):
             self.loadFolder(path, True)

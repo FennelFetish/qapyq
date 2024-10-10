@@ -40,8 +40,7 @@ class CompareTool(ViewTool):
 
     def onDrop(self, event, zoneIndex):
         if zoneIndex == 0:
-            paths = (url.toLocalFile() for url in event.mimeData().urls())
-            self._imgview.filelist.loadAll(paths)
+            super().onDrop(event, zoneIndex)
         else:
             path = event.mimeData().urls()[0].toLocalFile()
             self.loadCompareImage(path)

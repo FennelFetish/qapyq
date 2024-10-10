@@ -15,7 +15,12 @@ class ViewTool(Tool):
     
     def onDrop(self, event, zoneIndex):
         paths = (url.toLocalFile() for url in event.mimeData().urls())
-        self._imgview.filelist.loadAll(paths)
+        
+        # CTRL pressed -> Append
+        if (event.modifiers() & Qt.ControlModifier) == Qt.ControlModifier:
+            self._imgview.filelist.loadAppend(paths)
+        else:
+            self._imgview.filelist.loadAll(paths)
 
     def onMousePress(self, event) -> bool:
         match event.button():

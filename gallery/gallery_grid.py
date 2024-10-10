@@ -49,8 +49,28 @@ class GalleryGrid(QtWidgets.QWidget):
         layout.setSpacing(4)
         self.setLayout(layout)
 
+
+    def freeLayout(self) -> dict:
+        galleryItems = dict()
+        layout = self.layout()
+        for i in reversed(range(layout.count())):
+            item = layout.takeAt(i)
+            if widget := item.widget():
+                if isinstance(widget, GalleryGridItem):
+                    galleryItems[widget.file] = widget
+                else:
+                    widget.deleteLater()
+            else:
+                item.spacerItem().deleteLater()
+
+        return galleryItems
+
     def reloadImages(self):
-        self.clearLayout()
+        self.fileItems = dict()
+        self._selectedItem = None
+        self._selectedCompare = None
+
+        existingItems = self.freeLayout()
         headers = dict()
 
         currentDir = ""
@@ -65,16 +85,21 @@ class GalleryGrid(QtWidgets.QWidget):
                 headers[dirname] = row
                 row += 1
 
-            self.addImage(file, row, col)
+            if not (galleryItem := existingItems.pop(file, None)):
+                galleryItem = GalleryGridItem(self, file)
+            
+            self.addImage(galleryItem, file, row, col)
             col += 1
             if col >= self.columns:
                 col = 0
                 row += 1
 
+        for widget in existingItems.values():
+            widget.deleteLater()
+
         self.headersUpdated.emit(headers)
     
-    def addImage(self, file, row, col):
-        galleryItem = GalleryGridItem(self, file)
+    def addImage(self, galleryItem, file, row, col):
         galleryItem.row = row
         self.fileItems[file] = galleryItem
 
@@ -82,12 +107,15 @@ class GalleryGrid(QtWidgets.QWidget):
 
         if self.filelist.getCurrentFile() == file:
             self._selectedItem = galleryItem
-            galleryItem.setSelected(True)
+            galleryItem.selected = True
+        else:
+            galleryItem.selected = False
 
-        if compareTool := self.tab.getTool("compare"):
-            if compareTool.compareFile == file:
-                self._selectedCompare = galleryItem
-                galleryItem.setCompare(True)
+        if (compareTool := self.tab.getTool("compare")) and compareTool.compareFile == file:
+            self._selectedCompare = galleryItem
+            galleryItem.setCompare(True)
+        else:
+            galleryItem.setCompare(False)
 
     def addHeader(self, text, row):
         label = QtWidgets.QLabel(text)
@@ -99,24 +127,11 @@ class GalleryGrid(QtWidgets.QWidget):
         label.setStyleSheet(f"color: {colorFg}; background-color: #161616")
         self.layout().addWidget(label, row, 0, 1, self.columns)
 
-    def clearLayout(self):
-        layout = self.layout()
-        for i in reversed(range(layout.count())):
-            item = layout.takeAt(i)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-            else:
-                item.spacerItem().deleteLater()
-        
-        self.fileItems.clear()
-        self._selectedItem = None
-        self._selectedCompare = None
 
     def setSelectedItem(self, item, updateFileList=False):
         if self._selectedItem:
-            self._selectedItem.setSelected(False)
-        item.setSelected(True)
+            self._selectedItem.selected = False
+        item.selected = True
         self._selectedItem = item
 
         self.fileChanged.emit(item, item.row)
@@ -208,8 +223,16 @@ class GalleryGrid(QtWidgets.QWidget):
             self.setSelectedItem(widget)
     
     def onFileListChanged(self, currentFile):
+        # When files were appended, the selection is kept
+        # and the gallery should scroll to the selection instead of the top
+        if (selectedItem := self._selectedItem) and selectedItem.file != currentFile:
+            selectedItem = None
+
         self.reloadImages()
-        self.reloaded.emit()
+        if selectedItem:
+            self.fileChanged.emit(selectedItem, selectedItem.row)
+        else:
+            self.reloaded.emit()
 
     def onFileDataChanged(self, file, key):
         if file not in self.fileItems:
@@ -287,7 +310,12 @@ class GalleryGridItem(QtWidgets.QWidget):
         self._height = h
         self.update()
 
-    def setSelected(self, selected):
+    @property
+    def selected(self) -> bool:
+        return self.selectionStyle & GalleryGridItem.SelectionPrimary
+
+    @selected.setter
+    def selected(self, selected) -> None:
         if selected:
             self.selectionStyle |= GalleryGridItem.SelectionPrimary
         else:
