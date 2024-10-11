@@ -1,6 +1,7 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QObject
 from .inference_settings import InferenceSettingsWidget
+from main import WINDOW_TITLE
 from config import Config
 
 
@@ -48,7 +49,7 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
         self._initialized = True
 
         super().__init__(parent)
-        self.setWindowTitle("Model Settings")
+        self.setWindowTitle(f"Model Settings - {WINDOW_TITLE}")
         self.resize(800, self.height())
 
         self.captionSettings = CaptionModelSettings("inferCaptionPresets", BackendsCaption)
@@ -89,7 +90,6 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
     def closeInstance(cls):
         if isinstance(cls._instance, cls):
             cls._instance.close()
-
 
 
 

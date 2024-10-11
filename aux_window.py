@@ -1,5 +1,6 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Signal
+from main import WINDOW_TITLE
 from config import Config
 
 
@@ -8,7 +9,7 @@ class AuxiliaryWindow(QtWidgets.QMainWindow):
 
     def __init__(self, parent, contentClass, title, configKey):
         super().__init__(parent)
-        self.setWindowTitle(title)
+        self.setWindowTitle(f"{title} - {WINDOW_TITLE}")
         self.contentClass = contentClass
         self.configKey = configKey
         self.tab = None

@@ -1,7 +1,7 @@
 import os
 import sys
 from PySide6 import QtGui, QtWidgets
-from PySide6.QtCore import Qt, Slot, QPoint
+from PySide6.QtCore import Qt, Slot, Signal, QPoint
 from export import Export
 from filelist import FileList
 from imgview import ImgView
@@ -12,6 +12,9 @@ import aux_window
 from typing import ForwardRef
 ImgTab = ForwardRef('ImgTab')
 
+WINDOW_TITLE = "qapyq"
+EMPTY_TAB_TITLE = "Empty"
+
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, app):
@@ -21,8 +24,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.batchWindow   = None
         self.captionWindow = None
 
-        self.setWindowTitle("pyImgSet")
         self.setAttribute(Qt.WA_QuitOnClose)
+        self.setWindowIcon(QtGui.QPixmap("res/qapyq.png"))
+        self.updateTitle(None)
 
         self.menu = MainMenu(self)
         self.toolbar = MainToolBar(self, self.menu)
@@ -34,6 +38,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if not aux_window.loadWindowPos(self, "main"):
             aux_window.setWindowDimensions(self, 0.5, 1, 0, 0)
+
 
     def buildTabs(self):
         self.tabWidget = QtWidgets.QTabWidget(self)
@@ -52,6 +57,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.toggleFullscreen()
 
         tab = ImgTab(self.tabWidget)
+        tab.tabTitleChanged.connect(self.updateTitle)
         index = self.tabWidget.addTab(tab, "Empty")
         self.tabWidget.setCurrentIndex(index)
         tab.imgview.setFocus()
@@ -99,12 +105,20 @@ class MainWindow(QtWidgets.QMainWindow):
                 win.setTab(tab)
 
         self.toolbar.setTool(tab.toolName if tab else None)
-        
+        self.updateTitle(self.tabWidget.tabText(index))
+    
     
     @Slot()
     def setTool(self, toolName: str):
         self.currentTab.setTool(toolName)
         self.toolbar.setTool(toolName)
+
+    @Slot()
+    def updateTitle(self, filename: str | None):
+        title = WINDOW_TITLE
+        if filename and filename != EMPTY_TAB_TITLE:
+            title = f"{filename} - {title}"
+        self.setWindowTitle(title)
 
     
     @Slot()
@@ -197,6 +211,7 @@ class MainWindow(QtWidgets.QMainWindow):
 class MainMenu(QtWidgets.QMenu):
     def __init__(self, mainWindow: MainWindow):
         super().__init__()
+        self.mainWindow = mainWindow
 
         # https://doc.qt.io/qt-6/qt.html#Key-enum
 
@@ -263,7 +278,7 @@ class MainMenu(QtWidgets.QMenu):
     @Slot()
     def showModelSettings(self):
         from infer.model_settings import ModelSettingsWindow
-        ModelSettingsWindow.openInstance(self)
+        ModelSettingsWindow.openInstance(self.mainWindow)
 
 
 
@@ -337,11 +352,13 @@ class MainToolBar(QtWidgets.QToolBar):
 
 
 class ImgTab(QtWidgets.QMainWindow):
+    tabTitleChanged = Signal(str)
+
     def __init__(self, tabWidget):
         super().__init__()
         self.tabWidget = tabWidget
         self._index = -1 # Store index when fullscreen
-        self.setWindowTitle("PyImgSet Tab")
+        self.setWindowTitle(f"{WINDOW_TITLE} Fullscreen Tab")
 
         self.setStatusBar(TabStatusBar(self))
 
@@ -362,8 +379,9 @@ class ImgTab(QtWidgets.QMainWindow):
 
     def onFileChanged(self, currentFile):
         idx = self.tabWidget.indexOf(self)
-        name = os.path.basename(currentFile) if currentFile else "Empty"
+        name = os.path.basename(currentFile) if currentFile else EMPTY_TAB_TITLE
         self.tabWidget.setTabText(idx, name)
+        self.tabTitleChanged.emit(name)
 
     def onFileListChanged(self, currentFile):
         self.onFileChanged(currentFile)
