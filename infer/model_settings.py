@@ -1,7 +1,6 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QObject
 from .inference_settings import InferenceSettingsWidget
-from main import WINDOW_TITLE
 from config import Config
 
 
@@ -49,7 +48,7 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
         self._initialized = True
 
         super().__init__(parent)
-        self.setWindowTitle(f"Model Settings - {WINDOW_TITLE}")
+        self.setWindowTitle(f"Model Settings - {Config.windowTitle}")
         self.resize(800, self.height())
 
         self.captionSettings = CaptionModelSettings("inferCaptionPresets", BackendsCaption)

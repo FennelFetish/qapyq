@@ -1,15 +1,14 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Signal
-from main import WINDOW_TITLE
 from config import Config
 
 
 class AuxiliaryWindow(QtWidgets.QMainWindow):
-    closed = Signal()
+    closed = Signal(object)
 
     def __init__(self, parent, contentClass, title, configKey):
         super().__init__(parent)
-        self.setWindowTitle(f"{title} - {WINDOW_TITLE}")
+        self.setWindowTitle(f"{title} - {Config.windowTitle}")
         self.contentClass = contentClass
         self.configKey = configKey
         self.tab = None
@@ -60,7 +59,7 @@ class AuxiliaryWindow(QtWidgets.QMainWindow):
         self.tab = None
         
         super().closeEvent(event)
-        self.closed.emit()
+        self.closed.emit(self)
 
 
 

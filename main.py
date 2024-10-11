@@ -1,18 +1,12 @@
-import os
 import sys
 from PySide6 import QtGui, QtWidgets
-from PySide6.QtCore import Qt, Slot, Signal, QPoint
-from export import Export
-from filelist import FileList
-from imgview import ImgView
+from PySide6.QtCore import Qt, Slot, QPoint
+from tab import ImgTab
 from config import Config
 import qtlib
 import aux_window
 
-from typing import ForwardRef
-ImgTab = ForwardRef('ImgTab')
 
-WINDOW_TITLE = "qapyq"
 EMPTY_TAB_TITLE = "Empty"
 
 
@@ -20,14 +14,12 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, app):
         super().__init__()
         self.app = app
-        self.galleryWindow = None
-        self.batchWindow   = None
-        self.captionWindow = None
-
+        
         self.setAttribute(Qt.WA_QuitOnClose)
-        self.setWindowIcon(QtGui.QPixmap("res/qapyq.png"))
+        self.setWindowIcon(QtGui.QPixmap(Config.windowIcon))
         self.updateTitle(None)
 
+        self.auxWindows: dict[str, aux_window.AuxiliaryWindow] = dict()
         self.menu = MainMenu(self)
         self.toolbar = MainToolBar(self, self.menu)
         self.addToolBar(self.toolbar)
@@ -100,9 +92,8 @@ class MainWindow(QtWidgets.QMainWindow):
     @Slot()
     def onTabChanged(self, index):
         tab = self.currentTab
-        for win in (self.galleryWindow, self.batchWindow, self.captionWindow):
-            if win:
-                win.setTab(tab)
+        for win in self.auxWindows.values():
+            win.setTab(tab)
 
         self.toolbar.setTool(tab.toolName if tab else None)
         self.updateTitle(self.tabWidget.tabText(index))
@@ -115,7 +106,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @Slot()
     def updateTitle(self, filename: str | None):
-        title = WINDOW_TITLE
+        title = Config.windowTitle
         if filename and filename != EMPTY_TAB_TITLE:
             title = f"{filename} - {title}"
         self.setWindowTitle(title)
@@ -130,65 +121,41 @@ class MainWindow(QtWidgets.QMainWindow):
             self._fullscreenTab = self.currentTab
             self._fullscreenTab.toggleFullscreen()
 
-    
-    @Slot()
-    def toggleGallery(self):
-        if self.galleryWindow is None:
-            from gallery import Gallery
-            self.galleryWindow = aux_window.AuxiliaryWindow(self, Gallery, "Gallery", "gallery")
-            self.galleryWindow.closed.connect(self.onGalleryClosed)
-            self.galleryWindow.show()
 
-            self.galleryWindow.setTab(self.currentTab)
-            self.toolbar.actToggleGallery.setChecked(True)
-        else:
-            self.galleryWindow.close()
-    
-    @Slot()
-    def onGalleryClosed(self):
-        self.toolbar.actToggleGallery.setChecked(False)
-        self.galleryWindow.deleteLater()
-        self.galleryWindow = None
+    @staticmethod
+    def getWindowClass(winName: str) -> type:
+        match winName:
+            case "gallery":
+                from gallery import Gallery
+                return Gallery
+            case "batch":
+                from batch import BatchContainer
+                return BatchContainer
+            case "caption":
+                from caption import CaptionContainer
+                return CaptionContainer
+        return None
 
-
-    @Slot()
-    def toggleBatchWindow(self):
-        if self.batchWindow is None:
-            from batch import BatchContainer
-            self.batchWindow = aux_window.AuxiliaryWindow(self, BatchContainer, "Batch", "batch")
-            self.batchWindow.closed.connect(self.onBatchWindowClosed)
-            self.batchWindow.show()
-
-            self.batchWindow.setTab(self.currentTab)
-            self.toolbar.actToggleBatch.setChecked(True)
-        else:
-            self.batchWindow.close()
-    
-    @Slot()
-    def onBatchWindowClosed(self):
-        self.toolbar.actToggleBatch.setChecked(False)
-        self.batchWindow.deleteLater()
-        self.batchWindow = None
-
-    
-    @Slot()
-    def toggleCaptionWindow(self):
-        if self.captionWindow is None:
-            from caption import CaptionContainer
-            self.captionWindow = aux_window.AuxiliaryWindow(self, CaptionContainer, "Caption", "caption")
-            self.captionWindow.closed.connect(self.onCaptionWindowClosed)
-            self.captionWindow.show()
-
-            self.captionWindow.setTab(self.currentTab)
-            self.toolbar.actToggleCaption.setChecked(True)
-        else:
-            self.captionWindow.close()
+    def toggleAuxWindow(self, winName: str):
+        if win := self.auxWindows.get(winName):
+            win.close()
+            return
+        
+        winClass = self.getWindowClass(winName)
+        win = aux_window.AuxiliaryWindow(self, winClass, winName.capitalize(), winName)
+        win.closed.connect(self.onAuxWindowClosed)
+        win.show()
+        win.setTab(self.currentTab)
+        self.auxWindows[winName] = win
+        
+        self.toolbar.setWindowToggleChecked(winName, True)
 
     @Slot()
-    def onCaptionWindowClosed(self):
-        self.toolbar.actToggleCaption.setChecked(False)
-        self.captionWindow.deleteLater()
-        self.captionWindow = None
+    def onAuxWindowClosed(self, win: aux_window.AuxiliaryWindow) -> None:
+        winName = win.configKey
+        self.toolbar.setWindowToggleChecked(winName, False)
+        win.deleteLater()
+        self.auxWindows.pop(winName, None)
 
 
     def closeEvent(self, event):
@@ -197,10 +164,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self._fullscreenTab.close()
         
         openWindows = []
-        for win in (self.galleryWindow, self.batchWindow, self.captionWindow):
-            if win:
-                openWindows.append(win.configKey)
-                win.close()
+        for win in list(self.auxWindows.values()):
+            openWindows.append(win.configKey)
+            win.close()
         Config.windowOpen = openWindows
 
         from infer.model_settings import ModelSettingsWindow
@@ -283,7 +249,7 @@ class MainMenu(QtWidgets.QMenu):
 
 
 class MainToolBar(QtWidgets.QToolBar):
-    def __init__(self, mainWindow, menu):
+    def __init__(self, mainWindow: MainWindow, menu: MainMenu):
         super().__init__("Main Toolbar")
         self.mainWindow = mainWindow
         self.setFloatable(False)
@@ -300,17 +266,10 @@ class MainToolBar(QtWidgets.QToolBar):
 
         self.addSeparator()
 
-        self.actToggleGallery = self.addAction("Gallery")
-        self.actToggleGallery.setCheckable(True)
-        self.actToggleGallery.triggered.connect(mainWindow.toggleGallery)
-
-        self.actToggleBatch = self.addAction("Batch")
-        self.actToggleBatch.setCheckable(True)
-        self.actToggleBatch.triggered.connect(mainWindow.toggleBatchWindow)
-
-        self.actToggleCaption = self.addAction("Caption")
-        self.actToggleCaption.setCheckable(True)
-        self.actToggleCaption.triggered.connect(mainWindow.toggleCaptionWindow)
+        self.windowToggles: dict[str, QtGui.QAction] = dict()
+        self.addWindowToggle("gallery", mainWindow)
+        self.addWindowToggle("batch", mainWindow)
+        self.addWindowToggle("caption", mainWindow)
 
         self.addWidget(qtlib.SpacerWidget())
 
@@ -343,155 +302,21 @@ class MainToolBar(QtWidgets.QToolBar):
         if toolName in self._toolActions:
             self._toolActions[toolName].setChecked(True)
 
+    def addWindowToggle(self, winName: str, mainWindow: MainWindow) -> None:
+        act = self.addAction(winName.capitalize())
+        act.setCheckable(True)
+        act.triggered.connect(lambda: mainWindow.toggleAuxWindow(winName))
+        self.windowToggles[winName] = act
+
+    def setWindowToggleChecked(self, winName, checked: bool) -> None:
+        if act := self.windowToggles.get(winName):
+            act.setChecked(checked)
+
     @Slot()
     def showMenu(self):
         widget = self.widgetForAction(self.actMenu)
         pos = widget.mapToGlobal(QPoint(0, widget.height()))
         self.actMenu.menu().popup(pos)
-
-
-
-class ImgTab(QtWidgets.QMainWindow):
-    tabTitleChanged = Signal(str)
-
-    def __init__(self, tabWidget):
-        super().__init__()
-        self.tabWidget = tabWidget
-        self._index = -1 # Store index when fullscreen
-        self.setWindowTitle(f"{WINDOW_TITLE} Fullscreen Tab")
-
-        self.setStatusBar(TabStatusBar(self))
-
-        self.filelist = FileList()
-        self.filelist.addListener(self)
-
-        self.imgview = ImgView(self.filelist)
-        self.export = Export()
-        self._windowContent: dict[str, QtWidgets.QWidget] = dict()
-
-        self.tools = dict()
-        self._toolbar = None
-        self.toolName = None
-        self.setTool("view")
-
-        self.setCentralWidget(self.imgview)
-
-
-    def onFileChanged(self, currentFile):
-        idx = self.tabWidget.indexOf(self)
-        name = os.path.basename(currentFile) if currentFile else EMPTY_TAB_TITLE
-        self.tabWidget.setTabText(idx, name)
-        self.tabTitleChanged.emit(name)
-
-    def onFileListChanged(self, currentFile):
-        self.onFileChanged(currentFile)
-
-
-    def setTool(self, toolName: str):
-        if toolName not in self.tools:
-            self.tools[toolName] = self.createTool(toolName)
-        self.imgview.tool = self.tools[toolName]
-        self.toolName = toolName
-
-        # Replace toolbar
-        if self._toolbar:
-            self.removeToolBar(self._toolbar)
-        self._toolbar = self.imgview.tool.getToolbar()
-        if self._toolbar:
-            self.addToolBar(Qt.RightToolBarArea, self._toolbar)
-            self._toolbar.show()
-
-    def createTool(self, toolName: str):
-        match toolName:
-            case "view":
-                from tools import ViewTool
-                return ViewTool(self)
-            case "slideshow":
-                from tools import SlideshowTool
-                return SlideshowTool(self)
-            case "measure":
-                from tools import MeasureTool
-                return MeasureTool(self)
-            case "compare":
-                from tools import CompareTool
-                return CompareTool(self)
-            case "crop":
-                from tools import CropTool
-                return CropTool(self)
-            case "mask":
-                from tools import MaskTool
-                return MaskTool(self)
-        
-        print("Invalid tool:", toolName)
-        return None
-
-    def getTool(self, toolName: str):
-        if toolName in self.tools:
-            return self.tools[toolName]
-        else:
-            return None
-
-    def getCurrentTool(self):
-        return self.imgview.tool
-
-
-    def getWindowContent(self, windowName: str):
-        return self._windowContent.get(windowName, None)
-
-    def setWindowContent(self, windowName: str, content: QtWidgets.QWidget):
-        if windowName in self._windowContent:
-            self._windowContent[windowName].deleteLater()
-        self._windowContent[windowName] = content
-
-
-    def toggleFullscreen(self):
-        winState = self.windowState()
-        if winState & Qt.WindowFullScreen:
-            # Disable fullscreen
-            index = self.tabWidget.insertTab(self._index, self, "Fullscreen")
-            self.tabWidget.setCurrentIndex(index)
-            self.onFileChanged(self.filelist.getCurrentFile())
-            self._index = -1
-            self.imgview.tool.onFullscreen(False)
-        else:
-            # Enable fullscreen
-            self._index = self.tabWidget.indexOf(self)
-            self.tabWidget.removeTab(self._index)
-            self.setParent(None)
-            self.imgview.tool.onFullscreen(True)
-
-        self.imgview.setFocus()
-        self.setWindowState(winState ^ Qt.WindowFullScreen)
-        self.setVisible(True)
-
-
-    def onTabClosed(self):
-        self.imgview.tool.onDisabled(self.imgview)
-
-        for winContent in self._windowContent.values():
-            winContent.deleteLater()
-
-
-
-class TabStatusBar(qtlib.ColoredMessageStatusBar):
-    def __init__(self, tab):
-        super().__init__("border-top: 1px outset black")
-        self.tab = tab
-        self.setSizeGripEnabled(False)
-        self.setContentsMargins(6, 0, 6, 0)
-
-        self._lblMouseCoords = QtWidgets.QLabel()
-        self._lblMouseCoords.setFixedWidth(100)
-        self.addPermanentWidget(self._lblMouseCoords)
-
-        self._lblImgSize = QtWidgets.QLabel()
-        self.addPermanentWidget(self._lblImgSize)
-
-    def setImageSize(self, width, height):
-        self._lblImgSize.setText(f"W: {width}  H: {height}")
-
-    def setMouseCoords(self, x, y):
-        self._lblMouseCoords.setText(f"X: {x}  Y: {y}")
 
 
 
@@ -502,12 +327,8 @@ def loadInitialImage(win: MainWindow):
         tab.filelist.load(loadPath)
 
 def restoreWindows(win: MainWindow):
-    if "gallery" in Config.windowOpen:
-        win.toggleGallery()
-    if "batch" in Config.windowOpen:
-        win.toggleBatchWindow()
-    if "caption" in Config.windowOpen:
-        win.toggleCaptionWindow()
+    for winName in Config.windowOpen:
+        win.toggleAuxWindow(winName)
 
 def main() -> int:
     app = QtWidgets.QApplication([])

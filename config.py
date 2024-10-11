@@ -1,5 +1,7 @@
 class Config:
     version                 = "1.0"
+    windowTitle             = "qapyq"
+    windowIcon              = "res/qapyq.png"
 
     # Paths
     pathConfig              = "./pyimgset_config.json"
