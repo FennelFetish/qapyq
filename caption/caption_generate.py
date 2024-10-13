@@ -1,7 +1,7 @@
 import os, traceback
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject
-from infer import Inference, InferencePresetWidget, TagPresetWidget, PromptWidget
+from infer import Inference, InferencePresetWidget, TagPresetWidget, PromptWidget, InferenceProcess
 from filelist import DataKeys
 import qtlib
 
@@ -151,28 +151,22 @@ class InferenceTask(QRunnable):
             text = os.linesep.join(results)
             self.signals.done.emit(self.imgPath, text)
         except Exception as ex:
-            errorMsg = f"Error during inference: {str(ex)}"
-            print(errorMsg)
             traceback.print_exc()
-            self.signals.fail.emit(errorMsg)
+            self.signals.fail.emit(str(ex))
 
-    def runCaption(self, inferProc) -> str:
+    def runCaption(self, inferProc: InferenceProcess) -> str:
         self.signals.progress.emit("Loading caption model ...")
-        if not inferProc.setupCaption(self.config):
-            raise RuntimeError("Couldn't load caption model")
+        inferProc.setupCaption(self.config)
 
         self.signals.progress.emit("Generating caption ...")
         captions = inferProc.caption(self.imgPath, self.prompts, self.systemPrompt)
-        if not captions:
-            raise RuntimeError("Error during inference")
 
         parts = (cap for name, cap in captions.items() if not name.startswith('?'))
         return os.linesep.join(parts)
 
-    def runTags(self, inferProc) -> str:
+    def runTags(self, inferProc: InferenceProcess) -> str:
         self.signals.progress.emit("Loading tag model ...")
-        if not inferProc.setupTag(self.tagConfig):
-            raise RuntimeError("Couldn't load tag model")
+        inferProc.setupTag(self.tagConfig)
         
         self.signals.progress.emit("Generating tags ...")
         return inferProc.tag(self.imgPath)

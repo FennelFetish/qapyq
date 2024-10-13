@@ -204,8 +204,7 @@ class BatchTransformTask(BatchTask):
         self.inferProc.start()
 
         self.signals.progressMessage.emit("Loading LLM ...")
-        if not self.inferProc.setupLLM(self.config):
-            raise RuntimeError("Couldn't load LLM")
+        self.inferProc.setupLLM(self.config)
 
         self.writeKeys = {k for conv in self.prompts for k in conv.keys() if not k.startswith('?')}
 

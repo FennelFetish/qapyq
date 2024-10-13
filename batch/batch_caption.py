@@ -197,15 +197,12 @@ class BatchCaptionTask(BatchTask):
 
         if self.doCaption:
             self.signals.progressMessage.emit("Loading caption model ...")
-            if not self.inferProc.setupCaption(self.config):
-                raise RuntimeError("Couldn't load caption model")
-            
+            self.inferProc.setupCaption(self.config)
             self.writeKeys = {k for conv in self.prompts for k in conv.keys() if not k.startswith('?')}
 
         if self.doTag:
             self.signals.progressMessage.emit("Loading tag model ...")
-            if not self.inferProc.setupTag(self.tagConfig):
-                raise RuntimeError("Couldn't load tag model")
+            self.inferProc.setupTag(self.tagConfig)
             if not self.tagName:
                 self.tagName = "tags"
 

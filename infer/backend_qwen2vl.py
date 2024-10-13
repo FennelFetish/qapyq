@@ -3,6 +3,8 @@ import torch
 from PIL import Image
 from typing import List, Dict
 from .backend import InferenceBackend
+from .devmap import DevMap
+from .quant import Quantization
 
 
 class Qwen2VLBackend(InferenceBackend):
@@ -10,11 +12,16 @@ class Qwen2VLBackend(InferenceBackend):
         super().__init__(config)
         modelPath = config.get("model_path")
 
+        devmap = self.makeDeviceMap(modelPath, config.get("gpu_layers"), config.get("vis_gpu_layers"))
+        attn = "eager" if devmap.hasCpuLayers else "flash_attention_2"
+        quant = Quantization.getQuantConfig(config.get("quantization"))
+
         self.model = Qwen2VLForConditionalGeneration.from_pretrained(
             modelPath,
             torch_dtype=torch.bfloat16,
-            device_map="auto",
-            attn_implementation="flash_attention_2",
+            device_map=devmap.deviceMap,
+            attn_implementation=attn,
+            quantization_config=quant,
             vision_config={"torch_dtype": torch.bfloat16}
         )
 
@@ -81,6 +88,27 @@ class Qwen2VLBackend(InferenceBackend):
         else:
             return prompt.strip()
 
+
+    @staticmethod
+    def makeDeviceMap(modelPath, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
+        devmap = DevMap.fromConfig(
+            modelPath, 
+            "num_hidden_layers",
+            "vision_config.depth"
+        )
+
+        devmap.setCudaLayer("model")
+        devmap.setCudaLayer("model.embed_tokens")
+        devmap.setCudaLayer("model.norm")
+        devmap.setLLMLayers("model.layers", llmGpuLayers)
+        
+        devmap.setCudaLayer("visual")
+        devmap.setCudaLayer("visual.patch_embed")
+        devmap.setCudaLayer("visual.merger")
+        devmap.setVisLayers("visual.blocks", visGpuLayers)
+
+        devmap.setCudaLayer("lm_head")
+        return devmap
 
 
 # import sys, os

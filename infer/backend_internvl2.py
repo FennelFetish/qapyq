@@ -7,7 +7,8 @@ from PIL import Image
 #from accelerate import infer_auto_device_map, init_empty_weights
 from typing import List, Dict
 from .backend import InferenceBackend
-
+from .devmap import DevMap
+from .quant import Quantization
 
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
@@ -91,18 +92,20 @@ class InternVL2Backend(InferenceBackend):
         super().__init__(config)
         modelPath = config.get("model_path")
 
+        devmap = self.makeDeviceMap(modelPath, config.get("gpu_layers"), config.get("vis_gpu_layers"))
+        attn = "eager" if devmap.hasCpuLayers else "flash_attention_2"
+        quant = Quantization.getQuantConfig(config.get("quantization"))
+
         self.model = AutoModel.from_pretrained(
             modelPath,
             torch_dtype=torch.bfloat16,
             #low_cpu_mem_usage=True,
             #use_flash_attn=True,
-            attn_implementation='flash_attention_2',
+            attn_implementation=attn,
+            device_map=devmap.deviceMap,
+            quantization_config=quant,
             trust_remote_code=True,
-            device_map="auto"
         ).eval()#.cuda()
-
-        # deviceMap = {name: param.device for name, param in self.model.named_parameters()}
-        # printErr(f"deviceMap: {deviceMap}")
 
         fast = True # False
         self.tokenizer = AutoTokenizer.from_pretrained(modelPath, trust_remote_code=True, use_fast=fast)
@@ -141,42 +144,30 @@ class InternVL2Backend(InferenceBackend):
         return answers
 
 
+    @staticmethod
+    def makeDeviceMap(modelPath: str, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
+        devmap = DevMap.fromConfig(
+            modelPath,
+            "llm_config.num_hidden_layers",
+            "vision_config.num_hidden_layers"
+        )
 
-    def makeDeviceMap(numGpuLayers: int = 0):
-        lastLayer = 59
-        numGpuLayers = min(numGpuLayers, lastLayer)
-        cpu = "cpu"
+        devmap.setCudaLayer("language_model")
+        devmap.setCudaLayer("language_model.model.tok_embeddings")
+        devmap.setCudaLayer("language_model.model.norm")
+        devmap.setCudaLayer("language_model.output")
+        devmap.setLLMLayers("language_model.model.layers", llmGpuLayers)
 
-        device_map = {}
-        device_map["vision_model"] = cpu # 0
-        device_map["language_model.model.embed_tokens"] = 0
-        # --- layers ---
-        device_map["language_model.model.norm"] = 0 #cpu
-        device_map["language_model.model.rotary_emb"] = 0 #cpu
-        device_map["language_model.lm_head"] = 0 #cpu
-        device_map["mlp1"] = cpu
+        # device_map["language_model.model.embed_tokens"] = 0
+        # device_map["language_model.model.rotary_emb"] = 0 #cpu
+        # device_map["language_model.lm_head"] = 0 #cpu
 
-        layer = 0
-        for l in range(numGpuLayers):
-            device_map[f"language_model.model.layers.{l}"] = 0
+        devmap.setCudaLayer("vision_model")
+        devmap.setCudaLayer("vision_model.embeddings")
+        devmap.setVisLayers("vision_model.encoder.layers", visGpuLayers)
 
-        if numGpuLayers < lastLayer:
-            device_map[f"language_model.model.layers.{numGpuLayers}.self_attn"] = 0
-            device_map[f"language_model.model.layers.{numGpuLayers}.input_layernorm"] = 0 #cpu
-            device_map[f"language_model.model.layers.{numGpuLayers}.post_attention_layernorm"] = cpu
-            device_map[f"language_model.model.layers.{numGpuLayers}.mlp"] = 0 #cpu
-        else:
-            device_map[f"language_model.model.layers.{lastLayer}"] = 0
-
-        for l in range(numGpuLayers+1, lastLayer+1):
-            device_map[f"language_model.model.layers.{l}"] = cpu
-
-        print("Device map:")
-        for k, v in device_map.items():
-            print(f"{k} -> {v}")
-        
-        return device_map
-
+        devmap.setCudaLayer("mlp1")
+        return devmap
 
 
 

@@ -143,6 +143,18 @@ def handleMessage(protocol) -> bool:
     return True
 
 
+def handleError(protocol: Protocol, excType: str, excMessage: str) -> None:
+    import re
+    pattern = r"<class '([^']+)'>"
+    if match := re.match(pattern, excType):
+        excType = match.group(1)
+
+    protocol.writeMessage({
+        "error_type": excType,
+        "error": excMessage
+    })
+
+
 def main() -> int:
     printErr("Inference process started")
     protocol = Protocol(sys.stdin.buffer, sys.stdout.buffer)
@@ -153,14 +165,11 @@ def main() -> int:
                 running = False
                 break
         except:
-            exc_type, exc_value, exc_traceback = sys.exc_info()
+            exType, exMessage, exTraceback = sys.exc_info()
             traceback.print_exc(file=sys.stderr)
-            protocol.writeMessage({
-                "error_type": str(exc_type),
-                "error": str(exc_value)
-            })
+            handleError(protocol, str(exType), str(exMessage))
     
-    printErr("Inference process ended")
+    printErr("Inference process ending")
     return 0
 
 

@@ -160,6 +160,7 @@ class BaseSettingsWidget(QtWidgets.QWidget):
 
         self.fromDict({})
         self.reloadPresetList()
+        self._onBackendChanged(self.cboBackend.currentIndex())
 
     def build(self, layout: QtWidgets.QGridLayout, row: int) -> None:
         raise NotImplementedError()
@@ -268,11 +269,13 @@ class LLMModelSettings(BaseSettingsWidget):
         super().__init__(configAttr, backends)
         
     def build(self, layout: QtWidgets.QGridLayout, row: int):
-        self.spinGpuLayers = QtWidgets.QSpinBox()
-        self.spinGpuLayers.setRange(-1, 999)
-        self.spinGpuLayers.setSingleStep(1)
-        layout.addWidget(QtWidgets.QLabel("GPU Layers:"), row, 0)
-        layout.addWidget(self.spinGpuLayers, row, 1)
+        self.lblQuant = QtWidgets.QLabel("Quantization:")
+        layout.addWidget(self.lblQuant, row, 0)
+        self.cboQuant = QtWidgets.QComboBox()
+        self.cboQuant.addItem("None", "none")
+        self.cboQuant.addItem("INT8", "int8")
+        self.cboQuant.addItem("NF4", "nf4")
+        layout.addWidget(self.cboQuant, row, 1)
 
         self.lblCtxLen = QtWidgets.QLabel("Context Length:")
         self.spinCtxLen = QtWidgets.QSpinBox()
@@ -280,6 +283,14 @@ class LLMModelSettings(BaseSettingsWidget):
         self.spinCtxLen.setSingleStep(512)
         layout.addWidget(self.lblCtxLen, row, 3)
         layout.addWidget(self.spinCtxLen, row, 4, 1, 2)
+
+        row += 1
+        self.lblGpuLayers = QtWidgets.QLabel("GPU Layers:")
+        layout.addWidget(self.lblGpuLayers, row, 0)
+        self.spinGpuLayers = QtWidgets.QSpinBox()
+        self.spinGpuLayers.setRange(-1, 999)
+        self.spinGpuLayers.setSingleStep(1)
+        layout.addWidget(self.spinGpuLayers, row, 1)
 
         row += 1
         self.lblThreadCount = QtWidgets.QLabel("Thread Count:")
@@ -302,23 +313,29 @@ class LLMModelSettings(BaseSettingsWidget):
 
     @Slot()
     def _onBackendChanged(self, index):
-        widgets = [
+        widgets = (
             self.lblCtxLen, self.spinCtxLen,
             self.lblBatchSize, self.spinBatchSize,
             self.lblThreadCount, self.spinThreadCount
-        ]
+        )
 
         enabled = (self.backendType == BackendTypes.LLAMA_CPP)
         self.inferSettings.setSupportsPenalty(enabled)
         for w in widgets:
             w.setEnabled(enabled)
+        
+        for w in (self.lblQuant, self.cboQuant):
+            w.setEnabled(not enabled)
 
     def fromDict(self, settings: dict) -> None:
         super().fromDict(settings)
 
-        self.spinGpuLayers.setValue(settings.get("gpu_layers", -1))
+        quantIndex = self.cboQuant.findData(settings.get("quantization", ""))
+        self.cboQuant.setCurrentIndex(max(quantIndex, 0))
         self.spinCtxLen.setValue(settings.get("ctx_length", 32768))
 
+        self.spinGpuLayers.setValue(settings.get("gpu_layers", -1))
+        
         self.spinThreadCount.setValue(settings.get("num_threads", 15))
         self.spinBatchSize.setValue(settings.get("batch_size", 512))
 
@@ -335,6 +352,8 @@ class LLMModelSettings(BaseSettingsWidget):
             settings["ctx_length"]  = self.spinCtxLen.value()
             settings["num_threads"] = self.spinThreadCount.value()
             settings["batch_size"]  = self.spinBatchSize.value()
+        else:
+            settings["quantization"] = self.cboQuant.currentData()
         
         settings[Config.INFER_PRESET_SAMPLECFG_KEY] = self.inferSettings.toDict()
         return settings
@@ -355,14 +374,24 @@ class CaptionModelSettings(LLMModelSettings):
         self.btnChooseProjector.clicked.connect(lambda: self._choosePath(self.txtProjectorPath, self.txtPath))
         layout.addWidget(self.btnChooseProjector, row, 6)
         
-        super().build(layout, row+1)
+        row += 1
+        super().build(layout, row)
+
+        row += 1
+        self.spinVisGpuLayers = QtWidgets.QSpinBox()
+        self.spinVisGpuLayers.setRange(-1, 999)
+        self.spinVisGpuLayers.setSingleStep(1)
+        layout.addWidget(QtWidgets.QLabel("Vis GPU Layers:"), row, 3)
+        layout.addWidget(self.spinVisGpuLayers, row, 4, 1, 2)
+
+        self.lblGpuLayers.setText("LLM GPU Layers:")
 
     @Slot()
     def _onBackendChanged(self, index):
         super()._onBackendChanged(index)
 
         enabled = (self.backendType == BackendTypes.LLAMA_CPP)
-        for w in [self.lblProjectorPath, self.txtProjectorPath, self.btnChooseProjector]:
+        for w in (self.lblProjectorPath, self.txtProjectorPath, self.btnChooseProjector):
             w.setEnabled(enabled)
 
     def _choosePath(self, target: QtWidgets.QLineEdit, altTarget: QtWidgets.QLineEdit | None = None):
@@ -372,12 +401,15 @@ class CaptionModelSettings(LLMModelSettings):
     def fromDict(self, settings: dict) -> None:
         super().fromDict(settings)
         self.txtProjectorPath.setText(settings.get("proj_path", ""))
+        self.spinVisGpuLayers.setValue(settings.get("vis_gpu_layers", -1))
 
     def toDict(self) -> dict:
         settings = super().toDict()
         if self.backendType == BackendTypes.LLAMA_CPP:
             settings["proj_path"] = self.txtProjectorPath.text()
-            
+        else:
+            settings["vis_gpu_layers"] = self.spinVisGpuLayers.value()
+        
         return settings
 
 

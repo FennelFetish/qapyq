@@ -3,18 +3,30 @@ from PIL import Image
 import torch
 from typing import List, Dict
 from .backend import InferenceBackend
+from .devmap import DevMap
+from .quant import Quantization
 
 
 class Ovis16Backend(InferenceBackend):
     def __init__(self, config: dict):
         modelPath = config.get("model_path")
 
+        devmap = self.makeDeviceMap(modelPath, config.get("gpu_layers"), config.get("vis_gpu_layers"))
+        quant = Quantization.getQuantConfig(config.get("quantization"))
+
+        # Quantization doesnt work: self and mat2 must have the same dtype, but got BFloat16 and Byte
+        #   File "/home/rem/.cache/huggingface/modules/transformers_modules/modeling_ovis.py", line 196, in encode
+        #     output = self.backbone(pixel_values, output_hidden_states=True, return_dict=True)
+        # Maybe try putting the whole encoder to CPU (NF4 quant uses float32 @ cpu)?
+        # Or set dtype in backbone config?
+
         self.model = AutoModelForCausalLM.from_pretrained(
             modelPath,
             torch_dtype=torch.bfloat16,
             multimodal_max_length=8192,
             #attn_implementation='flash_attention_2',
-            device_map=self.makeDeviceMap(41, 6),
+            device_map=devmap.deviceMap,
+            quantization_config=quant,
             trust_remote_code=True
         )
 
@@ -90,36 +102,21 @@ class Ovis16Backend(InferenceBackend):
 
 
     @staticmethod
-    def makeDeviceMap(llmGpuLayers: int, visGpuLayers: int) -> dict:
-        llmGpuLayers = min(llmGpuLayers, 41)
-        visGpuLayers = min(visGpuLayers, 26)
+    def makeDeviceMap(modelPath, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
+        devmap = DevMap.fromConfig(
+            modelPath, 
+            "llm_config.num_hidden_layers",
+            "visual_tokenizer_config.backbone_config.num_hidden_layers"
+        )
 
-        deviceMap = dict()
-        cpu = "cpu"
-        cuda = 0
+        devmap.setCudaLayer("llm")
+        devmap.setCudaLayer("llm.lm_head")
+        devmap.setCudaLayer("llm.model.embed_tokens")
+        devmap.setCudaLayer("llm.model.norm")
+        devmap.setLLMLayers("llm.model.layers", llmGpuLayers)
+        
+        devmap.setCudaLayer("visual_tokenizer")
+        devmap.setVisLayers("visual_tokenizer.backbone.vision_model.encoder.layers", visGpuLayers)
 
-        deviceMap["llm.model.embed_tokens"] = cuda
-        deviceMap["llm.model.norm"] = cuda
-        deviceMap["llm.lm_head.weight"] = cuda
-        deviceMap["vte.weight"] = cuda
-
-        deviceMap["llm.model.layers.0"] = cuda
-        for l in range(1, llmGpuLayers):
-            deviceMap[f"llm.model.layers.{l}"] = cuda
-        for l in range(llmGpuLayers, 41):
-            deviceMap[f"llm.model.layers.{l}"] = cpu
-        deviceMap["llm.model.layers.41"] = cuda
-
-        deviceMap["visual_tokenizer"] = cuda
-        deviceMap["visual_tokenizer.backbone.vision_model.encoder.layers.0"] = cuda
-        for l in range(1, visGpuLayers):
-            deviceMap[f"visual_tokenizer.backbone.vision_model.encoder.layers.{l}"] = cuda
-        for l in range(visGpuLayers, 26):
-            deviceMap[f"visual_tokenizer.backbone.vision_model.encoder.layers.{l}"] = cpu
-        deviceMap["visual_tokenizer.backbone.vision_model.encoder.layers.26"] = cuda
-
-        # print("mkDeviceMap:")
-        # for k, v in deviceMap.items():
-        #     print(f"{k} -> {v}")
-
-        return deviceMap
+        devmap.setCudaLayer("vte")
+        return devmap

@@ -66,8 +66,14 @@ class BatchTask(QRunnable):
                 return
 
             self.log(f"Processing: {imgFile}")
-            outputFile = self.runProcessFile(imgFile)
-            self.signals.progress.emit(fileNr+1, numFiles, outputFile)
+
+            try:
+                outputFile = self.runProcessFile(imgFile)
+            except Exception as ex:
+                self.log(f"WARNING: {str(ex)}")
+                outputFile = None
+            finally:
+                self.signals.progress.emit(fileNr+1, numFiles, outputFile)
 
         self.log(f"Batch {self.name} finished, processed {numFiles} files")
         self.signals.done.emit(numFiles)
@@ -76,5 +82,5 @@ class BatchTask(QRunnable):
     def runPrepare(self):
         pass
 
-    def runProcessFile(self, imgFile: str) -> str:
-        pass
+    def runProcessFile(self, imgFile: str) -> str | None:
+        return None
