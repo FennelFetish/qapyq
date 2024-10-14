@@ -94,7 +94,7 @@ class InternVL2Backend(InferenceBackend):
 
         devmap = self.makeDeviceMap(modelPath, config.get("gpu_layers"), config.get("vis_gpu_layers"))
         attn = "eager" if devmap.hasCpuLayers else "flash_attention_2"
-        quant = Quantization.getQuantConfig(config.get("quantization"))
+        quant = Quantization.getQuantConfig(config.get("quantization"), devmap.hasCpuLayers)
 
         self.model = AutoModel.from_pretrained(
             modelPath,
@@ -107,8 +107,7 @@ class InternVL2Backend(InferenceBackend):
             trust_remote_code=True,
         ).eval()#.cuda()
 
-        fast = True # False
-        self.tokenizer = AutoTokenizer.from_pretrained(modelPath, trust_remote_code=True, use_fast=fast)
+        self.tokenizer = AutoTokenizer.from_pretrained(modelPath, trust_remote_code=True, use_fast=True)
 
 
     def setConfig(self, config: dict):
@@ -152,20 +151,40 @@ class InternVL2Backend(InferenceBackend):
             "vision_config.num_hidden_layers"
         )
 
-        devmap.setCudaLayer("language_model")
+        # 1b, 4b, 40b, 76b
+        devmap.setCudaLayer("language_model.model.embed_tokens")
+        devmap.setCudaLayer("language_model.lm_head")
+
+        # 2b, 8b, 26b
         devmap.setCudaLayer("language_model.model.tok_embeddings")
-        devmap.setCudaLayer("language_model.model.norm")
         devmap.setCudaLayer("language_model.output")
+
+        match devmap.maxLayerLLM:
+            case 23: # 1b, 2b
+                if visGpuLayers == 0:
+                    visGpuLayers = 1
+            case 31: # 4b, 8b
+                # TODO: This should only apply to 4b model
+                if visGpuLayers == 0:
+                    visGpuLayers = 1
+            case 47: # 26b
+                pass
+            case 59: # 40b
+                pass
+            case 79: # 76b
+                pass
+
+        devmap.setCudaLayer("language_model")
+        devmap.setCudaLayer("language_model.model.norm")
         devmap.setLLMLayers("language_model.model.layers", llmGpuLayers)
 
-        # device_map["language_model.model.embed_tokens"] = 0
-        # device_map["language_model.model.rotary_emb"] = 0 #cpu
-        # device_map["language_model.lm_head"] = 0 #cpu
-
-        devmap.setCudaLayer("vision_model")
-        devmap.setCudaLayer("vision_model.embeddings")
-        devmap.setVisLayers("vision_model.encoder.layers", visGpuLayers)
-
+        if visGpuLayers == 0:
+            devmap.setCpuLayer("vision_model")
+        else:
+            devmap.setCudaLayer("vision_model")
+            devmap.setCudaLayer("vision_model.embeddings")
+            devmap.setVisLayers("vision_model.encoder.layers", visGpuLayers)
+        
         devmap.setCudaLayer("mlp1")
         return devmap
 

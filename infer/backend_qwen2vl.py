@@ -14,7 +14,7 @@ class Qwen2VLBackend(InferenceBackend):
 
         devmap = self.makeDeviceMap(modelPath, config.get("gpu_layers"), config.get("vis_gpu_layers"))
         attn = "eager" if devmap.hasCpuLayers else "flash_attention_2"
-        quant = Quantization.getQuantConfig(config.get("quantization"))
+        quant = Quantization.getQuantConfig(config.get("quantization"), devmap.hasCpuLayers)
 
         self.model = Qwen2VLForConditionalGeneration.from_pretrained(
             modelPath,
@@ -22,7 +22,7 @@ class Qwen2VLBackend(InferenceBackend):
             device_map=devmap.deviceMap,
             attn_implementation=attn,
             quantization_config=quant,
-            vision_config={"torch_dtype": torch.bfloat16}
+            #vision_config={"torch_dtype": torch.bfloat16}
         )
 
         self.processor = AutoProcessor.from_pretrained(modelPath)
@@ -102,16 +102,21 @@ class Qwen2VLBackend(InferenceBackend):
         devmap.setCudaLayer("model.norm")
         devmap.setLLMLayers("model.layers", llmGpuLayers)
         
-        devmap.setCudaLayer("visual")
-        devmap.setCudaLayer("visual.patch_embed")
-        devmap.setCudaLayer("visual.merger")
-        devmap.setVisLayers("visual.blocks", visGpuLayers)
+        # FIXME: Offloading the visual layers to CPU causes OOM errors during inference for non-square images?
+        if visGpuLayers == 0:
+            devmap.setCpuLayer("visual")
+        else:
+            devmap.setCudaLayer("visual")
+            devmap.setCudaLayer("visual.patch_embed")
+            devmap.setCudaLayer("visual.merger")
+            devmap.setVisLayers("visual.blocks", visGpuLayers)
 
         devmap.setCudaLayer("lm_head")
         return devmap
 
 
-# import sys, os
+
 # def printErr(text):
+#     import sys, os
 #     sys.stderr.write(text + os.linesep)
 #     sys.stderr.flush()

@@ -12,13 +12,14 @@ class Ovis16Backend(InferenceBackend):
         modelPath = config.get("model_path")
 
         devmap = self.makeDeviceMap(modelPath, config.get("gpu_layers"), config.get("vis_gpu_layers"))
-        quant = Quantization.getQuantConfig(config.get("quantization"))
+        quant = Quantization.getQuantConfig(config.get("quantization"), devmap.hasCpuLayers)
 
         # Quantization doesnt work: self and mat2 must have the same dtype, but got BFloat16 and Byte
         #   File "/home/rem/.cache/huggingface/modules/transformers_modules/modeling_ovis.py", line 196, in encode
         #     output = self.backbone(pixel_values, output_hidden_states=True, return_dict=True)
         # Maybe try putting the whole encoder to CPU (NF4 quant uses float32 @ cpu)?
         # Or set dtype in backbone config?
+        # --> Or try BitsAndBytesConfig.llm_int8_skip_modules (takes a list of layers that are excluded from quantization)
 
         self.model = AutoModelForCausalLM.from_pretrained(
             modelPath,
@@ -116,7 +117,16 @@ class Ovis16Backend(InferenceBackend):
         devmap.setLLMLayers("llm.model.layers", llmGpuLayers)
         
         devmap.setCudaLayer("visual_tokenizer")
-        devmap.setVisLayers("visual_tokenizer.backbone.vision_model.encoder.layers", visGpuLayers)
+        devmap.setCudaLayer("visual_tokenizer.head")
+        devmap.setCudaLayer("visual_tokenizer.backbone.vision_model.embeddings")
+        devmap.setCudaLayer("visual_tokenizer.backbone.vision_model.head")
+
+        if visGpuLayers == 0:
+            devmap.setCpuLayer("visual_tokenizer.backbone.vision_model.post_layernorm")
+            devmap.setCpuLayer("visual_tokenizer.backbone.vision_model.encoder.layers")
+        else:
+            devmap.setCudaLayer("visual_tokenizer.backbone.vision_model.post_layernorm")
+            devmap.setVisLayers("visual_tokenizer.backbone.vision_model.encoder.layers", visGpuLayers)
 
         devmap.setCudaLayer("vte")
         return devmap

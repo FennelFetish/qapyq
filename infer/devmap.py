@@ -1,3 +1,5 @@
+import json, os, sys
+
 class DevMap:
     CPU = "cpu"
 
@@ -10,7 +12,6 @@ class DevMap:
 
     @classmethod
     def fromConfig(cls, modelDirectory: str, llmLayersKey: str, visLayersKey: str = None):
-        import json, os
         path = os.path.join(modelDirectory, "config.json")
         with open(path, 'r') as file:
             config = json.load(file)
@@ -35,6 +36,7 @@ class DevMap:
 
     def setCpuLayer(self, name: str) -> None:
         self.deviceMap[name] = self.CPU
+        self.hasCpuLayers = True
     
 
     def setLLMLayers(self, prefix: str, numGpuLayers: int, device: int = 0) -> None:
@@ -64,8 +66,6 @@ class DevMap:
 
 
     def print(self) -> None:
-        import sys, os
-
         sys.stderr.write(f"Device Map:{os.linesep}")
         for k, v in self.deviceMap.items():
             sys.stderr.write(f"{k} => {v}{os.linesep}")
@@ -74,7 +74,6 @@ class DevMap:
 
     @staticmethod
     def printDeviceMap(model) -> None:
-        import sys, os
         deviceMap = {name: param.device for name, param in model.named_parameters()}
 
         sys.stderr.write(f"Model's Device Map:{os.linesep}")
@@ -82,3 +81,11 @@ class DevMap:
             sys.stderr.write(f"{k} => {v}{os.linesep}")
         
         sys.stderr.flush()
+
+    @staticmethod
+    def saveDeviceMap(model, path) -> None:
+        deviceMap = {name: param.device for name, param in model.named_parameters()}
+
+        with open(path, 'w') as file:
+            for k, v in deviceMap.items():
+                file.write(f"{k} => {v}{os.linesep}")

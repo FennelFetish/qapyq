@@ -273,8 +273,8 @@ class LLMModelSettings(BaseSettingsWidget):
         layout.addWidget(self.lblQuant, row, 0)
         self.cboQuant = QtWidgets.QComboBox()
         self.cboQuant.addItem("None", "none")
-        self.cboQuant.addItem("INT8", "int8")
         self.cboQuant.addItem("NF4", "nf4")
+        self.cboQuant.addItem("INT8", "int8")
         layout.addWidget(self.cboQuant, row, 1)
 
         self.lblCtxLen = QtWidgets.QLabel("Context Length:")
@@ -378,10 +378,11 @@ class CaptionModelSettings(LLMModelSettings):
         super().build(layout, row)
 
         row += 1
+        self.lblVisGpuLayers = QtWidgets.QLabel("Vis GPU Layers:")
+        layout.addWidget(self.lblVisGpuLayers, row, 3)
         self.spinVisGpuLayers = QtWidgets.QSpinBox()
         self.spinVisGpuLayers.setRange(-1, 999)
         self.spinVisGpuLayers.setSingleStep(1)
-        layout.addWidget(QtWidgets.QLabel("Vis GPU Layers:"), row, 3)
         layout.addWidget(self.spinVisGpuLayers, row, 4, 1, 2)
 
         self.lblGpuLayers.setText("LLM GPU Layers:")
@@ -393,6 +394,9 @@ class CaptionModelSettings(LLMModelSettings):
         enabled = (self.backendType == BackendTypes.LLAMA_CPP)
         for w in (self.lblProjectorPath, self.txtProjectorPath, self.btnChooseProjector):
             w.setEnabled(enabled)
+
+        for w in (self.lblVisGpuLayers, self.spinVisGpuLayers):
+            w.setEnabled(not enabled)
 
     def _choosePath(self, target: QtWidgets.QLineEdit, altTarget: QtWidgets.QLineEdit | None = None):
         altTarget = self.txtProjectorPath if target == self.txtPath else self.txtPath
