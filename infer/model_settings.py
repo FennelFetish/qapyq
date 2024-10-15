@@ -15,7 +15,8 @@ BackendsCaption = {
     "MiniCPM-V-2.6": ("minicpm", BackendTypes.LLAMA_CPP),
     "InternVL2": ("internvl2", BackendTypes.TRANSFORMERS),
     "Qwen2-VL": ("qwen2vl", BackendTypes.TRANSFORMERS),
-    "Ovis-1.6": ("ovis16", BackendTypes.TRANSFORMERS)
+    "Ovis-1.6": ("ovis16", BackendTypes.TRANSFORMERS),
+    "Molmo": ("molmo", BackendTypes.TRANSFORMERS)
 }
 
 BackendsLLM = {
@@ -273,8 +274,8 @@ class LLMModelSettings(BaseSettingsWidget):
         layout.addWidget(self.lblQuant, row, 0)
         self.cboQuant = QtWidgets.QComboBox()
         self.cboQuant.addItem("None", "none")
-        self.cboQuant.addItem("NF4", "nf4")
-        self.cboQuant.addItem("INT8", "int8")
+        self.cboQuant.addItem("bnb NF4", "nf4")
+        self.cboQuant.addItem("bnb INT8", "int8")
         layout.addWidget(self.cboQuant, row, 1)
 
         self.lblCtxLen = QtWidgets.QLabel("Context Length:")

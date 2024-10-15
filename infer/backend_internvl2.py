@@ -134,11 +134,12 @@ class InternVL2Backend(InferenceBackend):
         self.model.system_message = systemPrompt.strip() if systemPrompt else ""
         set_seed(self.randomSeed())
         
-        for conversation in prompts:
-            history = None
-            for name, prompt in conversation.items():
-                answer, history = self.model.chat(self.tokenizer, pixel_values, prompt, generation_config=self.configDict, history=history, return_history=True)
-                answers[name] = answer
+        with torch.inference_mode():
+            for conversation in prompts:
+                history = None
+                for name, prompt in conversation.items():
+                    answer, history = self.model.chat(self.tokenizer, pixel_values, prompt, generation_config=self.configDict, history=history, return_history=True)
+                    answers[name] = answer
 
         return answers
 

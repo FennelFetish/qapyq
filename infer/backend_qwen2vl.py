@@ -65,12 +65,13 @@ class Qwen2VLBackend(InferenceBackend):
                 inputs = self.processor(text=[inputText], images=[image], padding=True, return_tensors="pt")
                 inputs = inputs.to("cuda")
 
-                outputIDs = self.model.generate(**inputs, generation_config=self.generationConfig, tokenizer=self.processor.tokenizer)
-                generatedIDs = [
-                    outputIDs[len(inputIDs) :]
-                    for inputIDs, outputIDs in zip(inputs.input_ids, outputIDs)
-                ]
-                outputText = self.processor.batch_decode(generatedIDs, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+                with torch.inference_mode():
+                    outputIDs = self.model.generate(**inputs, generation_config=self.generationConfig, tokenizer=self.processor.tokenizer)
+                    generatedIDs = [
+                        outputIDs[len(inputIDs) :]
+                        for inputIDs, outputIDs in zip(inputs.input_ids, outputIDs)
+                    ]
+                    outputText = self.processor.batch_decode(generatedIDs, skip_special_tokens=True, clean_up_tokenization_spaces=True)
 
                 answer = outputText[0].strip()
                 messages.append( {"role": "assistant", "content": answer} )

@@ -273,7 +273,7 @@ class MainToolBar(QtWidgets.QToolBar):
 
         self.addWidget(qtlib.SpacerWidget())
 
-        actAddTab = self.addAction("Add Tab")
+        actAddTab = self.addAction("New Tab")
         actAddTab.triggered.connect(mainWindow.addTab)
 
         winColor = QtWidgets.QApplication.palette().color(QtGui.QPalette.ColorRole.Window)

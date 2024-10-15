@@ -24,6 +24,9 @@ def loadBackend(config: dict):
         case "ovis16":
             from infer.backend_ovis16 import Ovis16Backend
             return Ovis16Backend(config)
+        case "molmo":
+            from infer.backend_molmo import MolmoBackend
+            return MolmoBackend(config)
         case "gguf":
             from infer.backend_llamacpp import LlamaCppBackend
             return LlamaCppBackend(config)
