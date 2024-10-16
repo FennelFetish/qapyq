@@ -24,7 +24,7 @@ class Config:
 
     # Prompts
     promptCaptionPresets    = dict()
-    promptCaptionDefault = {
+    promptCaptionDefault    = {
         "system_prompt": "You are an assistant that perfectly describes scenes in concise English language. " \
                        + "You always express yourself in a well-assured way. Refer to a person using gendered pronouns like she/he. " \
                        + "Don't format your response into numered lists or bullet points.",
@@ -32,7 +32,7 @@ class Config:
     }
 
     promptLLMPresets        = dict()
-    promptLLMDefault = {
+    promptLLMDefault        = {
         "system_prompt": "Your task is to summarize image captions. I will provide multiple descriptions of the same image separated by a line with dash. " \
                        + "I will also include a list of booru tags that accurately categorize the image. " \
                        + "Use your full knowledge about booru tags and use them to inform your summary.\n\n" \
@@ -45,6 +45,8 @@ class Config:
                  + "{{captions.caption_round3}}\n-\n" \
                  + "{{tags.tags}}"
     }
+
+    sysPromptFallbackTemplate = "# System Instructions:\n{{systemPrompt}}\n\n# Prompt:\n{{prompt}}"
 
     # Inference
     inferCaptionPresets     = dict()
@@ -92,6 +94,7 @@ class Config:
 
         cls.promptCaptionPresets  = data.get("prompt_caption_presets", cls.promptCaptionPresets)
         cls.promptLLMPresets      = data.get("prompt_llm_presets", cls.promptLLMPresets)
+        cls.sysPromptFallbackTemplate = data.get("sys_prompt_fallback_template", cls.sysPromptFallbackTemplate)
         
         cls.inferCaptionPresets   = data.get("infer_caption_presets", cls.inferCaptionPresets)
         cls.inferLLMPresets       = data.get("infer_llm_presets", cls.inferLLMPresets)
@@ -128,6 +131,7 @@ class Config:
 
         data["prompt_caption_presets"]      = cls.promptCaptionPresets
         data["prompt_llm_presets"]          = cls.promptLLMPresets
+        data["sys_prompt_fallback_template"] = cls.sysPromptFallbackTemplate
 
         data["infer_caption_presets"]       = cls.inferCaptionPresets
         data["infer_llm_presets"]           = cls.inferLLMPresets

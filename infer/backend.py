@@ -58,18 +58,14 @@ class InferenceBackend:
     def mergeSystemPrompt(prompts: List[Dict[str, str]], systemPrompt: str) -> List[Dict[str, str]]:
         for conv in prompts:
             name, prompt  = next(iter(conv.items())) # First entry
-            conv[name] = f'''
-            # System Instructions:
-            {systemPrompt}
-
-            # Prompt:
-            {prompt}
-            '''
+            text = Config.sysPromptFallbackTemplate.replace("{{systemPrompt}}", systemPrompt)
+            text = text.replace("{{prompt}}", prompt)
+            conv[name] = text
         return prompts
 
 
     def caption(self, imgPath: str, prompts: List[Dict[str, str]], systemPrompt: str = None) -> Dict[str, str]:
-        return {}
+        raise NotImplementedError()
 
     def answer(self, prompts: List[Dict[str, str]], systemPrompt: str = None) -> Dict[str, str]:
-        return {}
+        raise NotImplementedError()
