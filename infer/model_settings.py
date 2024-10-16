@@ -12,11 +12,11 @@ class BackendTypes:
 
 
 BackendsCaption = {
-    "MiniCPM-V-2.6": ("minicpm", BackendTypes.LLAMA_CPP),
     "InternVL2": ("internvl2", BackendTypes.TRANSFORMERS),
-    "Qwen2-VL": ("qwen2vl", BackendTypes.TRANSFORMERS),
+    "MiniCPM-V-2.6": ("minicpm", BackendTypes.LLAMA_CPP),
+    "Molmo": ("molmo", BackendTypes.TRANSFORMERS),
     "Ovis-1.6": ("ovis16", BackendTypes.TRANSFORMERS),
-    "Molmo": ("molmo", BackendTypes.TRANSFORMERS)
+    "Qwen2-VL": ("qwen2vl", BackendTypes.TRANSFORMERS)
 }
 
 BackendsLLM = {

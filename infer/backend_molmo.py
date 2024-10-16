@@ -62,9 +62,7 @@ class MolmoBackend(InferenceBackend):
         set_seed(self.randomSeed())
 
         for conversation in prompts:
-            messages = ""
-            if systemPrompt:
-                messages += self.formatMessage("system", systemPrompt)
+            messages = self.formatMessage("system", systemPrompt) if systemPrompt else ""
 
             for name, prompt in conversation.items():
                 messages += self.formatMessage("user", prompt)
