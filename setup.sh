@@ -1,6 +1,6 @@
 #!/bin/bash
 
-venv_name="venv"
+venv_name=".venv"
 venv_path="./${venv_name}"
 
 
@@ -29,6 +29,10 @@ script_dir="$(dirname "$0")"
 echo ""
 echo "Installing requirements"
 pip install -r "${script_dir}/requirements.txt"
+
+echo ""
+echo "Installing flash_attn"
+pip install flash_attn
 
 echo ""
 echo "Installing llama-cpp-python"

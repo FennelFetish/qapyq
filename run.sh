@@ -1,6 +1,6 @@
 #!/bin/bash
 
-venv_name="venv"
+venv_name=".venv"
 venv_path="./${venv_name}"
 
 # Activate the virtual environment

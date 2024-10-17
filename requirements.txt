@@ -14,11 +14,20 @@ msgpack
 transformers>=4.45.0
 torch
 torchvision
-flash_attn
 accelerate
+#flash_attn # requires packaging/wheel to be already installed, postponing
+
+# flash_attn prerequisites
+packaging
+wheel
 
 # Quantization
 bitsandbytes
+
+# llama-cpp-python
+diskcache
+typing-extensions
+jinja2
 
 # WD Tags
 pandas

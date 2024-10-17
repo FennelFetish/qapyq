@@ -1,5 +1,0 @@
-# JoyTag -> 2GB+ dependecies!
-torch
-torchvision
-transformers
-einops
