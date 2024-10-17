@@ -1,8 +1,8 @@
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPixmap, QTransform
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsPixmapItem, QGraphicsView
-from dropview import DropView, DropZone
-import os
+from .dropview import DropView
+
 
 class ImgView(DropView):
     def __init__(self, filelist):

@@ -1,7 +1,7 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QSignalBlocker
 from .gallery_grid import GalleryGrid
-import qtlib
+import lib.qtlib as qtlib
 
 
 # Contains directory tree toolbar

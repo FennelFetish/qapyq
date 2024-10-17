@@ -2,8 +2,8 @@ import os, traceback
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject
 from infer import Inference, InferencePresetWidget, TagPresetWidget, PromptWidget, InferenceProcess
-from filelist import DataKeys
-import qtlib
+from lib.filelist import DataKeys
+import lib.qtlib as qtlib
 
 
 class CaptionGenerate(QtWidgets.QWidget):

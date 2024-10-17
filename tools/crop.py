@@ -1,12 +1,11 @@
 import cv2 as cv
 import numpy as np
-from PySide6 import QtWidgets
 from PySide6.QtCore import QBuffer, QPointF, QRect, QRectF, Qt, QTimer, QRunnable, QObject, QThreadPool, Signal, Slot
 from PySide6.QtGui import QBrush, QPen, QColor, QPainterPath, QPolygonF, QTransform
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem
 from .crop_toolbar import CropToolBar
 from .view import ViewTool
-from filelist import DataKeys
+from lib.filelist import DataKeys
 from config import Config
 
 

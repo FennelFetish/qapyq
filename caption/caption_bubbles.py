@@ -1,9 +1,6 @@
-
-import random
-import sys
-from PySide6 import QtGui, QtWidgets
-from PySide6.QtCore import QRect, QSize, Qt, Slot, Signal
-import qtlib, util
+from PySide6 import QtWidgets
+from PySide6.QtCore import Qt, Signal
+import lib.qtlib as qtlib
 
 # TODO: Nested bubbles for expressions like: (blue (starry:0.8) sky:1.2)
 

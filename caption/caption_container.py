@@ -1,8 +1,8 @@
 import os
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Signal, Slot, QSignalBlocker
-import qtlib
-from filelist import DataKeys
+import lib.qtlib as qtlib
+from lib.filelist import DataKeys
 from .caption_bubbles import CaptionBubbles
 from .caption_filter import CaptionRulesProcessor
 from .caption_generate import CaptionGenerate

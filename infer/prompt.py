@@ -2,7 +2,7 @@ from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QSignalBlocker
 from typing import List, Dict
 from config import Config
-import qtlib
+import lib.qtlib as qtlib
 
 
 class PromptSettingsSignals(QObject):

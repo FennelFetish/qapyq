@@ -1,9 +1,9 @@
-from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, QSize, Slot, Signal, QThreadPool, QObject, QRunnable
-from .thumbnail_cache import ThumbnailCache
-from filelist import DataKeys
 import os
-import qtlib
+from PySide6 import QtGui, QtWidgets
+from PySide6.QtCore import QSize, Qt, Signal
+from lib.filelist import DataKeys
+import lib.qtlib as qtlib
+from .thumbnail_cache import ThumbnailCache
 
 # TODO: RowView with captions
 

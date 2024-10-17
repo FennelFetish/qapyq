@@ -1,7 +1,7 @@
-from zoompan_view import ZoomPanView
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsRectItem
 from PySide6.QtGui import QPen, QBrush, QColor, QDropEvent
 from PySide6.QtCore import QRectF
+from .zoompan_view import ZoomPanView
 
 
 class DropZone(QGraphicsRectItem):

@@ -1,5 +1,5 @@
 from PySide6.QtCore import QThreadPool, QRunnable, Slot
-from util import Singleton
+from lib.util import Singleton
 
 
 class Inference(metaclass=Singleton):

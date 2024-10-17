@@ -1,4 +1,3 @@
-from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import QCoreApplication, QPointF, QRectF, Qt
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsView
 from config import Config

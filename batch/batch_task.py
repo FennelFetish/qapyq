@@ -1,7 +1,7 @@
 from typing import Callable
 from PySide6.QtCore import Signal, Slot, QRunnable, QObject, QMutex, QMutexLocker
 import traceback
-from filelist import FileList
+from lib.filelist import FileList
 
 
 class BatchTask(QRunnable):

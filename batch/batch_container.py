@@ -4,7 +4,7 @@ from .batch_transform import BatchTransform
 from .batch_rules import BatchRules
 from .batch_apply import BatchApply
 from .batch_log import BatchLog
-import qtlib
+import lib.qtlib as qtlib
 
 
 class BatchContainer(QtWidgets.QTabWidget):

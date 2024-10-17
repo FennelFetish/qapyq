@@ -1,7 +1,7 @@
-from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QBrush, QColor, QPen
+from PySide6.QtCore import QRectF
+from PySide6.QtGui import QColor, QPen
 from PySide6.QtWidgets import QGraphicsLineItem
-from imgview import ClipImgItem
+from ui.imgview import ClipImgItem
 from .view import ViewTool
 
 

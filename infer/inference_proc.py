@@ -1,6 +1,6 @@
 from PySide6.QtCore import QProcess, QByteArray, QMutex, QMutexLocker, QThread
 import sys, struct, msgpack, copy
-from util import Singleton
+from lib.util import Singleton
 from config import Config
 
 

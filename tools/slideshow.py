@@ -1,10 +1,9 @@
-from PySide6 import QtGui
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QTimer
 import random
-from .view import ViewTool
-from imgview import ImgItem
 from config import Config
+from ui.imgview import ImgItem
+from .view import ViewTool
 
 
 class SlideshowTool(ViewTool):

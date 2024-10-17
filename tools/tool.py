@@ -1,5 +1,5 @@
-from dropview import DropZone
-from imgview import ImgView
+from ui.dropview import DropZone
+from ui.imgview import ImgView
 
 
 class Tool:

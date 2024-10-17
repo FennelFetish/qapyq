@@ -1,7 +1,7 @@
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QRect, QSize, QMimeData
 import os
-import util
+import lib.util as util
 
 
 def setTextEditHeight(textEdit, numRows, mode=None):

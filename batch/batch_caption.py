@@ -1,6 +1,6 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
-import qtlib
+import lib.qtlib as qtlib
 from config import Config
 from infer import Inference, InferencePresetWidget, TagPresetWidget, PromptWidget
 from .batch_task import BatchTask

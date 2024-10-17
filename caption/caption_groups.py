@@ -1,7 +1,8 @@
 from typing import ForwardRef
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot
-import qtlib, util
+import lib.qtlib as qtlib
+import lib.util as util
 
 CaptionControlGroup = ForwardRef('CaptionControlGroup')
 

@@ -1,10 +1,10 @@
 import sys
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Slot, QPoint
-from tab import ImgTab
 from config import Config
-import qtlib
-import aux_window
+from ui import aux_window
+from ui.tab import ImgTab
+import lib.qtlib as qtlib
 
 
 EMPTY_TAB_TITLE = "Empty"

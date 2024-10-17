@@ -1,11 +1,11 @@
 import os
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Signal
-from export import Export
-from filelist import FileList
-from imgview import ImgView
 from config import Config
-import qtlib
+from lib.export import Export
+from lib.filelist import FileList
+from lib.qtlib import ColoredMessageStatusBar
+from .imgview import ImgView
 
 
 class ImgTab(QtWidgets.QMainWindow):
@@ -130,7 +130,7 @@ class ImgTab(QtWidgets.QMainWindow):
 
 
 
-class TabStatusBar(qtlib.ColoredMessageStatusBar):
+class TabStatusBar(ColoredMessageStatusBar):
     def __init__(self, tab):
         super().__init__("border-top: 1px outset black")
         self.tab = tab

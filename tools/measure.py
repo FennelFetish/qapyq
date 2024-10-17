@@ -1,7 +1,7 @@
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, QLineF, QPointF, QPoint
+from PySide6.QtCore import Qt, QPointF, QPoint
 from .view import ViewTool
-import qtlib
+import lib.qtlib as qtlib
 import math
 
 # Right click (?) sets origin point

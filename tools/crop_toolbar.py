@@ -2,7 +2,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
 import superqt
 import cv2 as cv
-import qtlib
+import lib.qtlib as qtlib
 from config import Config
 
 
