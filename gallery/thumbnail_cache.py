@@ -1,6 +1,6 @@
-from PySide6.QtCore import Slot, Signal, QSize, QThreadPool, QObject, QRunnable
+from PySide6.QtCore import Slot, Signal, QSize, QThreadPool, QObject, QRunnable, Qt
 from PySide6.QtGui import QPixmap, QImageReader
-from filelist import DataKeys
+from lib.filelist import FileList, DataKeys
 from config import Config
 import time
 
@@ -10,7 +10,7 @@ class ThumbnailCache:
     REQUEST_TIMEOUT = 1000 * 1000000
 
     @classmethod
-    def updateThumbnail(cls, filelist, target, file):
+    def updateThumbnail(cls, filelist: FileList, target, file):
         if pixmap := filelist.getData(file, DataKeys.Thumbnail):
             target.pixmap = pixmap
             return
@@ -19,6 +19,7 @@ class ThumbnailCache:
         # More requests are queued while the items are painted, congesting the thread pool and causing unnecessary I/O.
         # As a workaround, the request time is stored here. This will throttle the requests,
         # but some thumbnails may be missing initially until another paint event is received.
+        # ---> Fixed with ConnectionType.BlockingQueuedConnection?
         requestTime = filelist.getData(file, DataKeys.ThumbnailRequestTime)
         now = time.monotonic_ns()
         if requestTime and requestTime+cls.REQUEST_TIMEOUT > now:
@@ -26,16 +27,16 @@ class ThumbnailCache:
         filelist.setData(file, DataKeys.ThumbnailRequestTime, now, False)
 
         task = ThumbnailTask(filelist, target, file)
-        task.signals.done.connect(cls._onThumbnailLoaded)
+        task.signals.done.connect(cls._onThumbnailLoaded, Qt.ConnectionType.BlockingQueuedConnection)
         QThreadPool.globalInstance().start(task)
 
+    @Slot()
     @staticmethod
-    def _onThumbnailLoaded(filelist, target, file, img):
+    def _onThumbnailLoaded(filelist: FileList, target, file, img):
         pixmap = QPixmap.fromImage(img)
         filelist.setData(file, DataKeys.Thumbnail, pixmap)
         filelist.removeData(file, DataKeys.ThumbnailRequestTime, False)
         target.pixmap = pixmap
-        del img
 
 
 
@@ -48,7 +49,7 @@ class ThumbnailTask(QRunnable):
         self.filelist = filelist
         self.target = target
         self.file = file
-        self.signals = ThumbnailTask.Signals()
+        self.signals = self.Signals()
 
     @Slot()
     def run(self):
