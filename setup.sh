@@ -31,9 +31,9 @@ echo "Installing requirements"
 pip install -r "${script_dir}/requirements.txt"
 
 echo ""
-echo "Installing requirements for llamacpp"
+echo "Installing llama-cpp-python"
 pip install -r "${script_dir}/requirements-llamacpp.txt"
 
 echo ""
-echo "Installing requirements for joytag"
-pip install -r "${script_dir}/requirements-joytag.txt"
+echo "Installing onnxruntime-gpu"
+pip install -r "${script_dir}/requirements-onnx.txt"

@@ -4,8 +4,25 @@ superqt
 
 # Image
 opencv-python
+pillow  # File type support wider than opencv's
 numpy
-#pillow
 
 # Inter-process communication
 msgpack
+
+# Inference
+transformers>=4.45.0
+torch
+torchvision
+flash_attn
+accelerate
+
+# Quantization
+bitsandbytes
+
+# WD Tags
+pandas
+
+# InternVL2
+timm
+sentencepiece
