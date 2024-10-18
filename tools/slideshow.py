@@ -131,7 +131,9 @@ class SlideshowTool(ViewTool):
         self._oldPixmap = imgview.image.pixmap()
 
     def onDisabled(self, imgview):
-        self._playTimer.stop()
+        if self._playTimer.isActive():
+            self._toolbar.togglePlay()
+        
         self.resetHistory()
         self.tab.statusBar().show()
         self.tab.filelist.removeListener(self)
