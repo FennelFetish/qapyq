@@ -7,9 +7,6 @@ from ui.tab import ImgTab
 import lib.qtlib as qtlib
 
 
-EMPTY_TAB_TITLE = "Empty"
-
-
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, app):
         super().__init__()
@@ -107,7 +104,7 @@ class MainWindow(QtWidgets.QMainWindow):
     @Slot()
     def updateTitle(self, filename: str | None):
         title = Config.windowTitle
-        if filename and filename != EMPTY_TAB_TITLE:
+        if filename and filename != ImgTab.EMPTY_TAB_TITLE:
             title = f"{filename} - {title}"
         self.setWindowTitle(title)
 
@@ -332,6 +329,8 @@ def restoreWindows(win: MainWindow):
 
 def main() -> int:
     app = QtWidgets.QApplication([])
+    app.setStyle("Fusion")
+
     win = MainWindow(app)
     win.show()
     loadInitialImage(win)

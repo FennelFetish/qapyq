@@ -9,6 +9,8 @@ from .imgview import ImgView
 
 
 class ImgTab(QtWidgets.QMainWindow):
+    EMPTY_TAB_TITLE = "Empty"
+
     tabTitleChanged = Signal(str)
 
     def __init__(self, tabWidget: QtWidgets.QTabWidget):
@@ -36,7 +38,7 @@ class ImgTab(QtWidgets.QMainWindow):
 
     def onFileChanged(self, currentFile):
         idx = self.tabWidget.indexOf(self)
-        name = os.path.basename(currentFile) if currentFile else EMPTY_TAB_TITLE
+        name = os.path.basename(currentFile) if currentFile else self.EMPTY_TAB_TITLE
         self.tabWidget.setTabText(idx, name)
         self.tabTitleChanged.emit(name)
 
