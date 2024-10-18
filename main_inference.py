@@ -161,15 +161,16 @@ def handleError(protocol: Protocol, excType: str, excMessage: str) -> None:
 def main() -> int:
     printErr("Inference process started")
     protocol = Protocol(sys.stdin.buffer, sys.stdout.buffer)
+    
     running = True
     while running:
         try:
-            if not handleMessage(protocol):
-                running = False
-                break
+            running = handleMessage(protocol)
+        except KeyboardInterrupt:
+            running = False
         except:
             exType, exMessage, exTraceback = sys.exc_info()
-            traceback.print_exc(file=sys.stderr)
+            printErr(traceback.format_exc())
             handleError(protocol, str(exType), str(exMessage))
     
     printErr("Inference process ending")
