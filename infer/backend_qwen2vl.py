@@ -13,14 +13,13 @@ class Qwen2VLBackend(InferenceBackend):
         modelPath = config.get("model_path")
 
         devmap = self.makeDeviceMap(modelPath, config.get("gpu_layers"), config.get("vis_gpu_layers"))
-        attn = "eager" if devmap.hasCpuLayers else "flash_attention_2"
         quant = Quantization.getQuantConfig(config.get("quantization"), devmap.hasCpuLayers)
 
         self.model = Qwen2VLForConditionalGeneration.from_pretrained(
             modelPath,
             torch_dtype=torch.bfloat16,
             device_map=devmap.deviceMap,
-            attn_implementation=attn,
+            attn_implementation=devmap.attention,
             quantization_config=quant,
             #vision_config={"torch_dtype": torch.bfloat16}
         )
@@ -46,7 +45,7 @@ class Qwen2VLBackend(InferenceBackend):
         )
 
 
-    def caption(self, imgPath: str, prompts: List[Dict[str, str]], systemPrompt: str = None) -> List[Dict[str, str]]:
+    def caption(self, imgPath: str, prompts: List[Dict[str, str]], systemPrompt: str = None) -> Dict[str, str]:
         image = Image.open(imgPath)
         answers = dict()
 

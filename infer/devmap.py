@@ -65,6 +65,18 @@ class DevMap:
         self.deviceMap[f"{prefix}.{maxGpuLayer}"] = device
 
 
+    @property
+    def attention(self) -> str:
+        if self.hasCpuLayers:
+            return "eager"
+
+        try:
+            import flash_attn
+            return "flash_attention_2"
+        except:
+            return "eager"
+
+
     def print(self) -> None:
         sys.stderr.write(f"Device Map:{os.linesep}")
         for k, v in self.deviceMap.items():

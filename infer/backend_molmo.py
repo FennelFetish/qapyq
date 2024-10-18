@@ -17,7 +17,7 @@ class MolmoBackend(InferenceBackend):
         self.model = AutoModelForCausalLM.from_pretrained(
             modelPath,
             torch_dtype=torch.bfloat16,
-            #attn_implementation=attn, # ValueError: MolmoForCausalLM does not support Flash Attention 2.0 yet.
+            #attn_implementation=devmap.attention, # ValueError: MolmoForCausalLM does not support Flash Attention 2.0 yet.
             device_map=devmap.deviceMap,
             quantization_config=quant,
             trust_remote_code=True

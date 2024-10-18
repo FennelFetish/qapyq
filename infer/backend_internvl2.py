@@ -93,7 +93,6 @@ class InternVL2Backend(InferenceBackend):
         modelPath = config.get("model_path")
 
         devmap = self.makeDeviceMap(modelPath, config.get("gpu_layers"), config.get("vis_gpu_layers"))
-        attn = "eager" if devmap.hasCpuLayers else "flash_attention_2"
         quant = Quantization.getQuantConfig(config.get("quantization"), devmap.hasCpuLayers)
 
         self.model = AutoModel.from_pretrained(
@@ -101,7 +100,7 @@ class InternVL2Backend(InferenceBackend):
             torch_dtype=torch.bfloat16,
             #low_cpu_mem_usage=True,
             #use_flash_attn=True,
-            attn_implementation=attn,
+            attn_implementation=devmap.attention,
             device_map=devmap.deviceMap,
             quantization_config=quant,
             trust_remote_code=True,

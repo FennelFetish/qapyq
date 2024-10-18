@@ -25,7 +25,7 @@ class Ovis16Backend(InferenceBackend):
             modelPath,
             torch_dtype=torch.bfloat16,
             multimodal_max_length=8192,
-            #attn_implementation='flash_attention_2',
+            #attn_implementation=devmap.attention,
             device_map=devmap.deviceMap,
             quantization_config=quant,
             trust_remote_code=True
