@@ -24,7 +24,7 @@ class InferenceException(Exception):
 
 class InferenceProcess(metaclass=Singleton):
     def __init__(self):
-        self.proc = None
+        self.proc: QProcess = None
         self.mutex = QMutex()
 
         self.currentLLMConfig = dict()
@@ -39,8 +39,9 @@ class InferenceProcess(metaclass=Singleton):
             self.proc = QProcess()
             self.proc.setProgram(sys.executable)
             self.proc.setArguments(["-u", "main_inference.py"]) # Unbuffered pipes
-            self.proc.setProcessChannelMode(QProcess.SeparateChannels)
-            self.proc.readyReadStandardError.connect(self._onError)
+            #self.proc.setArguments(["main_inference.py"])
+            #self.proc.setProcessEnvironment(QProcessEnvironment.systemEnvironment())
+            self.proc.setProcessChannelMode(QProcess.ProcessChannelMode.ForwardedErrorChannel)
             self.proc.finished.connect(self._onProcessEnded)
             self.proc.start()
 
@@ -139,10 +140,6 @@ class InferenceProcess(metaclass=Singleton):
             else:
                 raise InferenceException("Unknown error")
 
-    def _onError(self):
-        err = self.proc.readAllStandardError().data().decode('utf-8')
-        sys.stderr.write(err)
-        sys.stderr.flush()
 
     def _onProcessEnded(self, exitCode, exitStatus):
         print(f"Inference process ended. Exit code: {exitCode}, {exitStatus}")

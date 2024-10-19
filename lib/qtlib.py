@@ -58,7 +58,7 @@ class EllipsisLabel(QtWidgets.QLabel):
         self.maxLength = maxLength
 
     def setText(self, text):
-        text = text.strip().replace(os.linesep, "↩")
+        text = text.strip().replace("\n", "↩")
         if len(text) > self.maxLength:
             partLength = max((self.maxLength - EllipsisLabel._ellipsisLength) // 2, 10)
             wordsLeft  = text[:partLength].split(" ")
