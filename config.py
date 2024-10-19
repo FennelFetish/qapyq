@@ -4,7 +4,7 @@ class Config:
     windowIcon              = "res/qapyq.png"
 
     # Paths
-    pathConfig              = "./pyimgset_config.json"
+    pathConfig              = "./qapyq_config.json"
     pathExport              = "."
     pathDebugLoad           = ""
 
