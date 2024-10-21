@@ -4,30 +4,25 @@ superqt
 
 # Image
 opencv-python
-pillow  # File type support wider than opencv's
-numpy
+pillow
 
 # Inter-process communication
 msgpack
 
 # Inference
 transformers>=4.45.0
-torch
-torchvision
 accelerate
-#flash_attn # requires packaging/wheel to be already installed, postponing
-
-# flash_attn prerequisites
-packaging
-wheel
 
 # Quantization
 bitsandbytes
 
 # llama-cpp-python
 diskcache
-typing-extensions
-jinja2
+
+# onnx
+numpy<2.0,>=1.21.6
+protobuf
+humanfriendly
 
 # WD Tags
 pandas
@@ -35,3 +30,4 @@ pandas
 # InternVL2
 timm
 sentencepiece
+einops
