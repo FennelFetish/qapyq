@@ -41,7 +41,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(self.tabWidget)
 
     @Slot()
-    def addTab(self):
+    def addTab(self) -> ImgTab:
         if self._fullscreenTab:
             self.toggleFullscreen()
 
@@ -50,6 +50,7 @@ class MainWindow(QtWidgets.QMainWindow):
         index = self.tabWidget.addTab(tab, "Empty")
         self.tabWidget.setCurrentIndex(index)
         tab.imgview.setFocus()
+        return tab
 
     @property
     def currentTab(self) -> ImgTab:
@@ -178,6 +179,16 @@ class MainMenu(QtWidgets.QMenu):
 
         # https://doc.qt.io/qt-6/qt.html#Key-enum
 
+        actOpen = QtGui.QAction("&Open...", self)
+        actOpen.setShortcutContext(Qt.ApplicationShortcut)
+        actOpen.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_O))
+        actOpen.triggered.connect(self.open)
+
+        actOpenDir = QtGui.QAction("&Open Folder...", self)
+        actOpenDir.setShortcutContext(Qt.ApplicationShortcut)
+        actOpenDir.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.SHIFT | Qt.Key_O))
+        actOpenDir.triggered.connect(self.openDir)
+
         actFullscreen = QtGui.QAction("Toggle &Fullscreen", self)
         actFullscreen.setShortcutContext(Qt.ApplicationShortcut)
         actFullscreen.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_F))
@@ -194,7 +205,7 @@ class MainMenu(QtWidgets.QMenu):
         # actPrevImage.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_PageDown))
         # actPrevImage.triggered.connect(lambda: mainWindow.currentTab.filelist.setPrevFile())
 
-        actAddTab = QtGui.QAction("New Tab", self)
+        actAddTab = QtGui.QAction("New &Tab", self)
         actAddTab.setShortcutContext(Qt.ApplicationShortcut)
         actAddTab.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_T))
         actAddTab.triggered.connect(mainWindow.addTab)
@@ -209,7 +220,9 @@ class MainMenu(QtWidgets.QMenu):
         actCloseTab.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_W))
         actCloseTab.triggered.connect(mainWindow.closeCurrentTab)
 
-        actClearVram = QtGui.QAction("Clear VRAM", self)
+        actClearVram = QtGui.QAction("Clear V&RAM", self)
+        actClearVram.setShortcutContext(Qt.ApplicationShortcut)
+        actClearVram.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_R))
         actClearVram.triggered.connect(self.clearVram)
 
         actModelConfig = QtGui.QAction("Model Settings...", self)
@@ -220,6 +233,9 @@ class MainMenu(QtWidgets.QMenu):
         actQuit.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_Q))
         actQuit.triggered.connect(mainWindow.close)
 
+        self.addAction(actOpen)
+        self.addAction(actOpenDir)
+        self.addSeparator()
         self.addAction(actFullscreen)
         # self.addAction(actNextImage)
         # self.addAction(actPrevImage)
@@ -232,6 +248,21 @@ class MainMenu(QtWidgets.QMenu):
         self.addAction(actClearVram)
         self.addSeparator()
         self.addAction(actQuit)
+
+    @Slot()
+    def open(self):
+        path, filter = QtWidgets.QFileDialog.getOpenFileName(self, "Choose file")
+        if path:
+            tab = self.mainWindow.addTab()
+            tab.filelist.load(path)
+
+    @Slot()
+    def openDir(self):
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose directory")
+        if path:
+            tab = self.mainWindow.addTab()
+            tab.filelist.load(path)
+    
 
     @Slot()
     def clearVram(self):
