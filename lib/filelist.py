@@ -170,7 +170,8 @@ class FileList:
         for (root, dirs, files) in os.walk(path, topdown=True, followlinks=True):
             if not subfolders:
                 dirs[:] = []
-            self.files += [os.path.join(root, f) for f in files if any(f.lower().endswith(ext) for ext in VALID_EXTENSION)]
+            # os.path.join() mixes up the separators on Windows.
+            self.files += [f"{root}/{f}" for f in files if any(f.lower().endswith(ext) for ext in VALID_EXTENSION)]
 
     def _sortFiles(self):
         self.files.sort(key=lambda path: os.path.split(path))

@@ -7,8 +7,10 @@ class AuxiliaryWindow(QtWidgets.QMainWindow):
     closed = Signal(object)
 
     def __init__(self, parent, contentClass, title, configKey):
-        super().__init__(parent)
+        # Don't set parent so windows have their own entry in task bar on Windows
+        super().__init__(None)
         self.setWindowTitle(f"{title} - {Config.windowTitle}")
+        self.setWindowIcon(parent.windowIcon())
         self.contentClass = contentClass
         self.configKey = configKey
         self.tab = None
