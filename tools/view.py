@@ -16,8 +16,8 @@ class ViewTool(Tool):
     def onDrop(self, event, zoneIndex):
         paths = (url.toLocalFile() for url in event.mimeData().urls())
         
-        # CTRL pressed -> Append
-        if (event.modifiers() & Qt.ControlModifier) == Qt.ControlModifier:
+        # SHIFT pressed -> Append
+        if (event.modifiers() & Qt.ShiftModifier) == Qt.ShiftModifier:
             self._imgview.filelist.loadAppend(paths)
         else:
             self._imgview.filelist.loadAll(paths)
