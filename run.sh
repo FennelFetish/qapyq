@@ -24,3 +24,5 @@ python_exec="${venv_path}/bin/python"
 # Write output to terminal and last.log
 cd "$script_dir"
 exec ${python_exec} "./main.py" "$1" > >(tee "./last.log") 2>&1
+
+# TODO: Open images in new tab if program already runs

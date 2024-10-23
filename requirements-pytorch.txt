@@ -1,7 +1,7 @@
 #--index-url https://download.pytorch.org/whl/cu121
 --index-url https://download.pytorch.org/whl/cu124
 
-torch; platform_system != "Windows"
-torch==2.4.1; platform_system == "Windows"
+# Molmo is slow with torch 2.5.0
 
+torch==2.4.1
 torchvision

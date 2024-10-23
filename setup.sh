@@ -49,7 +49,7 @@ activate_venv() {
 
 ask_flash_attn() {
     echo ""
-    echo "Does your hardware support flash attention? (nvidia 30xx GPU, Ampere generation or later)"
+    echo "Does your hardware support flash attention 2? (nvidia 30xx GPU, Ampere generation or later)"
     echo -n "[y/N] "
     local flash_attn
     read flash_attn
@@ -95,11 +95,11 @@ do_install() {
 }
 
 
-cd "$script_dir"
-activate_venv
-
 ask_flash_attn
 flash_attn="$?"
+
+cd "$script_dir"
+activate_venv
 
 do_install "$flash_attn"
 

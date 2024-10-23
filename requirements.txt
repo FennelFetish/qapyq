@@ -20,7 +20,7 @@ bitsandbytes
 diskcache
 
 # onnx
-numpy<2.0,>=1.21.6
+numpy<2.0,>=1.26.3
 protobuf
 humanfriendly
 

@@ -4,6 +4,10 @@ setlocal
 if not defined PYTHON (set PYTHON=python)
 if not defined VENV_DIR (set "VENV_DIR=%~dp0%.venv")
 
+:ask_flash_attn
+set /p "FLASH_ATTN=Does your hardware support flash attention 2? (nvidia 30xx GPU, Ampere generation or later) [y/N] "
+
+
 :check_venv
 dir "%VENV_DIR%" > NUL 2> NUL
 if %ERRORLEVEL% == 0 goto :activate_venv
@@ -18,9 +22,6 @@ goto :end_error
 :activate_venv
 echo Activating virtual environment: %VENV_DIR%
 set PYTHON="%VENV_DIR%\Scripts\python.exe"
-
-:ask_flash_attn
-set /p "FLASH_ATTN=Does your hardware support flash attention? (nvidia 30xx GPU, Ampere generation or later) [y/N] "
 
 
 :install_dependencies
