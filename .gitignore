@@ -3,3 +3,5 @@ __pycache__/
 /.vscode/
 *.log
 *.json
+
+screenshots/
