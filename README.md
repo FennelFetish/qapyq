@@ -1,9 +1,11 @@
-# qapyq
 <img src="res/qapyq.png" align="left" />
 
-**qapyq (CapPic): An image viewer and AI-assisted editing tool that helps with curating datasets for generative AI models, finetunes and LoRA.**
+# qapyq
+<sup>(CapPic)</sup><br />
+**An image viewer and AI-assisted editing tool that helps with curating datasets for generative AI models, finetunes and LoRA.** 
 
 <br clear="left"/>
+<br /><br />
 
 ![Screenshot of qapyq with its 4 windows open.](https://www.alchemists.ch/qapyq/overview.jpg)
 
@@ -34,19 +36,19 @@
 
 
 ## Supported Models
-#### Tagging
-- [JoyTag](https://github.com/fpgaminer/joytag)
-- [WD (onnx)](https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3) (eva02 recommended)
+- **Tagging**
+  - [JoyTag](https://github.com/fpgaminer/joytag)
+  - [WD (onnx)](https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3) (eva02 recommended)
 
-#### Captioning
-- [InternVL2](https://huggingface.co/collections/OpenGVLab/internvl-20-667d3961ab5eb12c7ed1463e)
-- [MiniCPM-V-2.6 (GGUF)](https://huggingface.co/openbmb/MiniCPM-V-2_6-gguf) ([alternative link](https://huggingface.co/bartowski/MiniCPM-V-2_6-GGUF))
-- [Molmo](https://huggingface.co/collections/allenai/molmo-66f379e6fe3b8ef090a8ca19)
-- [Ovis-1.6](https://huggingface.co/AIDC-AI/Ovis1.6-Gemma2-9B)
-- [Qwen2-VL](https://huggingface.co/collections/Qwen/qwen2-vl-66cee7455501d7126940800d)
+- **Captioning**
+  - [InternVL2](https://huggingface.co/collections/OpenGVLab/internvl-20-667d3961ab5eb12c7ed1463e)
+  - [MiniCPM-V-2.6 (GGUF)](https://huggingface.co/openbmb/MiniCPM-V-2_6-gguf) ([alternative link](https://huggingface.co/bartowski/MiniCPM-V-2_6-GGUF))
+  - [Molmo](https://huggingface.co/collections/allenai/molmo-66f379e6fe3b8ef090a8ca19)
+  - [Ovis-1.6](https://huggingface.co/AIDC-AI/Ovis1.6-Gemma2-9B)
+  - [Qwen2-VL](https://huggingface.co/collections/Qwen/qwen2-vl-66cee7455501d7126940800d)
 
-#### LLM
-- Models in GGUF format with embedded chat template (llama-cpp backend).
+- **LLM**
+  - Models in GGUF format with embedded chat template (llama-cpp backend).
 
 
 ## Setup
@@ -59,10 +61,11 @@ By default, prebuilt packages for CUDA 12.4 are installed. If you need a differe
    - This will create a virtual environment that needs 7-9 GB.
 
 Tested with RTX 4090 on Kubuntu 22.04 and Windows 10. Python versions 3.10/3.11.
+
 If the setup scripts didn't work for you, but you manually got it running, please share your solution and raise an issue.
 
 
-#### Models
+### Models
 qapyq makes no internet connections (except during the setup script) and does not automatically download models.
 Models need to be downloaded manually from https://huggingface.co and then configured in the Model Settings, accessible via the burger menu in the top left corner of the Main Window.
 
@@ -73,11 +76,11 @@ Models need to be downloaded manually from https://huggingface.co and then confi
 > [!NOTE]
 > For Ovis-1.6 to run multiple times, I had to make these changes to the model's code: [GitHub Issue](https://github.com/AIDC-AI/Ovis/issues/31#issuecomment-2395469771)
 
-##### Prequantized Models (AWQ/GPTQ)
+#### Prequantized Models (AWQ/GPTQ)
 These should work, but the required packages are not installed by default.
 Installing those requires downgrading torch and CUDA versions and may have to be built from source.
 
-##### Model Settings for 24GB VRAM
+#### Model Settings for 24GB VRAM
 
 | Model | Quantization | LLM GPU Layers | Visual GPU Layers |
 | ----- | ------------ | -------------- | ----------------- |
@@ -111,7 +114,7 @@ Use the toolbar at the top of the Main Window to select tools and toggle windows
 - Pan image by dragging with mouse
 
 
-#### Measure Tool
+### Measure Tool
 - Right click starts and freezes measurement.
 - Status bar at the bottom displays values.
 
@@ -121,11 +124,11 @@ Use the toolbar at the top of the Main Window to select tools and toggle windows
   - Blur radius/kernel size
   - ...
 
-#### Compare Tool
+### Compare Tool
 - Load second image by dropping it onto the right side of the Main Window.
 - Or right-click on an image in the gallery.
 
-#### Crop Tool
+### Crop Tool
 1. Set export path.
    - Elements of the image path can be included in the destination path (as part of name or as subfolders).
    - The destination path is shown at the bottom.
