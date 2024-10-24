@@ -117,10 +117,7 @@ class CropTool(ViewTool):
 
     def updateSelection(self, mouseCoords: QPointF):
         self.updateSelectionRect(mouseCoords)
-
-        self._mask.clipPath.clear()
-        self._mask.clipPath.addRect(self._imgview.viewport().rect())
-        self._mask.clipPath.addRect(self._cropRect.rect())
+        self._mask.setHighlightRegion(self._imgview.viewport().rect(), self._cropRect.rect())
 
         # Change selection color depending on crop size
         pen = self.PEN_UPSCALE if self._cropHeight < self._targetHeight else self.PEN_DOWNSCALE
@@ -148,8 +145,8 @@ class CropTool(ViewTool):
         params = self._toolbar.getSaveParams()
 
         task = ExportTask(self._export, currentFile, pixmap, poly, self._targetWidth, self._targetHeight, interp, border, params)
-        task.signals.done.connect(self.onExportDone)
-        task.signals.fail.connect(lambda: self.tab.statusBar().showColoredMessage("Export failed", success=False))
+        task.signals.done.connect(self.onExportDone, Qt.ConnectionType.BlockingQueuedConnection)
+        task.signals.fail.connect(self.onExportFailed, Qt.ConnectionType.BlockingQueuedConnection)
         QThreadPool.globalInstance().start(task)
 
     @Slot()
@@ -157,6 +154,10 @@ class CropTool(ViewTool):
         print("Exported cropped image to", path)
         self.tab.statusBar().showColoredMessage("Exported cropped image to: " + path, success=True)
         self._imgview.filelist.setData(file, DataKeys.CropState, DataKeys.IconStates.Saved)
+    
+    @Slot()
+    def onExportFailed(self):
+        self.tab.statusBar().showColoredMessage("Export failed", success=False)
 
 
     def onFileChanged(self, currentFile):
@@ -288,7 +289,7 @@ class ExportTask(QRunnable):
 
     def __init__(self, export, file, pixmap, poly, targetWidth, targetHeight, interp, border, saveParams):
         super().__init__()
-        self.signals = ExportTask.ExportTaskSignals()
+        self.signals = self.ExportTaskSignals()
 
         self.export = export
         export.suffix = f"_{targetWidth}x{targetHeight}"
@@ -364,10 +365,15 @@ class MaskRect(QGraphicsRectItem):
     def __init__(self):
         super().__init__(None)
         self.setFlag(QGraphicsItem.ItemClipsToShape, True)
-        self.clipPath = QPainterPath()
+        self._clipPath = QPainterPath()
+    
+    def setHighlightRegion(self, viewportRect, selectionRect) -> None:
+        self._clipPath.clear()
+        self._clipPath.addRect(viewportRect)
+        self._clipPath.addRect(selectionRect)
 
     def shape(self) -> QPainterPath:
-        return self.clipPath
+        return self._clipPath
 
 
 

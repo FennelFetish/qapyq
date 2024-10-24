@@ -1,6 +1,6 @@
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPixmap, QTransform
-from PySide6.QtWidgets import QGraphicsItem, QGraphicsPixmapItem, QGraphicsView
+from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QTransform
+from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsView
 from .dropview import DropView
 
 
@@ -137,25 +137,3 @@ class ImgItem(QGraphicsPixmapItem):
         transform = transform.translate(x, y)
         transform = transform.scale(scale, scale)
         self.setTransform(transform)
-
-
-
-class ClipImgItem(ImgItem):
-    def __init__(self):
-        super().__init__()
-        self.setFlag(QGraphicsItem.ItemClipsToShape, True)
-        self.clipPath = QPainterPath()
-
-    def setClipWidth(self, x):
-        w = self.pixmap().width()
-        h = self.pixmap().height()
-        self.clipPath.clear()
-        self.clipPath.addRect(x, 0, w-x, h)
-        self.update()
-    
-    def setClipEmpty(self):
-        self.clipPath.clear()
-        self.update()
-
-    def shape(self) -> QPainterPath:
-        return self.clipPath

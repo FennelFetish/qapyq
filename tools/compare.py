@@ -1,7 +1,7 @@
 from PySide6.QtCore import QRectF
-from PySide6.QtGui import QColor, QPen
-from PySide6.QtWidgets import QGraphicsLineItem
-from ui.imgview import ClipImgItem
+from PySide6.QtGui import QColor, QPen, QPainterPath
+from PySide6.QtWidgets import QGraphicsLineItem, QGraphicsItem
+from ui.imgview import ImgItem
 from .view import ViewTool
 
 
@@ -70,3 +70,25 @@ class CompareTool(ViewTool):
     def onMouseLeave(self, event):
         self._image.setClipEmpty()
         self._dividerLine.setVisible(False)
+
+
+
+class ClipImgItem(ImgItem):
+    def __init__(self):
+        super().__init__()
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemClipsToShape, True)
+        self._clipPath = QPainterPath()
+
+    def setClipWidth(self, x):
+        w = self.pixmap().width()
+        h = self.pixmap().height()
+        self._clipPath.clear()
+        self._clipPath.addRect(x, 0, w-x, h)
+        self.update()
+    
+    def setClipEmpty(self):
+        self._clipPath.clear()
+        self.update()
+
+    def shape(self) -> QPainterPath:
+        return self._clipPath
