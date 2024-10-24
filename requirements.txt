@@ -10,7 +10,7 @@ pillow
 msgpack
 
 # Inference
-transformers>=4.45.0
+transformers>=4.45.0,<4.46 # InternVL2 1B/40B have issues with 4.46
 accelerate
 
 # Quantization
