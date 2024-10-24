@@ -20,3 +20,4 @@ cd /d "%~dp0%"
 
 :end
 endlocal
+pause

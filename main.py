@@ -360,6 +360,7 @@ class MainToolBar(QtWidgets.QToolBar):
 def loadInitialImage(win: MainWindow):
     loadPath = sys.argv[1] if len(sys.argv) > 1 else Config.pathDebugLoad
     if loadPath:
+        loadPath = loadPath.replace("\\", "/")
         tab: ImgTab = win.tabWidget.currentWidget()
         tab.filelist.load(loadPath)
 
