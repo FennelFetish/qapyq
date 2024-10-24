@@ -220,14 +220,17 @@ class MainMenu(QtWidgets.QMenu):
         actCloseTab.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_W))
         actCloseTab.triggered.connect(mainWindow.closeCurrentTab)
 
+        actModelConfig = QtGui.QAction("Model Settings...", self)
+        actModelConfig.triggered.connect(self.showModelSettings)
+
         actClearVram = QtGui.QAction("Clear V&RAM", self)
         actClearVram.setShortcutContext(Qt.ApplicationShortcut)
         actClearVram.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_R))
         actClearVram.triggered.connect(self.clearVram)
 
-        actModelConfig = QtGui.QAction("Model Settings...", self)
-        actModelConfig.triggered.connect(self.showModelSettings)
-        
+        actKillInference = QtGui.QAction("Terminate Inference", self)
+        actKillInference.triggered.connect(self.killInference)
+
         actQuit = QtGui.QAction("&Quit", self)
         actQuit.setShortcutContext(Qt.ApplicationShortcut)
         actQuit.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_Q))
@@ -246,6 +249,7 @@ class MainMenu(QtWidgets.QMenu):
         self.addSeparator()
         self.addAction(actModelConfig)
         self.addAction(actClearVram)
+        self.addAction(actKillInference)
         self.addSeparator()
         self.addAction(actQuit)
 
@@ -268,6 +272,11 @@ class MainMenu(QtWidgets.QMenu):
     def clearVram(self):
         from infer import Inference
         Inference().quitProcess()
+
+    @Slot()
+    def killInference(self):
+        from infer import Inference
+        Inference().proc.kill()
 
     @Slot()
     def showModelSettings(self):

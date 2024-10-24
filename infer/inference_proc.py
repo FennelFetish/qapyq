@@ -62,11 +62,13 @@ class InferenceProcess(metaclass=Singleton):
                 # But for some reason, to flush the message, we have to read from the pipe
                 self._blockReadMessage()
 
-    def terminate(self):
-        with QMutexLocker(self.mutex):
+    def kill(self):
+        try:
             if self.proc:
-                self.proc.terminate()
-
+                self.proc.kill()
+        except Exception as ex:
+            print(ex)
+                
 
     def setupCaption(self, config: dict):
         self._setup(config, "setup_caption", "currentLLMConfig")
@@ -142,6 +144,7 @@ class InferenceProcess(metaclass=Singleton):
 
 
     def _onProcessEnded(self, exitCode, exitStatus):
+        # FIXME: Not printed anymore in linux?
         print(f"Inference process ended. Exit code: {exitCode}, {exitStatus}")
         # Buffers still intact
         self.proc.readAllStandardOutput()
