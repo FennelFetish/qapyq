@@ -11,26 +11,26 @@
 
 ## Features
 
-- **Image Viewer**
+- **Image Viewer**: Display and navigate images
   - Quick-starting desktop application built with Qt
   - Modular interface that lets you place windows on different monitors
   - Open multiple tabs
   - Zoom/pan and fullscreen mode
   - Gallery with thumbnails
-  - Crop and save parts of images
+  - **Crop** and save parts of images
   - Compare two images
   - Measure size and pixel distances
   - Slideshow
 
-- **Captioning**
+- **Captioning**: Describe images with text
   - Edit captions manually with drag-and-drop support
   - Tag sorting and filtering rules
   - Colored text highlighting
-  - Automated captioning and flexible batch processing
+  - **Automated captioning** and flexible batch processing
   - Prompt presets
   - Iterative prompting with each answer saved to different entries in a `.json` file
   - Further refinement with LLMs
-  - Model and sampling settings, GPU acceleration with CPU offload support
+  - Model and sampling settings, GPU acceleration with **CPU offload** support
   - On-the-fly NF4 and INT8 quantization
   - Separate inference subprocess isolates potential crashes and allows complete VRAM cleanup
 
@@ -56,7 +56,7 @@ Requires Python.
 
 By default, prebuilt packages for CUDA 12.4 are installed. If you need a different CUDA version, change the index URL in `requirements-pytorch.txt` and `requirements-llamacpp.txt` before running the setup script.
 
-1. Git clone or download this repository.
+1. Git clone or [download](https://github.com/FennelFetish/qapyq/archive/refs/heads/main.zip) this repository.
 2. Run `setup.sh` on Linux, `setup.bat` on Windows.
    - This will create a virtual environment that needs 7-9 GB.
 
@@ -81,6 +81,8 @@ These should work, but the required packages are not installed by default.
 Installing those requires downgrading torch and CUDA versions and may have to be built from source.
 
 #### Model Settings for 24GB VRAM
+
+Most time is usually spent generating the text. Encoding the image is faster. So when VRAM is short, it makes sense to keep the LLM on the GPU and offload some visual layers to the CPU first.
 
 | Model | Quantization | LLM GPU Layers | Visual GPU Layers |
 | ----- | ------------ | -------------- | ----------------- |
@@ -129,11 +131,12 @@ Use the toolbar at the top of the Main Window to select tools and toggle windows
 - Or right-click on an image in the gallery.
 
 ### Crop Tool
-1. Set export path.
+1. Load a bunch of images.
+2. Set export path.
    - Elements of the image path can be included in the destination path (as part of name or as subfolders).
    - The destination path is shown at the bottom.
-2. Use the mouse to select the crop region.
-3. Press the left mouse button twice.
+3. Use the mouse to select the crop region.
+4. Press the left mouse button twice.
    - The first click fixes the selection, the second click confirms it.
    - To reset the selection, right click anywhere or left click outside of the selected region.
    - A green flash effect confirms export.
@@ -143,6 +146,18 @@ Use the toolbar at the top of the Main Window to select tools and toggle windows
   - Hold SHIFT to adjust in 1px steps.
   - Hold CTRL to pan and zoom.
 - Target size presets can be edited in the config file (`qapyq_config.json`) in the `crop_size_presets` list.
+
+#### Image Quality
+Scaling and rotating are performed in a single transformation to minimize quality loss. Interpolation is only applied once.
+
+- The interpolation mode "Area" is preferred for downscaling.
+- "Lanczos" is great for upscaling, but it has a slight sharpening effect. To prevent that, you can choose "Cubic" instead.
+
+
+- PNG is a lossless format. It still supports a compression parameter, which is set to the maximum (slower saving but smaller files).
+- WEBP export is done using lossless compression with maximum quality.
+- JPEG is a lossy format. Quality is set to maximum.
+
 
 ### Captioning
 
@@ -156,6 +171,7 @@ Reorder existing tags by dragging the bubbles with the mouse.
 
 When the save button is clicked, the current text is saved to a `.txt` file with the same name as the image, in the same folder.
 Edited captions are kept in memory even when another image is selected. However, when another file or directory is loaded, changes are lost!
+
 The Gallery Window shows little icons for the caption state:
 - A white icon means that a `.txt` file exists.
 - A red icon means that the caption was edited but hasn't been saved yet.
@@ -236,6 +252,7 @@ Variables are highlighted in different colors, and the preview shows the replace
 - AI-assisted mask editing
 - Auto-caption after crop
 - Adapt new captioning models
+- Gallery list view with captions
 - Overlays (difference image) for comparison tool
 - Possibly a plugin system for new tools
 
