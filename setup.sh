@@ -36,11 +36,11 @@ activate_venv() {
         fi
 
         source "${venv_path}/bin/activate"
-    fi
 
-    if [ -z "${VIRTUAL_ENV}" ]; then
-        echo "Failed to activate virtual environment"
-        exit 1
+        if [ -z "${VIRTUAL_ENV}" ]; then
+            echo "Failed to activate virtual environment"
+            exit 1
+        fi
     fi
 
     echo "Active environment: '${VIRTUAL_ENV}'"
@@ -90,6 +90,7 @@ do_install() {
     if [ "$flash_attn" -eq 0 ]; then
         echo ""
         echo "(5/${steps}) Installing flash attention"
+        pip install wheel
         pip install flash_attn --no-build-isolation
     fi
 }
