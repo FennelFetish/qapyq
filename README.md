@@ -93,7 +93,7 @@ Most time is usually spent generating the text. Encoding the image is faster. So
 | Ovis1.6-Gemma2-9B | None | -1 | 0 |
 | Qwen2-VL 2B/7B | None | -1 | -1 |
 
-InternVL2-26B could't see the images and only wrote about its hallucinations.
+InternVL2-26B couldn't see the images and only wrote about its hallucinations.
 I haven't tried InternVL-2-76B or Qwen2-VL-72B.
 
 
