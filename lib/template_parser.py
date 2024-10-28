@@ -157,8 +157,8 @@ class TemplateVariableParser:
             name = var[len(self._tagPrefix):]
             value =  self.getCaptionFile().getTags(name)
 
-        elif var == "folder":
-            value =  self._getFolderName()
+        else:
+            value = self._getImgProperties(var)
 
         if value:
             return value
@@ -166,9 +166,20 @@ class TemplateVariableParser:
             self.missingVars.append(var)
             return "" if optional else "{{" + varOrig + "}}"
 
-    def _getFolderName(self) -> str:
-        path = os.path.dirname(self.imgPath)
-        return os.path.basename(path)
+
+    def _getImgProperties(self, var):
+        match var:
+            case "path":
+                return self.imgPath
+
+            case "name":
+                return os.path.basename(self.imgPath)
+
+            case "folder":
+                path = os.path.dirname(self.imgPath)
+                return os.path.basename(path)
+
+        return None
 
 
 

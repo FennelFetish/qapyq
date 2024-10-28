@@ -52,6 +52,8 @@ class BatchTask(QRunnable):
             errorMessage = f"Error during batch {self.name}: {str(ex)}"
             self.log(errorMessage)
             self.signals.fail.emit(errorMessage)
+        finally:
+            self.runCleanup()
 
 
     def processAll(self):
@@ -84,3 +86,6 @@ class BatchTask(QRunnable):
 
     def runProcessFile(self, imgFile: str) -> str | None:
         return None
+
+    def runCleanup(self):
+        pass

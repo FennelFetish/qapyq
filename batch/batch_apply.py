@@ -1,4 +1,5 @@
 import os
+from enum import Enum
 from PySide6 import QtWidgets
 from PySide6.QtCore import QSignalBlocker, Qt, Slot
 from config import Config
@@ -9,6 +10,13 @@ from .batch_task import BatchTask
 from .captionfile import CaptionFile
 
 
+class WriteMode(Enum):
+    SeparateReplace = 0
+    SeparateSkipExisting = 1
+    SingleReplace = 2
+    SingleAppend = 3
+
+
 class BatchApply(QtWidgets.QWidget):
     def __init__(self, tab, logSlot, progressBar, statusBar):
         super().__init__()
@@ -17,6 +25,7 @@ class BatchApply(QtWidgets.QWidget):
         self.progressBar: QtWidgets.QProgressBar = progressBar
         self.statusBar: qtlib.ColoredMessageStatusBar = statusBar
 
+        self.writeSettings = self._buildWriteSettings()
         self.backupSettings = self._buildBackupSettings()
 
         self.btnStart = QtWidgets.QPushButton("Start Batch Apply")
@@ -24,6 +33,7 @@ class BatchApply(QtWidgets.QWidget):
 
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self._buildFormatSettings())
+        layout.addWidget(self.writeSettings)
         layout.addWidget(self.backupSettings)
         layout.addWidget(self.btnStart)
         self.setLayout(layout)
@@ -31,6 +41,9 @@ class BatchApply(QtWidgets.QWidget):
         self._parser = None
         self._highlighter = VariableHighlighter()
         self._task = None
+
+        self._onWriteModeChanged(0)
+
 
     def _buildFormatSettings(self):
         layout = QtWidgets.QGridLayout()
@@ -74,19 +87,50 @@ class BatchApply(QtWidgets.QWidget):
         self.chkStripMulti.checkStateChanged.connect(self._updateParser)
         layout.addWidget(self.chkStripMulti, row, 2)
 
+
+        groupBox = QtWidgets.QGroupBox("Format")
+        groupBox.setLayout(layout)
+        return groupBox
+
+    def _buildWriteSettings(self):
+        layout = QtWidgets.QGridLayout()
+        layout.setAlignment(Qt.AlignTop)
+        layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 0)
+        layout.setColumnStretch(2, 0)
+        layout.setColumnStretch(3, 0)
+        layout.setColumnStretch(4, 1)
+        layout.setColumnMinimumWidth(2, 20)
+
+        row = 0
+        layout.addWidget(QtWidgets.QLabel("Destination:"), row, 0)
+
+        self.cboWriteMode = QtWidgets.QComboBox()
+        self.cboWriteMode.addItem("Separate .txt files (replace)", WriteMode.SeparateReplace)
+        self.cboWriteMode.addItem("Separate .txt files (skip existing)", WriteMode.SeparateSkipExisting)
+        self.cboWriteMode.addItem("Single .txt file (replace)", WriteMode.SingleReplace)
+        self.cboWriteMode.addItem("Single .txt file (append)", WriteMode.SingleAppend)
+        self.cboWriteMode.currentIndexChanged.connect(self._onWriteModeChanged)
+        layout.addWidget(self.cboWriteMode, row, 1)
+
+        self.btnChooseDestFile = QtWidgets.QPushButton("Choose File...")
+        self.btnChooseDestFile.clicked.connect(self._chooseDestFile)
+        layout.addWidget(self.btnChooseDestFile, row, 3)
+
+        self.txtDestFilePath = QtWidgets.QLineEdit("caption-list.txt")
+        qtlib.setMonospace(self.txtDestFilePath)
+        layout.addWidget(self.txtDestFilePath, row, 4)
+
         row += 1
-        layout.addWidget(QtWidgets.QLabel("Processing:"), row, 0)
+        layout.addWidget(QtWidgets.QLabel("Post Processing:"), row, 0)
 
-        self.chkOverwrite = QtWidgets.QCheckBox("Overwrite .txt")
-        self.chkOverwrite.setChecked(True)
-        layout.addWidget(self.chkOverwrite, row, 1)
-
-        self.chkDeleteJson = QtWidgets.QCheckBox("Delete .json")
+        self.chkDeleteJson = QtWidgets.QCheckBox("Delete .json files")
         self.chkDeleteJson.toggled.connect(self._onDeleteJsonToggled)
-        layout.addWidget(self.chkDeleteJson, row, 2)
+        layout.addWidget(self.chkDeleteJson, row, 1)
 
 
-        groupBox = QtWidgets.QGroupBox("Write to Text File")
+        groupBox = QtWidgets.QGroupBox("Write to text file(s)")
         groupBox.setLayout(layout)
         return groupBox
 
@@ -115,6 +159,27 @@ class BatchApply(QtWidgets.QWidget):
         self._parser = TemplateVariableParser(currentFile)
         self._updateParser()
 
+
+    @Slot()
+    def _onWriteModeChanged(self, index: int):
+        mode = self.cboWriteMode.itemData(index)
+        single = mode in (WriteMode.SingleAppend, WriteMode.SingleReplace)
+
+        for widget in (self.btnChooseDestFile, self.txtDestFilePath):
+            widget.setEnabled(single)
+        
+        self.backupSettings.setEnabled(not single)
+        if single:
+            self.backupSettings.setChecked(False)
+    
+    @Slot()
+    def _chooseDestFile(self):
+        path = self.txtDestFilePath.text()
+        filter = "Text Files (*.txt)"
+
+        path, filter = QtWidgets.QFileDialog.getSaveFileName(self, "Choose target file", path, filter)
+        if path:
+            self.txtDestFilePath.setText(path)
 
     @Slot()
     def _onDeleteJsonToggled(self, state: bool):
@@ -156,7 +221,8 @@ class BatchApply(QtWidgets.QWidget):
             self._task = BatchApplyTask(self.log, self.tab.filelist, template, backupName)
             self._task.stripAround = self.chkStripAround.isChecked()
             self._task.stripMulti  = self.chkStripMulti.isChecked()
-            self._task.overwrite   = self.chkOverwrite.isChecked()
+            self._task.writeMode   = self.cboWriteMode.currentData()
+            self._task.destPath    = self.txtDestFilePath.text()
             self._task.deleteJson  = self.chkDeleteJson.isChecked()
 
             self._task.signals.progress.connect(self.onProgress)
@@ -204,7 +270,10 @@ class BatchApplyTask(BatchTask):
         self.stripAround = True
         self.stripMulti  = True
 
-        self.overwrite   = True
+        self.writeMode   = WriteMode.SeparateSkipExisting
+        self.destPath    = ""
+        self.destFile    = None
+
         self.deleteJson  = False
 
 
@@ -213,13 +282,28 @@ class BatchApplyTask(BatchTask):
         self.parser.stripAround = self.stripAround
         self.parser.stripMultiWhitespace = self.stripMulti
 
+        match self.writeMode:
+            case WriteMode.SingleReplace:
+                self.destFile = open(self.destPath, 'w')
+            case WriteMode.SingleAppend:
+                self.destFile = open(self.destPath, 'a')
+    
+    def runCleanup(self):
+        if self.destFile:
+            self.destFile.flush()
+            self.destFile.close()
+
+
     def runProcessFile(self, imgFile) -> str:
         captionFile = CaptionFile(imgFile)
         if not captionFile.loadFromJson():
             self.log(f"WARNING: Couldn't read captions from {captionFile.jsonPath}")
             return None
 
-        writtenFile = self.processFile(imgFile, captionFile)
+        if self.destFile:
+            writtenFile = self.processFileSingleDest(imgFile, captionFile)
+        else:
+            writtenFile = self.processFile(imgFile, captionFile)
 
         if self.deleteJson and not self.backupName:
             self.deleteFile(captionFile.jsonPath)
@@ -232,18 +316,28 @@ class BatchApplyTask(BatchTask):
         if self.backupName:
             self.backup(txtFile, captionFile)
 
-        if (not self.overwrite) and os.path.exists(txtFile):
+        if (self.writeMode != WriteMode.SeparateReplace) and os.path.exists(txtFile):
             return None
 
+        caption = self.parseCaption(imgFile, captionFile)
+        with open(txtFile, 'w') as file:
+            file.write(caption)
+        return txtFile
+
+    def processFileSingleDest(self, imgFile: str, captionFile: CaptionFile):
+        caption = self.parseCaption(imgFile, captionFile)
+        self.destFile.write(caption)
+        return self.destPath
+
+
+    def parseCaption(self, imgFile: str, captionFile: CaptionFile) -> str:
         self.parser.setup(imgFile, captionFile)
         caption = self.parser.parse(self.template)
 
         if self.parser.missingVars:
             self.log(f"WARNING: {captionFile.jsonPath} is missing values for variables: {', '.join(self.parser.missingVars)}")
-
-        with open(txtFile, 'w') as file:
-            file.write(caption)
-        return txtFile
+        
+        return caption
 
 
     def backup(self, txtFile, captionFile: CaptionFile):
