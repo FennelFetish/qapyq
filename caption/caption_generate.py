@@ -66,11 +66,16 @@ class CaptionGenerate(QtWidgets.QWidget):
         self.setLayout(layout)
 
 
+    @Slot()
     def generate(self):
+        file = self.ctx.tab.imgview.image.filepath
+        if not file:
+            QtWidgets.QMessageBox.warning(self, "No Image Loaded", "Please load an image into the Main Window first.")
+            return
+
         self.btnGenerate.setEnabled(False)
         self.statusBar.showMessage("Starting ...")
 
-        file = self.ctx.tab.imgview.image.filepath
         content = self.cboCapTag.currentText().lower().split(", ")
 
         task = InferenceTask(file, content)
