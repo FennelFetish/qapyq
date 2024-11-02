@@ -17,7 +17,7 @@ echo Using Python %PYTHON%
 
 :launch
 cd /d "%~dp0%"
-start "" %PYTHON% main.py "%1" > "last.log" 2>&1
+start "" /B %PYTHON% main.py "%1" > "last.log" 2>&1
 
 :end
 endlocal
