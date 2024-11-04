@@ -61,25 +61,25 @@ class ImgTab(QtWidgets.QMainWindow):
     def createTool(self, toolName: str):
         match toolName:
             case "view":
-                from tools import ViewTool
+                from tools.view import ViewTool
                 return ViewTool(self)
             case "slideshow":
-                from tools import SlideshowTool
+                from tools.slideshow import SlideshowTool
                 return SlideshowTool(self)
             case "measure":
-                from tools import MeasureTool
+                from tools.measure import MeasureTool
                 return MeasureTool(self)
             case "compare":
-                from tools import CompareTool
+                from tools.compare import CompareTool
                 return CompareTool(self)
             case "crop":
-                from tools import CropTool
+                from tools.crop import CropTool
                 return CropTool(self)
             case "scale":
-                from tools import ScaleTool
+                from tools.scale import ScaleTool
                 return ScaleTool(self)
             case "mask":
-                from tools import MaskTool
+                from tools.mask import MaskTool
                 return MaskTool(self)
         
         print("Invalid tool:", toolName)
