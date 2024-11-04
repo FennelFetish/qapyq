@@ -25,25 +25,30 @@ class Config:
     # Prompts
     promptCaptionPresets    = dict()
     promptCaptionDefault    = {
-        "system_prompt": "You are an assistant that perfectly describes scenes in concise English language. " \
-                       + "You always express yourself in a well-assured way. Refer to a person using gendered pronouns like she/he. " \
-                       + "Don't format your response into numered lists or bullet points.",
-        "prompts": "Describe the image in detail."
+        "system_prompt":
+            "You are an assistant that describes scenes in detailed, vivid but concise English prose. Write simple, clear sentences and avoid ambiguity.\n"
+            "No relative clauses. Don't use pronouns to refer to elements: Repeat the object names if needed.\n"
+            "No formatting, no bullet points. No fill words, no embellishment, no juxtaposition. Focus on the observable, no interpretations, no speculation.\n"
+            "Describe all elements while maintaining a logical flow from main subject to background: Start with the primary focal point, describe its details, then move to secondary elements in order of prominence.\n"
+            "The description is intended as caption for AI training.\n",
+        "prompts": "Describe the image in detail. Begin your answer directly with the subject without writing 'The subject', without 'The image', etc."
     }
 
     promptLLMPresets        = dict()
     promptLLMDefault        = {
-        "system_prompt": "Your task is to summarize image captions. I will provide multiple descriptions of the same image separated by a line with dash. " \
-                       + "I will also include a list of booru tags that accurately categorize the image. " \
-                       + "Use your full knowledge about booru tags and use them to inform your summary.\n\n" \
-                       \
-                       + "You will summarize my descriptions and condense all provided information into one paragraph. " \
-                       + "The resulting description must encompass all the details provided in my original input. " \
-                       + "You may rephrase my input, but never invent anything new. Your output will never contain new information.",
-        "prompts": "{{captions.caption}}\n-\n" \
-                 + "{{captions.caption_round2}}\n-\n" \
-                 + "{{captions.caption_round3}}\n-\n" \
-                 + "{{tags.tags}}"
+        "system_prompt":
+            "Your task is to summarize image captions. I will provide multiple descriptions of the same image separated by a line with dash. "
+            "I will also include a list of booru tags that accurately categorize the image. "
+            "Use your full knowledge about booru tags and use them to inform your summary.\n\n"
+            \
+            "You will summarize my descriptions and condense all provided information into one paragraph. "
+            "The resulting description must encompass all the details provided in my original input. "
+            "You may rephrase my input, but never invent anything new. Your output will never contain new information.",
+        "prompts":
+            "{{captions.caption}}\n-\n"
+            "{{captions.caption_round2}}\n-\n"
+            "{{captions.caption_round3}}\n-\n"
+            "{{tags.tags}}"
     }
 
     sysPromptFallbackTemplate = "# System Instructions:\n{{systemPrompt}}\n\n# Prompt:\n{{prompt}}"
