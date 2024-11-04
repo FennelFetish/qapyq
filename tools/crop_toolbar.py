@@ -1,42 +1,21 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
-import superqt
-import cv2 as cv
-import lib.qtlib as qtlib
+from ui.export_settings import ExportSettings
 from config import Config
 
 
-INTERP_MODES = {
-    "Nearest": cv.INTER_NEAREST,
-    "Linear":  cv.INTER_LINEAR,
-    "Cubic":   cv.INTER_CUBIC,
-    "Area":    cv.INTER_AREA,
-    "Lanczos": cv.INTER_LANCZOS4
-}
-
-SAVE_PARAMS = {
-    "PNG":  [cv.IMWRITE_PNG_COMPRESSION, 9],
-    "JPG":  [cv.IMWRITE_JPEG_QUALITY, 100],
-    "WEBP": [cv.IMWRITE_WEBP_QUALITY, 100]
-}
-
-
 class CropToolBar(QtWidgets.QToolBar):
-    def __init__(self, cropTool):
+    def __init__(self, cropTool, exportSettings):
         super().__init__("Crop")
         self._cropTool = cropTool
+        self.exportSettings: ExportSettings = exportSettings
 
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(1, 1, 1, 1)
         layout.addWidget(self._buildTargetSize())
         layout.addWidget(self._buildSelectionSize())
         layout.addWidget(self._buildRotation())
-        layout.addWidget(self._buildExport())
-
-        self.txtPathSample = QtWidgets.QPlainTextEdit()
-        self.txtPathSample.setReadOnly(True)
-        qtlib.setMonospace(self.txtPathSample, 0.9)
-        layout.addWidget(self.txtPathSample)
+        layout.addWidget(self.exportSettings)
 
         widget = QtWidgets.QWidget()
         widget.setLayout(layout)
@@ -174,63 +153,6 @@ class CropToolBar(QtWidgets.QToolBar):
         group.setLayout(layout)
         return group
 
-    def _buildExport(self):
-        group = superqt.QCollapsible("Export Settings")
-        group.layout().setContentsMargins(2, 2, 2, 0)
-        group.setFrameStyle(QtWidgets.QFrame.NoFrame)
-        group.setLineWidth(0)
-
-        group.addWidget(self._buildSave())
-        group.addWidget(self._buildDestination())
-        return group
-
-    def _buildSave(self):
-        self.cboInterpUp = QtWidgets.QComboBox()
-        self.cboInterpUp.addItems(INTERP_MODES.keys())
-        self.cboInterpUp.setCurrentIndex(4) # Default: Lanczos
-
-        self.cboInterpDown = QtWidgets.QComboBox()
-        self.cboInterpDown.addItems(INTERP_MODES.keys())
-        self.cboInterpDown.setCurrentIndex(3) # Default: Area
-
-        self.cboFormat = QtWidgets.QComboBox()
-        self.cboFormat.addItems(SAVE_PARAMS.keys())
-        self.cboFormat.currentTextChanged.connect(self.updateExport)
-
-        layout = QtWidgets.QFormLayout()
-        layout.setContentsMargins(1, 1, 1, 1)
-        layout.addRow("Interp 🠕:", self.cboInterpUp)
-        layout.addRow("Interp 🠗:", self.cboInterpDown)
-        layout.addRow("Format:", self.cboFormat)
-
-        group = QtWidgets.QGroupBox("Parameter")
-        group.setLayout(layout)
-        return group
-
-    def _buildDestination(self):
-        self.btnChoosePath = QtWidgets.QPushButton("Choose Path...")
-        self.btnChoosePath.clicked.connect(self.chooseExportPath)
-
-        self.spinFolderSkip = QtWidgets.QSpinBox()
-        self.spinFolderSkip.valueChanged.connect(self.updateExport)
-
-        self.spinFolderNames = QtWidgets.QSpinBox()
-        self.spinFolderNames.valueChanged.connect(self.updateExport)
-
-        self.spinSubfolders = QtWidgets.QSpinBox()
-        self.spinSubfolders.valueChanged.connect(self.updateExport)
-
-        layout = QtWidgets.QFormLayout()
-        layout.setContentsMargins(1, 1, 1, 1)
-        layout.addRow(self.btnChoosePath)
-        layout.addRow("Folder Skip:", self.spinFolderSkip)
-        layout.addRow("Folder Names:", self.spinFolderNames)
-        layout.addRow("Subfolders:", self.spinSubfolders)
-
-        group = QtWidgets.QGroupBox("Destination")
-        group.setLayout(layout)
-        return group
-
 
     @Slot()
     def updateSize(self):
@@ -288,22 +210,14 @@ class CropToolBar(QtWidgets.QToolBar):
         self.lblW.setText(f"{w:.1f} px")
         self.lblH.setText(f"{h:.1f} px")
 
-        scale = (self.spinH.value() / h) if h>0 else 1.0
+        scale = (self.spinH.value() / h) if h>0 else 0.0
         if scale > 1.0:
             self.lblScale.setStyleSheet("QLabel { color: #ff3030; }")
-            self.lblScale.setText(f"▲   {scale:.3f}")
+            self.lblScale.setText(f"▲  {scale:.3f}")
         else:
             self.lblScale.setStyleSheet("QLabel { color: #30ff30; }")
-            self.lblScale.setText(f"▼   {scale:.3f}")
+            self.lblScale.setText(f"▼  {scale:.3f}")
 
-
-    def getInterpolationMode(self, upscale):
-        cbo = self.cboInterpUp if upscale else self.cboInterpDown
-        return INTERP_MODES[ cbo.currentText() ]
-
-    def getSaveParams(self):
-        key = self.cboFormat.currentText()
-        return SAVE_PARAMS[key]
 
     @property
     def constrainToImage(self) -> bool:
@@ -313,21 +227,7 @@ class CropToolBar(QtWidgets.QToolBar):
     def allowUpscale(self) -> bool:
         return self.chkAllowUpscale.isChecked()
 
-    def chooseExportPath(self):
-        path = self._cropTool._export.basePath
-        opts = QtWidgets.QFileDialog.ShowDirsOnly
-        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose save folder", path, opts)
-        if path:
-            self._cropTool._export.basePath = path
-            self.updateExport()
 
     def updateExport(self):
-        export = self._cropTool._export
-        export.extension = self.cboFormat.currentText()
-        export.skipDirs = self.spinFolderSkip.value()
-        export.subfolders = self.spinSubfolders.value()
-        export.folderNames = self.spinFolderNames.value()
-        export.suffix = f"_{self.spinW.value()}x{self.spinH.value()}"
-
-        examplePath = export.getExportPath(self._cropTool._imgview.image.filepath)
-        self.txtPathSample.setPlainText(examplePath)
+        self.exportSettings.setExportSize(self.spinW.value(), self.spinH.value())
+        self.exportSettings.updateExport()

@@ -3,6 +3,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
 import lib.qtlib as qtlib
 from .caption_preset import CaptionPreset
+from config import Config
 
 
 # TODO?: Banned captions, per caption configurable matching method
@@ -15,7 +16,7 @@ class CaptionSettings(QtWidgets.QWidget):
         self.ctx = context
 
         self.bannedSeparator = ', '
-        self._defaultPresetPath = context.tab.export.basePath
+        self._defaultPresetPath = Config.pathExport
 
         self._build()
 

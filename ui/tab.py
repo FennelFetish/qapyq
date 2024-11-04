@@ -2,7 +2,6 @@ import os
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Signal
 from config import Config
-from lib.export import Export
 from lib.filelist import FileList
 from lib.qtlib import ColoredMessageStatusBar
 from .imgview import ImgView
@@ -25,7 +24,6 @@ class ImgTab(QtWidgets.QMainWindow):
         self.filelist.addListener(self)
 
         self.imgview = ImgView(self.filelist)
-        self.export = Export()
         self._windowContent: dict[str, QtWidgets.QWidget] = dict()
 
         self.tools = dict()
@@ -77,6 +75,9 @@ class ImgTab(QtWidgets.QMainWindow):
             case "crop":
                 from tools import CropTool
                 return CropTool(self)
+            case "scale":
+                from tools import ScaleTool
+                return ScaleTool(self)
             case "mask":
                 from tools import MaskTool
                 return MaskTool(self)

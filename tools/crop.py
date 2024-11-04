@@ -6,11 +6,15 @@ from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem
 from .crop_toolbar import CropToolBar
 from .view import ViewTool
 from lib.filelist import DataKeys
+from ui.export_settings import ExportSettings, ExportPath
 from config import Config
 
 
 # TODO: Upscale using model (whole image upscaled before crop so selected area matches target size? or upscale cropped region only?)
 
+# TODO: Crop Modes:
+#       - Start selection in top left corner, drag to bottom right corner
+#       - Crop by selecting 4 points, transform using warpPerspective
 
 def createPen(r, g, b):
     pen = QPen( QColor(r, g, b, 180) )
@@ -28,7 +32,6 @@ class CropTool(ViewTool):
 
     def __init__(self, tab):
         super().__init__(tab)
-        self._export = tab.export
 
         self._targetWidth = 512
         self._targetHeight = 512
@@ -47,7 +50,8 @@ class CropTool(ViewTool):
         self._mask.setBrush( QBrush(QColor(0, 0, 0, 100)) )
         self._waitForConfirmation = False
 
-        self._toolbar = CropToolBar(self)
+        self.exportSettings = ExportSettings(tab.filelist)
+        self._toolbar = CropToolBar(self, self.exportSettings)
 
 
     def setTargetSize(self, width, height):
@@ -140,11 +144,12 @@ class CropTool(ViewTool):
         self.tab.statusBar().showMessage("Saving cropped image...")
 
         currentFile = self._imgview.image.filepath
-        interp = self._toolbar.getInterpolationMode(self._targetHeight > self._cropHeight)
+        destFile = self.exportSettings.exportPath.getExportPath(currentFile)
+        interp = self.exportSettings.getInterpolationMode(self._targetHeight > self._cropHeight)
         border = cv.BORDER_REPLICATE if self._toolbar.constrainToImage else cv.BORDER_CONSTANT
-        params = self._toolbar.getSaveParams()
+        params = self.exportSettings.getSaveParams()
 
-        task = ExportTask(self._export, currentFile, pixmap, poly, self._targetWidth, self._targetHeight, interp, border, params)
+        task = ExportTask(currentFile, destFile, pixmap, poly, self._targetWidth, self._targetHeight, interp, border, params)
         task.signals.done.connect(self.onExportDone, Qt.ConnectionType.BlockingQueuedConnection)
         task.signals.fail.connect(self.onExportFailed, Qt.ConnectionType.BlockingQueuedConnection)
         QThreadPool.globalInstance().start(task)
@@ -287,21 +292,19 @@ class ExportTask(QRunnable):
         def __init__(self):
             super().__init__()
 
-    def __init__(self, export, file, pixmap, poly, targetWidth, targetHeight, interp, border, saveParams):
+    def __init__(self, srcFile, destFile, pixmap, poly, targetWidth, targetHeight, interp, border, saveParams):
         super().__init__()
         self.signals = self.ExportTaskSignals()
 
-        self.export = export
-        export.suffix = f"_{targetWidth}x{targetHeight}"
-        self.destFile = export.getExportPath(file)
-
-        self.srcFile = file
+        self.srcFile = srcFile
+        self.destFile = destFile
         self.poly = poly
         self.targetWidth  = targetWidth
         self.targetHeight = targetHeight
         self.interp = interp
         self.border = border
         self.saveParams = saveParams
+
         self.rect = self.calcCutRect(poly, pixmap)
         self.img = pixmap.copy(self.rect).toImage()
 
@@ -327,17 +330,23 @@ class ExportTask(QRunnable):
     def run(self):
         try:
             p0, p1, p2, _ = self.poly
+
+            # Origin of cut image (with padding), offset by half pixel to maintain pixel borders
             ox, oy = self.rect.topLeft().toTuple()
+            ox, oy = ox+0.5, oy+0.5
+
+            # Selection relative to origin of cut image
+            # Round selection coordinates for pixel-accuracy
             ptsSrc = np.float32([
-                [p0.x()-ox, p0.y()-oy],
-                [p1.x()-ox, p1.y()-oy],
-                [p2.x()-ox, p2.y()-oy]
+                [round(p0.x())-ox, round(p0.y())-oy],
+                [round(p1.x())-ox, round(p1.y())-oy],
+                [round(p2.x())-ox, round(p2.y())-oy]
             ])
 
             ptsDest = np.float32([
-                [0, 0],
-                [self.targetWidth, 0],
-                [self.targetWidth, self.targetHeight],
+                [-0.5, -0.5],
+                [self.targetWidth-0.5, -0.5],
+                [self.targetWidth-0.5, self.targetHeight-0.5],
             ])
 
             # https://docs.opencv.org/3.4/da/d6e/tutorial_py_geometric_transformations.html
@@ -346,7 +355,7 @@ class ExportTask(QRunnable):
             matSrc  = self.toCvMat(self.img)
             matDest = cv.warpAffine(src=matSrc, M=matrix, dsize=dsize, flags=self.interp, borderMode=self.border)
 
-            self.export.createFolders(self.destFile)
+            ExportPath.createFolders(self.destFile)
             cv.imwrite(self.destFile, matDest, self.saveParams)
             self.signals.done.emit(self.srcFile, self.destFile)
 
