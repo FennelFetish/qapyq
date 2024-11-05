@@ -42,7 +42,7 @@ class JoyTag(TagBackend):
         return tags
 
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def predict(self, imgTensor: torch.Tensor):
         batch = { 'image': imgTensor.unsqueeze(0).to('cuda') }
 

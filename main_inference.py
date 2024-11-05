@@ -27,6 +27,9 @@ def loadBackend(config: dict):
         case "molmo":
             from infer.backend_molmo import MolmoBackend
             return MolmoBackend(config)
+        case "florence2":
+            from infer.backend_florence2 import Florence2Backend
+            return Florence2Backend(config)
         case "gguf":
             from infer.backend_llamacpp import LlamaCppBackend
             return LlamaCppBackend(config)

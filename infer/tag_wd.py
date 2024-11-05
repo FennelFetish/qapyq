@@ -1,7 +1,6 @@
 import numpy as np
 import onnxruntime
 import pandas as pd
-import cv2 as cv
 import torch # Not used directly, but required for GPU inference
 from .tag import TagBackend
 from config import Config

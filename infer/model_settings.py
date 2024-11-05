@@ -12,6 +12,7 @@ class BackendTypes:
 
 
 BackendsCaption = {
+    "Florence-2": ("florence2", BackendTypes.TRANSFORMERS),
     "InternVL2": ("internvl2", BackendTypes.TRANSFORMERS),
     "MiniCPM-V-2.6": ("minicpm", BackendTypes.LLAMA_CPP),
     "Molmo": ("molmo", BackendTypes.TRANSFORMERS),
@@ -19,6 +20,8 @@ BackendsCaption = {
     "Qwen2-VL": ("qwen2vl", BackendTypes.TRANSFORMERS)
 }
 
+# TODO: Allow loading of caption models as LLM.
+#       Set visual layers to 0? -> No, load as defined in config to prevent reloading.
 BackendsLLM = {
     "GGUF": ("gguf", BackendTypes.LLAMA_CPP)
 }
