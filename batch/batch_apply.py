@@ -4,10 +4,10 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import QSignalBlocker, Qt, Slot
 from config import Config
 from infer import Inference
-import lib.qtlib as qtlib
+from lib import qtlib
+from lib.captionfile import CaptionFile
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
 from .batch_task import BatchTask
-from .captionfile import CaptionFile
 
 
 class WriteMode(Enum):

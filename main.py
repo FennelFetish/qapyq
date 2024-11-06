@@ -127,7 +127,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 from gallery import Gallery
                 return Gallery
             case "batch":
-                from batch import BatchContainer
+                from batch.batch_container import BatchContainer
                 return BatchContainer
             case "caption":
                 from caption import CaptionContainer

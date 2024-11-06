@@ -10,6 +10,7 @@ from config import Config
 #        Strategy pattern defines what happens if banned caption is encountered
 #        --> Would probably be easier and more accurate to use LLM for such transformations
 
+
 class CaptionSettings(QtWidgets.QWidget):
     def __init__(self, context):
         super().__init__()
@@ -24,6 +25,45 @@ class CaptionSettings(QtWidgets.QWidget):
     def _build(self):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignTop)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
+
+        layout.setColumnStretch(2, 0)
+        layout.setColumnMinimumWidth(2, 12)
+
+        layout.setColumnStretch(3, 0)
+        layout.setColumnStretch(4, 1)
+        
+        row = 0
+        self.srcSelector = FileTypeSelector(self.ctx)
+        layout.addWidget(QtWidgets.QLabel("Load From:"), row, 0)
+        layout.addLayout(self.srcSelector, row, 1)
+
+        self.destSelector = FileTypeSelector(self.ctx)
+        layout.addWidget(QtWidgets.QLabel("Save To:"), row, 3)
+        layout.addLayout(self.destSelector, row, 4)
+
+        row += 1
+        layout.setRowMinimumHeight(row, 8)
+
+        row += 1
+        rules = self._buildRules()
+        layout.addWidget(rules, row, 0, 1, 5)
+
+        self.setLayout(layout)
+
+    def _buildRules(self):
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setAlignment(Qt.AlignTop)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
+
+        layout.setColumnStretch(2, 0)
+        layout.setColumnMinimumWidth(2, 12)
+
+        layout.setColumnStretch(3, 0)
+        layout.setColumnStretch(4, 1)
 
         row = 0
         self.txtPrefix = QtWidgets.QPlainTextEdit()
@@ -37,8 +77,8 @@ class CaptionSettings(QtWidgets.QWidget):
         qtlib.setMonospace(self.txtSuffix)
         qtlib.setTextEditHeight(self.txtSuffix, 2)
         qtlib.setShowWhitespace(self.txtSuffix)
-        layout.addWidget(QtWidgets.QLabel("Suffix:"), row, 2, Qt.AlignTop)
-        layout.addWidget(self.txtSuffix, row, 3, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Suffix:"), row, 3, Qt.AlignTop)
+        layout.addWidget(self.txtSuffix, row, 4, Qt.AlignTop)
 
         row += 1
         self.chkPrefixSeparator = QtWidgets.QCheckBox("Append separator to prefix")
@@ -47,7 +87,7 @@ class CaptionSettings(QtWidgets.QWidget):
 
         self.chkSuffixSeparator = QtWidgets.QCheckBox("Prepend separator to suffix")
         self.chkSuffixSeparator.setChecked(True)
-        layout.addWidget(self.chkSuffixSeparator, row, 3)
+        layout.addWidget(self.chkSuffixSeparator, row, 4)
 
         row += 1
         layout.setRowMinimumHeight(row, 8)
@@ -63,8 +103,8 @@ class CaptionSettings(QtWidgets.QWidget):
         self.txtBanned.textChanged.connect(lambda: self.ctx.controlUpdated.emit())
         qtlib.setMonospace(self.txtBanned)
         qtlib.setTextEditHeight(self.txtBanned, 3)
-        layout.addWidget(QtWidgets.QLabel("Banned:"), row, 2, Qt.AlignTop)
-        layout.addWidget(self.txtBanned, row, 3, 2, 1, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Banned:"), row, 3, Qt.AlignTop)
+        layout.addWidget(self.txtBanned, row, 4, 2, 1, Qt.AlignTop)
 
         row += 1
         self.chkAutoApply = QtWidgets.QCheckBox("Auto apply rules")
@@ -80,18 +120,24 @@ class CaptionSettings(QtWidgets.QWidget):
         btnAddBanned.setFixedWidth(50)
         btnAddBanned.setFocusPolicy(Qt.NoFocus)
         btnAddBanned.clicked.connect(self.addBanned)
-        layout.addWidget(btnAddBanned, row, 2)
+        layout.addWidget(btnAddBanned, row, 3)
         
         row += 1
-        self.btnLoad = QtWidgets.QPushButton("Load preset...")
+        layout.setRowMinimumHeight(row, 8)
+
+        row += 1
+        self.btnLoad = QtWidgets.QPushButton("Load Rules and Groups...")
         self.btnLoad.clicked.connect(self.loadPreset)
         layout.addWidget(self.btnLoad, row, 0, 1, 2)
 
-        self.btnSave = QtWidgets.QPushButton("Save preset as...")
+        self.btnSave = QtWidgets.QPushButton("Save Rules and Groups as...")
         self.btnSave.clicked.connect(self.savePreset)
-        layout.addWidget(self.btnSave, row, 2, 1, 2)
+        layout.addWidget(self.btnSave, row, 3, 1, 2)
 
-        self.setLayout(layout)
+        group = QtWidgets.QGroupBox("Rules")
+        group.setLayout(layout)
+        return group
+
 
 
     @property
@@ -185,3 +231,54 @@ class CaptionSettings(QtWidgets.QWidget):
 
         self.ctx.groups.loadFromPreset(preset)
         self.ctx.controlUpdated.emit()
+
+
+
+class FileTypeSelector(QtWidgets.QHBoxLayout):
+    TYPE_TXT = "txt"
+    TYPE_TAGS = "tags"
+    TYPE_CAPTIONS = "captions"
+
+    def __init__(self, ctx):
+        super().__init__()
+        self.ctx = ctx
+
+        self.cboType = QtWidgets.QComboBox()
+        self.cboType.addItem(".txt File", self.TYPE_TXT)
+        self.cboType.addItem(".json Tags:", self.TYPE_TAGS)
+        self.cboType.addItem(".json Caption:", self.TYPE_CAPTIONS)
+        self.cboType.currentIndexChanged.connect(self._onTypeChanged)
+        self.addWidget(self.cboType)
+
+        self.txtName = QtWidgets.QLineEdit("tags")
+        self.txtName.editingFinished.connect(self._onEdited)
+        qtlib.setMonospace(self.txtName)
+        self.addWidget(self.txtName)
+
+        self._onTypeChanged(self.cboType.currentIndex())
+    
+    @Slot()
+    def _onTypeChanged(self, index):
+        nameEnabled = self.cboType.itemData(index) != self.TYPE_TXT
+        self.txtName.setEnabled(nameEnabled)
+
+        self.ctx.fileTypeUpdated.emit()
+
+    @Slot()
+    def _onEdited(self):
+        if not self.name:
+            if self.type == self.TYPE_TAGS:
+                self.txtName.setText("tags")
+            else:
+                self.txtName.setText("caption")
+        
+        self.ctx.fileTypeUpdated.emit()
+
+
+    @property
+    def type(self) -> str:
+        return self.cboType.currentData()
+
+    @property
+    def name(self) -> str:
+        return self.txtName.text()

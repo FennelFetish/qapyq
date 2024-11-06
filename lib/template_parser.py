@@ -1,8 +1,8 @@
 import re, os
 from typing import Tuple, List
 from PySide6 import QtWidgets, QtGui
-from batch.captionfile import CaptionFile
-import lib.qtlib as qtlib
+from .captionfile import CaptionFile
+from . import qtlib
 
 
 class TemplateVariableParser:

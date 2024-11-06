@@ -1,13 +1,14 @@
 import os
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Signal, Slot, QSignalBlocker
-import lib.qtlib as qtlib
+from lib import qtlib
 from lib.filelist import DataKeys
+from lib.captionfile import CaptionFile
 from .caption_bubbles import CaptionBubbles
 from .caption_filter import CaptionRulesProcessor
 from .caption_generate import CaptionGenerate
 from .caption_groups import CaptionGroups
-from .caption_settings import CaptionSettings
+from .caption_settings import CaptionSettings, FileTypeSelector
 
 # TODO: Ctrl+S saves current caption
 
@@ -15,6 +16,7 @@ class CaptionContext(QtWidgets.QTabWidget):
     captionClicked      = Signal(str)
     separatorChanged    = Signal(str)
     controlUpdated      = Signal()
+    fileTypeUpdated     = Signal()
     needsRulesApplied   = Signal()
     captionGenerated    = Signal(str, str)
 
@@ -28,7 +30,7 @@ class CaptionContext(QtWidgets.QTabWidget):
         self.groups   = CaptionGroups(self)
         self.generate = CaptionGenerate(self)
 
-        self.addTab(self.settings, "Rules")
+        self.addTab(self.settings, "Settings")
         self.addTab(self.groups, "Groups")
         #self.addTab(QtWidgets.QWidget(), "Variables (json)")
         #self.addTab(QtWidgets.QWidget(), "Folder Overrides") # Let variables from json override settings?
@@ -51,7 +53,8 @@ class CaptionContainer(QtWidgets.QWidget):
         self.ctx.captionClicked.connect(self.appendToCaption)
         self.ctx.captionGenerated.connect(self._onCaptionGenerated)
         self.ctx.separatorChanged.connect(self._onSeparatorChanged)
-        self.ctx.controlUpdated.connect(self.onControlUpdated)
+        self.ctx.controlUpdated.connect(self._onControlUpdated)
+        self.ctx.fileTypeUpdated.connect(self._onFileTypeUpdated)
         self.ctx.needsRulesApplied.connect(self.applyRulesIfAuto)
 
         tab.filelist.addListener(self)
@@ -81,11 +84,11 @@ class CaptionContainer(QtWidgets.QWidget):
         self.btnApplyRules.clicked.connect(self.applyRules)
         layout.addWidget(self.btnApplyRules, 3, 0)
 
-        self.btnReset = QtWidgets.QPushButton("Reload")
+        self.btnReset = QtWidgets.QPushButton("Reload from .txt")
         self.btnReset.clicked.connect(self.resetCaption)
         layout.addWidget(self.btnReset, 3, 1)
 
-        self.btnSave = QtWidgets.QPushButton("Save")
+        self.btnSave = QtWidgets.QPushButton("Save to .txt")
         self.btnSave.clicked.connect(self.saveCaption)
         layout.addWidget(self.btnSave, 3, 2)
 
@@ -147,7 +150,7 @@ class CaptionContainer(QtWidgets.QWidget):
 
 
     @Slot()
-    def onControlUpdated(self):
+    def _onControlUpdated(self):
         text = self.txtCaption.toPlainText()
         self._highlight(text)
         self.bubbles.updateBubbles()
@@ -214,34 +217,57 @@ class CaptionContainer(QtWidgets.QWidget):
 
 
     @Slot()
-    def saveCaption(self):
-        if os.path.exists(self.captionFile):
-            print("Overwriting caption file:", self.captionFile)
+    def _onFileTypeUpdated(self):
+        srcSelector = self.ctx.settings.srcSelector
+        if srcSelector.type == FileTypeSelector.TYPE_TXT:
+            self.btnReset.setText("Reload from .txt")
         else:
-            print("Saving to caption file:", self.captionFile)
-        
-        text = self.txtCaption.toPlainText()
-        with open(self.captionFile, 'w') as file:
-            file.write(text)
+            self.btnReset.setText(f"Reload from .json   [{srcSelector.type}.{srcSelector.name}]")
 
-        self.captionCache.remove()
-        self.captionCache.setState(DataKeys.IconStates.Saved)
-        self._setSaveButtonStyle(False)
+        destSelector = self.ctx.settings.destSelector
+        if destSelector.type == FileTypeSelector.TYPE_TXT:
+            self.btnSave.setText("Save to .txt")
+        else:
+            self.btnSave.setText(f"Save to .json   [{destSelector.type}.{destSelector.name}]")
+
 
     @Slot()
-    def resetCaption(self):
-        if os.path.exists(self.captionFile):
-            with open(self.captionFile, 'r') as file:
-                text = file.read()
-            self.setCaption(text)
-            self.captionCache.setState(DataKeys.IconStates.Exists)
+    def saveCaption(self):
+        text = self.txtCaption.toPlainText()
+
+        destSelector = self.ctx.settings.destSelector
+        success = False
+        if destSelector.type == FileTypeSelector.TYPE_TXT:
+            success = self.saveCaptionTxt(text)
         else:
-            self.setCaption("")
-            self.captionCache.setState(None)
+            success = self.saveCaptionJson(text, destSelector.type, destSelector.name)
+
+        if success:
+            self.captionCache.remove()
+            self.captionCache.setState(DataKeys.IconStates.Saved)
+            self._setSaveButtonStyle(False)
+
+    def saveCaptionTxt(self, text: str) -> bool:
+        with open(self.captionFile, 'w') as file:
+            file.write(text)
+        print("Saved caption to file:", self.captionFile)
+        return True
+
+    def saveCaptionJson(self, text: str, type: str, name: str) -> bool:
+        captionFile = CaptionFile(self.captionFile)
         
-        # When setting the text, _onCaptionEdited() will make a cache entry and turn the save button red. So we revert that here.
-        self.captionCache.remove()
-        self._setSaveButtonStyle(False)
+        if type == FileTypeSelector.TYPE_CAPTIONS:
+            captionFile.addCaption(name, text)
+        else:
+            captionFile.addTags(name, text)
+        
+        if captionFile.updateToJson():
+            print(f"Saved caption to file: {captionFile.jsonPath} [{type}.{name}]")
+            return True
+        else:
+            print(f"Failed to save caption to file: {captionFile.jsonPath} [{type}.{name}]")
+            return False
+
 
     def loadCaption(self):
         # Use cached caption if it exists in dictionary
@@ -253,10 +279,47 @@ class CaptionContainer(QtWidgets.QWidget):
             self.resetCaption()
 
     @Slot()
+    def resetCaption(self):
+        srcSelector = self.ctx.settings.srcSelector
+        if srcSelector.type == FileTypeSelector.TYPE_TXT:
+            text = self.resetCaptionTxt()
+        else:
+            text = self.resetCaptionJson(srcSelector.type, srcSelector.name)
+
+        if text:
+            self.setCaption(text)
+            self.captionCache.setState(DataKeys.IconStates.Exists)
+        else:
+            self.setCaption("")
+            self.captionCache.setState(None)
+        
+        # When setting the text, _onCaptionEdited() will make a cache entry and turn the save button red. So we revert that here.
+        self.captionCache.remove()
+        self._setSaveButtonStyle(False)
+
+    def resetCaptionTxt(self) -> str | None:
+        if os.path.exists(self.captionFile):
+            with open(self.captionFile, 'r') as file:
+                return file.read()
+        return None
+
+    def resetCaptionJson(self, type: str, name: str):
+        captionFile = CaptionFile(self.captionFile)
+        if not captionFile.loadFromJson():
+            return None
+
+        if type == FileTypeSelector.TYPE_CAPTIONS:
+            return captionFile.getCaption(name)
+        else:
+            return captionFile.getTags(name)
+        
+
+    @Slot()
     def _onSeparatorChanged(self, separator):
         self.captionSeparator = separator
         self.bubbles.separator = separator
-        self.onControlUpdated()
+        self._onControlUpdated()
+
 
     def onFileChanged(self, currentFile):
         filename = os.path.normpath(currentFile)

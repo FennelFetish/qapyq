@@ -1,11 +1,13 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
-import lib.qtlib as qtlib
+from lib import qtlib
+from lib.captionfile import CaptionFile
 from config import Config
 from infer import Inference, InferencePresetWidget, TagPresetWidget, PromptWidget
 from .batch_task import BatchTask
-from .captionfile import CaptionFile
 
+
+# TODO: Loading of variables
 
 class BatchCaption(QtWidgets.QWidget):
     def __init__(self, tab, logSlot, progressBar, statusBar):

@@ -1,14 +1,13 @@
 import os
 from typing import ForwardRef
-from PySide6 import QtWidgets, QtGui
+from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Slot
 from caption import CaptionPreset, CaptionRulesProcessor
 from config import Config
-from .batch_task import BatchTask
-from .captionfile import CaptionFile
 from infer import Inference
-import lib.qtlib as qtlib
-import lib.util as util
+from lib import qtlib, util
+from lib.captionfile import CaptionFile
+from .batch_task import BatchTask
 
 
 BatchRulesGroup = ForwardRef("BatchRulesGroup")

@@ -14,12 +14,12 @@ class CaptionFile:
     VERSION = "1.0"
 
 
-    def __init__(self, imgPath):
+    def __init__(self, file):
         self.captions: Dict[str, str] = dict()
         self.prompts: Dict[str, str] = dict()
         self.tags: Dict[str, str] = dict()
 
-        path, ext = os.path.splitext(imgPath)
+        path, ext = os.path.splitext(file)
         self.jsonPath = f"{path}.json"
 
 
