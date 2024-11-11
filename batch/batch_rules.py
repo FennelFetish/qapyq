@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt, Slot
 from caption import CaptionPreset, CaptionRulesProcessor
 from config import Config
 from infer import Inference
-from lib import qtlib, util
+from lib import qtlib
 from lib.captionfile import CaptionFile
 from .batch_task import BatchTask
 
@@ -316,13 +316,10 @@ class BatchRules(QtWidgets.QWidget):
             start += len(caption) + len(sep)
 
     def _updateHighlightFormats(self):
-        colorV = QtWidgets.QApplication.palette().color(QtGui.QPalette.ColorRole.Text).valueF()
-        colorV = max(colorV, 0.2)
-
         self._highlightFormats.clear()
         for group in self.groups:
             groupFormat = QtGui.QTextCharFormat()
-            groupFormat.setForeground(QtGui.QColor.fromHsvF(util.get_hue(group.color), 0.35, colorV))
+            groupFormat.setForeground( qtlib.getHighlightColor(group.color) )
             for cap in group.captions:
                 self._highlightFormats[cap] = groupFormat
         

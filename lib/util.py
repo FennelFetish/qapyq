@@ -6,19 +6,23 @@ import re
 # def randomColor(s=0.5, v=0.5):
 #     return hsv_to_rgb(rnd01(), s, v)
 
-def hsv_to_rgb(h: float, s: float, v: float):
+def hsv_to_rgb(h: float, s: float, v: float) -> str:
     r, g, b = colorsys.hsv_to_rgb(h, s, v)
     r, g, b = int(r*255), int(g*255), int(b*255)
     return '#{:02x}{:02x}{:02x}'.format(r, g, b)
 
+def get_hsv(colorHex: str) -> tuple[float, float, float]:
+    colorHex = colorHex.lstrip('#')
+    if len(colorHex) == 3:
+        colorHex = ''.join(c*2 for c in colorHex)
+    elif len(colorHex) != 6:
+        return (0.0, 0.0, 0.0)
+
+    r, g, b = int(colorHex[0:2], 16), int(colorHex[2:4], 16), int(colorHex[4:6], 16)
+    return colorsys.rgb_to_hsv(r/255.0, g/255.0, b/255.0)
+
 def get_hue(colorHex: str) -> float:
-    if len(colorHex) == 7:
-        r, g, b = int(colorHex[1:3], 16), int(colorHex[3:5], 16), int(colorHex[5:7], 16)
-    elif len(colorHex) == 4:
-        r, g, b = int(colorHex[1], 16), int(colorHex[2], 16), int(colorHex[3], 16)
-    else:
-        r, g, b = 0, 0, 0
-    h, s, v = colorsys.rgb_to_hsv(r, g, b)
+    h, s, v = get_hsv(colorHex)
     return h
 
 

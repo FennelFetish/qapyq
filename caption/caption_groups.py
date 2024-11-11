@@ -1,8 +1,7 @@
 from typing import ForwardRef
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot
-import lib.qtlib as qtlib
-import lib.util as util
+from lib import qtlib, util
 
 CaptionControlGroup = ForwardRef('CaptionControlGroup')
 
@@ -14,24 +13,38 @@ CaptionControlGroup = ForwardRef('CaptionControlGroup')
 # - any word  ('b d' in 'a b c d e', also 'b f')
 
 class CaptionGroups(QtWidgets.QWidget):
+    HUE_OFFSET = 0.3819444 # 1.0 - inverted golden ratio, ~137.5°
+
     def __init__(self, context):
         super().__init__()
         self.ctx = context
+        self._nextGroupHue = util.rnd01()
 
         self._build()
         self.addGroup()
 
 
     def _build(self):
+        layout = QtWidgets.QGridLayout()
+        layout.setSpacing(0)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(1, 0)
+        layout.setColumnStretch(2, 0)
+        layout.setColumnMinimumWidth(1, 12)
+        layout.setColumnMinimumWidth(2, 40)
+
         self.groupLayout = QtWidgets.QVBoxLayout()
-        self.groupLayout.setAlignment(Qt.AlignBottom)
         self.groupLayout.setContentsMargins(0, 0, 0, 0)
+        layout.addLayout(self.groupLayout, 0, 0, 1, 3)
 
-        btnAddGroup = QtWidgets.QPushButton("Add Group")
+        btnAddGroup = QtWidgets.QPushButton("✚ Add Group")
         btnAddGroup.clicked.connect(self.addGroup)
-        self.groupLayout.addWidget(btnAddGroup)
+        layout.addWidget(btnAddGroup, 1, 0)
 
-        self.setLayout(self.groupLayout)
+        layout.addWidget(Trash(), 1, 2)
+
+        self.setLayout(layout)
 
 
     @property
@@ -44,7 +57,10 @@ class CaptionGroups(QtWidgets.QWidget):
     @Slot()
     def addGroup(self):
         group = CaptionControlGroup(self, "Group")
-        index = self.groupLayout.count() - 1 # Insert before button
+        group.color = util.hsv_to_rgb(self._nextGroupHue, 0.5, 0.25)
+        self._nextGroupHue += self.HUE_OFFSET
+
+        index = self.groupLayout.count()
         self.groupLayout.insertWidget(index, group)
         self.ctx.controlUpdated.emit()
         return group
@@ -72,7 +88,7 @@ class CaptionGroups(QtWidgets.QWidget):
         count = self.groupLayout.count()
         index = self.groupLayout.indexOf(group)
         index += move
-        if index >= 0 and index < count-1: # There's also a button at the bottom
+        if 0 <= index < count:
             self.groupLayout.insertWidget(index, group)
             self._emitUpdatedApplyRules()
 
@@ -129,16 +145,15 @@ class CaptionGroups(QtWidgets.QWidget):
             for caption in group.captions:
                 groupWidget.addCaption(caption)
 
+            self._nextGroupHue = util.get_hue(group.color) + self.HUE_OFFSET
 
 
 class CaptionControlGroup(QtWidgets.QFrame):
-    _nextHue = util.rnd01()
-
     def __init__(self, groups, name):
         super().__init__()
         self.groups = groups
         self.charFormat = QtGui.QTextCharFormat()
-        self.setFrameStyle(QtWidgets.QFrame.Panel | QtWidgets.QFrame.Raised)
+        self.setFrameStyle(QtWidgets.QFrame.Shape.Box | QtWidgets.QFrame.Shadow.Sunken)
 
         self._buildHeaderWidget(name)
 
@@ -162,8 +177,7 @@ class CaptionControlGroup(QtWidgets.QFrame):
         self.txtColor.textChanged.connect(self._updateColor)
         self.txtColor.setFixedWidth(60)
         qtlib.setMonospace(self.txtColor, 0.8)
-        self.color = util.hsv_to_rgb(CaptionControlGroup._nextHue, 0.5, 0.25)
-        CaptionControlGroup._nextHue += 0.3819444
+        self.color = "#000"
 
         self.txtName = QtWidgets.QLineEdit(name)
         self.txtName.setMinimumWidth(160)
@@ -245,10 +259,7 @@ class CaptionControlGroup(QtWidgets.QFrame):
             self.groups.ctx.controlUpdated.emit()
     
     def _updateCharFormat(self, color):
-        colorV = QtWidgets.QApplication.palette().color(QtGui.QPalette.ColorRole.Text).valueF()
-        colorV = max(colorV, 0.2)
-        color = QtGui.QColor.fromHsvF(util.get_hue(color), 0.35, colorV)
-        self.charFormat.setForeground(QtGui.QColor(color))
+        self.charFormat.setForeground( qtlib.getHighlightColor(color) )
 
 
     @property
@@ -295,3 +306,30 @@ class CaptionControlGroup(QtWidgets.QFrame):
 
     def resizeEvent(self, event):
         self.layout().update()  # Weird: Needed for proper resize.
+
+
+
+class Trash(QtWidgets.QLabel):
+    def __init__(self):
+        super().__init__("🗑")
+        self.setAcceptDrops(True)
+
+        self.setStyleSheet("QLabel{border: 1px solid #333333; font-size: 18px}")
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.setToolTip("Drag tags here to delete them")
+        
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasText:
+            event.accept()
+
+    def dragLeaveEvent(self, event):
+        event.accept()
+
+    def dragMoveEvent(self, event):
+        event.accept()
+
+    def dropEvent(self, event):
+        event.setDropAction(Qt.DropAction.MoveAction)
+        event.accept()

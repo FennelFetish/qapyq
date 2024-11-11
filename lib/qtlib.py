@@ -1,6 +1,5 @@
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QRect, QSize, QMimeData
-import os
 import lib.util as util
 
 
@@ -459,6 +458,36 @@ class ColorCharFormats:
 
     def addFormat(self, format: QtGui.QTextCharFormat) -> None:
         self._formats.append(format)
+
+
+
+def getHighlightColor(colorHex: str) -> QtGui.QColor:
+    vPalette = QtWidgets.QApplication.palette().color(QtGui.QPalette.ColorRole.Text).valueF()
+    vPalette = max(vPalette, 0.70) # min/max prevents div/0 when calculating vMix below
+    vPalette = min(vPalette, 0.99)
+
+    h, s, v = util.get_hsv(colorHex)
+
+    # Try to keep saturation at around 0.38 for bright text (dark themes)
+    # and around 0.76 for dark text (bright themes), but allow extreme values.
+    # Smooth curve with start/end at 0 and 1, with plateau in the middle.
+    # https://www.desmos.com/calculator/y4dgc8uz0b
+    plateauLower = 1.4 if vPalette>0.71 else 0.4
+    plateauWidth = 1.5
+    plateau = ((2*s - 1) ** 5) * 0.5 + 0.5
+    smoothstep = 3*s*s - 2*s*s*s
+    sMix = (2*abs(s-0.5)) ** plateauWidth
+    s = (1-sMix)*plateau + sMix*smoothstep
+    s = s ** plateauLower
+
+    # Try to keep 'v' at 'vPalette', but mix towards 'v' for extreme values.
+    # Smooth curve goes through (0,1), (vPalette,0), (1,1), sample at 'v'.
+    # https://www.desmos.com/calculator/obmyhuqy37
+    vMix = (vPalette-v)/vPalette if v<vPalette else (v-vPalette)/(1-vPalette)
+    vMix = vMix ** 8.0
+    v = (1.0-vMix)*vPalette + vMix*v
+
+    return QtGui.QColor.fromHsvF(h, s, v)
 
 
 
