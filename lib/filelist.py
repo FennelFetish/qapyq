@@ -1,5 +1,5 @@
-import os
-import enum
+import os, enum
+from PySide6.QtGui import QImageReader
 
 
 class DataKeys:
@@ -9,13 +9,19 @@ class DataKeys:
     Thumbnail       = "thumbnail"
     ThumbnailRequestTime = "thumbnail_time"
 
+    MaskLayers      = "mask_layers"
+    MaskIndex       = "mask_selected_index"
+    MaskState       = "mask_state"
+
     class IconStates(enum.Enum):
         Exists  = "exists"
         Changed = "changed"
         Saved   = "saved"
 
 
-VALID_EXTENSION = ['.jpg', '.jpeg', '.png', '.webp', '.bmp']
+
+VALID_EXTENSION = [ f".{format.data().decode('utf-8')}" for format in QImageReader.supportedImageFormats() ]
+
 
 class FileList:
     def __init__(self):
@@ -68,7 +74,10 @@ class FileList:
         self.notifyListChanged()
 
     def loadFolder(self, path, subfolders=False):
-        self._readFolder(path, subfolders)
+        self.files = []
+        self.fileData = dict()
+        self._walkPath(path, subfolders)
+        self._sortFiles()
         self.currentFile = self.files[0] if len(self.files) > 0 else ""
         self.currentIndex = 0
         self.notifyListChanged()
@@ -87,7 +96,7 @@ class FileList:
     def setCurrentFile(self, file):
         try:
             index = self.files.index(file)
-        except ValueError as ex:
+        except ValueError:
             print(f"Warning: File {file} not in FileList")
             index = -1
 
@@ -157,14 +166,14 @@ class FileList:
     def _lazyLoadFolder(self):
         if self.currentIndex < 0 and self.currentFile:
             path = os.path.dirname(self.currentFile)
-            self._readFolder(path, False)
-            self.currentIndex = self.files.index(self.currentFile)
+            self._walkPath(path, False)
+            self._sortFiles()
 
-    def _readFolder(self, path, subfolders=False):
-        self.files = []
-        self.fileData = dict()
-        self._walkPath(path, subfolders)
-        self._sortFiles()
+            try:
+                self.currentIndex = self.files.index(self.currentFile)
+            except ValueError:
+                print(f"Warning: File {self.currentFile} not in FileList")
+                self.currentIndex = -1
 
     def _walkPath(self, path, subfolders=False):
         for (root, dirs, files) in os.walk(path, topdown=True, followlinks=True):
