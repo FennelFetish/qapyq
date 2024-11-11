@@ -51,13 +51,6 @@ class ScaleTool(ViewTool):
         self.tab.statusBar().showColoredMessage("Export failed", success=False)
 
 
-    def onFileChanged(self, currentFile):
-        self._toolbar.updateExport()
-
-    def onFileListChanged(self, currentFile):
-        self.onFileChanged(currentFile)
-
-
     # === Tool Interface ===
 
     def getToolbar(self):
@@ -68,7 +61,6 @@ class ScaleTool(ViewTool):
         imgview.rotation = self._toolbar.rotation
         imgview.updateImageTransform()
 
-        imgview.filelist.addListener(self)
         self._toolbar.initScaleMode()
         self._toolbar.updateExport()
 
@@ -77,7 +69,9 @@ class ScaleTool(ViewTool):
         imgview.rotation = 0.0
         imgview.updateImageTransform()
 
-        imgview.filelist.removeListener(self)
+    def onSceneUpdate(self):
+        super().onSceneUpdate()
+        self._toolbar.updateExport()
 
     def onResetView(self):
         self._toolbar.rotation = self._imgview.rotation

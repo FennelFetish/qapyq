@@ -165,13 +165,6 @@ class CropTool(ViewTool):
         self.tab.statusBar().showColoredMessage("Export failed", success=False)
 
 
-    def onFileChanged(self, currentFile):
-        self._toolbar.updateExport()
-
-    def onFileListChanged(self, currentFile):
-        self.onFileChanged(currentFile)
-
-
     # === Tool Interface ===
 
     def getToolbar(self):
@@ -188,7 +181,6 @@ class CropTool(ViewTool):
         imgview.updateImageTransform()
 
         self._toolbar.updateSize()
-        imgview.filelist.addListener(self)
 
     def onDisabled(self, imgview):
         super().onDisabled(imgview)
@@ -199,14 +191,13 @@ class CropTool(ViewTool):
         imgview.rotation = 0.0
         imgview.updateImageTransform()
 
-        imgview.filelist.removeListener(self)
-
 
     def onSceneUpdate(self):
         super().onSceneUpdate()
         self._waitForConfirmation = False
         self.setSelectionVisible(False)
         self.updateSelection(self._cropRect.rect().center())
+        self._toolbar.updateExport()
 
     def onResetView(self):
         self._toolbar.rotation = self._imgview.rotation
