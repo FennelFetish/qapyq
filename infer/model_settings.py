@@ -122,6 +122,7 @@ class BaseSettingsWidget(QtWidgets.QWidget):
         row = 0
         self.cboPreset = QtWidgets.QComboBox()
         self.cboPreset.setEditable(True)
+        self.cboPreset.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
         self.cboPreset.editTextChanged.connect(self._onPresetNameEdited)
         self.cboPreset.currentIndexChanged.connect(self.loadPreset)
         layout.addWidget(QtWidgets.QLabel("Preset Name:"), row, 0)

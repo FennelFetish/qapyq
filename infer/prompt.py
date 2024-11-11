@@ -32,6 +32,7 @@ class PromptWidget(QtWidgets.QWidget):
 
         self.preset = QtWidgets.QComboBox()
         self.preset.setEditable(True)
+        self.preset.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
         self.preset.editTextChanged.connect(self._onPresetNameEdited)
         self.preset.currentIndexChanged.connect(self.loadPreset)
         layout.addWidget(self.preset, row, 1, 1, 2)
