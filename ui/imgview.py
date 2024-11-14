@@ -92,15 +92,25 @@ class ImgView(DropView):
         if not self._tool.onMousePress(event):
             super().mousePressEvent(event)
 
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        self._tool.onMouseRelease(event)
+
     def wheelEvent(self, event):
         if not self._tool.onMouseWheel(event):
             super().wheelEvent(event)
-    
+
+    def tabletEvent(self, event):
+        if self._tool.onTablet(event):
+            event.accept()
+        else:
+            super().tabletEvent(event)
+
 
     def keyPressEvent(self, event):
         super().keyPressEvent(event)
         self._tool.onKeyPress(event)
-        
+
 
 
 class ImgItem(QGraphicsPixmapItem):

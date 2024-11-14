@@ -10,6 +10,13 @@ from .thumbnail_cache import ThumbnailCache
 class ImageIcon:
     Caption = "caption"
     Crop = "crop"
+    Mask = "mask"
+
+DATA_ICONS = {
+    DataKeys.CaptionState: ImageIcon.Caption,
+    DataKeys.CropState: ImageIcon.Crop,
+    DataKeys.MaskState: ImageIcon.Mask
+}
 
 
 class GalleryGrid(QtWidgets.QWidget):
@@ -25,7 +32,8 @@ class GalleryGrid(QtWidgets.QWidget):
 
         self.icons = {
             ImageIcon.Caption: QtGui.QPixmap("./res/icon_caption.png"),
-            ImageIcon.Crop: QtGui.QPixmap("./res/icon_crop.png")
+            ImageIcon.Crop: QtGui.QPixmap("./res/icon_crop.png"),
+            ImageIcon.Mask: QtGui.QPixmap("./res/icon_mask.png")
         }
 
         colorWhite = QtGui.QColor(230, 230, 230)
@@ -235,24 +243,17 @@ class GalleryGrid(QtWidgets.QWidget):
             self.reloaded.emit()
 
     def onFileDataChanged(self, file, key):
-        if file not in self.fileItems:
+        if not (icon := DATA_ICONS.get(key)):
             return
-        
-        if key == DataKeys.CaptionState:
-            widget = self.fileItems[file]
-            if captionState := self.filelist.getData(file, DataKeys.CaptionState):
-                widget.setIcon(ImageIcon.Caption, captionState)
-            else:
-                widget.removeIcon(ImageIcon.Caption)
-            widget.update()
 
-        elif key == DataKeys().CropState:
-            widget = self.fileItems[file]
-            if cropState := self.filelist.getData(file, DataKeys.CropState):
-                widget.setIcon(ImageIcon.Crop, cropState)
-            else:
-                widget.removeIcon(ImageIcon.Crop)
-            widget.update()
+        if not (widget := self.fileItems.get(file)):
+            return
+
+        if iconState := self.filelist.getData(file, key):
+            widget.setIcon(icon, iconState)
+        else:
+            widget.removeIcon(icon)
+        widget.update()
 
 
 

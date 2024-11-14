@@ -1,10 +1,12 @@
 from ui.dropview import DropZone
 from ui.imgview import ImgView
+from ui.tab import ImgTab
 
 
 class Tool:
-    def __init__(self, tab):
-        self.tab = tab
+    def __init__(self, tab: ImgTab):
+        self.tab: ImgTab = tab
+        self._imgview: ImgView = None
 
     def getToolbar(self):
         return None
@@ -13,7 +15,7 @@ class Tool:
         self._imgview = imgview
         imgview.clearDropZones()
         for rect in self.getDropRects():
-            imgview.addDropZone( DropZone(rect))
+            imgview.addDropZone(DropZone(rect))
 
     def onDisabled(self, imgview: ImgView):
         self._imgview = None
@@ -51,7 +53,13 @@ class Tool:
     def onMousePress(self, event) -> bool:
         return False
 
+    def onMouseRelease(self, event):
+        pass
+
     def onMouseWheel(self, event) -> bool:
+        return False
+    
+    def onTablet(self, event) -> bool:
         return False
 
 
