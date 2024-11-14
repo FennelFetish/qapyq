@@ -345,7 +345,7 @@ class ReorderWidget(QtWidgets.QWidget):
             self.updateCallback()
 
     def dragEnterEvent(self, e):
-        if e.mimeData().hasText:
+        if e.mimeData().hasText():
             e.accept()
 
     def dragLeaveEvent(self, e):

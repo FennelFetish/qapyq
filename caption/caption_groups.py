@@ -28,21 +28,29 @@ class CaptionGroups(QtWidgets.QWidget):
         layout = QtWidgets.QGridLayout()
         layout.setSpacing(0)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 0)
-        layout.setColumnStretch(2, 0)
+        layout.setColumnStretch(2, 1)
+        layout.setColumnStretch(3, 0)
+        layout.setColumnStretch(4, 0)
+        layout.setColumnMinimumWidth(0, 40)
         layout.setColumnMinimumWidth(1, 12)
-        layout.setColumnMinimumWidth(2, 40)
+        layout.setColumnMinimumWidth(3, 12)
+        layout.setColumnMinimumWidth(4, 40)
 
+        row = 0
         self.groupLayout = QtWidgets.QVBoxLayout()
         self.groupLayout.setContentsMargins(0, 0, 0, 0)
-        layout.addLayout(self.groupLayout, 0, 0, 1, 3)
+        layout.addLayout(self.groupLayout, row, 0, 1, 5)
+
+        row += 1
+        layout.addWidget(Trash(), row, 0)
 
         btnAddGroup = QtWidgets.QPushButton("✚ Add Group")
         btnAddGroup.clicked.connect(self.addGroup)
-        layout.addWidget(btnAddGroup, 1, 0)
+        layout.addWidget(btnAddGroup, row, 2)
 
-        layout.addWidget(Trash(), 1, 2)
+        layout.addWidget(Trash(), row, 4)
 
         self.setLayout(layout)
 
@@ -313,23 +321,31 @@ class Trash(QtWidgets.QLabel):
     def __init__(self):
         super().__init__("🗑")
         self.setAcceptDrops(True)
-
-        self.setStyleSheet("QLabel{border: 1px solid #333333; font-size: 18px}")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
         self.setToolTip("Drag tags here to delete them")
-        
+
+        self.setHover(False)
 
     def dragEnterEvent(self, event):
-        if event.mimeData().hasText:
+        if event.mimeData().hasText():
+            self.setHover(True)
             event.accept()
 
     def dragLeaveEvent(self, event):
+        self.setHover(False)
         event.accept()
 
     def dragMoveEvent(self, event):
         event.accept()
 
     def dropEvent(self, event):
+        self.setHover(False)
         event.setDropAction(Qt.DropAction.MoveAction)
         event.accept()
+
+    def setHover(self, hover: bool):
+        style = "border: 1px solid #333333; font-size: 18px"
+        if hover:
+            style += "; background: #801616"
+
+        self.setStyleSheet("QLabel{" + style + "}")
