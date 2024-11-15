@@ -22,6 +22,10 @@ class Config:
     cropSizeStep            = 64
     cropWheelStep           = 0.02
 
+    # Mask
+    maskSuffix              = "-masklabel"
+    maskHistorySize         = 20
+
     # Prompts
     promptCaptionPresets    = dict()
     promptCaptionDefault    = {
@@ -97,6 +101,9 @@ class Config:
         cls.cropSizeStep          = int(data.get("crop_size_step", cls.cropSizeStep))
         cls.cropWheelStep         = float(data.get("crop_wheel_step", cls.cropWheelStep))
 
+        cls.maskSuffix            = data.get("mask_suffix", cls.maskSuffix)
+        cls.maskHistorySize       = int(data.get("mask_history_size", cls.maskHistorySize))
+
         cls.promptCaptionPresets  = data.get("prompt_caption_presets", cls.promptCaptionPresets)
         cls.promptLLMPresets      = data.get("prompt_llm_presets", cls.promptLLMPresets)
         cls.sysPromptFallbackTemplate = data.get("sys_prompt_fallback_template", cls.sysPromptFallbackTemplate)
@@ -133,6 +140,9 @@ class Config:
         data["crop_size_presets"]           = cls.cropSizePresets
         data["crop_size_step"]              = cls.cropSizeStep
         data["crop_wheel_step"]             = cls.cropWheelStep
+
+        data["mask_suffix"]                 = cls.maskSuffix
+        data["mask_history_size"]           = cls.maskHistorySize
 
         data["prompt_caption_presets"]      = cls.promptCaptionPresets
         data["prompt_llm_presets"]          = cls.promptLLMPresets

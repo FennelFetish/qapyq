@@ -1,5 +1,6 @@
 import os, enum
 from PySide6.QtGui import QImageReader
+from config import Config
 
 
 class DataKeys:
@@ -20,7 +21,14 @@ class DataKeys:
 
 
 
-VALID_EXTENSION = [ f".{format.data().decode('utf-8')}" for format in QImageReader.supportedImageFormats() ]
+VALID_EXTENSION = set([ f".{format.data().decode('utf-8')}" for format in QImageReader.supportedImageFormats() ])
+
+MASK_SUFFIX = Config.maskSuffix + ".png"
+def fileFilter(path) -> bool:
+    if path.endswith(MASK_SUFFIX):
+        return False
+    name, ext = os.path.splitext(path)
+    return ext in VALID_EXTENSION
 
 
 class FileList:
@@ -40,7 +48,7 @@ class FileList:
         for path in paths:
             if os.path.isdir(path):
                 self._walkPath(path, True)
-            elif any(path.lower().endswith(ext) for ext in VALID_EXTENSION):
+            elif fileFilter(path):
                 self.files.append(path)
 
         self._sortFiles()
@@ -53,7 +61,7 @@ class FileList:
         for path in paths:
             if os.path.isdir(path):
                 self._walkPath(path, True)
-            elif any(path.lower().endswith(ext) for ext in VALID_EXTENSION):
+            elif fileFilter(path):
                 self.files.append(path)
 
         self.files = list(set(self.files))
@@ -180,7 +188,7 @@ class FileList:
             if not subfolders:
                 dirs[:] = []
             # os.path.join() mixes up the separators on Windows.
-            self.files += [f"{root}/{f}" for f in files if any(f.lower().endswith(ext) for ext in VALID_EXTENSION)]
+            self.files += [f"{root}/{f}" for f in files if fileFilter(f)]
 
     def _sortFiles(self):
         self.files.sort(key=lambda path: os.path.split(path))

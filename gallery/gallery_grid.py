@@ -4,6 +4,7 @@ from PySide6.QtCore import QSize, Qt, Signal
 from lib.filelist import DataKeys
 import lib.qtlib as qtlib
 from .thumbnail_cache import ThumbnailCache
+from config import Config
 
 # TODO: RowView with captions
 
@@ -278,16 +279,26 @@ class GalleryGridItem(QtWidgets.QWidget):
         self._checkIcons(file)
 
     def _checkIcons(self, file):
-        if captionState := self.gallery.filelist.getData(file, DataKeys.CaptionState):
+        filelist = self.gallery.filelist
+
+        if captionState := filelist.getData(file, DataKeys.CaptionState):
             self.setIcon(ImageIcon.Caption, captionState)
         else:
-            filenameNoExt, ext = os.path.splitext(self.filename)
-            captionFile = os.path.join(os.path.dirname(file), filenameNoExt + ".txt")
+            filenameNoExt, ext = os.path.splitext(self.file)
+            captionFile = filenameNoExt + ".txt"
             if os.path.exists(captionFile):
                 self.setIcon(ImageIcon.Caption, DataKeys.IconStates.Exists)
 
-        if cropState := self.gallery.filelist.getData(file, DataKeys.CropState):
+        if cropState := filelist.getData(file, DataKeys.CropState):
             self.setIcon(ImageIcon.Crop, cropState)
+        
+        if maskState := filelist.getData(file, DataKeys.MaskState):
+            self.setIcon(ImageIcon.Mask, maskState)
+        else:
+            filenameNoExt, ext = os.path.splitext(self.file)
+            maskFile = f"{filenameNoExt}{Config.maskSuffix}.png"
+            if os.path.exists(maskFile):
+                self.setIcon(ImageIcon.Mask, DataKeys.IconStates.Exists)
 
     def setIcon(self, key, state):
         self.icons[key] = state

@@ -255,14 +255,14 @@ class MainMenu(QtWidgets.QMenu):
 
     @Slot()
     def open(self):
-        path, filter = QtWidgets.QFileDialog.getOpenFileName(self, "Choose file")
+        path, filter = QtWidgets.QFileDialog.getOpenFileName(self, "Open File")
         if path:
             tab = self.mainWindow.addTab()
             tab.filelist.load(path)
 
     @Slot()
     def openDir(self):
-        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose directory")
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Open Folder")
         if path:
             tab = self.mainWindow.addTab()
             tab.filelist.load(path)
@@ -326,7 +326,7 @@ class MainToolBar(QtWidgets.QToolBar):
             "compare":  self.addAction("Compare"),
             "crop":     self.addAction("Crop"),
             "scale":    self.addAction("Scale"),
-            #"mask":     self.addAction("Mask")
+            "mask":     self.addAction("Mask")
         }
 
         for name, act in self._toolActions.items():

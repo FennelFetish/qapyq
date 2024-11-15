@@ -1,7 +1,8 @@
+import os
 from typing import ForwardRef
 from typing_extensions import override
-from PySide6.QtCore import Qt, Slot, Signal, QEvent, QRect, QRectF, QPointF, QSignalBlocker, QRunnable, QObject, QThreadPool
-from PySide6.QtGui import QPixmap, QImage, QTransform, QPainter, QPen, QColor, QTabletEvent, QPointingDevice
+from PySide6.QtCore import Qt, Slot, Signal, QEvent, QSignalBlocker, QRunnable, QObject, QThreadPool
+from PySide6.QtGui import QImage, QPainter, QTabletEvent, QPointingDevice
 from PySide6 import QtWidgets
 import cv2 as cv
 import numpy as np
@@ -9,6 +10,7 @@ from lib.filelist import DataKeys
 from ui.export_settings import ExportPath
 from config import Config
 from .view import ViewTool
+from . import mask_ops
 
 MaskItem = ForwardRef("MaskItem")
 
@@ -19,7 +21,6 @@ MaskItem = ForwardRef("MaskItem")
 # Brushes: Set size, solid brush, blurry brush, subtractive brush (eraser) ...
 # Flood fill
 
-# For converting to CV Mat: use pixmap.bits() ? ask SuperNova
 # Save layer names to file meta data
 
 # Undo/Redo with Ctrl+Z/Ctrl+Y, store vector data
@@ -27,31 +28,17 @@ MaskItem = ForwardRef("MaskItem")
 # OneTrainer uses filename suffix "-masklabel.png"
 # kohya-ss has the masks in separate folder: conditioning_data_dir = '...'
 
+# TODO: Display hovered-over pixel value in statusbar
+
 
 class MaskTool(ViewTool):
-    BUTTON_DRAW = Qt.MouseButton.LeftButton
-    BUTTON_ERASE = Qt.MouseButton.RightButton
+    BUTTON_MAIN = Qt.MouseButton.LeftButton
+    BUTTON_ALT = Qt.MouseButton.RightButton
 
     def __init__(self, tab):
         super().__init__(tab)
         self.maskItem: MaskItem = None
         self.layers: list[MaskItem] = None
-
-        self._drawing = False
-        self._lastPoint: QPointF = None
-
-        self._painter = QPainter()
-        self._penColor = QColor()
-        self._pen = QPen()
-        self._pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        self._pen.setWidth(10)
-
-        cursorPen = QPen(QColor(0, 255, 255, 255))
-        cursorPen.setStyle(Qt.PenStyle.DashLine)
-        cursorPen.setDashPattern([2,3])
-        self._cursor = QtWidgets.QGraphicsEllipseItem()
-        self._cursor.setPen(cursorPen)
-        self._origCursor = None
 
         self._toolbar = MaskToolBar(self)
 
@@ -63,10 +50,10 @@ class MaskTool(ViewTool):
         imgview = self._imgview
         pixmap = imgview.image.pixmap()
 
-        mask = QImage(pixmap.size(), QImage.Format.Format_Grayscale8) # QImage::Format_ARGB32_Premultiplied ? (faster with alpha blending)
+        mask = QImage(pixmap.size(), QImage.Format.Format_Grayscale8)
         mask.fill(Qt.GlobalColor.black)
 
-        maskItem = MaskItem(name, mask)
+        maskItem = MaskItem.new(name, mask)
         maskItem.updateTransform(imgview.image)
         return maskItem
 
@@ -75,20 +62,43 @@ class MaskTool(ViewTool):
         if not (currentFile := filelist.getCurrentFile()):
             return
 
-        self.layers = filelist.getData(currentFile, DataKeys.MaskLayers)
-        if self.layers:
+        index = 0
+        if layers := filelist.getData(currentFile, DataKeys.MaskLayers):
             index = filelist.getData(currentFile, DataKeys.MaskIndex)
-            self.maskItem = self.layers[index]
-
+            self.maskItem = layers[index]
+        elif layers := self.loadLayersFromFile():
+            self.maskItem = layers[0]
         else:
             self.maskItem = self.createMask()
-            self.layers = [ self.maskItem ]
-            index = 0
+            layers = [ self.maskItem ]
 
         self._imgview.scene().addItem(self.maskItem)
         self._imgview.updateScene()
 
-        self._toolbar.setLayers(self.layers, index)
+        self.layers = layers
+        self._toolbar.setLayers(layers, index)
+        self._toolbar.setHistory(self.maskItem)
+
+    def loadLayersFromFile(self):
+        maskPath = self.getSavePath()
+        if not os.path.exists(maskPath):
+            return None
+
+        maskMat = cv.imread(maskPath, cv.IMREAD_UNCHANGED)
+        if maskMat.ndim == 2:
+            h, w = maskMat.shape
+            maskMat.shape = (h, w, 1)
+        channels = maskMat.shape[2]
+
+        layers: list[MaskItem] = []
+        indices = list(range(channels))
+        indices[:3] = indices[2::-1] # Convert BGR(A) -> RGB(A)
+        for i, c in enumerate(indices):
+            array = np.ascontiguousarray(maskMat[:, :, c])
+            maskItem = MaskItem.load(f"Layer {i}", array)
+            maskItem.updateTransform(self._imgview.image)
+            layers.append(maskItem)
+        return layers
 
     def storeLayers(self):
         filelist = self.tab.filelist
@@ -127,9 +137,11 @@ class MaskTool(ViewTool):
             self._imgview.scene().removeItem(self.maskItem)
 
         self.maskItem = self.layers[index]
+        self.maskItem.updateTransform(self._imgview.image)
         self._imgview.scene().addItem(self.maskItem)
         self._imgview.scene().update()
 
+        self._toolbar.setHistory(self.maskItem)
         filelist.setData(currentFile, DataKeys.MaskIndex, index)
 
     @Slot()
@@ -151,75 +163,13 @@ class MaskTool(ViewTool):
         self.setEdited()
 
 
-    # Remember: When exporting mask, simply delete the FileList Data and set icon state.
     def setEdited(self):
         self.storeLayers()
 
 
-    def updatePen(self, pressure):
-        self._penColor.setRgbF(pressure, pressure, pressure, 1.0)
-        self._pen.setColor(self._penColor)
-        self._painter.setPen(self._pen)
-
-    @Slot()
-    def setPenWidth(self, width: int):
-        width = max(width, 1)
-        self._pen.setWidth(width)
-        self.updateCursor(self._cursor.rect().center())
-
-        with QSignalBlocker(self._toolbar.spinBrushSize):
-            self._toolbar.spinBrushSize.setValue(width)
-
-
-    def updateCursor(self, pos: QPointF):
-        w = float(self._pen.width())
-        if self.maskItem:
-            rect = self.maskItem.mapToParent(0, 0, w, w)
-            rect = self._imgview.mapFromScene(rect).boundingRect()
-            w = rect.width()
-
-        wHalf = w * 0.5
-        self._cursor.setRect(pos.x()-wHalf, pos.y()-wHalf, w, w)
-        self._imgview.scene().update()
-
-
-    def mapPosToImage(self, eventPos):
-        imgpos = self._imgview.mapToScene(eventPos.toPoint())
-        imgpos = self.maskItem.mapFromParent(imgpos)
-        return imgpos
-
-
-    def drawStart(self, eventPos, pressure: float, erase=False):
-        self._drawing = True
-        self._lastPoint = self.mapPosToImage(eventPos)
-
-        self._painter.begin(self.maskItem.mask)
-        if erase:
-            self._painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
-        else:
-            self._painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Lighten)
-        self._painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        self.updatePen(pressure)
-        self._painter.drawPoint(self._lastPoint)
-        self.maskItem.update()
-
-    def drawMove(self, eventPos, pressure: float):
-        currentPoint = self.mapPosToImage(eventPos)
-
-        # TODO: Remember last pressure and draw gradient to prevent banding effect
-        self.updatePen(pressure)
-        self._painter.drawLine(self._lastPoint, currentPoint)
-        self.maskItem.update()
-
-        self._lastPoint = currentPoint
-        
-    def drawEnd(self):
-        if self._drawing:
-            self._drawing = False
-            self._painter.end()
-            self.setEdited()
-
+    def getSavePath(self) -> str:
+        currentFile = self.tab.filelist.getCurrentFile()
+        return ExportPath.getSavePath(currentFile, "png", Config.maskSuffix)
 
     @Slot()
     def exportMask(self):
@@ -232,7 +182,12 @@ class MaskTool(ViewTool):
         for layerItem in self.layers:
             image = layerItem.image
             array = np.frombuffer(image.constBits(), dtype=np.uint8)
-            array.shape = (image.height(), image.width())
+            array.shape = (image.height(), image.bytesPerLine())
+
+            # Remove padding
+            if image.bytesPerLine() != image.width():
+                array = array[:, :image.width()]
+
             masks.append(array)
 
         # Can't write images with only 2 channels. Need 1/3/4 channels.
@@ -246,53 +201,51 @@ class MaskTool(ViewTool):
         # Creates a copy of the data.
         combined = np.dstack(masks)
 
-        exportPath = ExportPath()
-        exportPath.suffix = "-masklabel"
+        currentFile = self.tab.filelist.getCurrentFile()
+        destFile = self.getSavePath()
         saveParams = [cv.IMWRITE_PNG_COMPRESSION, 9]
 
-        #exportPath.extension = "webp"
-        #saveParams = [cv.IMWRITE_WEBP_QUALITY, 100]
-
-        currentFile = self.tab.filelist.getCurrentFile()
-        destFile = exportPath.getExportPath(currentFile)
-
+        # TODO: Save layer names to meta data?
         task = MaskExportTask(currentFile, destFile, combined, saveParams)
         task.signals.done.connect(self.onExportDone, Qt.ConnectionType.BlockingQueuedConnection)
         task.signals.fail.connect(self.onExportFailed, Qt.ConnectionType.BlockingQueuedConnection)
         QThreadPool.globalInstance().start(task)
 
+        # Set state when export starts so editing while export is in progress will correctly reflect changed status.
         self.tab.filelist.setData(currentFile, DataKeys.MaskState, DataKeys.IconStates.Saved)
-        
+
 
     @Slot()
     def onExportDone(self, imgFile, maskFile):
         message = f"Saved mask to: {maskFile}"
         print(message)
         self.tab.statusBar().showColoredMessage(message, success=True)
-        
+
         # Remove masks
         # TODO: Which image file to load when changing back to this image?
         #       Remember exported file? Don't export multiple files, but overwrite the one with _mask suffix?
-        state = self.tab.filelist.getData(imgFile, DataKeys.MaskState)
-        if state == DataKeys.IconStates.Saved:
-            self.tab.filelist.removeData(imgFile, DataKeys.MaskLayers)
+        #       What to do with history?
+        # state = self.tab.filelist.getData(imgFile, DataKeys.MaskState)
+        # if state == DataKeys.IconStates.Saved:
+        #     self.tab.filelist.removeData(imgFile, DataKeys.MaskLayers)
 
         #self._toolbar.updateExport()
-    
+
     @Slot()
     def onExportFailed(self):
         self.tab.statusBar().showColoredMessage("Export failed", success=False)
 
 
-    def onFileChanged(self, currentFile):
-        if self._drawing:
-            self._drawing = False
-            self._painter.end()
+    @property
+    def op(self) -> mask_ops.MaskOperation:
+        return self._toolbar.selectedOp
 
+    def onFileChanged(self, currentFile):
         if self.maskItem:
             self._imgview.scene().removeItem(self.maskItem)
         self.loadLayers()
-        self.updateCursor(self._cursor.rect().center())
+
+        self.op.onFileChanged(currentFile)
 
     def onFileListChanged(self, currentFile):
         self.onFileChanged(currentFile)
@@ -308,11 +261,7 @@ class MaskTool(ViewTool):
     def onEnabled(self, imgview):
         super().onEnabled(imgview)
         imgview.filelist.addListener(self)
-
-        self._origCursor = imgview.cursor()
-        imgview.setCursor(Qt.CursorShape.BlankCursor)
-        imgview._guiScene.addItem(self._cursor)
-
+        self.op.onEnabled(imgview)
         self.loadLayers()
 
     @override
@@ -320,11 +269,7 @@ class MaskTool(ViewTool):
         super().onDisabled(imgview)
         imgview.filelist.removeListener(self)
 
-        self.drawEnd()
-
-        imgview.setCursor(self._origCursor)
-        self._origCursor = None
-        imgview._guiScene.removeItem(self._cursor)
+        self.op.onDisabled(imgview)
 
         if self.maskItem:
             imgview.scene().removeItem(self.maskItem)
@@ -335,7 +280,7 @@ class MaskTool(ViewTool):
     @override
     def onSceneUpdate(self):
         super().onSceneUpdate()
-        self.updateCursor(self._cursor.rect().center())
+        self.op.onFileChanged(self.tab.filelist.getCurrentFile()) # TODO: What function to call?
 
         if self.maskItem:
             self.maskItem.updateTransform(self._imgview.image)
@@ -355,27 +300,25 @@ class MaskTool(ViewTool):
             return super().onMousePress(event)
 
         match event.button():
-            case self.BUTTON_DRAW:
-                self.drawStart(event.position(), 1.0)
+            case self.BUTTON_MAIN:
+                self.op.onMousePress(event.position(), 1.0, False)
                 return True
-            case self.BUTTON_ERASE:
-                self.drawStart(event.position(), 1.0, True)
+            case self.BUTTON_ALT:
+                self.op.onMousePress(event.position(), 1.0, True)
                 return True
 
         return super().onMousePress(event)
 
     @override
     def onMouseRelease(self, event):
-        # TODO: Only stop drawing if same button is released
-        self.drawEnd()
+        match event.button():
+            case self.BUTTON_MAIN: self.op.onMouseRelease(False)
+            case self.BUTTON_ALT:  self.op.onMouseRelease(True)
 
     @override
     def onMouseMove(self, event):
         super().onMouseMove(event)
-        self.updateCursor(event.position())
-
-        if self._drawing and self.maskItem:
-            self.drawMove(event.position(), 1.0)
+        self.op.onMouseMove(event.position(), 1.0)
 
     @override
     def onMouseWheel(self, event) -> bool:
@@ -384,20 +327,21 @@ class MaskTool(ViewTool):
             return super().onMousePress(event)
         
         wheelSteps = event.angleDelta().y() / 120.0 # 8*15° standard
-        width = self._pen.width()
-        width += wheelSteps
-        self.setPenWidth(width)
+        if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+            wheelSteps *= 10
+
+        self.op.onMouseWheel(wheelSteps)
         return True
 
 
     @override
     def onMouseEnter(self, event):
-        self._cursor.setVisible(True)
+        self.op.onCursorVisible(True)
         self._imgview.scene().update()
 
     @override
     def onMouseLeave(self, event):
-        self._cursor.setVisible(False)
+        self.op.onCursorVisible(False)
         self._imgview.scene().update()
 
 
@@ -409,33 +353,58 @@ class MaskTool(ViewTool):
 
         pressure = event.pressure()
         #pressure = event.pressure() ** 1.0
-        
+
+        pointerType = event.pointingDevice().pointerType()
+        alt = (pointerType == QPointingDevice.PointerType.Eraser)
+
         # TODO: Handle case when stylus buttons are pressed
         match event.type():
             case QEvent.Type.TabletPress:
-                pointerType = event.pointingDevice().pointerType()
-                eraser = (pointerType == QPointingDevice.PointerType.Eraser)
-                self.drawStart(event.position(), pressure, eraser)
+                self.op.onMousePress(event.position(), pressure, alt)
 
             case QEvent.Type.TabletMove:
-                self.updateCursor(event.position())
-                self.drawMove(event.position(), pressure)
+                self.op.onMouseMove(event.position(), pressure)
 
             case QEvent.Type.TabletRelease:
-                self.drawEnd()
+                self.op.onMouseRelease(alt)
 
         #print("tablet event:", event)
         return True
 
 
 
+class HistoryEntry:
+    def __init__(self, title: str, compressed: bool, mask: np.ndarray | None):
+        self.title = title
+        self.compressed = compressed
+        self.mask = mask
+
+
 class MaskItem(QtWidgets.QGraphicsRectItem):
-    def __init__(self, name: str, image: QImage):
+    def __init__(self, name: str):
         super().__init__()
-        self.setOpacity(0.7)
-        self.setImage(image)
+        self.setOpacity(0.55)
         self.name = name
+        self.image: QImage = None
+
+        self.history: list[HistoryEntry] = list()
+        self.historyIndex = 0
     
+    @staticmethod
+    def new(name: str, image: QImage) -> MaskItem:
+        maskItem = MaskItem(name)
+        maskItem.setImage(image)
+        maskItem.history.append( HistoryEntry("New", False, None) )
+        return maskItem
+    
+    @staticmethod
+    def load(name: str, imgData: np.ndarray) -> MaskItem:
+        maskItem = MaskItem(name)
+        maskItem.fromNumpy(imgData)
+        maskItem.addHistory("Load", np.copy(imgData))
+        return maskItem
+
+
     @property
     def mask(self) -> QImage:
         return self.image
@@ -454,20 +423,81 @@ class MaskItem(QtWidgets.QGraphicsRectItem):
         self.setRect(baseImage.boundingRect())
 
 
+    def toNumpy(self) -> np.ndarray:
+        buffer = np.frombuffer(self.image.constBits(), dtype=np.uint8)
+        buffer.shape = (self.image.height(), self.image.bytesPerLine())
+        return np.copy( buffer[:, :self.image.width()] ) # Remove padding
+
+    def fromNumpy(self, data: np.ndarray) -> None:
+        # QImage needs alignment to 32bit/4bytes. Add padding.
+        height, width = data.shape
+        bytesPerLine = ((width+3) // 4) * 4
+        if width != bytesPerLine:
+            padded = np.zeros((height, bytesPerLine), dtype=np.uint8)
+            padded[:, :width] = data
+            data = padded
+
+        #image = QImage(data, self.image.width(), self.image.height(), QImage.Format.Format_Grayscale8)
+        image = QImage(data, width, height, QImage.Format.Format_Grayscale8)
+        self.setImage(image)
+
+
+    def addHistory(self, title: str, imgData: np.ndarray | None = None):
+        # Create a copy of the mask so that:
+        #   1. It can be used for retrieving the history until the mask is converted to PNG.
+        #   2. It can be safely passed to the PNG conversion thread.
+        # Also remove QImage's padding, reshape.
+        if imgData is None:
+            imgData = self.toNumpy()
+
+        del self.history[self.historyIndex+1:]
+        self.history.append(HistoryEntry(title, False, imgData))
+        self.history = self.history[-Config.maskHistorySize:]
+        self.historyIndex = len(self.history) - 1
+
+        task = MaskHistoryTask(imgData, self.historyIndex)
+        task.signals.done.connect(self._setCompressedHistory, Qt.ConnectionType.BlockingQueuedConnection)
+        QThreadPool.globalInstance().start(task)
+
+    def jumpHistory(self, index):
+        if index < 0 or index >= len(self.history):
+            return
+        entry: HistoryEntry = self.history[index]
+        self.historyIndex = index
+
+        if entry.mask is None:
+            image = QImage(self.image.size(), QImage.Format.Format_Grayscale8)
+            image.fill(Qt.GlobalColor.black)
+            self.setImage(image)
+        else:
+            mask = entry.mask
+            if entry.compressed:
+                mask = cv.imdecode(mask, cv.IMREAD_UNCHANGED)
+            self.fromNumpy(mask)
+
+    @Slot()
+    def _setCompressedHistory(self, pngData, index):
+        if 0 <= index < len(self.history):
+            entry = self.history[index]
+            entry.compressed = True
+            del entry.mask
+            entry.mask = pngData
+
+
 
 class MaskToolBar(QtWidgets.QToolBar):
     def __init__(self, maskTool):
         super().__init__("Mask")
         self.maskTool: MaskTool = maskTool
+        self.selectedOp: mask_ops.MaskOperation = None
 
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(1, 1, 1, 1)
         layout.addWidget(self._buildLayers())
-        layout.addWidget(self._buildBrush())
         layout.addWidget(self._buildOps())
-        layout.addWidget(self._buildAutoMask())
+        layout.addWidget(self._buildHistory())
 
-        btnExport = QtWidgets.QPushButton("Export")
+        btnExport = QtWidgets.QPushButton("Save")
         btnExport.clicked.connect(self.maskTool.exportMask)
         layout.addWidget(btnExport)
         
@@ -498,63 +528,55 @@ class MaskToolBar(QtWidgets.QToolBar):
         self.btnDeleteLayer.clicked.connect(self.maskTool.deleteCurrentLayer)
         layout.addWidget(self.btnDeleteLayer, row, 1)
 
-        group = QtWidgets.QGroupBox("Layers")
-        group.setLayout(layout)
-        return group
-
-    def _buildBrush(self):
-        layout = QtWidgets.QGridLayout()
-        layout.setContentsMargins(1, 1, 1, 1)
-        layout.setColumnStretch(0, 0)
-        layout.setColumnStretch(1, 1)
-
-        row = 0
-        self.spinBrushSize = QtWidgets.QSpinBox()
-        self.spinBrushSize.setRange(1, 1024)
-        self.spinBrushSize.setSingleStep(10)
-        self.spinBrushSize.setValue(self.maskTool._pen.width())
-        self.spinBrushSize.valueChanged.connect(self.maskTool.setPenWidth)
-        layout.addWidget(QtWidgets.QLabel("Size:"), row, 0)
-        layout.addWidget(self.spinBrushSize, row, 1)
-
-        row += 1
-        self.chkBrushAntiAlias = QtWidgets.QCheckBox("Smooth")
-        layout.addWidget(self.chkBrushAntiAlias, row, 0, 1, 2)
-
-        group = QtWidgets.QGroupBox("Brush")
-        group.setLayout(layout)
-        return group
+        self.layerGroup = QtWidgets.QGroupBox("Layers")
+        self.layerGroup.setLayout(layout)
+        return self.layerGroup
 
     def _buildOps(self):
-        layout = QtWidgets.QGridLayout()
-        layout.setContentsMargins(1, 1, 1, 1)
+        self.opLayout = QtWidgets.QVBoxLayout()
+        self.opLayout.setContentsMargins(1, 1, 1, 1)
+
+        self.ops = {
+            "brush": mask_ops.DrawMaskOperation(self.maskTool),
+            "fill": mask_ops.FillMaskOperation(self.maskTool),
+            "clear": mask_ops.ClearMaskOperation(self.maskTool),
+            "invert": mask_ops.InvertMaskOperation(self.maskTool),
+            "blur_gauss": mask_ops.BlurMaskOperation(self.maskTool)
+        }
 
         row = 0
-        self.cboFilter = QtWidgets.QComboBox()
-        self.cboFilter.addItem("Fill", "fill")
-        self.cboFilter.addItem("Clear", "clear")
-        self.cboFilter.addItem("Invert", "invert")
-        self.cboFilter.addItem("Linear Gradient", "gradient_linear")
-        self.cboFilter.addItem("Gaussian Blur", "blur_gauss")
-        layout.addWidget(self.cboFilter, row, 1, 1, 2)
+        self.cboOperation = QtWidgets.QComboBox()
+        self.cboOperation.addItem("Brush", "brush")
+        self.cboOperation.addItem("Flood Fill", "fill")
+        self.cboOperation.addItem("Clear", "clear")
+        self.cboOperation.addItem("Invert", "invert")
+        #self.cboOperation.addItem("Morphology", "morph") # grow, shrink, open, close
+        #self.cboOperation.addItem("Linear Gradient", "gradient_linear")
+        self.cboOperation.addItem("Gaussian Blur", "blur_gauss")
+        #self.cboOperation.addItem("RemBg", "rembg") # TODO: Mask models in Model Settings. Backends: rembg, yolo, ultralytics...
+        #self.cboOperation.addItem("Yolo", "yolo")
+        self.cboOperation.currentIndexChanged.connect(self.onOpChanged)
+        self.opLayout.addWidget(self.cboOperation)
+
+        self.selectedOp = self.ops["brush"]
+        self.opLayout.addWidget(self.selectedOp)
 
         group = QtWidgets.QGroupBox("Operations")
-        group.setLayout(layout)
+        group.setLayout(self.opLayout)
         return group
 
-    def _buildAutoMask(self):
-        # TODO: Mask models in Model Settings. Backends: rembg, yolo, ultralytics...
-
+    def _buildHistory(self):
         layout = QtWidgets.QGridLayout()
         layout.setContentsMargins(1, 1, 1, 1)
 
-        row = 0
-        self.cboModel = QtWidgets.QComboBox()
-        self.cboModel.addItem("RemBg", "rembg")
-        self.cboModel.addItem("Yolo", "yolo")
-        layout.addWidget(self.cboModel, row, 1, 1, 2)
+        self.listHistory = QtWidgets.QListWidget()
+        self.listHistory.currentRowChanged.connect(lambda index: self.maskTool.maskItem.jumpHistory(index))
+        layout.addWidget(self.listHistory, 0, 0, 1, 2)
 
-        group = QtWidgets.QGroupBox("Auto Masking")
+        # layout.addWidget(QtWidgets.QPushButton("Undo"), 1, 0)
+        # layout.addWidget(QtWidgets.QPushButton("Redo"), 1, 1)
+
+        group = QtWidgets.QGroupBox("History")
         group.setLayout(layout)
         return group
 
@@ -566,14 +588,45 @@ class MaskToolBar(QtWidgets.QToolBar):
                 self.cboLayer.addItem(mask.name, mask)
             self.cboLayer.setCurrentIndex(selectedIndex)
         
-        self.btnAddLayer.setEnabled(len(layers) < 4)
-
+        numLayers = len(layers)
+        self.btnAddLayer.setEnabled(numLayers < 4)
+        self.layerGroup.setTitle(f"Layers ({numLayers})")
 
     @Slot()
     def renameLayer(self, name: str):
         index = self.cboLayer.currentIndex()
         self.cboLayer.setItemText(index, name)
         self.cboLayer.itemData(index).name = name
+    
+
+    @Slot()
+    def onOpChanged(self, index: int):
+        if self.selectedOp:
+            self.selectedOp.onDisabled(self.maskTool._imgview)
+            self.opLayout.removeWidget(self.selectedOp)
+            self.selectedOp.hide()
+        
+        if not (opKey := self.cboOperation.itemData(index)):
+            return
+        if not (op := self.ops.get(opKey)):
+            return
+        
+        self.selectedOp = op
+        self.opLayout.addWidget(self.selectedOp)
+        self.selectedOp.show()
+        self.selectedOp.onEnabled(self.maskTool._imgview)
+
+
+    def addHistory(self, title: str):
+        self.maskTool.maskItem.addHistory(title)
+        self.setHistory(self.maskTool.maskItem)
+
+    def setHistory(self, maskItem: MaskItem):
+        with QSignalBlocker(self.listHistory):
+            self.listHistory.clear()
+            for entry in maskItem.history:
+                self.listHistory.addItem(entry.title)
+            self.listHistory.setCurrentRow(maskItem.historyIndex)
 
 
 
@@ -606,3 +659,28 @@ class MaskExportTask(QRunnable):
             self.signals.fail.emit()
         finally:
             del self.mask
+
+
+
+class MaskHistoryTask(QRunnable):
+    class HistoryTaskSignals(QObject):
+        done = Signal(object, int)
+    
+    def __init__(self, mask: np.ndarray, index: int):
+        super().__init__()
+        self.signals = self.HistoryTaskSignals()
+        
+        self.mask = mask
+        self.index = index
+
+    @Slot()
+    def run(self):
+        try:
+            success, encoded = cv.imencode(".png", self.mask, [cv.IMWRITE_PNG_COMPRESSION, 9])
+            if success:
+                self.signals.done.emit(encoded, self.index)
+            else:
+                print("Couldn't encode history as PNG")
+        except Exception as ex:
+            print("Error while saving history:")
+            print(ex)

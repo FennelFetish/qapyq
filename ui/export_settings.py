@@ -2,7 +2,7 @@ import os, superqt
 from PySide6 import QtWidgets
 from PySide6.QtCore import Slot
 import cv2 as cv
-import lib.qtlib as qtlib
+from lib import qtlib
 from config import Config
 
 
@@ -202,3 +202,15 @@ class ExportPath:
             subfoldersLeft -= 1
 
         return filename + self.suffix
+
+
+    @staticmethod
+    def getSavePath(srcFile: str, extension: str, suffix: str = None) -> str:
+        filename = os.path.normpath(srcFile)
+        dirname, filename = os.path.split(filename)
+        filename = os.path.basename(filename)
+        filename = os.path.splitext(filename)[0]
+
+        extension = extension.lstrip(".")
+        filename = f"{filename}{suffix}.{extension}"
+        return os.path.join(dirname, filename)
