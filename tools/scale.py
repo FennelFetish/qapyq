@@ -4,16 +4,14 @@ import cv2 as cv
 import numpy as np
 from config import Config
 from .view import ViewTool
-from ui.export_settings import ExportSettings, ExportPath
+from ui.export_settings import ExportWidget
 from lib.filelist import DataKeys
 
 
 class ScaleTool(ViewTool):
     def __init__(self, tab):
         super().__init__(tab)
-        self.exportSettings = ExportSettings(tab.filelist)
-        self._toolbar = ScaleToolBar(self, self.exportSettings)
-
+        self._toolbar = ScaleToolBar(self)
 
     @Slot()
     def exportImage(self):
@@ -21,16 +19,19 @@ class ScaleTool(ViewTool):
         if not pixmap:
             return
 
-        self.tab.statusBar().showMessage("Saving scaled image...")
-
+        exportWidget = self._toolbar.exportWidget
         currentFile = self._imgview.image.filepath
-        destFile = self.exportSettings.exportPath.getExportPath(currentFile)
+        destFile = exportWidget.getExportPath(currentFile)
+        if not destFile:
+            return
+
+        self.tab.statusBar().showMessage("Saving scaled image...")
 
         rot = self._toolbar.rotation
         w, h = self._toolbar.targetSize
-        interp = self.exportSettings.getInterpolationMode(h > pixmap.height() or w > pixmap.width())
+        interp = exportWidget.getInterpolationMode(h > pixmap.height() or w > pixmap.width())
         border = cv.BORDER_REPLICATE
-        params = self.exportSettings.getSaveParams()
+        params = exportWidget.getSaveParams()
 
         task = ScaledExportTask(currentFile, destFile, pixmap, rot, w, h, interp, border, params)
         task.signals.done.connect(self.onExportDone, Qt.ConnectionType.BlockingQueuedConnection)
@@ -88,17 +89,17 @@ class ScaleTool(ViewTool):
 
 
 class ScaleToolBar(QtWidgets.QToolBar):
-    def __init__(self, scaleTool, exportSettings):
+    def __init__(self, scaleTool):
         super().__init__("Scale")
         self.scaleTool: ScaleTool = scaleTool
-        self.exportSettings: ExportSettings = exportSettings
+        self.exportWidget = ExportWidget("scale", scaleTool.tab.filelist)
         self.selectedScaleMode: ScaleMode = None
 
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(1, 1, 1, 1)
         layout.addWidget(self._buildTargetSize())
         layout.addWidget(self._buildRotation())
-        layout.addWidget(self.exportSettings)
+        layout.addWidget(self.exportWidget)
 
         btnExport = QtWidgets.QPushButton("Export")
         btnExport.clicked.connect(self.scaleTool.exportImage)
@@ -241,9 +242,9 @@ class ScaleToolBar(QtWidgets.QToolBar):
                 self.selectedScaleMode.updateSize()
 
             w, h = self.targetSize
-            self.exportSettings.setExportSize(w, h)
+            self.exportWidget.setExportSize(w, h)
 
-        self.exportSettings.updateExport()
+        self.exportWidget.updateSample()
 
 
 
@@ -261,6 +262,7 @@ class ScaledExportTask(QRunnable):
 
         self.srcFile = srcFile
         self.destFile = destFile
+
         self.img = pixmap.toImage()
         self.rotation = rotation
         self.targetWidth  = targetWidth
@@ -269,14 +271,29 @@ class ScaledExportTask(QRunnable):
         self.border = border
         self.saveParams = saveParams
 
-
-    def toCvMat(self, image):
+    @staticmethod
+    def toCvMat(image):
         buffer = QBuffer()
         buffer.open(QBuffer.ReadWrite)
         image.save(buffer, "PNG", 100) # Preserve transparency with PNG. quality 100 actually fastest?
 
         buf = np.frombuffer(buffer.data(), dtype=np.uint8)
         return cv.imdecode(buf, cv.IMREAD_UNCHANGED)
+
+        # dtype = np.uint8
+        # channels = 1
+        # print("depth:", image.depth(), "format:", image.format())
+        # match image.depth():
+        #     case 16: dtype = np.uint16
+        #     case 24: channels = 3
+        #     case 32: channels = 4
+        
+        # Produces slightly different images! Why? ---> probably because of padding
+        # array = np.frombuffer(image.constBits(), dtype=np.uint8)
+        # channels = len(array) // (image.height() * image.width())
+        # array.shape = (image.height(), image.width(), channels)
+        # print("shape:", array.shape)
+        # return array
 
 
     @Slot()
@@ -297,7 +314,7 @@ class ScaledExportTask(QRunnable):
             matSrc  = self.toCvMat(self.img)
             matDest = cv.warpAffine(src=matSrc, M=matrix, dsize=dsize, flags=self.interp, borderMode=self.border)
 
-            ExportPath.createFolders(self.destFile)
+            ExportWidget.createFolders(self.destFile)
             cv.imwrite(self.destFile, matDest, self.saveParams)
             self.signals.done.emit(self.srcFile, self.destFile)
 

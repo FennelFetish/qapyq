@@ -59,8 +59,7 @@ class CompareTool(ViewTool):
 
     def onMouseMove(self, event):
         super().onMouseMove(event)
-        imgpos = self._imgview.mapToScene(event.position().toPoint())
-        imgpos = self._image.mapFromParent(imgpos)
+        imgpos = self.mapPosToImage(event.position())
         self._image.setClipWidth(imgpos.x())
 
         x = event.position().x()

@@ -1,21 +1,21 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
-from ui.export_settings import ExportSettings
+from ui.export_settings import ExportWidget
 from config import Config
 
 
 class CropToolBar(QtWidgets.QToolBar):
-    def __init__(self, cropTool, exportSettings):
+    def __init__(self, cropTool):
         super().__init__("Crop")
         self._cropTool = cropTool
-        self.exportSettings: ExportSettings = exportSettings
+        self.exportWidget = ExportWidget("crop", cropTool.tab.filelist)
 
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(1, 1, 1, 1)
         layout.addWidget(self._buildTargetSize())
         layout.addWidget(self._buildSelectionSize())
         layout.addWidget(self._buildRotation())
-        layout.addWidget(self.exportSettings)
+        layout.addWidget(self.exportWidget)
 
         widget = QtWidgets.QWidget()
         widget.setLayout(layout)
@@ -229,5 +229,5 @@ class CropToolBar(QtWidgets.QToolBar):
 
 
     def updateExport(self):
-        self.exportSettings.setExportSize(self.spinW.value(), self.spinH.value())
-        self.exportSettings.updateExport()
+        self.exportWidget.setExportSize(self.spinW.value(), self.spinH.value())
+        self.exportWidget.updateSample()

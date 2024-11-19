@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem
 from .crop_toolbar import CropToolBar
 from .view import ViewTool
 from lib.filelist import DataKeys
-from ui.export_settings import ExportSettings, ExportPath
+from ui.export_settings import ExportWidget
 from config import Config
 
 
@@ -50,8 +50,7 @@ class CropTool(ViewTool):
         self._mask.setBrush( QBrush(QColor(0, 0, 0, 100)) )
         self._waitForConfirmation = False
 
-        self.exportSettings = ExportSettings(tab.filelist)
-        self._toolbar = CropToolBar(self, self.exportSettings)
+        self._toolbar = CropToolBar(self)
 
 
     def setTargetSize(self, width, height):
@@ -100,12 +99,9 @@ class CropTool(ViewTool):
             cropW, cropH = self.constrainCropSize(rot, imgSize)
         else:
             cropW, cropH = (self._cropHeight * self._cropAspectRatio), self._cropHeight
-        
-        # Map mouse coordinates to image space
-        mouse = self._imgview.mapToScene(mouseCoords.toPoint())
-        mouse = self._imgview.image.mapFromParent(mouse)
 
         # Calculate selected area in image space
+        mouse = self.mapPosToImage(mouseCoords)
         rect = QRect(-cropW/2, -cropH/2, cropW, cropH)
         poly = rot.mapToPolygon(rect)
         poly.translate(mouse.x(), mouse.y())
@@ -136,29 +132,35 @@ class CropTool(ViewTool):
         self._mask.setVisible(visible)
         self._imgview.scene().update()
 
-    def exportImage(self, poly: QPolygonF):
+    def exportImage(self, poly: QPolygonF) -> bool:
         pixmap = self._imgview.image.pixmap()
         if not pixmap:
-            return
+            return False
+
+        exportWidget = self._toolbar.exportWidget
+        currentFile = self._imgview.image.filepath
+        destFile = exportWidget.getExportPath(currentFile)
+        if not destFile:
+            return False
 
         self.tab.statusBar().showMessage("Saving cropped image...")
 
-        currentFile = self._imgview.image.filepath
-        destFile = self.exportSettings.exportPath.getExportPath(currentFile)
-        interp = self.exportSettings.getInterpolationMode(self._targetHeight > self._cropHeight)
+        interp = exportWidget.getInterpolationMode(self._targetHeight > self._cropHeight)
         border = cv.BORDER_REPLICATE if self._toolbar.constrainToImage else cv.BORDER_CONSTANT
-        params = self.exportSettings.getSaveParams()
+        params = exportWidget.getSaveParams()
 
         task = ExportTask(currentFile, destFile, pixmap, poly, self._targetWidth, self._targetHeight, interp, border, params)
         task.signals.done.connect(self.onExportDone, Qt.ConnectionType.BlockingQueuedConnection)
         task.signals.fail.connect(self.onExportFailed, Qt.ConnectionType.BlockingQueuedConnection)
         QThreadPool.globalInstance().start(task)
+        return True
 
     @Slot()
     def onExportDone(self, file, path):
         print("Exported cropped image to", path)
         self.tab.statusBar().showColoredMessage("Exported cropped image to: " + path, success=True)
         self._imgview.filelist.setData(file, DataKeys.CropState, DataKeys.IconStates.Saved)
+        self._toolbar.updateExport()
     
     @Slot()
     def onExportFailed(self):
@@ -236,10 +238,9 @@ class CropTool(ViewTool):
                 if rect.contains(event.position().toPoint()):
                     poly = self._imgview.mapToScene(rect)
                     poly = self._imgview.image.mapFromParent(poly)
-                    self.exportImage(poly)
-
-                    self._confirmRect.setRect(rect)
-                    self._confirmRect.startAnim()
+                    if self.exportImage(poly):
+                        self._confirmRect.setRect(rect)
+                        self._confirmRect.startAnim()
 
                 self._waitForConfirmation = False
                 self.updateSelection(event.position())
@@ -346,7 +347,7 @@ class ExportTask(QRunnable):
             matSrc  = self.toCvMat(self.img)
             matDest = cv.warpAffine(src=matSrc, M=matrix, dsize=dsize, flags=self.interp, borderMode=self.border)
 
-            ExportPath.createFolders(self.destFile)
+            ExportWidget.createFolders(self.destFile)
             cv.imwrite(self.destFile, matDest, self.saveParams)
             self.signals.done.emit(self.srcFile, self.destFile)
 

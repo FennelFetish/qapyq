@@ -1,8 +1,10 @@
 import os, superqt
+from typing_extensions import override
 from PySide6 import QtWidgets
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker
 import cv2 as cv
-from lib import qtlib
+from datetime import datetime
+from lib import qtlib, template_parser
 from config import Config
 
 
@@ -21,35 +23,50 @@ SAVE_PARAMS = {
 }
 
 
-class ExportSettings(QtWidgets.QWidget):
-    def __init__(self, filelist):
+class ExportWidget(QtWidgets.QWidget):
+    MODE_AUTO = "auto"
+    MODE_MANUAL = "manual"
+
+    def __init__(self, configKey: str, filelist, showInterpolation=True):
         super().__init__()
-        self.exportPath = ExportPath()
+        self.configKey = configKey
         self.filelist = filelist
+        self.showInterpolation = showInterpolation
+        self._defaultPath = Config.pathExport
+
+        config = Config.exportPresets.get(configKey, {})
+        self.pathTemplate   = config.get("path_template", "{{name}}_{{date}}_{{time}}_{{w}}x{{h}}")
+        self.overwriteFiles = config.get("overwrite", False)
+        self._extension = "png"
+
+        self.parser = ExportVariableParser()
+        self.parser.stripAround = False
+        self.parser.stripMultiWhitespace = False
+
+        self._build()
+        self._onSaveModeChanged(self.cboSaveMode.currentIndex())
+        
+    def _build(self):
+        collapsible = superqt.QCollapsible("Export Settings")
+        collapsible.layout().setContentsMargins(2, 2, 2, 0)
+        collapsible.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
+        collapsible.setLineWidth(0)
+        collapsible.addWidget(self._buildParams())
+        collapsible.addWidget(self._buildPathSettings())
+
+        self.txtPathSample = ClickableTextEdit()
+        self.txtPathSample.setToolTip("Click to change export path")
+        self.txtPathSample.setReadOnly(True)
+        self.txtPathSample.clicked.connect(self.openExportSettings)
+        qtlib.setMonospace(self.txtPathSample, 0.9)
 
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self._buildExport())
-
-        self.txtPathSample = QtWidgets.QPlainTextEdit()
-        self.txtPathSample.setReadOnly(True)
-        qtlib.setMonospace(self.txtPathSample, 0.9)
+        layout.addWidget(collapsible)
         layout.addWidget(self.txtPathSample)
-
         self.setLayout(layout)
 
-
-    def _buildExport(self):
-        group = superqt.QCollapsible("Export Settings")
-        group.layout().setContentsMargins(2, 2, 2, 0)
-        group.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
-        group.setLineWidth(0)
-
-        group.addWidget(self._buildSave())
-        group.addWidget(self._buildDestination())
-        return group
-
-    def _buildSave(self):
+    def _buildParams(self):
         self.cboInterpUp = QtWidgets.QComboBox()
         self.cboInterpUp.addItems(INTERP_MODES.keys())
         self.cboInterpUp.setCurrentIndex(4) # Default: Lanczos
@@ -60,41 +77,85 @@ class ExportSettings(QtWidgets.QWidget):
 
         self.cboFormat = QtWidgets.QComboBox()
         self.cboFormat.addItems(SAVE_PARAMS.keys())
-        self.cboFormat.currentTextChanged.connect(self.updateExport)
+        self.cboFormat.currentTextChanged.connect(self._onExtensionChanged)
 
         layout = QtWidgets.QFormLayout()
         layout.setContentsMargins(1, 1, 1, 1)
-        layout.addRow("Interp 🠕:", self.cboInterpUp)
-        layout.addRow("Interp 🠗:", self.cboInterpDown)
+        if self.showInterpolation:
+            layout.addRow("Interp 🠕:", self.cboInterpUp)
+            layout.addRow("Interp 🠗:", self.cboInterpDown)
         layout.addRow("Format:", self.cboFormat)
 
         group = QtWidgets.QGroupBox("Parameter")
         group.setLayout(layout)
         return group
 
-    def _buildDestination(self):
-        self.btnChoosePath = QtWidgets.QPushButton("Choose Path...")
-        self.btnChoosePath.clicked.connect(self.chooseExportPath)
-
-        self.spinFolderSkip = QtWidgets.QSpinBox()
-        self.spinFolderSkip.valueChanged.connect(self.updateExport)
-
-        self.spinFolderNames = QtWidgets.QSpinBox()
-        self.spinFolderNames.valueChanged.connect(self.updateExport)
-
-        self.spinSubfolders = QtWidgets.QSpinBox()
-        self.spinSubfolders.valueChanged.connect(self.updateExport)
-
-        layout = QtWidgets.QFormLayout()
+    def _buildPathSettings(self):
+        layout = QtWidgets.QGridLayout()
         layout.setContentsMargins(1, 1, 1, 1)
-        layout.addRow(self.btnChoosePath)
-        layout.addRow("Folder Skip:", self.spinFolderSkip)
-        layout.addRow("Folder Names:", self.spinFolderNames)
-        layout.addRow("Subfolders:", self.spinSubfolders)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
+
+        self.cboSaveMode = QtWidgets.QComboBox()
+        self.cboSaveMode.addItem("Template", self.MODE_AUTO)
+        self.cboSaveMode.addItem("Dialog", self.MODE_MANUAL)
+        self.cboSaveMode.currentIndexChanged.connect(self._onSaveModeChanged)
+        layout.addWidget(QtWidgets.QLabel("Path:"), 0, 0)
+        layout.addWidget(self.cboSaveMode, 0, 1)
+        
+        self.btnOpenSettings = QtWidgets.QPushButton("Edit Path...")
+        self.btnOpenSettings.clicked.connect(self.openExportSettings)
+        layout.addWidget(self.btnOpenSettings, 1, 0, 1, 2)
 
         group = QtWidgets.QGroupBox("Destination")
         group.setLayout(layout)
         return group
+
+    @Slot()
+    def _onExtensionChanged(self, ext: str):
+        self.extension = self.cboFormat.currentText()
+
+    @Slot()
+    def _onSaveModeChanged(self, index):
+        enabled = (self.cboSaveMode.itemData(index) == self.MODE_AUTO)
+        self.btnOpenSettings.setEnabled(enabled)
+        self.txtPathSample.setEnabled(enabled)
+
+    @Slot()
+    def openExportSettings(self):
+        win = ExportSettingsWindow(self, self.parser, self.pathTemplate, self.overwriteFiles)
+        if win.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            self.pathTemplate = win.pathTemplate
+            self.overwriteFiles = win.overwriteFiles
+            self.saveToPreset()
+            self.updateSample()
+
+    def saveToPreset(self):
+        Config.exportPresets[self.configKey] = {
+            "path_template": self.pathTemplate,
+            "overwrite": self.overwriteFiles
+        }
+
+    @Slot()
+    def updateSample(self):
+        examplePath = self.getAutoExportPath(self.filelist.getCurrentFile())
+        stylesheet = ""
+        if os.path.exists(examplePath):
+            stylesheet = "color: #ff1616"
+        self.txtPathSample.setStyleSheet(stylesheet)
+
+        examplePath = "/\n\n".join(os.path.split(examplePath))
+        self.txtPathSample.setPlainText(examplePath)
+
+
+    @property
+    def extension(self) -> str:
+        return self._extension
+
+    @extension.setter
+    def extension(self, ext: str) -> None:
+        self._extension = ext.lstrip('.').lower()
+        self.updateSample()
 
 
     def getInterpolationMode(self, upscale):
@@ -104,64 +165,54 @@ class ExportSettings(QtWidgets.QWidget):
     def getSaveParams(self):
         key = self.cboFormat.currentText()
         return SAVE_PARAMS[key]
+    
 
-
-    @Slot()
-    def chooseExportPath(self):
-        path = self.exportPath.basePath
-        opts = QtWidgets.QFileDialog.ShowDirsOnly
-        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose save folder", path, opts)
-        if path:
-            self.exportPath.basePath = path
-            self.updateExport()
-
-    @Slot()
     def setExportSize(self, width: int, height: int):
-        self.exportPath.suffix = f"_{width}x{height}"
-
-    @Slot()
-    def updateExport(self):
-        self.exportPath.extension   = self.cboFormat.currentText()
-        self.exportPath.skipDirs    = self.spinFolderSkip.value()
-        self.exportPath.subfolders  = self.spinSubfolders.value()
-        self.exportPath.folderNames = self.spinFolderNames.value()
-        #self.export.suffix = f"_{self.spinW.value()}x{self.spinH.value()}"
-
-        examplePath = self.exportPath.getExportPath(self.filelist.getCurrentFile())
-        examplePath = "/\n\n".join(os.path.split(examplePath))
-        self.txtPathSample.setPlainText(examplePath)
+        self.parser.width = width
+        self.parser.height = height
 
 
+    def getExportPath(self, file: str) -> str:
+        '''
+        Returns empty string if manual saving was aborted.
+        '''
+        path = self.getAutoExportPath(file)
+        if self.cboSaveMode.currentData() == self.MODE_AUTO:
+            return path
 
-class ExportPath:
-    def __init__(self):
-        self.basePath = Config.pathExport
-        self._extension = "png"
-        self.suffix = ""
+        # Manually pick destination path: Use filename from path template
+        path = os.path.basename(path)
+        path = os.path.join(self._defaultPath, path)
 
-        self.skipDirs = 0       # Skip path components
-        self.folderNames = 0    # Include folder names in filename
-        self.subfolders = 0     # Save into nested directory structure
+        fileFilter = f"{self._extension.upper()} Image (*.{self._extension})"
+        path, selectedFilter = QtWidgets.QFileDialog.getSaveFileName(self, "Save Image", path, fileFilter)
+        if not path:
+            return ""
+        
+        _, ext = os.path.splitext(path)
+        if not ext:
+            QtWidgets.QMessageBox.warning(self, "Invalid Path", "The extension is missing from the filename.")
+            return ""
 
+        self._defaultPath = os.path.dirname(path)
+        return path
+    
+    def getAutoExportPath(self, imgFile) -> str:
+        self.parser.setup(imgFile, None)
 
-    @property
-    def extension(self) -> str:
-        return self._extension
+        path = self.parser.parse(self.pathTemplate)
+        path = path.replace('\n', '').replace('\r', '')
+        path = os.path.abspath(path)
 
-    @extension.setter
-    def extension(self, ext) -> None:
-        self._extension = ext.lower()
-
-
-    def getExportPath(self, srcFile) -> str:
-        filename = self.getFileName(srcFile)
-        filename = os.path.join(self.basePath, filename)
-
-        path = f"{filename}.{self._extension}"
-        counter = 1
-        while os.path.exists(path):
-            path = f"{filename}_{counter:02}.{self._extension}"
-            counter += 1
+        if self.overwriteFiles:
+            path = f"{path}.{self._extension}"
+        else:
+            head = path
+            path = f"{head}.{self._extension}"
+            counter = 1
+            while os.path.exists(path):
+                path = f"{head}_{counter:03}.{self._extension}"
+                counter += 1
         
         return path
 
@@ -171,46 +222,198 @@ class ExportPath:
         if not os.path.exists(folder):
             print(f"Creating folder: {folder}")
             os.makedirs(folder)
-    
 
-    # Returns filename without extension
-    def getFileName(self, srcFile) -> str:
-        filename = os.path.normpath(srcFile)
-        dirname, filename = os.path.split(filename)
-        filename = os.path.basename(filename)
-        filename = os.path.splitext(filename)[0]
 
-        skipLeft = self.skipDirs
-        while dirname and skipLeft > 0:
-            dirname = os.path.dirname(dirname)
-            skipLeft -= 1
 
-        folderNamesLeft = self.folderNames
-        while dirname and folderNamesLeft > 0:
-            dirname, currentDir = os.path.split(dirname)
-            if not currentDir:
+class ExportSettingsWindow(QtWidgets.QDialog):
+    INFO = """Available variables in path template:
+    {{path}}      Image path
+    {{path.ext}}  Image path with extension
+    {{name}}      Image filename
+    {{name.ext}}  Image filename with extension
+    {{folder}}    Folder of image
+    {{folder-1}}  Parent folder 1 (or 2, 3...)
+    {{w}}         Width
+    {{h}}         Height
+    {{date}}      Date yyyymmdd
+    {{time}}      Time hhmmss
+
+The file extension is always added.
+An increasing counter is appended when a file exists and overwriting is disabled.
+
+Examples:
+    {{name}}_{{w}}x{{h}}
+    {{path}}-masklabel
+    /home/user/Pictures/{{folder}}/{{date}}_{{time}}_{{w}}x{{h}}"""
+
+
+    def __init__(self, parent: ExportWidget, parser, pathTemplate: str, overwriteFiles: bool) -> None:
+        super().__init__(parent)
+        self.pathTemplate = pathTemplate
+        self.overwriteFiles = overwriteFiles
+        
+        self.parser: ExportVariableParser = parser
+        self.highlighter = template_parser.VariableHighlighter()
+
+        self.setWindowModality(Qt.WindowModality.WindowModal)
+        self.setWindowTitle("Setup Export Path")
+        self.resize(800, 500)
+
+        self._build()
+        self._updatePreview()
+
+    def _build(self):
+        layout = QtWidgets.QGridLayout(self)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(2, 1)
+        layout.setColumnStretch(3, 0)
+
+        row = 0
+        txtInfo = QtWidgets.QPlainTextEdit(self.INFO)
+        txtInfo.setReadOnly(True)
+        qtlib.setMonospace(txtInfo)
+        layout.addWidget(txtInfo, 0, 0, 1, 4)
+
+        row += 1
+        self.txtPathTemplate = QtWidgets.QPlainTextEdit(self.pathTemplate)
+        self.txtPathTemplate.textChanged.connect(self._updatePreview)
+        qtlib.setMonospace(self.txtPathTemplate)
+        qtlib.setShowWhitespace(self.txtPathTemplate)
+        qtlib.setTextEditHeight(self.txtPathTemplate, 1)
+        layout.addWidget(QtWidgets.QLabel("Template:"), row, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.txtPathTemplate, row, 1, 1, 2)
+
+        self.btnChoosePath = QtWidgets.QPushButton("Choose Folder...")
+        self.btnChoosePath.clicked.connect(self._choosePath)
+        layout.addWidget(self.btnChoosePath, row, 3)
+
+        row += 1
+        self.txtPreview = QtWidgets.QPlainTextEdit()
+        self.txtPreview.setReadOnly(True)
+        qtlib.setMonospace(self.txtPreview)
+        qtlib.setShowWhitespace(self.txtPreview)
+        qtlib.setTextEditHeight(self.txtPreview, 2)
+        layout.addWidget(QtWidgets.QLabel("Preview:"), row, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.txtPreview, row, 1, 1, 3)
+
+        row += 1
+        self.chkOverwrite = QtWidgets.QCheckBox("Overwrite existing files")
+        self.chkOverwrite.toggled.connect(self._onOverwriteToggled)
+        self.chkOverwrite.setChecked(self.overwriteFiles)
+        layout.addWidget(self.chkOverwrite, row, 1)
+
+        row += 1
+        btnCancel = QtWidgets.QPushButton("Cancel")
+        btnCancel.clicked.connect(self.reject)
+        layout.addWidget(btnCancel, row, 0, 1, 2)
+
+        btnApply = QtWidgets.QPushButton("Apply")
+        btnApply.clicked.connect(self.accept)
+        layout.addWidget(btnApply, row, 2, 1, 2)
+
+
+    @Slot()
+    def _onOverwriteToggled(self, state: bool):
+        style = "color: #FF1616" if state else None
+        self.chkOverwrite.setStyleSheet(style)
+
+    @Slot()
+    def _updatePreview(self):
+        text = self.txtPathTemplate.toPlainText()
+        textLen = len(text)
+        text = text.replace('\n', '').replace('\r', '')
+
+        with QSignalBlocker(self.txtPathTemplate):
+            if len(text) != textLen:
+                cursor = self.txtPathTemplate.textCursor()
+                cursorPos = cursor.position()-1
+                self.txtPathTemplate.setPlainText(text)
+                cursor.setPosition(cursorPos)
+                self.txtPathTemplate.setTextCursor(cursor)
+
+            text, varPositions = self.parser.parseWithPositions(text)
+            text = os.path.abspath(text) # FIXME: abspath() messes with variable positions
+            self.txtPreview.setPlainText(text + ".ext")
+            self.highlighter.highlight(self.txtPathTemplate, self.txtPreview, varPositions)
+
+    def _choosePath(self):
+        path = self.txtPathTemplate.toPlainText()
+        path = path.replace("{{path}}", "{{name}}")
+
+        # Keep dynamic path elements with variables
+        head, tail = os.path.split(path)
+        while head:
+            head, tempTail = os.path.split(head)
+            if "{{" not in tempTail:
                 break
-            filename = f"{currentDir}_{filename}"
-            folderNamesLeft -= 1
+            tail = os.path.join(tempTail, tail)
 
-        subfoldersLeft = self.subfolders
-        while dirname and subfoldersLeft > 0:
-            dirname, currentDir = os.path.split(dirname)
-            if not currentDir:
-                break
-            filename = os.path.join(currentDir, filename)
-            subfoldersLeft -= 1
+        opts = QtWidgets.QFileDialog.Option.ShowDirsOnly
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose save folder", head, opts)
+        if path:
+            self.txtPathTemplate.setPlainText(os.path.join(path, tail))
 
-        return filename + self.suffix
+    @override
+    def accept(self) -> None:
+        self.pathTemplate = self.txtPathTemplate.toPlainText()
+        self.pathTemplate = self.pathTemplate.replace('\n', '').replace('\r', '')
+        self.overwriteFiles = self.chkOverwrite.isChecked()
+        super().accept()
 
 
-    @staticmethod
-    def getSavePath(srcFile: str, extension: str, suffix: str = None) -> str:
-        filename = os.path.normpath(srcFile)
-        dirname, filename = os.path.split(filename)
-        filename = os.path.basename(filename)
-        filename = os.path.splitext(filename)[0]
 
-        extension = extension.lstrip(".")
-        filename = f"{filename}{suffix}.{extension}"
-        return os.path.join(dirname, filename)
+class ExportVariableParser(template_parser.TemplateVariableParser):
+    def __init__(self, imgPath: str = None):
+        super().__init__(imgPath)
+        self.width = 0
+        self.height = 0
+
+
+    @override
+    def _getImgProperties(self, var: str) -> str | None:
+        if value := super()._getImgProperties(var):
+            return value
+        
+        match var:
+            case "w": return str(self.width)
+            case "h": return str(self.height)
+
+            case "date": return datetime.now().strftime('%Y%m%d')
+            case "time": return datetime.now().strftime('%H%M%S')
+
+        return None
+
+
+
+class ClickableTextEdit(QtWidgets.QPlainTextEdit):
+    clicked = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+        self._pressPos = None
+
+    @override
+    def mousePressEvent(self, e) -> None:
+        super().mousePressEvent(e)
+        self._pressPos = e.position()
+        
+        cursor = self.textCursor()
+        cursor.clearSelection()
+        self.setTextCursor(cursor)
+        
+    @override
+    def mouseReleaseEvent(self, e) -> None:
+        super().mouseReleaseEvent(e)
+        if not self._pressPos:
+            return
+
+        pos = e.position()
+        dx = pos.x() - self._pressPos.x()
+        dy = pos.y() - self._pressPos.y()
+        dist2 = dx*dx + dy*dy
+        if dist2 < 16 and e.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        
+        self._pressPos = None

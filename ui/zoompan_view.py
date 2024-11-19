@@ -63,10 +63,11 @@ class ZoomPanView(QGraphicsView):
         self.zoom *= self.zoomFactor ** zoomSteps
         self.zoom = max(self.zoom, self.zoomMin)
         
-        oldPos = self.mapToScene(event.position().toPoint())
-        self.updateScene()
+        mousePos = event.position().toPoint()
+        oldPos = self.mapToScene(mousePos)
+        ZoomPanView.updateScene(self)
 
-        newPos = self.mapToScene(event.position().toPoint())
+        newPos = self.mapToScene(mousePos)
         self.pan -= (newPos - oldPos) * self.zoom
         self.updateScene()
 

@@ -1,10 +1,20 @@
-from PySide6.QtCore import QRectF, Qt
+from PySide6.QtCore import QRectF, Qt, QPointF
+from math import floor
 from .tool import Tool
 
 
 class ViewTool(Tool):
     def __init__(self, tab):
         super().__init__(tab)
+
+    def mapPosToImage(self, posF: QPointF) -> QPointF:
+        scenePos = self._imgview.mapToScene(posF.toPoint())
+        return self._imgview.image.mapFromParent(scenePos)
+
+    def mapPosToImageInt(self, posF: QPointF) -> tuple[int, int]:
+        imgpos = self.mapPosToImage(posF)
+        return (floor(imgpos.x()), floor(imgpos.y()))
+
 
     def onSceneUpdate(self):
         imgSize = self._imgview.image.pixmap().size()
@@ -44,7 +54,5 @@ class ViewTool(Tool):
                 self._imgview.filelist.setPrevFolder()
 
     def onMouseMove(self, event):
-        imgpos = self._imgview.mapToScene(event.position().toPoint())
-        imgpos = self._imgview.image.mapFromParent(imgpos)
-        x, y = int(imgpos.x()), int(imgpos.y())
+        x, y = self.mapPosToImageInt(event.position())
         self.tab.statusBar().setMouseCoords(x, y)

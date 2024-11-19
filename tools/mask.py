@@ -7,7 +7,7 @@ from PySide6 import QtWidgets
 import cv2 as cv
 import numpy as np
 from lib.filelist import DataKeys
-from ui.export_settings import ExportPath
+from ui.export_settings import ExportWidget
 from config import Config
 from .view import ViewTool
 from . import mask_ops
@@ -27,8 +27,6 @@ MaskItem = ForwardRef("MaskItem")
 
 # OneTrainer uses filename suffix "-masklabel.png"
 # kohya-ss has the masks in separate folder: conditioning_data_dir = '...'
-
-# TODO: Display hovered-over pixel value in statusbar
 
 
 class MaskTool(ViewTool):
@@ -80,7 +78,7 @@ class MaskTool(ViewTool):
         self._toolbar.setHistory(self.maskItem)
 
     def loadLayersFromFile(self):
-        maskPath = self.getSavePath()
+        maskPath = self._toolbar.exportWidget.getAutoExportPath(self.tab.filelist.getCurrentFile()) # TODO: When overwrite disabled, load latest counter
         if not os.path.exists(maskPath):
             return None
 
@@ -153,27 +151,36 @@ class MaskTool(ViewTool):
         index = self.layers.index(self.maskItem)
         del self.layers[index]
 
+        allRemoved = False
         if not self.layers:
+            allRemoved = True
             self.layers.append( self.createMask() )
 
         index = max(index-1, 0)
         self.setLayer(index)
         self._toolbar.setLayers(self.layers, index)
 
-        self.setEdited()
+        if allRemoved:
+            filelist.removeData(currentFile, DataKeys.MaskLayers)
+            filelist.removeData(currentFile, DataKeys.MaskIndex)
+            filelist.setData(currentFile, DataKeys.MaskState, DataKeys.IconStates.Changed)
+        else:
+            self.setEdited()
 
 
     def setEdited(self):
         self.storeLayers()
 
 
-    def getSavePath(self) -> str:
-        currentFile = self.tab.filelist.getCurrentFile()
-        return ExportPath.getSavePath(currentFile, "png", Config.maskSuffix)
-
     @Slot()
     def exportMask(self):
         if not self.layers:
+            return
+
+        exportWidget = self._toolbar.exportWidget
+        currentFile = self.tab.filelist.getCurrentFile()
+        destFile = exportWidget.getExportPath(currentFile)
+        if not destFile:
             return
 
         self.tab.statusBar().showMessage("Saving mask...")
@@ -201,12 +208,8 @@ class MaskTool(ViewTool):
         # Creates a copy of the data.
         combined = np.dstack(masks)
 
-        currentFile = self.tab.filelist.getCurrentFile()
-        destFile = self.getSavePath()
-        saveParams = [cv.IMWRITE_PNG_COMPRESSION, 9]
-
         # TODO: Save layer names to meta data?
-        task = MaskExportTask(currentFile, destFile, combined, saveParams)
+        task = MaskExportTask(currentFile, destFile, combined, exportWidget.getSaveParams())
         task.signals.done.connect(self.onExportDone, Qt.ConnectionType.BlockingQueuedConnection)
         task.signals.fail.connect(self.onExportFailed, Qt.ConnectionType.BlockingQueuedConnection)
         QThreadPool.globalInstance().start(task)
@@ -229,7 +232,7 @@ class MaskTool(ViewTool):
         # if state == DataKeys.IconStates.Saved:
         #     self.tab.filelist.removeData(imgFile, DataKeys.MaskLayers)
 
-        #self._toolbar.updateExport()
+        self._toolbar.updateExport()
 
     @Slot()
     def onExportFailed(self):
@@ -264,6 +267,8 @@ class MaskTool(ViewTool):
         self.op.onEnabled(imgview)
         self.loadLayers()
 
+        self._toolbar.updateExport()
+
     @override
     def onDisabled(self, imgview):
         super().onDisabled(imgview)
@@ -284,6 +289,8 @@ class MaskTool(ViewTool):
 
         if self.maskItem:
             self.maskItem.updateTransform(self._imgview.image)
+        
+        self._toolbar.updateExport()
             
     @override
     def onResize(self, event):
@@ -317,7 +324,16 @@ class MaskTool(ViewTool):
 
     @override
     def onMouseMove(self, event):
-        super().onMouseMove(event)
+        x, y = self.mapPosToImageInt(event.position())
+        self.tab.statusBar().setMouseCoords(x, y)
+
+        w, h = self.maskItem.image.size().toTuple() if self.maskItem else (0, 0)
+        if (0 <= x < w) and (0 <= y < h):
+            color = self.maskItem.image.pixelColor(x, y).red()
+        else:
+            color = 0
+        self.tab.statusBar().showMessage(f"Mask Value: {color/255.0:.2f}  ({color})")
+
         self.op.onMouseMove(event.position(), 1.0)
 
     @override
@@ -480,7 +496,6 @@ class MaskItem(QtWidgets.QGraphicsRectItem):
         if 0 <= index < len(self.history):
             entry = self.history[index]
             entry.compressed = True
-            del entry.mask
             entry.mask = pngData
 
 
@@ -497,7 +512,10 @@ class MaskToolBar(QtWidgets.QToolBar):
         layout.addWidget(self._buildOps())
         layout.addWidget(self._buildHistory())
 
-        btnExport = QtWidgets.QPushButton("Save")
+        self.exportWidget = ExportWidget("mask", maskTool.tab.filelist, showInterpolation=False)
+        layout.addWidget(self.exportWidget)
+
+        btnExport = QtWidgets.QPushButton("Export")
         btnExport.clicked.connect(self.maskTool.exportMask)
         layout.addWidget(btnExport)
         
@@ -538,19 +556,23 @@ class MaskToolBar(QtWidgets.QToolBar):
 
         self.ops = {
             "brush": mask_ops.DrawMaskOperation(self.maskTool),
+            "brush_magic": mask_ops.MagicDrawMaskOperation(self.maskTool),
             "fill": mask_ops.FillMaskOperation(self.maskTool),
             "clear": mask_ops.ClearMaskOperation(self.maskTool),
             "invert": mask_ops.InvertMaskOperation(self.maskTool),
+            "morph": mask_ops.MorphologyMaskOperation(self.maskTool),
             "blur_gauss": mask_ops.BlurMaskOperation(self.maskTool)
         }
 
         row = 0
         self.cboOperation = QtWidgets.QComboBox()
         self.cboOperation.addItem("Brush", "brush")
+        #self.cboOperation.addItem("Magic Brush", "brush_magic") # Flood fill from cursor position, keep inside brush circle (or GrabCut init with mask)
+        #self.cboOperation.addItem("Rectangle", "rect")
         self.cboOperation.addItem("Flood Fill", "fill")
         self.cboOperation.addItem("Clear", "clear")
         self.cboOperation.addItem("Invert", "invert")
-        #self.cboOperation.addItem("Morphology", "morph") # grow, shrink, open, close
+        self.cboOperation.addItem("Morphology", "morph")
         #self.cboOperation.addItem("Linear Gradient", "gradient_linear")
         self.cboOperation.addItem("Gaussian Blur", "blur_gauss")
         #self.cboOperation.addItem("RemBg", "rembg") # TODO: Mask models in Model Settings. Backends: rembg, yolo, ultralytics...
@@ -629,6 +651,14 @@ class MaskToolBar(QtWidgets.QToolBar):
             self.listHistory.setCurrentRow(maskItem.historyIndex)
 
 
+    def updateExport(self):
+        if maskItem := self.maskTool.maskItem:
+            self.exportWidget.setExportSize(maskItem.mask.width(), maskItem.mask.height())
+        else:
+            self.exportWidget.setExportSize(0, 0)
+        
+        self.exportWidget.updateSample()
+
 
 class MaskExportTask(QRunnable):
     class ExportTaskSignals(QObject):
@@ -650,7 +680,7 @@ class MaskExportTask(QRunnable):
     @Slot()
     def run(self):
         try:
-            ExportPath.createFolders(self.destFile)
+            ExportWidget.createFolders(self.destFile)
             cv.imwrite(self.destFile, self.mask, self.saveParams)
             self.signals.done.emit(self.srcFile, self.destFile)
         except Exception as ex:

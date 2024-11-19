@@ -24,7 +24,7 @@ class TemplateVariableParser:
         self.missingVars = list()
 
     
-    def setup(self, imgPath: str, captionFile: CaptionFile):
+    def setup(self, imgPath: str, captionFile: CaptionFile = None):
         self.imgPath = imgPath
         self.captionFile = captionFile
 
@@ -170,14 +170,28 @@ class TemplateVariableParser:
     def _getImgProperties(self, var):
         match var:
             case "path":
+                return os.path.splitext(self.imgPath)[0]
+            case "path.ext":
                 return self.imgPath
 
             case "name":
+                return os.path.splitext(os.path.basename(self.imgPath))[0]
+            case "name.ext":
                 return os.path.basename(self.imgPath)
 
             case "folder":
                 path = os.path.dirname(self.imgPath)
                 return os.path.basename(path)
+        
+        if var.startswith("folder-"):
+            try:
+                up = int(var[len("folder-"):])
+                path = os.path.dirname(self.imgPath)
+                for _ in range(up):
+                    path = os.path.dirname(path)
+                return os.path.basename(path)
+            except ValueError:
+                return None
 
         return None
 

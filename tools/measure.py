@@ -96,7 +96,7 @@ class MeasureTool(ViewTool):
 
     def updateEndPoint(self, cursorPos: QPointF):
         if not self._frozen:
-            self._endPoint = self.viewToImg(cursorPos.toPoint())
+            self._endPoint = self.viewToImg(cursorPos)
 
         rect = self._imgview.rect()
         self._crosshairH.setLine(0, cursorPos.y(), rect.width(), cursorPos.y())
@@ -104,21 +104,20 @@ class MeasureTool(ViewTool):
 
         self.updateLine()
 
-    def viewToImg(self, point: QPoint) -> QPointF:
-        point = self._imgview.mapToScene(point)
-        point = self._imgview.image.mapFromParent(point)
+    def viewToImg(self, point: QPointF) -> QPointF:
+        imgpos = self.mapPosToImage(point)
 
         # Constrain to image
         imgsize = self._imgview.image.pixmap().size()
-        x = max(point.x(), 0)
-        y = max(point.y(), 0)
+        x = max(imgpos.x(), 0)
+        y = max(imgpos.y(), 0)
         x = min(x, imgsize.width()-1)
         y = min(y, imgsize.height()-1)
 
         # On pixel center
-        point.setX( int(x) + 0.5 )
-        point.setY( int(y) + 0.5 )
-        return point
+        imgpos.setX( int(x) + 0.5 )
+        imgpos.setY( int(y) + 0.5 )
+        return imgpos
 
     def imgToView(self, point: QPointF) -> QPoint:
         point = self._imgview.image.mapToParent(point)
@@ -155,7 +154,7 @@ class MeasureTool(ViewTool):
         if event.button() == Qt.RightButton:
             if self._frozen:
                 self._frozen = False
-                self._startPoint = self.viewToImg(event.position().toPoint())
+                self._startPoint = self.viewToImg(event.position())
                 self._endPoint = self._startPoint
 
                 self._line.setVisible(True)

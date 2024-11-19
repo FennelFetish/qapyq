@@ -8,6 +8,21 @@ class Config:
     pathExport              = "."
     pathDebugLoad           = ""
 
+    exportPresets = {
+        "crop":  {
+            "path_template": "{{path}}_{{w}}x{{h}}",
+            "overwrite": False
+        },
+        "scale":  {
+            "path_template": "{{path}}_{{w}}x{{h}}",
+            "overwrite": False
+        },
+        "mask":  {
+            "path_template": "{{path}}-masklabel",
+            "overwrite": True
+        }
+    }
+
     # View
     viewZoomFactor          = 1.15
     viewZoomMinimum         = 0.5
@@ -89,6 +104,7 @@ class Config:
 
         cls.pathExport            = data.get("path_export", cls.pathExport)
         cls.pathDebugLoad         = data.get("path_debug_load", cls.pathDebugLoad)
+        cls.exportPresets         = data.get("export_presets", cls.exportPresets)
 
         cls.viewZoomFactor        = float(data.get("view_zoom_factor", cls.viewZoomFactor))
         cls.viewZoomMinimum       = float(data.get("view_zoom_minimum", cls.viewZoomMinimum))
@@ -129,6 +145,7 @@ class Config:
 
         data["path_export"]                 = cls.pathExport
         data["path_debug_load"]             = cls.pathDebugLoad
+        data["export_presets"]              = cls.exportPresets
 
         data["view_zoom_factor"]            = cls.viewZoomFactor
         data["view_zoom_minimum"]           = cls.viewZoomMinimum

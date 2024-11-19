@@ -1,6 +1,6 @@
 from typing_extensions import override
-from PySide6.QtCore import Qt, Slot, QPointF, QSignalBlocker
-from PySide6.QtGui import QPainter, QPen, QBrush, QColor, QLinearGradient
+from PySide6.QtCore import Qt, Slot, QPointF, QRectF, QSignalBlocker
+from PySide6.QtGui import QPainter, QPen, QBrush, QColor, QLinearGradient, QImage
 from PySide6 import QtWidgets
 import cv2 as cv
 import numpy as np
@@ -28,10 +28,9 @@ class MaskOperation(QtWidgets.QWidget):
         return self.maskTool._imgview
 
 
-    def mapPosToImage(self, eventPos):
-        imgpos = self.imgview.mapToScene(eventPos.toPoint())
-        imgpos = self.maskItem.mapFromParent(imgpos)
-        return imgpos
+    def mapPosToImage(self, pos: QPointF) -> QPointF:
+        scenepos = self.imgview.mapToScene(pos.toPoint())
+        return self.maskItem.mapFromParent(scenepos)
 
     def getCursor(self):
         raise NotImplementedError()
@@ -91,12 +90,7 @@ class DrawMaskOperation(MaskOperation):
         self._pen.setWidth(10)
         self._gradient = QLinearGradient()
 
-        cursorPen = QPen(QColor(0, 255, 255, 255))
-        cursorPen.setStyle(Qt.PenStyle.DashLine)
-        cursorPen.setDashPattern([2,3])
-        self._cursor = QtWidgets.QGraphicsEllipseItem()
-        self._cursor.setPen(cursorPen)
-
+        self._cursor = self._buildCircleCursor()
         self._build()
 
     def _build(self):
@@ -129,27 +123,52 @@ class DrawMaskOperation(MaskOperation):
 
         self.setLayout(layout)
 
+    def _buildCircleCursor(self):
+        cursorPen = QPen(QColor(0, 255, 255, 255))
+        cursorPen.setStyle(Qt.PenStyle.SolidLine)
 
-    def stopDraw(self, valid=False):
-        if not self._drawing:
-            return
+        circle = QtWidgets.QGraphicsEllipseItem()
+        circle.setRect(-10, -10, 20, 20)
+        circle.setPen(cursorPen)
 
-        erase = self._drawing==self.DRAW_ERASE
-        self._drawing = self.DRAW_NONE
-        self._painter.end()
+        crosshairSize = 3
+        lineH = QtWidgets.QGraphicsLineItem()
+        lineH.setLine(-crosshairSize, 0, crosshairSize, 0)
+        lineH.setPen(cursorPen)
 
-        # FIXME: Handle case when file is changed. Don't apply history to new file, etc.
-        if valid:
-            self.maskTool.setEdited()
-            mode = "Erase" if erase else "Stroke"
-            self.maskTool._toolbar.addHistory(f"Brush {mode} ({self._strokeLength:.1f})")
+        lineV = QtWidgets.QGraphicsLineItem()
+        lineV.setLine(0, -crosshairSize, 0, crosshairSize)
+        lineV.setPen(cursorPen)
+
+        group = QtWidgets.QGraphicsItemGroup()
+        group.addToGroup(circle)
+        group.addToGroup(lineH)
+        group.addToGroup(lineV)
+        return group
+
+    def updateCursor(self, pos: QPointF):
+        w = float(self._pen.width())
+        if self.maskItem:
+            wHalf = w * 0.5
+            rect = self.maskItem.transform().mapRect(QRectF(0, 0, w, w))
+            rect = self.imgview.transform().mapRect(rect)
+            w = rect.width()
+
+        wHalf = w * 0.5
+        self._cursor.childItems()[0].setRect(-wHalf, -wHalf, w, w)
+        self._cursor.setPos(pos.x(), pos.y())
+        self.imgview.scene().update()
+
+    @override
+    def onCursorVisible(self, visible: bool):
+        self._cursor.setVisible(visible)
 
 
     @Slot()
     def setPenWidth(self, width: int):
         width = max(width, 1)
         self._pen.setWidth(width)
-        self.updateCursor(self._cursor.rect().center())
+        self.updateCursor(self._cursor.pos())
 
         with QSignalBlocker(self.spinBrushSize):
             self.spinBrushSize.setValue(width)
@@ -168,20 +187,19 @@ class DrawMaskOperation(MaskOperation):
         return endColor
 
 
-    def updateCursor(self, pos: QPointF):
-        w = float(self._pen.width())
-        if self.maskItem:
-            rect = self.maskItem.mapToParent(0, 0, w, w)
-            rect = self.imgview.mapFromScene(rect).boundingRect()
-            w = rect.width()
+    def stopDraw(self, valid=False):
+        if not self._drawing:
+            return
 
-        wHalf = w * 0.5
-        self._cursor.setRect(pos.x()-wHalf, pos.y()-wHalf, w, w)
-        self.imgview.scene().update()
+        erase = self._drawing==self.DRAW_ERASE
+        self._drawing = self.DRAW_NONE
+        self._painter.end()
 
-    @override
-    def onCursorVisible(self, visible: bool):
-        self._cursor.setVisible(visible)
+        # FIXME: Handle case when file is changed. Don't apply history to new file, etc.
+        if valid:
+            self.maskTool.setEdited()
+            mode = "Erase" if erase else "Stroke"
+            self.maskTool._toolbar.addHistory(f"Brush {mode} ({self._strokeLength:.1f})")
 
 
     @override
@@ -198,7 +216,7 @@ class DrawMaskOperation(MaskOperation):
     @override
     def onFileChanged(self, file: str):
         self.stopDraw()
-        self.updateCursor(self._cursor.rect().center())
+        self.updateCursor(self._cursor.pos())
 
 
     @override
@@ -261,6 +279,128 @@ class DrawMaskOperation(MaskOperation):
 
 
 
+class MagicDrawMaskOperation(MaskOperation):
+    def __init__(self, maskTool):
+        super().__init__(maskTool, Qt.CursorShape.CrossCursor)
+        self._drawing = False
+
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
+
+        row = 0
+        self.spinFillColor = QtWidgets.QDoubleSpinBox()
+        self.spinFillColor.setRange(0.0, 1.0)
+        self.spinFillColor.setSingleStep(0.1)
+        self.spinFillColor.setValue(1.0)
+        layout.addWidget(QtWidgets.QLabel("Color:"), row, 0)
+        layout.addWidget(self.spinFillColor, row, 1)
+
+        row += 1
+        self.spinUpperDiff = QtWidgets.QDoubleSpinBox()
+        self.spinUpperDiff.setRange(0.0, 1.0)
+        self.spinUpperDiff.setSingleStep(0.01)
+        self.spinUpperDiff.setValue(0.1)
+        layout.addWidget(QtWidgets.QLabel("Upper Diff:"), row, 0)
+        layout.addWidget(self.spinUpperDiff, row, 1)
+
+        row += 1
+        self.spinLowerDiff = QtWidgets.QDoubleSpinBox()
+        self.spinLowerDiff.setRange(0.0, 1.0)
+        self.spinLowerDiff.setSingleStep(0.01)
+        self.spinLowerDiff.setValue(0.1)
+        layout.addWidget(QtWidgets.QLabel("Lower Diff:"), row, 0)
+        layout.addWidget(self.spinLowerDiff, row, 1)
+
+        self.setLayout(layout)
+    
+    def floodfill(self, pos):
+        pos = self.mapPosToImage(pos)
+        r = 10
+
+        color = self.spinFillColor.value() * 255.0
+        upDiff = self.spinUpperDiff.value() * 255.0
+        loDiff = self.spinLowerDiff.value() * 255.0
+        
+        # TODO: Convert image to array in onEnabled
+        pixmap = self.maskTool._imgview.image.pixmap()
+        cutX, cutY = int(pos.x()-r), int(pos.y()-r)
+        cutSize = 2*r
+        cut = pixmap.copy(cutX, cutY, cutSize, cutSize).toImage()
+        mat = np.frombuffer(cut.constBits(), dtype=np.uint8)
+        mat.shape = (cut.height(), cut.width(), 4)
+        mat = cv.cvtColor(mat, cv.COLOR_RGBA2GRAY)
+
+        mask = np.zeros((cut.height()+2, cut.width()+2), dtype=np.uint8)
+        flags = 8 | (int(color) << 8) | cv.FLOODFILL_MASK_ONLY
+        retval, floodimg, mask, rect = cv.floodFill(mat, mask, (r, r), color, loDiff, upDiff, flags)
+        #print(f"flood fill result: {retval}, img: floodimg, mask: mask, rect: {rect}")
+        #cv.imwrite("/mnt/ai/Datasets/floodfill.png", mask)
+        mask = mask[1:-1, 1:-1]
+
+        mat = self.maskItem.toNumpy()
+        mat[cutY:cutY+cutSize, cutX:cutX+cutSize] += mask
+        self.maskItem.fromNumpy(mat)
+
+        self.maskTool.setEdited()
+        self.maskTool._toolbar.addHistory("Magic Brush (Flood Fill)")
+    
+    def grabcut(self, pos):
+        pos = self.mapPosToImage(pos)
+        r = 10
+
+        color = self.spinFillColor.value() * 255.0
+        upDiff = self.spinUpperDiff.value() * 255.0
+        loDiff = self.spinLowerDiff.value() * 255.0
+
+        # TODO: Convert image to array in onEnabled
+        pixmap = self.maskTool._imgview.image.pixmap()
+        cutX, cutY = int(pos.x()-r), int(pos.y()-r)
+        cutSize = 2*r
+        cut = pixmap.copy(cutX, cutY, cutSize, cutSize).toImage()
+        img = np.frombuffer(cut.constBits(), dtype=np.uint8)
+        img.shape = (cut.height(), cut.width(), 4)
+        img = cv.cvtColor(img, cv.COLOR_RGBA2BGR)
+
+        mask = self.maskItem.toNumpy()
+        maskCut = mask[cutY:cutY+cutSize, cutX:cutX+cutSize]
+        #maskCut = np.ascontiguousarray(maskCut)
+        maskCut = np.where((maskCut!=0), cv.GC_PR_FGD, cv.GC_PR_BGD).astype(np.uint8)
+        maskCut[r, r] = cv.GC_FGD
+        #print(f"maskCut shape={maskCut.shape} type={maskCut.dtype} min={maskCut.min()} max={maskCut.max()}")
+
+        # TODO: Use alt button to mark regions as definitely background
+        fgd = np.zeros((1,65), np.float64)
+        bgd = np.zeros((1,65), np.float64)
+        grabcutMask, bgd, fgd = cv.grabCut(img, maskCut, rect=None, bgdModel=bgd, fgdModel=fgd, iterCount=1, mode=cv.GC_INIT_WITH_MASK)
+        #print(grabcutMask)
+
+        #cv.imwrite("/mnt/ai/Datasets/grabcut.png", grabcutMask)
+
+        apply = np.where((grabcutMask==2)|(grabcutMask==0), 0, color).astype(np.uint8)
+        mask[cutY:cutY+cutSize, cutX:cutX+cutSize] += apply
+        self.maskItem.fromNumpy(mask)
+
+        self.maskTool.setEdited()
+        self.maskTool._toolbar.addHistory("Magic Brush (GrabCut)")
+
+    @override
+    def onMousePress(self, pos, pressure: float, alt=False):
+        self._drawing = True
+    
+    def onMouseRelease(self, alt: bool):
+        self._drawing = False
+
+    def onMouseMove(self, pos, pressure: float):
+        if self._drawing:
+            self.grabcut(pos)
+
+    # @override
+    # def onMouseMove(self, pos, pressure: float):
+    #     self.onMousePress(pos, pressure)
+
+
 class FillMaskOperation(MaskOperation):
     def __init__(self, maskTool):
         super().__init__(maskTool, Qt.CursorShape.CrossCursor)
@@ -281,7 +421,7 @@ class FillMaskOperation(MaskOperation):
         row += 1
         self.spinUpperDiff = QtWidgets.QDoubleSpinBox()
         self.spinUpperDiff.setRange(0.0, 1.0)
-        self.spinUpperDiff.setSingleStep(0.1)
+        self.spinUpperDiff.setSingleStep(0.01)
         self.spinUpperDiff.setValue(1.0)
         layout.addWidget(QtWidgets.QLabel("Upper Diff:"), row, 0)
         layout.addWidget(self.spinUpperDiff, row, 1)
@@ -289,7 +429,7 @@ class FillMaskOperation(MaskOperation):
         row += 1
         self.spinLowerDiff = QtWidgets.QDoubleSpinBox()
         self.spinLowerDiff.setRange(0.0, 1.0)
-        self.spinLowerDiff.setSingleStep(0.1)
+        self.spinLowerDiff.setSingleStep(0.01)
         self.spinLowerDiff.setValue(0.0)
         layout.addWidget(QtWidgets.QLabel("Lower Diff:"), row, 0)
         layout.addWidget(self.spinLowerDiff, row, 1)
@@ -305,8 +445,9 @@ class FillMaskOperation(MaskOperation):
         upperDiff = self.spinUpperDiff.value() * 255.0
         lowerDiff = self.spinLowerDiff.value() * 255.0
 
+        # TODO: Calc upper/lower diff based on selected start point's pixel value
         mat = self.maskItem.toNumpy()
-        retval, img, mask, rect = cv.floodFill(mat, None, pos, color*255, lowerDiff, upperDiff)
+        retval, img, mask, rect = cv.floodFill(mat, None, pos, color*255, lowerDiff, upperDiff)#, cv.FLOODFILL_FIXED_RANGE)
         #print(f"flood fill result: {retval}, img: {img}, mask: {mask}, rect: {rect}")
         self.maskItem.fromNumpy(mat)
 
@@ -361,6 +502,60 @@ class InvertMaskOperation(MaskOperation):
 
         self.maskTool.setEdited()
         self.maskTool._toolbar.addHistory("Invert")
+
+
+
+class MorphologyMaskOperation(MaskOperation):
+    def __init__(self, maskTool):
+        super().__init__(maskTool)
+
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
+
+        row = 0
+        self.cboMode = QtWidgets.QComboBox()
+        self.cboMode.addItem("Grow", "grow")
+        self.cboMode.addItem("Shrink", "shrink")
+        self.cboMode.addItem("Close Holes", "close")
+        self.cboMode.addItem("Open Gaps", "open")
+        layout.addWidget(QtWidgets.QLabel("Op:"), row, 0)
+        layout.addWidget(self.cboMode, row, 1)
+
+        row += 1
+        self.spinRadius = QtWidgets.QSpinBox()
+        self.spinRadius.setRange(1, 4096)
+        self.spinRadius.setSingleStep(1)
+        self.spinRadius.setValue(10)
+        layout.addWidget(QtWidgets.QLabel("Radius:"), row, 0)
+        layout.addWidget(self.spinRadius, row, 1)
+
+        self.setLayout(layout)
+
+    @override
+    def onMousePress(self, pos, pressure: float, alt=False):
+        r = self.spinRadius.value()
+        size = r*2 + 1
+        kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (size, size))
+
+        mat = self.maskItem.toNumpy()
+        mode = self.cboMode.currentData()
+        match mode:
+            case "grow":
+                mat = cv.dilate(mat, kernel)
+            case "shrink":
+                mat = cv.erode(mat, kernel)
+            case "close":
+                mat = cv.dilate(mat, kernel)
+                mat = cv.erode(mat, kernel)
+            case "open":
+                mat = cv.erode(mat, kernel)
+                mat = cv.dilate(mat, kernel)
+
+        self.maskItem.fromNumpy(mat)
+        self.maskTool.setEdited()
+        self.maskTool._toolbar.addHistory(f"Morphology ({mode} {r})")
 
 
 
