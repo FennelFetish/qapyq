@@ -588,26 +588,26 @@ class BlurMaskOperation(MaskOperation):
 
     @override
     def onMousePress(self, pos, pressure: float, alt=False):
-        r = self.spinRadius.value()
-        size = r*2 + 1 # needs odd kernel size
-        kernel = (size, size)
-
+        radius = self.spinRadius.value()
         mat = self.maskItem.toNumpy()
-        blurred = cv.GaussianBlur(mat, kernel, sigmaX=0, sigmaY=0)
 
         mode = self.cboMode.currentData()
-        match mode:
-            case "out":
-                #mask = cv.bitwise_not(mat)
-                mask = 255 - mat
-                mat = cv.add(mat, blurred, mat, mask)
-            case "in":
-                blurred = 255 - blurred
-                mat = cv.subtract(mat, blurred, mat, mat)
-            case _:
-                mat = blurred
+        if mode == "both" or radius <= 1:
+            kernelSize = radius*2 + 1 # needs odd kernel size
+            mat = cv.GaussianBlur(mat, (kernelSize, kernelSize), sigmaX=0, sigmaY=0)
+        else:                                # 2    3    4    5    6    7
+            r           = (radius+1) * 0.5   # 1.5, 2.0, 2.5, 3.0, 3.5, 4.0
+            blurSize    = int(r)*2 + 1       # 3    5    5    7    7    9
+            morphSize   = int(r+0.5)*2 - 1   # 3    3    5    5    7    7
+            blurKernel  = (blurSize, blurSize)
+            morphKernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (morphSize, morphSize))
 
+            if mode == "out":
+                mat = cv.dilate(mat, morphKernel)
+            else:
+                mat = cv.erode(mat, morphKernel)
+            mat = cv.GaussianBlur(mat, blurKernel, sigmaX=0, sigmaY=0)
+        
         self.maskItem.fromNumpy(mat)
-
         self.maskTool.setEdited()
-        self.maskTool._toolbar.addHistory(f"Gaussian Blur ({mode} {r})")
+        self.maskTool._toolbar.addHistory(f"Gaussian Blur ({mode} {radius})")
