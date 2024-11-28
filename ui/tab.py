@@ -140,6 +140,10 @@ class TabStatusBar(ColoredMessageStatusBar):
         self.setSizeGripEnabled(False)
         self.setContentsMargins(6, 0, 6, 0)
 
+        self._lblToolMessage = QtWidgets.QLabel()
+        self._lblToolMessage.setFixedWidth(150)
+        self.addPermanentWidget(self._lblToolMessage)
+
         self._lblMouseCoords = QtWidgets.QLabel()
         self._lblMouseCoords.setFixedWidth(100)
         self.addPermanentWidget(self._lblMouseCoords)
@@ -147,8 +151,12 @@ class TabStatusBar(ColoredMessageStatusBar):
         self._lblImgSize = QtWidgets.QLabel()
         self.addPermanentWidget(self._lblImgSize)
 
-    def setImageSize(self, width, height):
-        self._lblImgSize.setText(f"W: {width}  H: {height}")
+    def setToolMessage(self, msg: str):
+        self._lblToolMessage.setVisible(bool(msg))
+        self._lblToolMessage.setText(msg)
 
     def setMouseCoords(self, x, y):
         self._lblMouseCoords.setText(f"X: {x}  Y: {y}")
+
+    def setImageSize(self, width, height):
+        self._lblImgSize.setText(f"W: {width}  H: {height}")
