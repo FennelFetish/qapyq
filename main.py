@@ -47,7 +47,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         tab = ImgTab(self.tabWidget)
         tab.tabTitleChanged.connect(self.updateTitle)
-        index = self.tabWidget.addTab(tab, "Empty")
+        index = self.tabWidget.addTab(tab, ImgTab.EMPTY_TAB_TITLE)
         self.tabWidget.setCurrentIndex(index)
         tab.imgview.setFocus()
         return tab
@@ -182,7 +182,7 @@ class MainMenu(QtWidgets.QMenu):
         actOpen = QtGui.QAction("&Open...", self)
         actOpen.setShortcutContext(Qt.ApplicationShortcut)
         actOpen.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_O))
-        actOpen.triggered.connect(self.open)
+        actOpen.triggered.connect(self.openFile)
 
         actOpenDir = QtGui.QAction("&Open Folder...", self)
         actOpenDir.setShortcutContext(Qt.ApplicationShortcut)
@@ -253,20 +253,30 @@ class MainMenu(QtWidgets.QMenu):
         self.addSeparator()
         self.addAction(actQuit)
 
+
     @Slot()
-    def open(self):
+    def openFile(self):
         path, filter = QtWidgets.QFileDialog.getOpenFileName(self, "Open File")
-        if path:
-            tab = self.mainWindow.addTab()
-            tab.filelist.load(path)
+        self.open(path)
 
     @Slot()
     def openDir(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Open Folder")
-        if path:
-            tab = self.mainWindow.addTab()
-            tab.filelist.load(path)
+        self.open(path)
     
+    def open(self, path: str | None):
+        if not path:
+            return
+
+        tabWidget = self.mainWindow.tabWidget
+        tabTitle = tabWidget.tabText(tabWidget.currentIndex())
+
+        if tabTitle == ImgTab.EMPTY_TAB_TITLE:
+            tab = self.mainWindow.currentTab
+        else:
+            tab = self.mainWindow.addTab()
+        tab.filelist.load(path)
+
 
     @Slot()
     def clearVram(self):
