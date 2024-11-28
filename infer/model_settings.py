@@ -2,6 +2,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QObject
 from .inference_settings import InferenceSettingsWidget
 from config import Config
+from lib import qtlib
 
 
 class BackendTypes:
@@ -9,6 +10,7 @@ class BackendTypes:
     TRANSFORMERS = "transformers"
     ONNX         = "onnx"
     TORCH        = "torch"
+    ULTRALYTICS  = "ultralytics"
 
 
 BackendsCaption = {
@@ -31,6 +33,10 @@ BackendsTag = {
     "JoyTag": ("joytag", BackendTypes.TORCH)
 }
 
+BackendsMask = {
+    "Yolo Detect": ("yolo-detect", BackendTypes.ULTRALYTICS),
+    "BriaAI RMBG-2.0": ("bria-rmbg", BackendTypes.TRANSFORMERS)
+}
 
 
 class ModelSettingsSignals(QObject):
@@ -56,14 +62,15 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
         self.resize(800, self.height())
 
         self.captionSettings = CaptionModelSettings("inferCaptionPresets", BackendsCaption)
-        self.llmSettings = LLMModelSettings("inferLLMPresets", BackendsLLM)
-
         self.tagSettings = TagModelSettings("inferTagPresets", BackendsTag)
-
+        self.llmSettings = LLMModelSettings("inferLLMPresets", BackendsLLM)
+        self.maskSettings = MaskModelSettings("inferMaskPresets", BackendsMask)
+        
         self.tabWidget = QtWidgets.QTabWidget()
         self.tabWidget.addTab(self.captionSettings, "Caption")
         self.tabWidget.addTab(self.tagSettings, "Tags")
         self.tabWidget.addTab(self.llmSettings, "LLM")
+        self.tabWidget.addTab(self.maskSettings, "Mask")
         self.setCentralWidget(self.tabWidget)
 
     def closeEvent(self, event):
@@ -82,12 +89,16 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
             if configAttr == "inferCaptionPresets":
                 win.tabWidget.setCurrentIndex(0)
                 win.captionSettings.reloadPresetList(presetName)
-            elif configAttr == "inferLLMPresets":
-                win.tabWidget.setCurrentIndex(2)
-                win.llmSettings.reloadPresetList(presetName)
             elif configAttr == "inferTagPresets":
                 win.tabWidget.setCurrentIndex(1)
                 win.tagSettings.reloadPresetList(presetName)
+            elif configAttr == "inferLLMPresets":
+                win.tabWidget.setCurrentIndex(2)
+                win.llmSettings.reloadPresetList(presetName)
+            elif configAttr == "inferMaskPresets":
+                win.tabWidget.setCurrentIndex(3)
+                win.llmSettings.reloadPresetList(presetName)
+
 
     @classmethod
     def closeInstance(cls):
@@ -172,6 +183,10 @@ class BaseSettingsWidget(QtWidgets.QWidget):
 
 
     @property
+    def backend(self) -> str:
+        return self.cboBackend.currentData()[0]
+    
+    @property
     def backendType(self) -> str:
         return self.cboBackend.currentData()[1]
 
@@ -243,7 +258,7 @@ class BaseSettingsWidget(QtWidgets.QWidget):
         if not path and altTarget:
             path = altTarget.text()
 
-        if self.backendType in [BackendTypes.LLAMA_CPP, BackendTypes.ONNX]:
+        if self.backendType in [BackendTypes.LLAMA_CPP, BackendTypes.ONNX, BackendTypes.ULTRALYTICS]:
             path, filter = QtWidgets.QFileDialog.getOpenFileName(self, "Choose model file", path)
         else:
             path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose model directory", path)
@@ -262,9 +277,8 @@ class BaseSettingsWidget(QtWidgets.QWidget):
         self.txtPath.setText(settings.get("model_path", ""))
 
     def toDict(self) -> dict:
-        backend, backendType = self.cboBackend.currentData()
         return {
-            "backend": backend,
+            "backend": self.backend,
             "model_path": self.txtPath.text()
         }
 
@@ -472,4 +486,44 @@ class TagModelSettings(BaseSettingsWidget):
         settings[Config.INFER_PRESET_SAMPLECFG_KEY] = {
             "threshold": self.spinThreshold.value()
         }
+        return settings
+
+
+
+class MaskModelSettings(BaseSettingsWidget):
+    def __init__(self, configAttr: str, backends: dict):
+        super().__init__(configAttr, backends)
+
+    def build(self, layout: QtWidgets.QGridLayout, row: int):
+        self.lblClasses = QtWidgets.QLabel("Classes:")
+        self.txtClasses = QtWidgets.QPlainTextEdit()
+        self.txtClasses.setPlaceholderText("Comma-separated. If empty, all detected classes are applied.")
+        qtlib.setMonospace(self.txtClasses)
+        qtlib.setTextEditHeight(self.txtClasses, 3)
+        layout.addWidget(self.lblClasses, row, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.txtClasses, row, 1, 1, 5)
+
+
+    @Slot()
+    def _onBackendChanged(self, index):
+        super()._onBackendChanged(index)
+        enabled = (self.backendType == BackendTypes.ULTRALYTICS)
+        for widget in (self.lblClasses, self.txtClasses):
+            widget.setEnabled(enabled)
+
+
+    def fromDict(self, settings: dict) -> None:
+        super().fromDict(settings)
+        if self.backendType == BackendTypes.ULTRALYTICS:
+            classes = ", ".join(settings.get("classes", ""))
+            self.txtClasses.setPlainText(classes)
+
+    def toDict(self) -> dict:
+        settings = super().toDict()
+
+        if self.backendType == BackendTypes.ULTRALYTICS:
+            classes = (name.strip() for name in self.txtClasses.toPlainText().split(","))
+            exist = {""}
+            settings["classes"] = [ name for name in classes if not (name in exist or exist.add(name)) ]
+
         return settings

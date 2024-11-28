@@ -1,9 +1,10 @@
-import sys, struct, msgpack, traceback, os
+import sys, struct, msgpack, traceback
 from config import Config
 
 
 backend = None
 tag = None
+masking = {}
 
 
 def loadBackend(config: dict):
@@ -72,6 +73,28 @@ def getTag(config: dict = None):
 
 
 
+def loadMaskingBackend(config: dict):
+    match backendName := config["backend"]:
+        case "yolo-detect":
+            from infer.mask_yolo import YoloMask
+            return YoloMask(config)
+        case "bria-rmbg":
+            from infer.mask_briarmbg import BriaRmbgMask
+            return BriaRmbgMask(config)
+    
+    raise ValueError(f"Unknown masking backend: {backendName}")
+
+
+def getMaskBackend(config: dict):
+    key = (config["backend"], config["model_path"])
+    backend = masking.get(key)
+    if not backend:
+        backend = loadMaskingBackend(config)
+        masking[key] = backend
+    return backend
+
+
+
 class Protocol:
     def __init__(self, bufIn, bufOut):
         self.bufIn  = bufIn
@@ -90,10 +113,6 @@ class Protocol:
         self.bufOut.write(data)
         self.bufOut.flush()
 
-
-def printErr(text):
-    sys.stderr.write(text + os.linesep)
-    sys.stderr.flush()
 
 
 def handleMessage(protocol) -> bool:
@@ -116,6 +135,10 @@ def handleMessage(protocol) -> bool:
 
         case "setup_llm":
             getBackend(msg.get("config", {}))
+            protocol.writeMessage({"cmd": cmd})
+        
+        case "setup_masking":
+            getMaskBackend(msg.get("config", {}))
             protocol.writeMessage({"cmd": cmd})
 
 
@@ -146,6 +169,24 @@ def handleMessage(protocol) -> bool:
                 "answers": answers
             })
 
+        case "mask":
+            img = msg["img"]
+            mask = getMaskBackend(msg["config"]).mask(img)
+            protocol.writeMessage({
+                "cmd": cmd,
+                "img": img,
+                "mask": mask
+            })
+
+        case "mask_boxes":
+            img = msg["img"]
+            boxes = getMaskBackend(msg["config"]).detectBoxes(img)
+            protocol.writeMessage({
+                "cmd": cmd,
+                "img": img,
+                "boxes": boxes
+            })
+
     return True
 
 
@@ -162,8 +203,11 @@ def handleError(protocol: Protocol, excType: str, excMessage: str) -> None:
 
 
 def main() -> int:
-    printErr("Inference process started")
+    # Send data through original stdout, redirect stdout to stderr for logging
     protocol = Protocol(sys.stdin.buffer, sys.stdout.buffer)
+    sys.stdout = sys.stderr
+
+    print("Inference process started")
     
     running = True
     while running:
@@ -173,10 +217,10 @@ def main() -> int:
             running = False
         except:
             exType, exMessage, exTraceback = sys.exc_info()
-            printErr(traceback.format_exc())
+            print(traceback.format_exc())
             handleError(protocol, str(exType), str(exMessage))
     
-    printErr("Inference process ending")
+    print("Inference process ending")
     return 0
 
 

@@ -9,6 +9,7 @@ import numpy as np
 from lib.filelist import DataKeys
 from ui.export_settings import ExportWidget
 from config import Config
+from infer.model_settings import ModelSettingsWindow
 from .view import ViewTool
 from . import mask_ops
 
@@ -273,6 +274,7 @@ class MaskTool(ViewTool):
     def onDisabled(self, imgview):
         super().onDisabled(imgview)
         imgview.filelist.removeListener(self)
+        self.tab.statusBar().setToolMessage(None)
 
         self.op.onDisabled(imgview)
 
@@ -332,7 +334,7 @@ class MaskTool(ViewTool):
             color = self.maskItem.image.pixelColor(x, y).red()
         else:
             color = 0
-        self.tab.statusBar().showMessage(f"Mask Value: {color/255.0:.2f}  ({color})")
+        self.tab.statusBar().setToolMessage(f"Mask Value: {color/255.0:.2f}  ({color})")
 
         self.op.onMouseMove(event.position(), 1.0)
 
@@ -389,6 +391,8 @@ class MaskTool(ViewTool):
 
 
 
+
+
 class HistoryEntry:
     def __init__(self, title: str, compressed: bool, mask: np.ndarray | None):
         self.title = title
@@ -405,14 +409,14 @@ class MaskItem(QtWidgets.QGraphicsRectItem):
 
         self.history: list[HistoryEntry] = list()
         self.historyIndex = 0
-    
+
     @staticmethod
     def new(name: str, image: QImage) -> MaskItem:
         maskItem = MaskItem(name)
         maskItem.setImage(image)
         maskItem.history.append( HistoryEntry("New", False, None) )
         return maskItem
-    
+
     @staticmethod
     def load(name: str, imgData: np.ndarray) -> MaskItem:
         maskItem = MaskItem(name)
@@ -424,6 +428,10 @@ class MaskItem(QtWidgets.QGraphicsRectItem):
     @property
     def mask(self) -> QImage:
         return self.image
+    
+    @property
+    def size(self) -> tuple[int, int]:
+        return (self.image.width(), self.image.height())
 
     def paint(self, painter, option, widget=None):
         painter.setRenderHints(QPainter.RenderHint.SmoothPixmapTransform, False)
@@ -453,7 +461,6 @@ class MaskItem(QtWidgets.QGraphicsRectItem):
             padded[:, :width] = data
             data = padded
 
-        #image = QImage(data, self.image.width(), self.image.height(), QImage.Format.Format_Grayscale8)
         image = QImage(data, width, height, QImage.Format.Format_Grayscale8)
         self.setImage(image)
 
@@ -500,10 +507,13 @@ class MaskItem(QtWidgets.QGraphicsRectItem):
 
 
 
+
+
 class MaskToolBar(QtWidgets.QToolBar):
     def __init__(self, maskTool):
         super().__init__("Mask")
         self.maskTool: MaskTool = maskTool
+        self.ops: dict[str, mask_ops.MaskOperation] = {}
         self.selectedOp: mask_ops.MaskOperation = None
 
         layout = QtWidgets.QVBoxLayout()
@@ -518,6 +528,12 @@ class MaskToolBar(QtWidgets.QToolBar):
         btnExport = QtWidgets.QPushButton("Export")
         btnExport.clicked.connect(self.maskTool.exportMask)
         layout.addWidget(btnExport)
+
+        # TODO: Also load from image's alpha channel
+        #       Only if file is PNG/WEBP
+        # btnApplyAlpha = QtWidgets.QPushButton("Set as Alpha Channel")
+        # btnApplyAlpha.clicked.connect(self.maskTool.applyAlpha)
+        # layout.addWidget(btnApplyAlpha)
         
         widget = QtWidgets.QWidget()
         widget.setLayout(layout)
@@ -551,9 +567,53 @@ class MaskToolBar(QtWidgets.QToolBar):
         return self.layerGroup
 
     def _buildOps(self):
+        shortcutLayout = QtWidgets.QHBoxLayout()
+        shortcutLayout.setContentsMargins(0, 0, 0, 0)
+
+        btnBrush = QtWidgets.QPushButton("B")
+        btnBrush.clicked.connect(lambda: self.selectOp("brush"))
+        shortcutLayout.addWidget(btnBrush)
+
+        btnFill = QtWidgets.QPushButton("F")
+        btnFill.clicked.connect(lambda: self.selectOp("fill"))
+        shortcutLayout.addWidget(btnFill)
+
+        btnClear = QtWidgets.QPushButton("C")
+        btnClear.clicked.connect(lambda: self.selectOp("clear"))
+        shortcutLayout.addWidget(btnClear)
+
+        btnInvert = QtWidgets.QPushButton("I")
+        btnInvert.clicked.connect(lambda: self.selectOp("invert"))
+        shortcutLayout.addWidget(btnInvert)
+
+        btnMorph = QtWidgets.QPushButton("M")
+        btnMorph.clicked.connect(lambda: self.selectOp("morph"))
+        shortcutLayout.addWidget(btnMorph)
+
+        btnGauss = QtWidgets.QPushButton("G")
+        btnGauss.clicked.connect(lambda: self.selectOp("blur_gauss"))
+        shortcutLayout.addWidget(btnGauss)
+
         self.opLayout = QtWidgets.QVBoxLayout()
         self.opLayout.setContentsMargins(1, 1, 1, 1)
+        self.opLayout.addLayout(shortcutLayout)
 
+        self.cboOperation = QtWidgets.QComboBox()
+        self.cboOperation.currentIndexChanged.connect(self.onOpChanged)
+        self.opLayout.addWidget(self.cboOperation)
+        self._reloadOps()
+        ModelSettingsWindow(self).signals.presetListUpdated.connect(self._reloadOps)
+        
+        group = QtWidgets.QGroupBox("Operations")
+        group.setLayout(self.opLayout)
+        return group
+
+    @Slot()
+    def _reloadOps(self):
+        for op in self.ops.values():
+            op.deleteLater()
+
+        # TODO: Keep existing ops and their current settings.
         self.ops = {
             "brush": mask_ops.DrawMaskOperation(self.maskTool),
             "brush_magic": mask_ops.MagicDrawMaskOperation(self.maskTool),
@@ -561,31 +621,41 @@ class MaskToolBar(QtWidgets.QToolBar):
             "clear": mask_ops.ClearMaskOperation(self.maskTool),
             "invert": mask_ops.InvertMaskOperation(self.maskTool),
             "morph": mask_ops.MorphologyMaskOperation(self.maskTool),
-            "blur_gauss": mask_ops.BlurMaskOperation(self.maskTool)
+            "blur_gauss": mask_ops.BlurMaskOperation(self.maskTool),
         }
 
-        row = 0
-        self.cboOperation = QtWidgets.QComboBox()
-        self.cboOperation.addItem("Brush", "brush")
-        #self.cboOperation.addItem("Magic Brush", "brush_magic") # Flood fill from cursor position, keep inside brush circle (or GrabCut init with mask)
-        #self.cboOperation.addItem("Rectangle", "rect")
-        self.cboOperation.addItem("Flood Fill", "fill")
-        self.cboOperation.addItem("Clear", "clear")
-        self.cboOperation.addItem("Invert", "invert")
-        self.cboOperation.addItem("Morphology", "morph")
-        #self.cboOperation.addItem("Linear Gradient", "gradient_linear")
-        self.cboOperation.addItem("Gaussian Blur", "blur_gauss")
-        #self.cboOperation.addItem("RemBg", "rembg") # TODO: Mask models in Model Settings. Backends: rembg, yolo, ultralytics...
-        #self.cboOperation.addItem("Yolo", "yolo")
-        self.cboOperation.currentIndexChanged.connect(self.onOpChanged)
-        self.opLayout.addWidget(self.cboOperation)
+        with QSignalBlocker(self.cboOperation):
+            selectedKey = self.cboOperation.currentData()
+            self.cboOperation.clear()
 
-        self.selectedOp = self.ops["brush"]
-        self.opLayout.addWidget(self.selectedOp)
+            self.cboOperation.addItem("Brush", "brush")
+            #self.cboOperation.addItem("Magic Brush", "brush_magic") # Flood fill from cursor position, keep inside brush circle (or GrabCut init with mask)
+            #self.cboOperation.addItem("Rectangle", "rect")
+            self.cboOperation.addItem("Flood Fill", "fill")
+            self.cboOperation.addItem("Clear", "clear")
+            self.cboOperation.addItem("Invert", "invert")
+            self.cboOperation.addItem("Morphology", "morph")
+            #self.cboOperation.addItem("Linear Gradient", "gradient_linear")
+            self.cboOperation.addItem("Gaussian Blur", "blur_gauss")
+            
+            for name, config in Config.inferMaskPresets.items():
+                self._buildCustomOp(name, config)
 
-        group = QtWidgets.QGroupBox("Operations")
-        group.setLayout(self.opLayout)
-        return group
+            index = max(0, self.cboOperation.findData(selectedKey))
+            self.cboOperation.setCurrentIndex(index)
+            self.onOpChanged(index)
+    
+    def _buildCustomOp(self, name: str, config: dict):
+        match config.get("backend"):
+            case "yolo-detect":
+                key = f"detect {name}"
+                self.ops[key] = mask_ops.DetectMaskOperation(self.maskTool, config)
+                self.cboOperation.addItem(f"Detect: {name}", key)
+            case "bria-rmbg":
+                key = f"segment {name}"
+                self.ops[key] = mask_ops.SegmentMaskOperation(self.maskTool, config)
+                self.cboOperation.addItem(f"Segment: {name}", key)
+
 
     def _buildHistory(self):
         layout = QtWidgets.QGridLayout()
@@ -594,9 +664,6 @@ class MaskToolBar(QtWidgets.QToolBar):
         self.listHistory = QtWidgets.QListWidget()
         self.listHistory.currentRowChanged.connect(lambda index: self.maskTool.maskItem.jumpHistory(index))
         layout.addWidget(self.listHistory, 0, 0, 1, 2)
-
-        # layout.addWidget(QtWidgets.QPushButton("Undo"), 1, 0)
-        # layout.addWidget(QtWidgets.QPushButton("Redo"), 1, 1)
 
         group = QtWidgets.QGroupBox("History")
         group.setLayout(layout)
@@ -619,12 +686,21 @@ class MaskToolBar(QtWidgets.QToolBar):
         index = self.cboLayer.currentIndex()
         self.cboLayer.setItemText(index, name)
         self.cboLayer.itemData(index).name = name
-    
+
+
+    def selectOp(self, key: str):
+        if (index := self.cboOperation.findData(key)) >= 0:
+            self.cboOperation.setCurrentIndex(index)
 
     @Slot()
     def onOpChanged(self, index: int):
+        # Updating the mask model settings updates the ops and calls this function.
+        # ImgView is not available when MaskTool is not active (or during initialization).
+        imgview = self.maskTool._imgview
+
         if self.selectedOp:
-            self.selectedOp.onDisabled(self.maskTool._imgview)
+            if imgview:
+                self.selectedOp.onDisabled(imgview)
             self.opLayout.removeWidget(self.selectedOp)
             self.selectedOp.hide()
         
@@ -636,11 +712,13 @@ class MaskToolBar(QtWidgets.QToolBar):
         self.selectedOp = op
         self.opLayout.addWidget(self.selectedOp)
         self.selectedOp.show()
-        self.selectedOp.onEnabled(self.maskTool._imgview)
+
+        if imgview:
+            self.selectedOp.onEnabled(imgview)
 
 
-    def addHistory(self, title: str):
-        self.maskTool.maskItem.addHistory(title)
+    def addHistory(self, title: str, imgData: np.ndarray | None = None):
+        self.maskTool.maskItem.addHistory(title, imgData)
         self.setHistory(self.maskTool.maskItem)
 
     def setHistory(self, maskItem: MaskItem):

@@ -1,5 +1,5 @@
 from PySide6.QtCore import QProcess, QByteArray, QMutex, QMutexLocker, QThread
-import sys, struct, msgpack, copy
+import sys, struct, msgpack, copy, traceback
 from lib.util import Singleton
 from config import Config
 
@@ -29,6 +29,9 @@ class InferenceProcess(metaclass=Singleton):
 
         self.currentLLMConfig = dict()
         self.currentTagConfig = dict()
+
+        self._readBuffer: QByteArray = None
+        self._readLength = 0
 
 
     def start(self):
@@ -120,27 +123,43 @@ class InferenceProcess(metaclass=Singleton):
         })
 
     def tag(self, imgPath) -> str:
-        return self._query("tags",{
+        return self._query("tags", {
             "cmd": "tag",
             "img": imgPath
         })
 
     def answer(self, prompts: dict, sysPrompt=None) -> dict[str, str]:
-        return self._query("answers",{
+        return self._query("answers", {
             "cmd": "answer",
             "prompts": prompts,
             "sysPrompt": sysPrompt
         })
 
+    def mask(self, config: dict, imgPath: str) -> bytes:
+        return self._query("mask", {
+            "cmd": "mask",
+            "config": config,
+            "img": imgPath
+        })
+
+    def maskBoxes(self, config: dict, imgPath: str) -> list[dict]:
+        return self._query("boxes", {
+            "cmd": "mask_boxes",
+            "config": config,
+            "img": imgPath
+        })
+
     def _query(self, returnKey: str, msg: dict):
         with QMutexLocker(self.mutex):
             self._writeMessage(msg)
-            if answer := self._blockReadMessage():
-                if error := answer.get("error"):
-                    raise InferenceException(error, msg.get("error_type"))
-                return answer.get(returnKey)
-            else:
+            answer = self._blockReadMessage()
+
+            if not answer:
                 raise InferenceException("Unknown error")
+            if error := answer.get("error"):
+                raise InferenceException(error, msg.get("error_type"))
+            
+            return answer.get(returnKey)
 
 
     def _onProcessEnded(self, exitCode, exitStatus):
@@ -150,30 +169,57 @@ class InferenceProcess(metaclass=Singleton):
         self.proc.readAllStandardOutput()
         self.proc.readAllStandardError()
         self.proc = None
-        
+
 
     def _writeMessage(self, msg) -> None:
-        data = msgpack.packb(msg)
-        buffer = QByteArray()
-        buffer.append( struct.pack("!I", len(data)) )
-        buffer.append(data)
-        self.proc.write(buffer)
+        try:
+            data = msgpack.packb(msg)
+            buffer = QByteArray()
+            buffer.append( struct.pack("!I", len(data)) )
+            buffer.append(data)
+            self.proc.write(buffer)
+        except:
+            print(traceback.format_exc())
 
-    def _readMessage(self) -> dict:
-        headerBuffer = self.proc.read(4)
-        length = struct.unpack("!I", headerBuffer.data())[0]
-        buffer = self.proc.read(length)
-        return msgpack.unpackb(buffer.data())
+    def _readMessage(self) -> dict | None:
+        # Handling of incomplete messages could also utilize QIODevice transactions
+        try:
+            # Start reading
+            if self._readLength == 0:
+                headerBuffer = self.proc.read(4)
+                length = struct.unpack("!I", headerBuffer.data())[0]
+                buffer = self.proc.read(length)
+
+                if buffer.length() < length:
+                    self._readBuffer = buffer
+                    self._readLength = length
+                    return None
+            
+            # Continue reading
+            else:
+                buffer = self.proc.read(self._readLength - self._readBuffer.length())
+                self._readBuffer.append(buffer)
+
+                if self._readBuffer.length() < self._readLength:
+                    return None
+                
+                buffer = self._readBuffer
+                self._readBuffer = None
+                self._readLength = 0
+
+            return msgpack.unpackb(buffer.data())
+        except:
+            print(traceback.format_exc())
+            return {}
 
     def _blockReadMessage(self) -> dict | None:
         try:
-            while True:
-                # waitForReadyRead blocks the UI, therefore wait manually using QThread.msleep
+            # waitForReadyRead blocks the UI, therefore wait manually using QThread.msleep
+            while not self.proc.waitForReadyRead(0):
                 QThread.msleep(30)
-                if self.proc.waitForReadyRead(0):
-                    break
-
-            return self._readMessage()
+            while not (msg := self._readMessage()):
+                self.proc.waitForReadyRead(-1)
+            return msg
         except:
             # Process ended while waiting
             return None

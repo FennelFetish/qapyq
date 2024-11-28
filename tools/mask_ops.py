@@ -1,6 +1,6 @@
 from typing_extensions import override
-from PySide6.QtCore import Qt, Slot, QPointF, QRectF, QSignalBlocker
-from PySide6.QtGui import QPainter, QPen, QBrush, QColor, QLinearGradient, QImage
+from PySide6.QtCore import Qt, Slot, QPointF, QRectF, QSignalBlocker, QRunnable, QObject, Signal
+from PySide6.QtGui import QPainter, QPen, QBrush, QColor, QLinearGradient
 from PySide6 import QtWidgets
 import cv2 as cv
 import numpy as np
@@ -344,7 +344,7 @@ class MagicDrawMaskOperation(MaskOperation):
         self.maskItem.fromNumpy(mat)
 
         self.maskTool.setEdited()
-        self.maskTool._toolbar.addHistory("Magic Brush (Flood Fill)")
+        self.maskTool._toolbar.addHistory("Magic Brush (Flood Fill)", mat)
     
     def grabcut(self, pos):
         pos = self.mapPosToImage(pos)
@@ -383,7 +383,7 @@ class MagicDrawMaskOperation(MaskOperation):
         self.maskItem.fromNumpy(mask)
 
         self.maskTool.setEdited()
-        self.maskTool._toolbar.addHistory("Magic Brush (GrabCut)")
+        self.maskTool._toolbar.addHistory("Magic Brush (GrabCut)", mask)
 
     @override
     def onMousePress(self, pos, pressure: float, alt=False):
@@ -441,7 +441,7 @@ class FillMaskOperation(MaskOperation):
         pos = self.mapPosToImage(pos).toPoint()
         pos = (pos.x(), pos.y())
 
-        color = self.spinFillColor.value()
+        color = 0 if alt else self.spinFillColor.value()
         upperDiff = self.spinUpperDiff.value() * 255.0
         lowerDiff = self.spinLowerDiff.value() * 255.0
 
@@ -452,7 +452,7 @@ class FillMaskOperation(MaskOperation):
         self.maskItem.fromNumpy(mat)
 
         self.maskTool.setEdited()
-        self.maskTool._toolbar.addHistory(f"Flood Fill ({color:.2f})")
+        self.maskTool._toolbar.addHistory(f"Flood Fill ({color:.2f})", mat)
 
 
 
@@ -486,7 +486,7 @@ class ClearMaskOperation(MaskOperation):
         self.maskItem.fromNumpy(mat)
 
         self.maskTool.setEdited()
-        self.maskTool._toolbar.addHistory(f"Clear ({color:.2f})")
+        self.maskTool._toolbar.addHistory(f"Clear ({color:.2f})", mat)
 
 
 
@@ -501,7 +501,7 @@ class InvertMaskOperation(MaskOperation):
         self.maskItem.fromNumpy(mat)
 
         self.maskTool.setEdited()
-        self.maskTool._toolbar.addHistory("Invert")
+        self.maskTool._toolbar.addHistory("Invert", mat)
 
 
 
@@ -535,27 +535,31 @@ class MorphologyMaskOperation(MaskOperation):
 
     @override
     def onMousePress(self, pos, pressure: float, alt=False):
+        # TODO: Grow/shrink depending on mouse button?
         r = self.spinRadius.value()
         size = r*2 + 1
         kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (size, size))
+
+        borderType = cv.BORDER_CONSTANT
+        borderVal  = (0,)
 
         mat = self.maskItem.toNumpy()
         mode = self.cboMode.currentData()
         match mode:
             case "grow":
-                mat = cv.dilate(mat, kernel)
+                mat = cv.dilate(mat, kernel, borderType=borderType, borderValue=borderVal)
             case "shrink":
-                mat = cv.erode(mat, kernel)
+                mat = cv.erode(mat, kernel, borderType=borderType, borderValue=borderVal)
             case "close":
-                mat = cv.dilate(mat, kernel)
-                mat = cv.erode(mat, kernel)
+                mat = cv.dilate(mat, kernel, borderType=borderType, borderValue=borderVal)
+                mat = cv.erode(mat, kernel, borderType=borderType, borderValue=borderVal)
             case "open":
-                mat = cv.erode(mat, kernel)
-                mat = cv.dilate(mat, kernel)
+                mat = cv.erode(mat, kernel, borderType=borderType, borderValue=borderVal)
+                mat = cv.dilate(mat, kernel, borderType=borderType, borderValue=borderVal)
 
         self.maskItem.fromNumpy(mat)
         self.maskTool.setEdited()
-        self.maskTool._toolbar.addHistory(f"Morphology ({mode} {r})")
+        self.maskTool._toolbar.addHistory(f"Morphology ({mode} {r})", mat)
 
 
 
@@ -591,10 +595,14 @@ class BlurMaskOperation(MaskOperation):
         radius = self.spinRadius.value()
         mat = self.maskItem.toNumpy()
 
+        blurBorder  = cv.BORDER_ISOLATED
+        morphBorder = cv.BORDER_CONSTANT
+        borderVal   = (0,)
+
         mode = self.cboMode.currentData()
         if mode == "both" or radius <= 1:
             kernelSize = radius*2 + 1 # needs odd kernel size
-            mat = cv.GaussianBlur(mat, (kernelSize, kernelSize), sigmaX=0, sigmaY=0)
+            mat = cv.GaussianBlur(mat, (kernelSize, kernelSize), sigmaX=0, sigmaY=0, borderType=blurBorder)
         else:                                # 2    3    4    5    6    7
             r           = (radius+1) * 0.5   # 1.5, 2.0, 2.5, 3.0, 3.5, 4.0
             blurSize    = int(r)*2 + 1       # 3    5    5    7    7    9
@@ -603,11 +611,219 @@ class BlurMaskOperation(MaskOperation):
             morphKernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (morphSize, morphSize))
 
             if mode == "out":
-                mat = cv.dilate(mat, morphKernel)
+                mat = cv.dilate(mat, morphKernel, borderType=morphBorder, borderValue=borderVal)
             else:
-                mat = cv.erode(mat, morphKernel)
-            mat = cv.GaussianBlur(mat, blurKernel, sigmaX=0, sigmaY=0)
+                mat = cv.erode(mat, morphKernel, borderType=morphBorder, borderValue=borderVal)
+            mat = cv.GaussianBlur(mat, blurKernel, sigmaX=0, sigmaY=0, borderType=blurBorder)
         
         self.maskItem.fromNumpy(mat)
         self.maskTool.setEdited()
-        self.maskTool._toolbar.addHistory(f"Gaussian Blur ({mode} {radius})")
+        self.maskTool._toolbar.addHistory(f"Gaussian Blur ({mode} {radius})", mat)
+
+
+
+class DetectMaskOperation(MaskOperation):
+    def __init__(self, maskTool, config):
+        super().__init__(maskTool)
+        self.config = config
+        self.running = False
+
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
+
+        row = 0
+        self.spinColor = QtWidgets.QDoubleSpinBox()
+        self.spinColor.setRange(0.0, 1.0)
+        self.spinColor.setSingleStep(0.1)
+        self.spinColor.setValue(1.0)
+        layout.addWidget(QtWidgets.QLabel("Color:"), row, 0)
+        layout.addWidget(self.spinColor, row, 1)
+
+        row += 1
+        self.spinThreshold = QtWidgets.QDoubleSpinBox()
+        self.spinThreshold.setRange(0.0, 1.0)
+        self.spinThreshold.setSingleStep(0.1)
+        self.spinThreshold.setValue(0.4)
+        layout.addWidget(QtWidgets.QLabel("Threshold:"), row, 0)
+        layout.addWidget(self.spinThreshold, row, 1)
+
+        self.setLayout(layout)
+
+    @override
+    def onMousePress(self, pos, pressure: float, alt=False):
+        if self.running:
+            return
+        self.running = True
+
+        imgPath = self.maskTool._imgview.image.filepath
+        color = 0.0 if alt else self.spinColor.value()
+
+        task = MaskTask("maskBoxes", self.maskTool.maskItem, self.config, imgPath, color)
+        task.signals.done.connect(self.onDone)
+        task.signals.fail.connect(self.onFail)
+
+        from infer import Inference
+        Inference().queueTask(task)
+        self.maskTool.tab.statusBar().showMessage("Detecting boxes...", 0)
+
+        # Store layers so result can be loaded when image is changed
+        self.maskTool.setEdited()
+
+    @Slot()
+    def onDone(self, maskItem, imgPath: str, color: float, boxes):
+        self.running = False
+
+        colorFill = round(color * 255)
+        classes = set(self.config["classes"])
+        threshold = self.spinThreshold.value()
+
+        mat = maskItem.toNumpy()
+        h, w = mat.shape
+
+        detections = {}
+        detectionsApplied = 0
+        for box in boxes:
+            name = box["name"]
+            if box["confidence"] < threshold or (classes and name not in classes):
+                continue
+            detections[name] = detections.get(name, 0) + 1
+            detectionsApplied += 1
+
+            p0x, p0y = box["p0"]
+            p0x, p0y = round(p0x*w), round(p0y*h)
+
+            p1x, p1y = box["p1"]
+            p1x, p1y = round(p1x*w)+1, round(p1y*h)+1
+
+            mat[p0y:p1y, p0x:p1x] = colorFill
+
+        maskItem.fromNumpy(mat)
+        historyTitle = f"Detect ({color:.2f})"
+        if maskItem == self.maskItem:
+            self.maskTool.setEdited()
+            self.maskTool._toolbar.addHistory(historyTitle, mat)
+        else:
+            maskItem.addHistory(historyTitle, mat)
+
+        if len(boxes):
+            msg = f"{len(boxes)} detections, {detectionsApplied} applied"
+            if detections:
+                detections = ", ". join(f"{count}x {name}" for name, count in detections.items())
+                msg += f": {detections}"
+        else:
+            msg = "No detections"
+
+        self.maskTool.tab.statusBar().showColoredMessage(msg, True, 0)
+
+    @Slot()
+    def onFail(self, msg: str):
+        self.running = False
+        self.maskTool.tab.statusBar().showColoredMessage(f"Detection failed: {msg}", False, 0)
+        print(msg)
+
+
+class SegmentMaskOperation(MaskOperation):
+    def __init__(self, maskTool, config):
+        super().__init__(maskTool)
+        self.config = config
+        self.running = False
+
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
+
+        row = 0
+        self.spinColor = QtWidgets.QDoubleSpinBox()
+        self.spinColor.setRange(0.0, 1.0)
+        self.spinColor.setSingleStep(0.1)
+        self.spinColor.setValue(1.0)
+        layout.addWidget(QtWidgets.QLabel("Color:"), row, 0)
+        layout.addWidget(self.spinColor, row, 1)
+
+        self.setLayout(layout)
+
+    @override
+    def onMousePress(self, pos, pressure: float, alt=False):
+        if self.running:
+            return
+        self.running = True
+
+        imgPath = self.maskTool._imgview.image.filepath
+        color = self.spinColor.value()
+
+        task = MaskTask("mask", self.maskItem, self.config, imgPath, color)
+        task.signals.done.connect(self.onDone)
+        task.signals.fail.connect(self.onFail)
+
+        from infer import Inference
+        Inference().queueTask(task)
+        self.maskTool.tab.statusBar().showMessage("Generating segmentation mask...", 0)
+
+        # Store layers so result can be loaded when image is changed
+        self.maskTool.setEdited()
+
+    @Slot()
+    def onDone(self, maskItem, imgPath: str, color: float, maskBytes):
+        self.running = False
+
+        mask = maskItem.toNumpy()
+        h, w = mask.shape
+
+        result = np.frombuffer(maskBytes, dtype=np.uint8)
+        result.shape = (h, w)
+
+        if color < 0.9999:
+            resultFloat = result.astype(np.float32)
+            resultFloat *= color
+            result = resultFloat.astype(np.uint8)
+
+        np.maximum(mask, result, out=mask)
+        maskItem.fromNumpy(mask)
+
+        historyTitle = f"Segmentation ({color:.2f})"
+        if maskItem == self.maskItem:
+            self.maskTool.setEdited()
+            self.maskTool._toolbar.addHistory(historyTitle, mask)
+        else:
+            maskItem.addHistory(historyTitle, mask)
+        
+        self.maskTool.tab.statusBar().showColoredMessage("Segmentation finished", True)
+
+    @Slot()
+    def onFail(self, msg: str):
+        self.running = False
+        self.maskTool.tab.statusBar().showColoredMessage(f"Segmentation failed: {msg}", False, 0)
+        print(msg)
+
+
+class MaskTask(QRunnable):
+    class Signals(QObject):
+        done = Signal(object, str, float, object)
+        fail = Signal(str)
+    
+    def __init__(self, funcName: str, maskItem, config: dict, imgPath: str, color: float):
+        super().__init__()
+        self.signals  = self.Signals()
+        self.funcName = funcName
+        self.maskItem = maskItem
+        self.config   = config
+        self.imgPath  = imgPath
+        self.color    = color
+
+    @Slot()
+    def run(self):
+        try:
+            from infer import Inference
+            inferProc = Inference().proc
+            inferProc.start()
+
+            func = getattr(inferProc, self.funcName)
+            result = func(self.config, self.imgPath)
+            self.signals.done.emit(self.maskItem, self.imgPath, self.color, result)
+        except Exception as ex:
+            import traceback
+            traceback.print_exc()
+            self.signals.fail.emit(str(ex))

@@ -31,3 +31,10 @@ pandas
 timm
 sentencepiece
 einops
+
+# YOLO
+ultralytics
+onnx
+
+# BriaAI RMBG
+kornia
