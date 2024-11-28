@@ -377,7 +377,7 @@ class ScaleMode(QtWidgets.QWidget):
         
 
     @property
-    def targetSize(self):
+    def targetSize(self) -> tuple[int, int]:
         raise NotImplementedError()
 
     @Slot()
@@ -551,8 +551,8 @@ class FixedSideScaleMode(ScaleMode):
     @Slot()
     def updateSize(self):
         w, h = self.targetSize
-        self.lblWidth.setText(f"{w:.1f} px")
-        self.lblHeight.setText(f"{h:.1f} px")
+        self.lblWidth.setText(f"{w} px")
+        self.lblHeight.setText(f"{h} px")
         super().updateSize()
 
     def applySizePreset(self, w: int, h: int):
@@ -604,8 +604,8 @@ class FactorScaleMode(ScaleMode):
     @Slot()
     def updateSize(self):
         w, h = self.targetSize
-        self.lblWidth.setText(f"{w:.1f} px")
-        self.lblHeight.setText(f"{h:.1f} px")
+        self.lblWidth.setText(f"{w} px")
+        self.lblHeight.setText(f"{h} px")
         super().updateSize()
 
 
@@ -653,8 +653,8 @@ class PixelCountScaleMode(ScaleMode):
     @Slot()
     def updateSize(self):
         w, h = self.targetSize
-        self.lblWidth.setText(f"{w:.1f} px")
-        self.lblHeight.setText(f"{h:.1f} px")
+        self.lblWidth.setText(f"{w} px")
+        self.lblHeight.setText(f"{h} px")
         super().updateSize()
 
 
@@ -747,6 +747,6 @@ class QuantizedScaleMode(ScaleMode):
     def updateSize(self):
         w, h = self.targetSize
         q = max(self.spinQuant.value(), 1)
-        self.lblWidth.setText(f"{w:.1f} px   ({int(w/q)} x Q)")
-        self.lblHeight.setText(f"{h:.1f} px   ({int(h/q)} x Q)")
+        self.lblWidth.setText(f"{w} px   ({int(w/q)} x Q)")
+        self.lblHeight.setText(f"{h} px   ({int(h/q)} x Q)")
         super().updateSize()
