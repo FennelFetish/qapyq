@@ -1,17 +1,28 @@
+from typing import Callable
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject, QThreadPool, QBuffer, QSignalBlocker
 import cv2 as cv
 import numpy as np
 from config import Config
 from .view import ViewTool
-from ui.export_settings import ExportWidget
+import ui.export_settings as export
 from lib.filelist import DataKeys
+
+
+class Size:
+    def __init__(self, w, h):
+        self.w, self.h = w, h
 
 
 class ScaleTool(ViewTool):
     def __init__(self, tab):
         super().__init__(tab)
         self._toolbar = ScaleToolBar(self)
+
+    def imgSize(self) -> Size | None:
+        if pixmap := self._imgview.image.pixmap():
+            return Size(pixmap.width(), pixmap.height())
+        return None
 
     @Slot()
     def exportImage(self):
@@ -92,7 +103,7 @@ class ScaleToolBar(QtWidgets.QToolBar):
     def __init__(self, scaleTool):
         super().__init__("Scale")
         self.scaleTool: ScaleTool = scaleTool
-        self.exportWidget = ExportWidget("scale", scaleTool.tab.filelist)
+        self.exportWidget = export.ExportWidget("scale", scaleTool.tab.filelist)
         self.selectedScaleMode: ScaleMode = None
 
         layout = QtWidgets.QVBoxLayout()
@@ -115,22 +126,22 @@ class ScaleToolBar(QtWidgets.QToolBar):
         if not self.selectedScaleMode:
             self.onScaleModeChanged(self.cboScaleMode.currentIndex())
 
-
     def _buildTargetSize(self):
-        self.scaleModelayout = QtWidgets.QVBoxLayout()
-        self.scaleModelayout.setContentsMargins(1, 1, 1, 1)
+        self.scaleModeLayout = QtWidgets.QVBoxLayout()
+        self.scaleModeLayout.setContentsMargins(1, 1, 1, 1)
 
+        sizeFunc = self.scaleTool.imgSize
         self.scaleModes = {
-            "fixed":         FixedScaleMode(self.scaleTool),
-            "fixed_width":   FixedWidthScaleMode(self.scaleTool),
-            "fixed_height":  FixedHeightScaleMode(self.scaleTool),
-            "fixed_smaller": FixedSideScaleMode(self.scaleTool, False),
-            "fixed_larger":  FixedSideScaleMode(self.scaleTool, True),
-            "factor":        FactorScaleMode(self.scaleTool),
-            "pixel_count":   PixelCountScaleMode(self.scaleTool),
-            "quant_closest": QuantizedScaleMode(self.scaleTool, QuantizedScaleMode.CLOSEST),
-            "quant_wider":   QuantizedScaleMode(self.scaleTool, QuantizedScaleMode.WIDER),
-            "quant_taller":  QuantizedScaleMode(self.scaleTool, QuantizedScaleMode.TALLER),
+            "fixed":         FixedScaleMode(sizeFunc),
+            "fixed_width":   FixedWidthScaleMode(sizeFunc),
+            "fixed_height":  FixedHeightScaleMode(sizeFunc),
+            "fixed_smaller": FixedSideScaleMode(sizeFunc, False),
+            "fixed_larger":  FixedSideScaleMode(sizeFunc, True),
+            "factor":        FactorScaleMode(sizeFunc),
+            "pixel_count":   PixelCountScaleMode(sizeFunc),
+            "quant_closest": QuantizedScaleMode(sizeFunc, QuantizedScaleMode.CLOSEST),
+            "quant_wider":   QuantizedScaleMode(sizeFunc, QuantizedScaleMode.WIDER),
+            "quant_taller":  QuantizedScaleMode(sizeFunc, QuantizedScaleMode.TALLER),
         }
 
         self.cboScaleMode = QtWidgets.QComboBox()
@@ -145,11 +156,12 @@ class ScaleToolBar(QtWidgets.QToolBar):
         self.cboScaleMode.addItem("Quantized Closest", "quant_closest")
         self.cboScaleMode.addItem("Quantized Wider", "quant_wider")
         self.cboScaleMode.addItem("Quantized Taller", "quant_taller")
+        #self.cboScaleMode.addItem("Quantized Crop", "quant_crop")
         self.cboScaleMode.currentIndexChanged.connect(self.onScaleModeChanged)
-        self.scaleModelayout.addWidget(self.cboScaleMode)
+        self.scaleModeLayout.addWidget(self.cboScaleMode)
 
         group = QtWidgets.QGroupBox("Target Size")
-        group.setLayout(self.scaleModelayout)
+        group.setLayout(self.scaleModeLayout)
         return group
 
     def _buildRotation(self):
@@ -188,7 +200,7 @@ class ScaleToolBar(QtWidgets.QToolBar):
     @Slot()
     def onScaleModeChanged(self, index):
         if self.selectedScaleMode:
-            self.scaleModelayout.removeWidget(self.selectedScaleMode)
+            self.scaleModeLayout.removeWidget(self.selectedScaleMode)
             self.selectedScaleMode.hide()
             self.selectedScaleMode.sizeChanged.disconnect(self.updateExport)
 
@@ -198,7 +210,7 @@ class ScaleToolBar(QtWidgets.QToolBar):
         
         self.selectedScaleMode = self.scaleModes[modeKey]
         self.selectedScaleMode.sizeChanged.connect(self.updateExport)
-        self.scaleModelayout.addWidget(self.selectedScaleMode)
+        self.scaleModeLayout.addWidget(self.selectedScaleMode)
         self.selectedScaleMode.show()
         self.selectedScaleMode.updateSize()
 
@@ -314,7 +326,7 @@ class ScaledExportTask(QRunnable):
             matSrc  = self.toCvMat(self.img)
             matDest = cv.warpAffine(src=matSrc, M=matrix, dsize=dsize, flags=self.interp, borderMode=self.border)
 
-            ExportWidget.createFolders(self.destFile)
+            export.createFolders(self.destFile)
             cv.imwrite(self.destFile, matDest, self.saveParams)
             self.signals.done.emit(self.srcFile, self.destFile)
 
@@ -364,9 +376,9 @@ class ScaledExportTask(QRunnable):
 class ScaleMode(QtWidgets.QWidget):
     sizeChanged = Signal(int, int)
 
-    def __init__(self, scaleTool):
+    def __init__(self, sizeFunc: Callable[[], Size | None]):
         super().__init__(None)
-        self.scaleTool = scaleTool
+        self.sizeFunc = sizeFunc
 
         self.lblTargetAspect = QtWidgets.QLabel()
         self.lblScale = QtWidgets.QLabel("1.0")
@@ -374,11 +386,17 @@ class ScaleMode(QtWidgets.QWidget):
         self.cboSizePresets = QtWidgets.QComboBox()
         self.cboSizePresets.addItems([""] + Config.cropSizePresets)
         self.cboSizePresets.currentTextChanged.connect(self._onSizePresetChosen)
-        
+
+
+    def getScaleFunc(self) -> Callable[[int, int], tuple[int, int]]:
+        raise NotImplementedError()
 
     @property
     def targetSize(self) -> tuple[int, int]:
-        raise NotImplementedError()
+        if imgSize := self.sizeFunc():
+            return self.getScaleFunc()(imgSize.w, imgSize.h)
+        else:
+            return (1, 1)
 
     @Slot()
     def updateSize(self):
@@ -390,8 +408,8 @@ class ScaleMode(QtWidgets.QWidget):
 
         # Compare area (this also works for the "fixed" mode which may change aspect ratio)
         scale = 0.0
-        if pixmap := self.scaleTool._imgview.image.pixmap():
-            scale = (w*h) / (pixmap.width()*pixmap.height())
+        if imgSize := self.sizeFunc():
+            scale = (w*h) / (imgSize.w * imgSize.h)
             scale = np.sqrt(scale)
         
         if scale > 1.0:
@@ -419,8 +437,8 @@ class ScaleMode(QtWidgets.QWidget):
 
 
 class FixedScaleMode(ScaleMode):
-    def __init__(self, scaleTool, displayAspectRatio=True):
-        super().__init__(scaleTool)
+    def __init__(self, sizeFunc: Callable[[], Size | None], displayAspectRatio=True):
+        super().__init__(sizeFunc)
 
         layout = QtWidgets.QFormLayout()
         layout.setContentsMargins(0, 0, 0, 0)
@@ -451,10 +469,11 @@ class FixedScaleMode(ScaleMode):
 
         self.setLayout(layout)
 
-
-    @property
-    def targetSize(self):
-        return (self.spinW.value(), self.spinH.value())
+    def getScaleFunc(self):
+        w, h = self.spinW.value(), self.spinH.value()
+        def func(imgWidth: int, imgHeight: int):
+            return (w, h)
+        return func
 
     def applySizePreset(self, w: int, h: int):
         self.spinW.setValue(int(w))
@@ -462,40 +481,53 @@ class FixedScaleMode(ScaleMode):
 
 
 class FixedWidthScaleMode(FixedScaleMode):
-    def __init__(self, scaleTool):
-        super().__init__(scaleTool, False)
+    def __init__(self, sizeFunc):
+        super().__init__(sizeFunc, False)
         self.spinH.setEnabled(False)
+
+    def getScaleFunc(self):
+        w = self.spinW.value()
+        def func(imgWidth: int, imgHeight: int):
+            scale = w / imgWidth
+            h = scale * imgHeight
+            return (w, round(h))
+        return func
 
     @Slot()
     def updateSize(self):
-        if pixmap := self.scaleTool._imgview.image.pixmap():
-            w = self.spinW.value()
-            scale = w / pixmap.width()
-            h = pixmap.height() * scale
-            self.spinH.setValue(round(h))
+        if imgSize := self.sizeFunc():
+            w, h = self.getScaleFunc()(imgSize.w, imgSize.h)
+            self.spinH.setValue(h)
         super().updateSize()
 
 class FixedHeightScaleMode(FixedScaleMode):
-    def __init__(self, scaleTool):
-        super().__init__(scaleTool, False)
+    def __init__(self, sizeFunc):
+        super().__init__(sizeFunc, False)
         self.spinW.setEnabled(False)
+
+    def getScaleFunc(self):
+        h = self.spinH.value()
+        def func(imgWidth: int, imgHeight: int):
+            scale = h / imgHeight
+            w = scale * imgWidth
+            return (round(w), h)
+        return func
 
     @Slot()
     def updateSize(self):
-        if pixmap := self.scaleTool._imgview.image.pixmap():
-            h = self.spinH.value()
-            scale = h / pixmap.height()
-            w = pixmap.width() * scale
-            self.spinW.setValue(round(w))
+        if imgSize := self.sizeFunc():
+            w, h = self.getScaleFunc()(imgSize.w, imgSize.h)
+            self.spinW.setValue(w)
         super().updateSize()
 
 
 class FixedSideScaleMode(ScaleMode):
-    def __init__(self, scaleTool, largerSide: bool):
-        super().__init__(scaleTool)
+    def __init__(self, sizeFunc, largerSide: bool):
+        super().__init__(sizeFunc)
         self.largerSide = largerSide
 
         layout = QtWidgets.QGridLayout()
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 1)
         layout.setColumnStretch(2, 1)
@@ -524,29 +556,28 @@ class FixedSideScaleMode(ScaleMode):
 
         self.setLayout(layout)
 
-    @property
-    def targetSize(self):
-        pixmap = self.scaleTool._imgview.image.pixmap()
-        if not pixmap:
-            return (1, 1)
-        imgW, imgH = pixmap.width(), pixmap.height()
-
+    def getScaleFunc(self):
         sideLength = self.spinSideLength.value()
+
         if self.largerSide:
-            if imgW > imgH:
-                h = imgH * (sideLength / imgW)
-                return (sideLength, round(h))
-            else:
-                w = imgW * (sideLength / imgH)
-                return (round(w), sideLength)
+            def func(imgWidth: int, imgHeight: int):
+                if imgWidth > imgHeight:
+                    h = imgHeight * (sideLength / imgWidth)
+                    return (sideLength, round(h))
+                else:
+                    w = imgWidth * (sideLength / imgHeight)
+                    return (round(w), sideLength)
         
-        else:
-            if imgW < imgH:
-                h = imgH * (sideLength / imgW)
-                return (sideLength, round(h))
-            else:
-                w = imgW * (sideLength / imgH)
-                return (round(w), sideLength)
+        else: # fixed smaller side
+            def func(imgWidth: int, imgHeight: int):
+                if imgWidth < imgHeight:
+                    h = imgHeight * (sideLength / imgWidth)
+                    return (sideLength, round(h))
+                else:
+                    w = imgWidth * (sideLength / imgHeight)
+                    return (round(w), sideLength)
+        
+        return func
 
     @Slot()
     def updateSize(self):
@@ -560,10 +591,11 @@ class FixedSideScaleMode(ScaleMode):
 
 
 class FactorScaleMode(ScaleMode):
-    def __init__(self, scaleTool):
-        super().__init__(scaleTool)
+    def __init__(self, sizeFunc):
+        super().__init__(sizeFunc)
 
         layout = QtWidgets.QGridLayout()
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 1)
         layout.setColumnStretch(2, 1)
@@ -590,16 +622,12 @@ class FactorScaleMode(ScaleMode):
 
         self.setLayout(layout)
 
-    @property
-    def targetSize(self):
-        pixmap = self.scaleTool._imgview.image.pixmap()
-        if not pixmap:
-            return (1, 1)
-        imgW, imgH = pixmap.width(), pixmap.height()
-
-        # TODO: Quantized to 1 with closest aspect ratio would be a bit more accurate
+    def getScaleFunc(self):
         scale = round(self.spinFactor.value(), 3)
-        return (round(scale*imgW), round(scale*imgH))
+        def func(imgWidth: int, imgHeight: int):
+            # TODO: Quantized to 1 with closest aspect ratio would be a bit more accurate
+            return (round(scale*imgWidth), round(scale*imgHeight))
+        return func
 
     @Slot()
     def updateSize(self):
@@ -610,10 +638,11 @@ class FactorScaleMode(ScaleMode):
 
 
 class PixelCountScaleMode(ScaleMode):
-    def __init__(self, scaleTool):
-        super().__init__(scaleTool)
+    def __init__(self, sizeFunc):
+        super().__init__(sizeFunc)
 
         layout = QtWidgets.QGridLayout()
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 1)
         layout.setColumnStretch(2, 1)
@@ -628,31 +657,35 @@ class PixelCountScaleMode(ScaleMode):
         layout.addWidget(QtWidgets.QLabel("px:"), 0, 0)
         layout.addWidget(self.spinPixelCount, 0, 1, 1, 2)
 
+        # TODO: Make this a spin box
+        self.lblMegaPx = QtWidgets.QLabel()
+        layout.addWidget(QtWidgets.QLabel("MP:"), 1, 0)
+        layout.addWidget(self.lblMegaPx, 1, 1, 1, 2)
+
         self.lblWidth = QtWidgets.QLabel()
-        layout.addWidget(QtWidgets.QLabel("W:"), 1, 0)
-        layout.addWidget(self.lblWidth, 1, 1)
-        layout.addWidget(self.lblScale, 1, 2)
+        layout.addWidget(QtWidgets.QLabel("W:"), 2, 0)
+        layout.addWidget(self.lblWidth, 2, 1)
+        layout.addWidget(self.lblScale, 2, 2)
 
         self.lblHeight = QtWidgets.QLabel()
-        layout.addWidget(QtWidgets.QLabel("H:"), 2, 0)
-        layout.addWidget(self.lblHeight, 2, 1)
+        layout.addWidget(QtWidgets.QLabel("H:"), 3, 0)
+        layout.addWidget(self.lblHeight, 3, 1)
 
         self.setLayout(layout)
 
-    @property
-    def targetSize(self):
-        pixmap = self.scaleTool._imgview.image.pixmap()
-        if not pixmap:
-            return (1, 1)
-        imgW, imgH = pixmap.width(), pixmap.height()
-
-        scale = self.spinPixelCount.value() / (imgW * imgH)
-        scale = np.sqrt(scale)
-        return (round(scale*imgW), round(scale*imgH))
+    def getScaleFunc(self):
+        pixelCount = self.spinPixelCount.value()
+        def func(imgWidth: int, imgHeight: int):
+            scale = pixelCount / (imgWidth * imgHeight)
+            scale = np.sqrt(scale)
+            return (round(scale*imgWidth), round(scale*imgHeight))
+        return func
 
     @Slot()
     def updateSize(self):
         w, h = self.targetSize
+        megaPx = (w*h) / 1000000
+        self.lblMegaPx.setText(f"{megaPx:.3f}")
         self.lblWidth.setText(f"{w} px")
         self.lblHeight.setText(f"{h} px")
         super().updateSize()
@@ -663,11 +696,12 @@ class QuantizedScaleMode(ScaleMode):
     TALLER  = 1
     WIDER   = 2
 
-    def __init__(self, scaleTool, mode):
-        super().__init__(scaleTool)
+    def __init__(self, sizeFunc, mode):
+        super().__init__(sizeFunc)
         self.mode = mode
 
         layout = QtWidgets.QGridLayout()
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 1)
         layout.setColumnStretch(2, 1)
@@ -705,43 +739,40 @@ class QuantizedScaleMode(ScaleMode):
 
         self.setLayout(layout)
 
-    @property
-    def targetSize(self):
-        pixmap = self.scaleTool._imgview.image.pixmap()
-        if not pixmap:
-            return (1, 1)
-        imgW, imgH = pixmap.width(), pixmap.height()
-
+    def getScaleFunc(self):
+        mode = self.mode
         scale = round(self.spinFactor.value(), 3)
         quant = max(self.spinQuant.value(), 1)
 
-        wq = max(imgW * scale / quant, 1)
-        hq = max(imgH * scale / quant, 1)
+        def func(imgWidth: int, imgHeight: int):
+            wq = max(imgWidth * scale / quant, 1)
+            hq = max(imgHeight * scale / quant, 1)
 
-        wUp, wDn = int(np.ceil(wq)*quant), int(np.floor(wq)*quant)
-        hUp, hDn = int(np.ceil(hq)*quant), int(np.floor(hq)*quant)
+            wUp, wDn = int(np.ceil(wq)*quant), int(np.floor(wq)*quant)
+            hUp, hDn = int(np.ceil(hq)*quant), int(np.floor(hq)*quant)
+            
+            # (width, height, aspect ratio)
+            points = [
+                (wDn, hDn, wDn/hDn),
+                (wUp, hDn, wUp/hDn),
+                (wDn, hUp, wDn/hUp),
+                (wUp, hUp, wUp/hUp)
+            ]
+
+            aspect = imgWidth / imgHeight
+            # TODO: Also sort by target size
+            # [(192, 192, 1.0), (288, 192, 1.5), (192, 288, 0.6666666666666666), (288, 288, 1.0)]  << here, 288x288 should be chosen for a 256^2 input image?
+            points.sort(key=lambda p: abs(p[2]-aspect))
+
+            selectedPoint = points[0] # Size with closest aspect ratio
+            if mode == QuantizedScaleMode.WIDER:
+                selectedPoint = next((p for p in points if p[2] >= aspect), selectedPoint)
+            elif mode == QuantizedScaleMode.TALLER:
+                selectedPoint = next((p for p in points if p[2] <= aspect), selectedPoint)
+            
+            return selectedPoint[:2]
         
-        # (width, height, aspect ratio)
-        points = [
-            (wDn, hDn, wDn/hDn),
-            (wUp, hDn, wUp/hDn),
-            (wDn, hUp, wDn/hUp),
-            (wUp, hUp, wUp/hUp)
-        ]
-
-        aspect = imgW / imgH
-        # TODO: Also sort by target size
-        # [(192, 192, 1.0), (288, 192, 1.5), (192, 288, 0.6666666666666666), (288, 288, 1.0)]  << here, 288x288 should be chosen for a 256^2 input image?
-        points.sort(key=lambda p: abs(p[2]-aspect))
-
-        selectedPoint = points[0] # Size with closest aspect ratio
-        if self.mode == self.WIDER:
-            selectedPoint = next((p for p in points if p[2] >= aspect), selectedPoint)
-        elif self.mode == self.TALLER:
-            selectedPoint = next((p for p in points if p[2] <= aspect), selectedPoint)
-        
-        return selectedPoint[:2]
-
+        return func
 
     @Slot()
     def updateSize(self):

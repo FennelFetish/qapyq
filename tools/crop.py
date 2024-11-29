@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem
 from .crop_toolbar import CropToolBar
 from .view import ViewTool
 from lib.filelist import DataKeys
-from ui.export_settings import ExportWidget
+import ui.export_settings as export
 from config import Config
 
 
@@ -347,7 +347,7 @@ class ExportTask(QRunnable):
             matSrc  = self.toCvMat(self.img)
             matDest = cv.warpAffine(src=matSrc, M=matrix, dsize=dsize, flags=self.interp, borderMode=self.border)
 
-            ExportWidget.createFolders(self.destFile)
+            export.createFolders(self.destFile)
             cv.imwrite(self.destFile, matDest, self.saveParams)
             self.signals.done.emit(self.srcFile, self.destFile)
 

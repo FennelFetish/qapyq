@@ -23,6 +23,13 @@ SAVE_PARAMS = {
 }
 
 
+def createFolders(filename, logger=print) -> None:
+    folder = os.path.dirname(filename)
+    if not os.path.exists(folder):
+        logger(f"Creating folder: {folder}")
+        os.makedirs(folder)
+
+
 class ExportWidget(QtWidgets.QWidget):
     MODE_AUTO = "auto"
     MODE_MANUAL = "manual"
@@ -40,8 +47,6 @@ class ExportWidget(QtWidgets.QWidget):
         self._extension = "png"
 
         self.parser = ExportVariableParser()
-        self.parser.stripAround = False
-        self.parser.stripMultiWhitespace = False
 
         self._build()
         self._onSaveModeChanged(self.cboSaveMode.currentIndex())
@@ -123,10 +128,10 @@ class ExportWidget(QtWidgets.QWidget):
 
     @Slot()
     def openExportSettings(self):
-        win = ExportSettingsWindow(self, self.parser, self.pathTemplate, self.overwriteFiles)
+        win = PathSettingsWindow(self, self.parser, self.pathTemplate, self.overwriteFiles)
         if win.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            self.pathTemplate = win.pathTemplate
-            self.overwriteFiles = win.overwriteFiles
+            self.pathTemplate   = win.pathSettings.pathTemplate
+            self.overwriteFiles = win.pathSettings.overwriteFiles
             self.saveToPreset()
             self.updateSample()
 
@@ -198,34 +203,12 @@ class ExportWidget(QtWidgets.QWidget):
         return path
     
     def getAutoExportPath(self, imgFile) -> str:
-        self.parser.setup(imgFile, None)
-
-        path = self.parser.parse(self.pathTemplate)
-        path = path.replace('\n', '').replace('\r', '')
-        path = os.path.abspath(path)
-
-        if self.overwriteFiles:
-            path = f"{path}.{self._extension}"
-        else:
-            head = path
-            path = f"{head}.{self._extension}"
-            counter = 1
-            while os.path.exists(path):
-                path = f"{head}_{counter:03}.{self._extension}"
-                counter += 1
-        
-        return path
-
-    @staticmethod
-    def createFolders(filename) -> None:
-        folder = os.path.dirname(filename)
-        if not os.path.exists(folder):
-            print(f"Creating folder: {folder}")
-            os.makedirs(folder)
+        self.parser.setup(imgFile)
+        return self.parser.parsePath(self.pathTemplate, self._extension, self.overwriteFiles)
 
 
 
-class ExportSettingsWindow(QtWidgets.QDialog):
+class PathSettings(QtWidgets.QWidget):
     INFO = """Available variables in path template:
     {{path}}      Image path
     {{path.ext}}  Image path with extension
@@ -247,23 +230,19 @@ Examples:
     /home/user/Pictures/{{folder}}/{{date}}_{{time}}_{{w}}x{{h}}"""
 
 
-    def __init__(self, parent: ExportWidget, parser, pathTemplate: str, overwriteFiles: bool) -> None:
-        super().__init__(parent)
-        self.pathTemplate = pathTemplate
-        self.overwriteFiles = overwriteFiles
-        
+    def __init__(self, parser) -> None:
+        super().__init__()
+        self._extension = "ext"
+
         self.parser: ExportVariableParser = parser
         self.highlighter = template_parser.VariableHighlighter()
 
-        self.setWindowModality(Qt.WindowModality.WindowModal)
-        self.setWindowTitle("Setup Export Path")
-        self.resize(800, 500)
-
         self._build()
-        self._updatePreview()
+        self.updatePreview()
 
     def _build(self):
         layout = QtWidgets.QGridLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 1)
         layout.setColumnStretch(2, 1)
@@ -276,8 +255,8 @@ Examples:
         layout.addWidget(txtInfo, 0, 0, 1, 4)
 
         row += 1
-        self.txtPathTemplate = QtWidgets.QPlainTextEdit(self.pathTemplate)
-        self.txtPathTemplate.textChanged.connect(self._updatePreview)
+        self.txtPathTemplate = QtWidgets.QPlainTextEdit()
+        self.txtPathTemplate.textChanged.connect(self.updatePreview)
         qtlib.setMonospace(self.txtPathTemplate)
         qtlib.setShowWhitespace(self.txtPathTemplate)
         qtlib.setTextEditHeight(self.txtPathTemplate, 1)
@@ -300,17 +279,36 @@ Examples:
         row += 1
         self.chkOverwrite = QtWidgets.QCheckBox("Overwrite existing files")
         self.chkOverwrite.toggled.connect(self._onOverwriteToggled)
-        self.chkOverwrite.setChecked(self.overwriteFiles)
+        self.chkOverwrite.setChecked(False)
         layout.addWidget(self.chkOverwrite, row, 1)
 
-        row += 1
-        btnCancel = QtWidgets.QPushButton("Cancel")
-        btnCancel.clicked.connect(self.reject)
-        layout.addWidget(btnCancel, row, 0, 1, 2)
 
-        btnApply = QtWidgets.QPushButton("Apply")
-        btnApply.clicked.connect(self.accept)
-        layout.addWidget(btnApply, row, 2, 1, 2)
+    @property
+    def extension(self) -> str:
+        return self._extension
+
+    @extension.setter
+    def extension(self, ext: str):
+        self._extension = ext.lstrip(".").lower()
+
+
+    @property
+    def pathTemplate(self) -> str:
+        template = self.txtPathTemplate.toPlainText()
+        return template.replace('\n', '').replace('\r', '')
+    
+    @pathTemplate.setter
+    def pathTemplate(self, template: str):
+        self.txtPathTemplate.setPlainText(template)
+
+
+    @property
+    def overwriteFiles(self) -> bool:
+        return self.chkOverwrite.isChecked()
+
+    @overwriteFiles.setter
+    def overwriteFiles(self, overwrite: bool):
+        self.chkOverwrite.setChecked(overwrite)
 
 
     @Slot()
@@ -319,22 +317,24 @@ Examples:
         self.chkOverwrite.setStyleSheet(style)
 
     @Slot()
-    def _updatePreview(self):
+    def updatePreview(self):
         text = self.txtPathTemplate.toPlainText()
         textLen = len(text)
         text = text.replace('\n', '').replace('\r', '')
 
         with QSignalBlocker(self.txtPathTemplate):
-            if len(text) != textLen:
+            # When newlines are pasted and removed, put text cursor at end of pasted text.
+            lenDiff = textLen - len(text)
+            if lenDiff != 0:
                 cursor = self.txtPathTemplate.textCursor()
-                cursorPos = cursor.position()-1
+                cursorPos = cursor.position() - lenDiff
                 self.txtPathTemplate.setPlainText(text)
                 cursor.setPosition(cursorPos)
                 self.txtPathTemplate.setTextCursor(cursor)
 
             text, varPositions = self.parser.parseWithPositions(text)
             text = os.path.abspath(text) # FIXME: abspath() messes with variable positions
-            self.txtPreview.setPlainText(text + ".ext")
+            self.txtPreview.setPlainText(text + f".{self._extension}")
             self.highlighter.highlight(self.txtPathTemplate, self.txtPreview, varPositions)
 
     def _choosePath(self):
@@ -354,21 +354,62 @@ Examples:
         if path:
             self.txtPathTemplate.setPlainText(os.path.join(path, tail))
 
-    @override
-    def accept(self) -> None:
-        self.pathTemplate = self.txtPathTemplate.toPlainText()
-        self.pathTemplate = self.pathTemplate.replace('\n', '').replace('\r', '')
-        self.overwriteFiles = self.chkOverwrite.isChecked()
-        super().accept()
+
+
+class PathSettingsWindow(QtWidgets.QDialog):
+    def __init__(self, parent, parser, pathTemplate: str, overwriteFiles: bool) -> None:
+        super().__init__(parent)
+        self.pathSettings = PathSettings(parser)
+        self.pathSettings.pathTemplate   = pathTemplate
+        self.pathSettings.overwriteFiles = overwriteFiles
+
+        self._build(self.pathSettings)
+
+        self.setWindowModality(Qt.WindowModality.WindowModal)
+        self.setWindowTitle("Setup Export Path")
+        self.resize(800, 500)
+
+    def _build(self, exportSettings):
+        layout = QtWidgets.QGridLayout(self)
+        layout.addWidget(exportSettings, 0, 0, 1, 2)
+
+        row = 1
+        btnCancel = QtWidgets.QPushButton("Cancel")
+        btnCancel.clicked.connect(self.reject)
+        layout.addWidget(btnCancel, row, 0)
+
+        btnApply = QtWidgets.QPushButton("Apply")
+        btnApply.clicked.connect(self.accept)
+        layout.addWidget(btnApply, row, 1)
+
+        self.setLayout(layout)
 
 
 
 class ExportVariableParser(template_parser.TemplateVariableParser):
     def __init__(self, imgPath: str = None):
         super().__init__(imgPath)
-        self.width = 0
+        self.stripAround = False
+        self.stripMultiWhitespace = False
+        self.width  = 0
         self.height = 0
 
+    def parsePath(self, pathTemplate: str, extension: str, overwriteFiles: bool) -> str:
+        path = self.parse(pathTemplate)
+        path = path.replace('\n', '').replace('\r', '')
+        path = os.path.abspath(path)
+
+        if overwriteFiles:
+            path = f"{path}.{extension}"
+        else:
+            head = path
+            path = f"{head}.{extension}"
+            counter = 1
+            while os.path.exists(path):
+                path = f"{head}_{counter:03}.{extension}"
+                counter += 1
+
+        return path
 
     @override
     def _getImgProperties(self, var: str) -> str | None:

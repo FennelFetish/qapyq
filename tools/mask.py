@@ -7,7 +7,7 @@ from PySide6 import QtWidgets
 import cv2 as cv
 import numpy as np
 from lib.filelist import DataKeys
-from ui.export_settings import ExportWidget
+import ui.export_settings as export
 from config import Config
 from infer.model_settings import ModelSettingsWindow
 from .view import ViewTool
@@ -522,7 +522,7 @@ class MaskToolBar(QtWidgets.QToolBar):
         layout.addWidget(self._buildOps())
         layout.addWidget(self._buildHistory())
 
-        self.exportWidget = ExportWidget("mask", maskTool.tab.filelist, showInterpolation=False)
+        self.exportWidget = export.ExportWidget("mask", maskTool.tab.filelist, showInterpolation=False)
         layout.addWidget(self.exportWidget)
 
         btnExport = QtWidgets.QPushButton("Export")
@@ -758,7 +758,7 @@ class MaskExportTask(QRunnable):
     @Slot()
     def run(self):
         try:
-            ExportWidget.createFolders(self.destFile)
+            export.createFolders(self.destFile)
             cv.imwrite(self.destFile, self.mask, self.saveParams)
             self.signals.done.emit(self.srcFile, self.destFile)
         except Exception as ex:
