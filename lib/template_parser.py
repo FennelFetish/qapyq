@@ -8,7 +8,7 @@ from . import qtlib
 class TemplateVariableParser:
     def __init__(self, imgPath: str = None):
         self.imgPath: str = imgPath
-        self.captionFile: CaptionFile = None
+        self.captionFile: CaptionFile | None = None
 
         self.stripAround = True
         self.stripMultiWhitespace = True
@@ -24,7 +24,7 @@ class TemplateVariableParser:
         self.missingVars = list()
 
     
-    def setup(self, imgPath: str, captionFile: CaptionFile = None):
+    def setup(self, imgPath: str, captionFile: CaptionFile | None = None):
         self.imgPath = imgPath
         self.captionFile = captionFile
 
@@ -185,7 +185,7 @@ class TemplateVariableParser:
         
         if var.startswith("folder-"):
             try:
-                up = int(var[len("folder-"):])
+                up = int( var[len("folder-"):] )
                 path = os.path.dirname(self.imgPath)
                 for _ in range(up):
                     path = os.path.dirname(path)

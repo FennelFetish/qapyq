@@ -85,20 +85,18 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
         win.show()
         win.activateWindow()
 
-        if justOpened:
-            if configAttr == "inferCaptionPresets":
-                win.tabWidget.setCurrentIndex(0)
-                win.captionSettings.reloadPresetList(presetName)
-            elif configAttr == "inferTagPresets":
-                win.tabWidget.setCurrentIndex(1)
-                win.tagSettings.reloadPresetList(presetName)
-            elif configAttr == "inferLLMPresets":
-                win.tabWidget.setCurrentIndex(2)
-                win.llmSettings.reloadPresetList(presetName)
-            elif configAttr == "inferMaskPresets":
-                win.tabWidget.setCurrentIndex(3)
-                win.llmSettings.reloadPresetList(presetName)
+        if not justOpened:
+            return
+        
+        match configAttr:
+            case "inferCaptionPresets": index, widget = 0, win.captionSettings
+            case "inferTagPresets":     index, widget = 1, win.tagSettings
+            case "inferLLMPresets":     index, widget = 2, win.llmSettings
+            case "inferMaskPresets":    index, widget = 3, win.maskSettings
+            case _: return
 
+        win.tabWidget.setCurrentIndex(index)
+        widget.reloadPresetList(presetName)
 
     @classmethod
     def closeInstance(cls):
@@ -191,7 +189,7 @@ class BaseSettingsWidget(QtWidgets.QWidget):
         return self.cboBackend.currentData()[1]
 
 
-    def reloadPresetList(self, selectName: str = None) -> None:
+    def reloadPresetList(self, selectName: str | None = None) -> None:
         self.cboPreset.clear()
 
         presets: dict = getattr(Config, self.configAttr)
