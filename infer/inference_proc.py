@@ -81,6 +81,12 @@ class InferenceProcess(metaclass=Singleton):
 
     def setupLLM(self, config: dict):
         self._setup(config, "setup_llm", "currentLLMConfig")
+    
+    def setupMasking(self, config: dict):
+        self._query("cmd", {
+            "cmd": "setup_masking",
+            "config": config
+        })
 
     def _setup(self, config: dict, cmd: str, configAttr: str):
         try:

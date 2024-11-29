@@ -661,15 +661,20 @@ class DetectMaskOperation(MaskOperation):
         color = 0.0 if alt else self.spinColor.value()
 
         task = MaskTask("maskBoxes", self.maskTool.maskItem, self.config, imgPath, color)
+        task.signals.loaded.connect(self.onLoaded)
         task.signals.done.connect(self.onDone)
         task.signals.fail.connect(self.onFail)
 
         from infer import Inference
         Inference().queueTask(task)
-        self.maskTool.tab.statusBar().showMessage("Detecting boxes...", 0)
+        self.maskTool.tab.statusBar().showMessage("Loading detection model...", 0)
 
         # Store layers so result can be loaded when image is changed
         self.maskTool.setEdited()
+
+    @Slot()
+    def onLoaded(self):
+        self.maskTool.tab.statusBar().showMessage("Detecting boxes...", 0)
 
     @Slot()
     def onDone(self, maskItem, imgPath: str, color: float, boxes):
@@ -755,15 +760,20 @@ class SegmentMaskOperation(MaskOperation):
         color = self.spinColor.value()
 
         task = MaskTask("mask", self.maskItem, self.config, imgPath, color)
+        task.signals.loaded.connect(self.onLoaded)
         task.signals.done.connect(self.onDone)
         task.signals.fail.connect(self.onFail)
 
         from infer import Inference
         Inference().queueTask(task)
-        self.maskTool.tab.statusBar().showMessage("Generating segmentation mask...", 0)
+        self.maskTool.tab.statusBar().showMessage("Loading segmentation model...", 0)
 
         # Store layers so result can be loaded when image is changed
         self.maskTool.setEdited()
+
+    @Slot()
+    def onLoaded(self):
+        self.maskTool.tab.statusBar().showMessage("Generating segmentation mask...", 0)
 
     @Slot()
     def onDone(self, maskItem, imgPath: str, color: float, maskBytes):
@@ -801,6 +811,7 @@ class SegmentMaskOperation(MaskOperation):
 
 class MaskTask(QRunnable):
     class Signals(QObject):
+        loaded = Signal()
         done = Signal(object, str, float, object)
         fail = Signal(str)
     
@@ -819,6 +830,9 @@ class MaskTask(QRunnable):
             from infer import Inference
             inferProc = Inference().proc
             inferProc.start()
+
+            inferProc.setupMasking(self.config)
+            self.signals.loaded.emit()
 
             func = getattr(inferProc, self.funcName)
             result = func(self.config, self.imgPath)
