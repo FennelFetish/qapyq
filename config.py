@@ -5,6 +5,7 @@ class Config:
 
     # Paths
     pathConfig              = "./qapyq_config.json"
+    pathMaskMacros          = "./user/mask-macros/"
     pathExport              = "."
     pathDebugLoad           = ""
 

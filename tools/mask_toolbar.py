@@ -1,12 +1,13 @@
 from PySide6.QtCore import Slot, QSignalBlocker
 from PySide6 import QtWidgets
+import superqt
 import numpy as np
 import ui.export_settings as export
 from config import Config
 from infer.model_settings import ModelSettingsWindow
 from .mask import MaskTool, MaskItem
 from . import mask_ops
-import lib.mask_macro as macro
+from lib.mask_macro import MacroOpItem
 
 
 class MaskToolBar(QtWidgets.QToolBar):
@@ -99,6 +100,7 @@ class MaskToolBar(QtWidgets.QToolBar):
         self.opLayout.setContentsMargins(1, 1, 1, 1)
         self.opLayout.addLayout(shortcutLayout)
 
+        # TODO: Use Menu. Arrange macros so directory structure is reflected. Group detection/segmentation ops under submenu?
         self.cboOperation = QtWidgets.QComboBox()
         self.cboOperation.currentIndexChanged.connect(self.onOpChanged)
         self.opLayout.addWidget(self.cboOperation)
@@ -121,8 +123,11 @@ class MaskToolBar(QtWidgets.QToolBar):
             "fill": mask_ops.FillMaskOperation(self.maskTool),
             "clear": mask_ops.ClearMaskOperation(self.maskTool),
             "invert": mask_ops.InvertMaskOperation(self.maskTool),
+            "threshold": mask_ops.ThresholdMaskOperation(self.maskTool),
             "morph": mask_ops.MorphologyMaskOperation(self.maskTool),
             "blur_gauss": mask_ops.BlurMaskOperation(self.maskTool),
+            "blend_layers": mask_ops.BlendLayersMaskOperation(self.maskTool),
+            "macro": mask_ops.MacroMaskOperation(self.maskTool)
         }
 
         with QSignalBlocker(self.cboOperation):
@@ -135,27 +140,30 @@ class MaskToolBar(QtWidgets.QToolBar):
             self.cboOperation.addItem("Flood Fill", "fill")
             self.cboOperation.addItem("Clear", "clear")
             self.cboOperation.addItem("Invert", "invert")
+            self.cboOperation.addItem("Threshold", "threshold")
             self.cboOperation.addItem("Morphology", "morph")
             #self.cboOperation.addItem("Linear Gradient", "gradient_linear")
             self.cboOperation.addItem("Gaussian Blur", "blur_gauss")
+            self.cboOperation.addItem("Blend Layers", "blend_layers")
+            self.cboOperation.addItem("Run Macro", "macro")
             
-            for name, config in Config.inferMaskPresets.items():
-                self._buildCustomOp(name, config)
+            for preset, config in Config.inferMaskPresets.items():
+                self._buildCustomOp(preset, config)
 
             index = max(0, self.cboOperation.findData(selectedKey))
             self.cboOperation.setCurrentIndex(index)
             self.onOpChanged(index)
     
-    def _buildCustomOp(self, name: str, config: dict):
+    def _buildCustomOp(self, preset: str, config: dict):
         match config.get("backend"):
             case "yolo-detect":
-                key = f"detect {name}"
-                self.ops[key] = mask_ops.DetectMaskOperation(self.maskTool, config)
-                self.cboOperation.addItem(f"Detect: {name}", key)
+                key = f"detect {preset}"
+                self.ops[key] = mask_ops.DetectMaskOperation(self.maskTool, preset)
+                self.cboOperation.addItem(f"Detect: {preset}", key)
             case "bria-rmbg":
-                key = f"segment {name}"
-                self.ops[key] = mask_ops.SegmentMaskOperation(self.maskTool, config)
-                self.cboOperation.addItem(f"Segment: {name}", key)
+                key = f"segment {preset}"
+                self.ops[key] = mask_ops.SegmentMaskOperation(self.maskTool, preset)
+                self.cboOperation.addItem(f"Segment: {preset}", key)
 
     def _buildHistory(self):
         layout = QtWidgets.QGridLayout()
@@ -170,6 +178,11 @@ class MaskToolBar(QtWidgets.QToolBar):
         return group
 
     def _buildMacro(self):
+        collapsible = superqt.QCollapsible("Macro")
+        collapsible.layout().setContentsMargins(2, 2, 2, 0)
+        collapsible.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
+        collapsible.setLineWidth(0)
+
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(1, 1, 1, 1)
 
@@ -185,9 +198,14 @@ class MaskToolBar(QtWidgets.QToolBar):
         self.btnStartStopMacro.clicked.connect(self.startStopMacro)
         layout.addWidget(self.btnStartStopMacro)
 
-        group = QtWidgets.QGroupBox("Macro")
-        group.setLayout(layout)
-        return group
+        btnClearMacro = QtWidgets.QPushButton("Stop && Clear")
+        btnClearMacro.clicked.connect(self.clearMacro)
+        layout.addWidget(btnClearMacro)
+
+        widget = QtWidgets.QWidget()
+        widget.setLayout(layout)
+        collapsible.addWidget(widget)
+        return collapsible
 
 
     def setLayers(self, layers: list[MaskItem], selectedIndex: int):
@@ -201,11 +219,15 @@ class MaskToolBar(QtWidgets.QToolBar):
         self.btnAddLayer.setEnabled(numLayers < 4)
         self.layerGroup.setTitle(f"Layers ({numLayers})")
 
+        self.ops["blend_layers"].setLayers(layers)
+
     @Slot()
     def renameLayer(self, name: str):
         index = self.cboLayer.currentIndex()
         self.cboLayer.setItemText(index, name)
         self.cboLayer.itemData(index).name = name
+        
+        self.ops["blend_layers"].setLayers(self.maskTool.layers)
 
 
     def selectOp(self, key: str):
@@ -237,8 +259,8 @@ class MaskToolBar(QtWidgets.QToolBar):
             self.selectedOp.onEnabled(imgview)
 
 
-    def addHistory(self, title: str, imgData: np.ndarray | None = None):
-        self.maskTool.maskItem.addHistory(title, imgData)
+    def addHistory(self, title: str, imgData: np.ndarray | None = None, macroItem: MacroOpItem | None = None):
+        self.maskTool.maskItem.addHistory(title, imgData, macroItem)
         self.setHistory(self.maskTool.maskItem)
 
     def setHistory(self, maskItem: MaskItem):
@@ -260,12 +282,49 @@ class MaskToolBar(QtWidgets.QToolBar):
 
     @Slot()
     def startStopMacro(self):
-        # Stop recording
-        if self.maskTool.macro:
-            self.btnStartStopMacro.setText("Start Recording")
-            self.maskTool.macro = None
-        
-        # Start recording
+        # TODO: Maybe don't allow pausing macro recording.
+        #       Can weird things happen when layers are added/deleted/changed during pause?
+
+        if self.maskTool.macro.recording:
+            self.stopMacro()
         else:
-            self.btnStartStopMacro.setText("Stop Recording")
-            self.maskTool.macro = macro.MaskingMacro()
+            self.startMacro()
+
+    def startMacro(self):
+        macro = self.maskTool.macro
+        if not macro.recording:
+            macro.recording = True
+            self.btnStartStopMacro.setText("Stop && Save")
+
+    def stopMacro(self):
+        macro = self.maskTool.macro
+        if not macro.recording:
+            return
+        macro.recording = False
+
+        if self.saveMacro():
+            self.clearMacro()
+            self.btnStartStopMacro.setText("Start Recording")
+        else:
+            self.btnStartStopMacro.setText("Continue Recording")
+
+    def saveMacro(self) -> bool:
+        path = Config.pathMaskMacros + "/macro.json"
+        fileFilter = "JSON (*.json)"
+        path, selectedFilter = QtWidgets.QFileDialog.getSaveFileName(self, "Save Macro", path, fileFilter)
+        if path:
+            self.maskTool.macro.saveTo(path)
+            return True
+        return False
+
+    @Slot()
+    def clearMacro(self):
+        macro = self.maskTool.macro
+        macro.recording = False
+        macro.clear()
+
+        for maskItem in self.maskTool.layers:
+            maskItem.clearHistoryMacroItems()
+
+        self.btnStartStopMacro.setText("Start Recording")
+        self.ops["macro"].reloadMacros()

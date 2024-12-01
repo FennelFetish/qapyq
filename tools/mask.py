@@ -11,7 +11,7 @@ import ui.export_settings as export
 from config import Config
 from .view import ViewTool
 from .mask_ops import MaskOperation
-import lib.mask_macro as macro
+from lib.mask_macro import MaskingMacro, MacroOp, MacroOpItem
 
 MaskItem = ForwardRef("MaskItem")
 
@@ -27,7 +27,7 @@ class MaskTool(ViewTool):
         super().__init__(tab)
         self.maskItem: MaskItem = None
         self.layers: list[MaskItem] = None
-        self.macro: macro.MaskingMacro | None = None
+        self.macro = MaskingMacro()
 
         from .mask_toolbar import MaskToolBar
         self._toolbar = MaskToolBar(self)
@@ -108,11 +108,12 @@ class MaskTool(ViewTool):
         index = len(self.layers)
         mask = self.createMask(f"Layer {index}")
         self.layers.append(mask)
+        self.macro.addOperation(MacroOp.AddLayer)
 
         self.setLayer(index)
         self._toolbar.setLayers(self.layers, index)
         self.setEdited()
-    
+
     @Slot()
     def setLayer(self, index: int):
         filelist = self.tab.filelist
@@ -133,6 +134,8 @@ class MaskTool(ViewTool):
         self._toolbar.setHistory(self.maskItem)
         filelist.setData(currentFile, DataKeys.MaskIndex, index)
 
+        self.macro.addOperation(MacroOp.SetLayer, index=index)
+
     @Slot()
     def deleteCurrentLayer(self):
         filelist = self.tab.filelist
@@ -141,11 +144,13 @@ class MaskTool(ViewTool):
 
         index = self.layers.index(self.maskItem)
         del self.layers[index]
+        self.macro.addOperation(MacroOp.DeleteLayer, index=index)
 
         allRemoved = False
         if not self.layers:
             allRemoved = True
             self.layers.append( self.createMask() )
+            self.macro.addOperation(MacroOp.AddLayer)
 
         index = max(index-1, 0)
         self.setLayer(index)
@@ -240,6 +245,7 @@ class MaskTool(ViewTool):
         self.loadLayers()
 
         self.op.onFileChanged(currentFile)
+        self._toolbar.stopMacro()
 
     def onFileListChanged(self, currentFile):
         self.onFileChanged(currentFile)
@@ -384,10 +390,11 @@ class MaskTool(ViewTool):
 
 
 class HistoryEntry:
-    def __init__(self, title: str, compressed: bool, mask: np.ndarray | None):
+    def __init__(self, title: str, mask: np.ndarray | None, macroItem: MacroOpItem | None = None):
         self.title = title
-        self.compressed = compressed
+        self.compressed = False
         self.mask = mask
+        self.macroItem = macroItem
 
 
 class MaskItem(QtWidgets.QGraphicsRectItem):
@@ -404,14 +411,14 @@ class MaskItem(QtWidgets.QGraphicsRectItem):
     def new(name: str, image: QImage) -> MaskItem:
         maskItem = MaskItem(name)
         maskItem.setImage(image)
-        maskItem.history.append( HistoryEntry("New", False, None) )
+        maskItem.history.append( HistoryEntry("New", None) )
         return maskItem
 
     @staticmethod
     def load(name: str, imgData: np.ndarray) -> MaskItem:
         maskItem = MaskItem(name)
         maskItem.fromNumpy(imgData)
-        maskItem.addHistory("Load", np.copy(imgData))
+        maskItem.addHistory("Load", np.copy(imgData)) # TODO: copy necessary?
         return maskItem
 
 
@@ -455,7 +462,7 @@ class MaskItem(QtWidgets.QGraphicsRectItem):
         self.setImage(image)
 
 
-    def addHistory(self, title: str, imgData: np.ndarray | None = None):
+    def addHistory(self, title: str, imgData: np.ndarray | None = None, macroItem: MacroOpItem | None = None):
         # Create a copy of the mask so that:
         #   1. It can be used for retrieving the history until the mask is converted to PNG.
         #   2. It can be safely passed to the PNG conversion thread.
@@ -464,7 +471,7 @@ class MaskItem(QtWidgets.QGraphicsRectItem):
             imgData = self.toNumpy()
 
         del self.history[self.historyIndex+1:]
-        self.history.append(HistoryEntry(title, False, imgData))
+        self.history.append(HistoryEntry(title, imgData, macroItem))
         self.history = self.history[-Config.maskHistorySize:]
         self.historyIndex = len(self.history) - 1
 
@@ -473,8 +480,15 @@ class MaskItem(QtWidgets.QGraphicsRectItem):
         QThreadPool.globalInstance().start(task)
 
     def jumpHistory(self, index):
-        if index < 0 or index >= len(self.history):
+        if index < 0 or index >= len(self.history) or index == self.historyIndex:
             return
+
+        # Update macro
+        start, end = sorted((index+1, self.historyIndex+1))
+        opState = (index >= self.historyIndex)
+        for entry in self.history[start:end]:
+            if entry.macroItem: entry.macroItem.enabled = opState
+
         entry: HistoryEntry = self.history[index]
         self.historyIndex = index
 
@@ -487,6 +501,10 @@ class MaskItem(QtWidgets.QGraphicsRectItem):
             if entry.compressed:
                 mask = cv.imdecode(mask, cv.IMREAD_UNCHANGED)
             self.fromNumpy(mask)
+    
+    def clearHistoryMacroItems(self):
+        for entry in self.history:
+            entry.macroItem = None
 
     @Slot()
     def _setCompressedHistory(self, pngData, index):
