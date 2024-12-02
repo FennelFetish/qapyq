@@ -64,7 +64,7 @@ class FileList:
             elif fileFilter(path):
                 self.files.append(path)
 
-        self.files = list(set(self.files))
+        self._removeDuplicates()
         self._sortFiles()
         self.notifyListChanged()
 
@@ -175,6 +175,7 @@ class FileList:
         if self.currentIndex < 0 and self.currentFile:
             path = os.path.dirname(self.currentFile)
             self._walkPath(path, False)
+            self._removeDuplicates()
             self._sortFiles()
 
             try:
@@ -189,6 +190,9 @@ class FileList:
                 dirs[:] = []
             # os.path.join() mixes up the separators on Windows.
             self.files += [f"{root}/{f}" for f in files if fileFilter(f)]
+
+    def _removeDuplicates(self):
+        self.files = list(set(self.files))
 
     def _sortFiles(self):
         self.files.sort(key=lambda path: os.path.split(path))
