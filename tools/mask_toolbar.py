@@ -1,4 +1,4 @@
-from PySide6.QtCore import Slot, QSignalBlocker
+from PySide6.QtCore import Slot, QSignalBlocker, QTimer
 from PySide6 import QtWidgets
 import superqt
 import numpy as np
@@ -30,6 +30,10 @@ class MaskToolBar(QtWidgets.QToolBar):
         btnExport = QtWidgets.QPushButton("Export")
         btnExport.clicked.connect(self.maskTool.exportMask)
         layout.addWidget(btnExport)
+
+        self._recordBlinkTimer = QTimer()
+        self._recordBlinkTimer.setInterval(500)
+        self._recordBlinkTimer.timeout.connect(self._blinkRecordMacro)
 
         # TODO: Also load from image's alpha channel
         #       Only if file is PNG/WEBP
@@ -194,8 +198,8 @@ class MaskToolBar(QtWidgets.QToolBar):
         # Load macros into list of operations?
         # Provide default macros in subfolder
 
-        self.btnStartStopMacro = QtWidgets.QPushButton("Start Recording")
-        self.btnStartStopMacro.clicked.connect(self.startStopMacro)
+        self.btnStartStopMacro = QtWidgets.QPushButton("⚫ Start Recording")
+        self.btnStartStopMacro.clicked.connect(self.startStopRecordMacro)
         layout.addWidget(self.btnStartStopMacro)
 
         btnClearMacro = QtWidgets.QPushButton("Stop && Clear")
@@ -281,32 +285,33 @@ class MaskToolBar(QtWidgets.QToolBar):
 
 
     @Slot()
-    def startStopMacro(self):
+    def startStopRecordMacro(self):
         # TODO: Maybe don't allow pausing macro recording.
         #       Can weird things happen when layers are added/deleted/changed during pause?
 
         if self.maskTool.macro.recording:
-            self.stopMacro()
+            self.stopRecordMacro()
         else:
-            self.startMacro()
+            self.startRecordMacro()
 
-    def startMacro(self):
+    def startRecordMacro(self):
         macro = self.maskTool.macro
         if not macro.recording:
             macro.recording = True
-            self.btnStartStopMacro.setText("Stop && Save")
+            self.btnStartStopMacro.setText("🔴 Stop && Save")
+            self._recordBlinkTimer.start()
 
-    def stopMacro(self):
+    def stopRecordMacro(self):
         macro = self.maskTool.macro
         if not macro.recording:
             return
         macro.recording = False
+        self._recordBlinkTimer.stop()
 
         if self.saveMacro():
             self.clearMacro()
-            self.btnStartStopMacro.setText("Start Recording")
         else:
-            self.btnStartStopMacro.setText("Continue Recording")
+            self.btnStartStopMacro.setText("⚫ Continue Recording")
 
     def saveMacro(self) -> bool:
         path = Config.pathMaskMacros + "/macro.json"
@@ -321,10 +326,20 @@ class MaskToolBar(QtWidgets.QToolBar):
     def clearMacro(self):
         macro = self.maskTool.macro
         macro.recording = False
+        self._recordBlinkTimer.stop()
         macro.clear()
 
         for maskItem in self.maskTool.layers:
             maskItem.clearHistoryMacroItems()
 
-        self.btnStartStopMacro.setText("Start Recording")
+        self.btnStartStopMacro.setText("⚫ Start Recording")
         self.ops["macro"].reloadMacros()
+
+    @Slot()
+    def _blinkRecordMacro(self, disable=False):
+        text = self.btnStartStopMacro.text()
+        if disable or text[0] == "🔴":
+            text = "⚫" + text[1:]
+        else:
+            text = "🔴" + text[1:]
+        self.btnStartStopMacro.setText(text)

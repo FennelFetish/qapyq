@@ -245,7 +245,7 @@ class MaskTool(ViewTool):
         self.loadLayers()
 
         self.op.onFileChanged(currentFile)
-        self._toolbar.stopMacro()
+        self._toolbar.stopRecordMacro()
 
     def onFileListChanged(self, currentFile):
         self.onFileChanged(currentFile)
