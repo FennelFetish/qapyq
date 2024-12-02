@@ -230,17 +230,17 @@ Examples:
     /home/user/Pictures/{{folder}}/{{date}}_{{time}}_{{w}}x{{h}}"""
 
 
-    def __init__(self, parser) -> None:
+    def __init__(self, parser, showInfo=True) -> None:
         super().__init__()
         self._extension = "ext"
 
         self.parser: ExportVariableParser = parser
         self.highlighter = template_parser.VariableHighlighter()
 
-        self._build()
+        self._build(showInfo)
         self.updatePreview()
 
-    def _build(self):
+    def _build(self, showInfo: bool):
         layout = QtWidgets.QGridLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setColumnStretch(0, 0)
@@ -249,12 +249,13 @@ Examples:
         layout.setColumnStretch(3, 0)
 
         row = 0
-        txtInfo = QtWidgets.QPlainTextEdit(self.INFO)
-        txtInfo.setReadOnly(True)
-        qtlib.setMonospace(txtInfo)
-        layout.addWidget(txtInfo, 0, 0, 1, 4)
-
-        row += 1
+        if showInfo:
+            txtInfo = QtWidgets.QPlainTextEdit(self.INFO)
+            txtInfo.setReadOnly(True)
+            qtlib.setMonospace(txtInfo)
+            layout.addWidget(txtInfo, row, 0, 1, 4)
+            row += 1
+        
         self.txtPathTemplate = QtWidgets.QPlainTextEdit()
         self.txtPathTemplate.textChanged.connect(self.updatePreview)
         qtlib.setMonospace(self.txtPathTemplate)
@@ -295,6 +296,7 @@ Examples:
     @property
     def pathTemplate(self) -> str:
         template = self.txtPathTemplate.toPlainText()
+        # TODO: Remove tabs, also in other places like in updatePreview()
         return template.replace('\n', '').replace('\r', '')
     
     @pathTemplate.setter

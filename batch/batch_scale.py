@@ -24,6 +24,7 @@ class Format:
         self.saveParams = saveParams
         self.conversion = conversion
 
+# https://pillow.readthedocs.io/en/stable/handbook/concepts.html#concept-modes
 FORMATS = {
     "PNG":  Format({"optimize": True, "compress_level": 9}),
     "JPG":  Format({"optimize": True, "quality": 95}, {"RGBA": "RGB", "P": "RGB"}),
@@ -142,7 +143,7 @@ class BatchScale(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.pathSettings)
 
-        groupBox = QtWidgets.QGroupBox("Path")
+        groupBox = QtWidgets.QGroupBox("Destination")
         groupBox.setLayout(layout)
         return groupBox
 

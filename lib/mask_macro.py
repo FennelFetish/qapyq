@@ -1,4 +1,5 @@
 from enum import Enum, auto # StrEnum available in python >=3.11
+import os, json
 import numpy as np
 from config import Config
 import tools.mask_ops as mask_ops
@@ -11,11 +12,12 @@ class MacroOp(Enum):
 
     SetLayer        = auto()    # index
     AddLayer        = auto()
+    #AddSetLayer     = auto()   # Add and select new layer. Determined while recording.
     DeleteLayer     = auto()    # index
     #RenameLayer     = auto()    # index, name TODO
 
     Brush           = auto()    # strokes...
-    FloodFill       = auto()    # color, upperDiff, lowerDiff, x, y
+    FloodFill       = auto()    # color, lowerDiff, upperDiff, x, y
     Clear           = auto()    # color (int)
     Invert          = auto()
     Threshold       = auto()    # color
@@ -49,7 +51,8 @@ class MacroOpItem:
         return MacroOpItem(MacroOp[opName], data)
     
     def __str__(self) -> str:
-        return f"{self.op}: {self.args}"
+        return f"{self.op.name}: {self.args}"
+
 
 
 class MacroLoadException(Exception):
@@ -64,8 +67,16 @@ class MacroRunException(Exception):
 
 
 
+# https://stackoverflow.com/a/72611442/1442598
+def jsonIndentLimit(indent, limit):
+    import re
+    return re.compile(f'\n({indent}){{{limit}}}(({indent})+|(?=(}}|])))')
+
+
+
 class MaskingMacro:
     VERSION = "1.0"
+    COMPACT_JSON_PATTERN = jsonIndentLimit("    ", 2)
 
     def __init__(self):
         self.operations: list[MacroOpItem] = list()
@@ -111,13 +122,12 @@ class MaskingMacro:
         data["version"] = self.VERSION
         data["operations"] = operations
 
-        # TODO: More compact formatting with 1 op per line
-        import json
+        jsonStr = json.dumps(data, indent=4)
+        jsonStr = self.COMPACT_JSON_PATTERN.sub(" ", jsonStr)
         with open(path, 'w') as file:
-            json.dump(data, file, indent=4)
+            file.writelines(jsonStr)
 
     def loadFrom(self, path: str):
-        import json, os
         if os.path.exists(path):
             with open(path, 'r') as file:
                 data = json.load(file)
@@ -131,6 +141,14 @@ class MaskingMacro:
                 self.operations.append( MacroOpItem.fromDict(opData) )
             except KeyError as ex:
                 raise MacroLoadException(f"Invalid operation name: {ex}")
+
+    @staticmethod
+    def loadMacros():
+        basePath = os.path.abspath(Config.pathMaskMacros)
+        for root, dirs, files in os.walk(basePath):
+            for path in (f"{root}/{f}" for f in files if f.endswith(".json")):
+                filenameNoExt, ext = os.path.splitext( os.path.basename(path) )
+                yield (filenameNoExt, path)
 
 
     # TODO: Macros that use scratch layers may expect a fixed number of input layers (like 1)
@@ -200,8 +218,8 @@ class MaskingMacro:
     @staticmethod
     def opFloodFill(mat: np.ndarray, args: dict) -> np.ndarray:
         h, w = mat.shape
-        args["x"] = int(args["x"] * (w-1))
-        args["y"] = int(args["y"] * (h-1))
+        args["x"] = round(args["x"] * (w-1))
+        args["y"] = round(args["y"] * (h-1))
         return mask_ops.FillMaskOperation.operate(mat, **args)
 
     @staticmethod

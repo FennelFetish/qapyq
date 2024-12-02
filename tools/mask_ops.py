@@ -1,5 +1,4 @@
 from typing_extensions import override
-import os
 from PySide6.QtCore import Qt, Slot, QPointF, QRectF, QSignalBlocker, QRunnable, QObject, Signal
 from PySide6.QtGui import QPainter, QPen, QBrush, QColor, QLinearGradient
 from PySide6 import QtWidgets
@@ -7,10 +6,13 @@ import cv2 as cv
 import numpy as np
 from config import Config
 from ui.imgview import ImgView
-from lib.mask_macro import MaskingMacro, MacroOp
+import lib.mask_macro as mask_macro
 from lib.filelist import DataKeys
 
+
+
 # Use OpenCV's GrabCut for bounding box -> segmentation conversion.
+# Or cv.watershed()? https://docs.opencv.org/3.4/d3/db4/tutorial_py_watershed.html
 
 
 class MaskOperation(QtWidgets.QWidget):
@@ -471,7 +473,7 @@ class FillMaskOperation(MaskOperation):
         self.maskItem.fromNumpy(mat)
 
         xRel, yRel = x/max(1, w-1), y/max(1, h-1)
-        macroItem = self.maskTool.macro.addOperation(MacroOp.FloodFill, color=colorFill, lowerDiff=lowerDiff, upperDiff=upperDiff, x=xRel, y=yRel)
+        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.FloodFill, color=colorFill, lowerDiff=lowerDiff, upperDiff=upperDiff, x=xRel, y=yRel)
 
         self.maskTool.setEdited()
         self.maskTool._toolbar.addHistory(f"Flood Fill ({color:.2f})", mat, macroItem)
@@ -514,7 +516,7 @@ class ClearMaskOperation(MaskOperation):
         self.maskItem.fromNumpy(mat)
 
         self.maskTool.setEdited()
-        macroItem = self.maskTool.macro.addOperation(MacroOp.Clear, color=colorFill)
+        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.Clear, color=colorFill)
         self.maskTool._toolbar.addHistory(f"Clear ({color:.2f})", mat, macroItem)
 
 
@@ -534,7 +536,7 @@ class InvertMaskOperation(MaskOperation):
         self.maskItem.fromNumpy(mat)
 
         self.maskTool.setEdited()
-        macroItem = self.maskTool.macro.addOperation(MacroOp.Invert)
+        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.Invert)
         self.maskTool._toolbar.addHistory("Invert", mat, macroItem)
 
 
@@ -573,7 +575,7 @@ class ThresholdMaskOperation(MaskOperation):
         self.maskItem.fromNumpy(mat)
 
         self.maskTool.setEdited()
-        macroItem = self.maskTool.macro.addOperation(MacroOp.Threshold, color=colorFill)
+        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.Threshold, color=colorFill)
         self.maskTool._toolbar.addHistory(f"Threshold ({color:.2f})", mat, macroItem)
 
 
@@ -639,7 +641,7 @@ class MorphologyMaskOperation(MaskOperation):
         self.maskItem.fromNumpy(mat)
 
         self.maskTool.setEdited()
-        macroItem = self.maskTool.macro.addOperation(MacroOp.Morph, mode=mode, radius=radius)
+        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.Morph, mode=mode, radius=radius)
         self.maskTool._toolbar.addHistory(f"Morphology ({mode} {radius})", mat, macroItem)
 
 
@@ -705,7 +707,7 @@ class BlurMaskOperation(MaskOperation):
         self.maskItem.fromNumpy(mat)
 
         self.maskTool.setEdited()
-        macroItem = self.maskTool.macro.addOperation(MacroOp.GaussBlur, mode=mode, radius=radius)
+        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.GaussBlur, mode=mode, radius=radius)
         self.maskTool._toolbar.addHistory(f"Gaussian Blur ({mode} {radius})", mat, macroItem)
 
 
@@ -788,7 +790,7 @@ class BlendLayersMaskOperation(MaskOperation):
         self.maskItem.fromNumpy(destMat)
 
         self.maskTool.setEdited()
-        macroItem = self.maskTool.macro.addOperation(MacroOp.BlendLayers, mode=mode, srcLayer=srcMatIndex)
+        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.BlendLayers, mode=mode, srcLayer=srcMatIndex)
         self.maskTool._toolbar.addHistory(f"Blend Layers ({mode})", destMat, macroItem)
 
 
@@ -815,11 +817,9 @@ class MacroMaskOperation(MaskOperation):
         selectedText = self.cboMacro.currentText()
         self.cboMacro.clear()
 
-        for root, dirs, files in os.walk(os.path.abspath(Config.pathMaskMacros)):
-            for path in (f"{root}/{f}" for f in files if f.endswith(".json")):
-                filenameNoExt, ext = os.path.splitext( os.path.basename(path) )
-                self.cboMacro.addItem(filenameNoExt, path)
-        
+        for name, path in mask_macro.MaskingMacro.loadMacros():
+            self.cboMacro.addItem(name, path)
+
         index = self.cboMacro.findText(selectedText)
         self.cboMacro.setCurrentIndex(max(0, index))
 
@@ -843,7 +843,7 @@ class MacroMaskOperation(MaskOperation):
 
         from infer import Inference
         Inference().queueTask(task)
-        self.maskTool.tab.statusBar().showMessage("Starting macro...", 0)
+        self.maskTool.tab.statusBar().showMessage("Running macro...", 0)
 
         # Store layers so result can be loaded when image is changed
         self.maskTool.setEdited()
@@ -857,10 +857,13 @@ class MacroMaskOperation(MaskOperation):
         # Recording macros into macros could lead to all kind of weird interactions and mess up layers.
         #macroItem = self.maskTool.macro.addOperation(MacroOp.Macro, name=macroName)
 
+        # TODO: If only one layer is returned, apply that one to current layer without modifying/adding/deleting other layers?
+        #       Though, there are use cases where this interferes.
+
         for item, mat, changed in zip(layerItems, layerMats, layerChanged):
             if changed:
                 item.fromNumpy(mat)
-                item.addHistory(historyTitle, mat) 
+                item.addHistory(historyTitle, mat)
 
         # Handle added/deleted layers
         layerDiff = len(layerMats) - len(layerItems)
@@ -888,7 +891,7 @@ class MacroMaskOperation(MaskOperation):
         if filelist.getCurrentFile() == imgPath:
             self.maskTool.onFileChanged(imgPath)
         
-        self.maskTool.tab.statusBar().showColoredMessage(f"Finished {historyTitle}", True, 0)
+        self.maskTool.tab.statusBar().showColoredMessage(f"Finished macro: {macroName}", True)
 
     @Slot()
     def onFail(self, msg: str):
@@ -990,7 +993,7 @@ class DetectMaskOperation(MaskOperation):
         maskItem.fromNumpy(mat)
 
         # History
-        macroItem = self.maskTool.macro.addOperation(MacroOp.Detect, preset=self.preset, color=colorFill, threshold=threshold)
+        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.Detect, preset=self.preset, color=colorFill, threshold=threshold)
         historyTitle = f"Detect ({color:.2f})"
         maskItem.addHistory(historyTitle, mat, macroItem)
         if maskItem == self.maskItem:
@@ -1086,11 +1089,11 @@ class SegmentMaskOperation(MaskOperation):
         mat = self.operate(mat, maskBytes, color)
         maskItem.fromNumpy(mat)
 
-        macroItem = self.maskTool.macro.addOperation(MacroOp.Segment, preset=self.preset, color=color)
+        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.Segment, preset=self.preset, color=color)
         historyTitle = f"Segmentation ({color:.2f})"
         maskItem.addHistory(historyTitle, mat, macroItem)
         if maskItem == self.maskItem:
-            self.maskTool._toolbar.addHistory(historyTitle, mat)
+            self.maskTool._toolbar.setHistory(maskItem)
             self.maskTool.setEdited()
 
         self.maskTool.tab.statusBar().showColoredMessage("Segmentation finished", True)
@@ -1156,7 +1159,7 @@ class MacroMaskTask(QRunnable):
     @Slot()
     def run(self):
         try:
-            macro = MaskingMacro()
+            macro = mask_macro.MaskingMacro()
             macro.loadFrom(self.macroPath)
             layerMats, layerChanged = macro.run(self.imgPath, self.layerMats, self.currentLayerIndex)
 
