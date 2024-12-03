@@ -5,10 +5,14 @@ import cv2 as cv
 import numpy as np
 from config import Config
 from lib import qtlib
-from lib.mask_macro import MaskingMacro, MacroOp
+from lib.mask_macro import MaskingMacro
+from lib.mask_macro_vis import MacroVisualization
 from infer import Inference
 from .batch_task import BatchTask
 import ui.export_settings as export
+
+
+# TODO: Store detections in json (or separate batch detect?)
 
 
 SAVE_PARAMS = {
@@ -210,140 +214,6 @@ class BatchMask(QtWidgets.QWidget):
         self.progressBar.setRange(0, 1)
         self.progressBar.reset()
         self._task = None
-
-
-
-# TODO: Visualization with layers in columns. Operations in rows.
-#       Layer blending with arrows, like Sequence Diagram.
-#       Layout above path settings.
-class MacroVisualization(QtWidgets.QScrollArea):
-    def __init__(self):
-        super().__init__()
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        self.setWidgetResizable(True)
-
-        #self.layerColors = ["#1f3b3f", "#3f1f31", "#283f1f", "#201f3f"]
-
-        self.gridLayout = QtWidgets.QGridLayout()
-
-        widget = QtWidgets.QWidget()
-        widget.setLayout(self.gridLayout)
-        self.setWidget(widget)
-    
-    def clear(self):
-        while self.gridLayout.count():
-            item = self.gridLayout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-
-    def reload(self, path: str):
-        macro = MaskingMacro()
-        macro.loadFrom(path)
-
-        self.clear()
-        self.gridLayout.addWidget(MacroOpLabel("Layer 0", bold=True), 0, 0)
-        self.gridLayout.addWidget(MacroOpLabel("Layer 1", bold=True), 0, 1)
-        self.gridLayout.addWidget(MacroOpLabel("Layer 2", bold=True), 0, 2)
-        self.gridLayout.addWidget(MacroOpLabel("Layer 3", bold=True), 0, 3)
-
-        colors = ["#1f3b3f", "#3f1f31", "#283f1f", "#201f3f"]
-
-        row = 1
-        col = 0
-        maxCol = 0
-
-        for op in macro.operations:
-            color = colors[col]
-            c = col
-            match op.op:
-                case MacroOp.AddLayer:
-                    maxCol += 1
-                    color = colors[maxCol]
-                    c = maxCol
-                case MacroOp.DeleteLayer:
-                    maxCol -= 1
-                    c = int(op.args.get("index", 0))
-                    del colors[c] # TODO: Refill color array after deletion
-                    col = min(maxCol, col)
-                case MacroOp.SetLayer:
-                    col = int(op.args.get("index", 0))
-                    continue
-                case MacroOp.BlendLayers:
-                    color = [color, colors[ int(op.args.get("srcLayer", 0)) ]]
-
-            opLabel = MacroOpLabel(op.op.name, color, args=op.args)
-            self.gridLayout.addWidget(opLabel, row, c)
-            row += 1
-
-        self.gridLayout.addWidget(QtWidgets.QWidget(), row, 0)
-
-    # def reload(self, path: str):
-    #     macro = MaskingMacro()
-    #     macro.loadFrom(path)
-
-    #     self.clear()
-    #     self.gridLayout.addWidget(MacroOpLabel("Layer 0", self.layerColors[0], True), 0, 0)
-    #     self.gridLayout.addWidget(MacroOpLabel("Layer 1", self.layerColors[1], True), 0, 1)
-    #     self.gridLayout.addWidget(MacroOpLabel("Layer 2", self.layerColors[2], True), 0, 2)
-    #     self.gridLayout.addWidget(MacroOpLabel("Layer 3", self.layerColors[3], True), 0, 3)
-
-    #     row = 1
-    #     col = 0
-    #     maxCol = 0
-    #     colMap = {0:0, 1:1, 2:2, 3:3}
-
-    #     for op in macro.operations:
-    #         color = "#161616"
-    #         c = colMap[col]
-    #         match op.op:
-    #             case MacroOp.AddLayer:
-    #                 maxCol += 1
-    #                 colMap[maxCol] = maxCol
-    #                 c = maxCol
-    #             case MacroOp.DeleteLayer:
-    #                 i = int(op.args.get("index", 0))
-    #                 c = colMap[i]
-    #                 for k, v in colMap.items():
-    #                     if k>=i:
-    #                         colMap[k] = v+1
-    #             case MacroOp.SetLayer:
-    #                 col = int(op.args.get("index", 0))
-    #                 continue
-    #             case MacroOp.BlendLayers:
-    #                 color = self.layerColors[ int(op.args.get("srcLayer", 0)) ]
-
-    #         opLabel = MacroOpLabel(op.op.name, color, args=op.args)
-    #         self.gridLayout.addWidget(opLabel, row, c)
-    #         row += 1
-
-    #     self.gridLayout.addWidget(QtWidgets.QWidget(), row, 0)
-
-
-class MacroOpLabel(QtWidgets.QLabel):
-    def __init__(self, title, color: str | list = "#161616", bold=False, args: dict={}):
-        params = []
-        for k, v in args.items():
-            if type(v) == float:
-                params.append(f"{k}={v:.2f}")
-            else:
-                params.append(f"{k}={v}")
-        
-        if params:
-            title += ": " + ", ".join(params)
-
-        super().__init__(title)
-        fontWeight = "900" if bold else "400"
-        if type(color) == list:
-            background = "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 " + color[0] + ", stop:1 " + color[1] + ")"
-            #background = "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 " + color[1] + ", stop:0.5 " + color[0] + ", stop:1 " + color[1] + ")"
-            #background = "background: qradialgradient(cx:0.5, cy:0.5, fx:0.5, fy:0.5, radius:1, stop:0 " + color[0] + ", stop:1 " + color[1] + ")"
-        else:
-            background = "background-color: " + str(color)
-
-        self.setStyleSheet("QLabel{font-weight:" + fontWeight + "; color: #fff; " + background + "; border: 1px solid #161616; border-radius: 8px}")
-        self.setFixedHeight(30 if bold else 24)
 
 
 

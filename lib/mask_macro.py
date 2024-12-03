@@ -21,6 +21,7 @@ class MacroOp(Enum):
     Clear           = auto()    # color (int)
     Invert          = auto()
     Threshold       = auto()    # color
+    Normalize       = auto()    # colorMin, colorMax
     Morph           = auto()    # mode, radius
     GaussBlur       = auto()    # mode, radius
     BlendLayers     = auto()    # mode, srcLayer
@@ -86,6 +87,7 @@ class MaskingMacro:
             MacroOp.Clear:      mask_ops.ClearMaskOperation.operate,
             MacroOp.Invert:     mask_ops.InvertMaskOperation.operate,
             MacroOp.Threshold:  mask_ops.ThresholdMaskOperation.operate,
+            MacroOp.Normalize:  mask_ops.NormalizeMaskOperation.operate,
             MacroOp.Morph:      mask_ops.MorphologyMaskOperation.operate,
             MacroOp.GaussBlur:  mask_ops.BlurMaskOperation.operate
         }
@@ -147,8 +149,8 @@ class MaskingMacro:
         basePath = os.path.abspath(Config.pathMaskMacros)
         for root, dirs, files in os.walk(basePath):
             for path in (f"{root}/{f}" for f in files if f.endswith(".json")):
-                filenameNoExt, ext = os.path.splitext( os.path.basename(path) )
-                yield (filenameNoExt, path)
+                name, ext = os.path.splitext( os.path.relpath(path, basePath) )
+                yield (name, path)
 
 
     # TODO: Macros that use scratch layers may expect a fixed number of input layers (like 1)

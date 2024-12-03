@@ -26,8 +26,8 @@ class CropTool(ViewTool):
     PEN_DOWNSCALE = createPen(0, 255, 0)
     PEN_UPSCALE   = createPen(255, 0, 0)
 
-    BUTTON_CROP   = Qt.LeftButton
-    BUTTON_ABORT  = Qt.RightButton
+    BUTTON_CROP   = Qt.MouseButton.LeftButton
+    BUTTON_ABORT  = Qt.MouseButton.RightButton
 
 
     def __init__(self, tab):
@@ -59,7 +59,7 @@ class CropTool(ViewTool):
         self._cropAspectRatio = self._targetWidth / self._targetHeight
 
 
-    def constrainCropSize(self, rotationMatrix, imgSize) -> (float, float):
+    def constrainCropSize(self, rotationMatrix, imgSize) -> tuple[float, float]:
         rectSel = QRectF(0, 0, self._cropAspectRatio, 1.0)
         rectSel = rotationMatrix.mapRect(rectSel)
         

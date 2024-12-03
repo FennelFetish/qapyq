@@ -128,6 +128,7 @@ class MaskToolBar(QtWidgets.QToolBar):
             "clear": mask_ops.ClearMaskOperation(self.maskTool),
             "invert": mask_ops.InvertMaskOperation(self.maskTool),
             "threshold": mask_ops.ThresholdMaskOperation(self.maskTool),
+            "normalize": mask_ops.NormalizeMaskOperation(self.maskTool),
             "morph": mask_ops.MorphologyMaskOperation(self.maskTool),
             "blur_gauss": mask_ops.BlurMaskOperation(self.maskTool),
             "blend_layers": mask_ops.BlendLayersMaskOperation(self.maskTool),
@@ -145,6 +146,7 @@ class MaskToolBar(QtWidgets.QToolBar):
             self.cboOperation.addItem("Clear", "clear")
             self.cboOperation.addItem("Invert", "invert")
             self.cboOperation.addItem("Threshold", "threshold")
+            self.cboOperation.addItem("Normalize", "normalize")
             self.cboOperation.addItem("Morphology", "morph")
             #self.cboOperation.addItem("Linear Gradient", "gradient_linear")
             self.cboOperation.addItem("Gaussian Blur", "blur_gauss")

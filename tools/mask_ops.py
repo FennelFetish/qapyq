@@ -580,6 +580,55 @@ class ThresholdMaskOperation(MaskOperation):
 
 
 
+class NormalizeMaskOperation(MaskOperation):
+    def __init__(self, maskTool):
+        super().__init__(maskTool)
+
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
+
+        row = 0
+        self.spinColorMin = QtWidgets.QDoubleSpinBox()
+        self.spinColorMin.setRange(0.0, 1.0)
+        self.spinColorMin.setSingleStep(0.1)
+        self.spinColorMin.setValue(0.0)
+        layout.addWidget(QtWidgets.QLabel("Color Min:"), row, 0)
+        layout.addWidget(self.spinColorMin, row, 1)
+
+        row += 1
+        self.spinColorMax = QtWidgets.QDoubleSpinBox()
+        self.spinColorMax.setRange(0.0, 1.0)
+        self.spinColorMax.setSingleStep(0.1)
+        self.spinColorMax.setValue(1.0)
+        layout.addWidget(QtWidgets.QLabel("Color Max:"), row, 0)
+        layout.addWidget(self.spinColorMax, row, 1)
+
+        self.setLayout(layout)
+
+    @staticmethod
+    def operate(mat: np.ndarray, colorMin: int, colorMax: int) -> np.ndarray:
+        mat = cv.normalize(mat, mat, colorMin, colorMax, norm_type=cv.NORM_MINMAX)
+        return mat
+
+    @override
+    def onMousePress(self, pos, pressure: float, alt=False):
+        colorMin = self.spinColorMin.value()
+        colorMax = self.spinColorMax.value()
+        colorMin8bit = round(colorMin*255)
+        colorMax8bit = round(colorMax*255)
+
+        mat = self.maskItem.toNumpy()
+        mat = self.operate(mat, colorMin8bit, colorMax8bit)
+        self.maskItem.fromNumpy(mat)
+
+        self.maskTool.setEdited()
+        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.Normalize, colorMin=colorMin8bit, colorMax=colorMax8bit)
+        self.maskTool._toolbar.addHistory(f"Normalize ({colorMin:.2f} - {colorMax:.2f})", mat, macroItem)
+
+
+
 class MorphologyMaskOperation(MaskOperation):
     def __init__(self, maskTool):
         super().__init__(maskTool)
@@ -599,6 +648,15 @@ class MorphologyMaskOperation(MaskOperation):
         layout.addWidget(self.cboMode, row, 1)
 
         row += 1
+        self.cboBorderMode = QtWidgets.QComboBox()
+        self.cboBorderMode.addItem("Reflect", (cv.BORDER_REFLECT, 0))
+        self.cboBorderMode.addItem("Replicate", (cv.BORDER_REPLICATE, 0))
+        self.cboBorderMode.addItem("Const Black", (cv.BORDER_CONSTANT, 0))
+        self.cboBorderMode.addItem("Const White", (cv.BORDER_CONSTANT, 255))
+        layout.addWidget(QtWidgets.QLabel("Border:"), row, 0)
+        layout.addWidget(self.cboBorderMode, row, 1)
+
+        row += 1
         self.spinRadius = QtWidgets.QSpinBox()
         self.spinRadius.setRange(1, 4096)
         self.spinRadius.setSingleStep(1)
@@ -609,24 +667,22 @@ class MorphologyMaskOperation(MaskOperation):
         self.setLayout(layout)
 
     @staticmethod
-    def operate(mat: np.ndarray, mode: str, radius: int) -> np.ndarray:
+    def operate(mat: np.ndarray, mode: str, radius: int, border: int = cv.BORDER_CONSTANT, borderVal: int = 0) -> np.ndarray:
         size = radius*2 + 1
         kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (size, size))
-
-        borderType = cv.BORDER_CONSTANT
-        borderVal  = (0,)
+        bv = (borderVal,)
 
         match mode:
             case "grow":
-                mat = cv.dilate(mat, kernel, borderType=borderType, borderValue=borderVal)
+                mat = cv.dilate(mat, kernel, borderType=border, borderValue=bv)
             case "shrink":
-                mat = cv.erode(mat, kernel, borderType=borderType, borderValue=borderVal)
+                mat = cv.erode(mat, kernel, borderType=border, borderValue=bv)
             case "close":
-                mat = cv.dilate(mat, kernel, borderType=borderType, borderValue=borderVal)
-                mat = cv.erode(mat, kernel, borderType=borderType, borderValue=borderVal)
+                mat = cv.dilate(mat, kernel, borderType=border, borderValue=bv)
+                mat = cv.erode(mat, kernel, borderType=border, borderValue=bv)
             case "open":
-                mat = cv.erode(mat, kernel, borderType=borderType, borderValue=borderVal)
-                mat = cv.dilate(mat, kernel, borderType=borderType, borderValue=borderVal)
+                mat = cv.erode(mat, kernel, borderType=border, borderValue=bv)
+                mat = cv.dilate(mat, kernel, borderType=border, borderValue=bv)
         
         return mat
 
@@ -634,14 +690,15 @@ class MorphologyMaskOperation(MaskOperation):
     def onMousePress(self, pos, pressure: float, alt=False):
         # TODO: Grow/shrink depending on mouse button?
         mode = self.cboMode.currentData()
+        borderType, borderVal = self.cboBorderMode.currentData()
         radius = self.spinRadius.value()
         
         mat = self.maskItem.toNumpy()
-        mat = self.operate(mat, mode, radius)
+        mat = self.operate(mat, mode, radius, borderType, borderVal)
         self.maskItem.fromNumpy(mat)
 
         self.maskTool.setEdited()
-        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.Morph, mode=mode, radius=radius)
+        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.Morph, mode=mode, radius=radius, border=borderType, borderVal=borderVal)
         self.maskTool._toolbar.addHistory(f"Morphology ({mode} {radius})", mat, macroItem)
 
 
@@ -664,6 +721,15 @@ class BlurMaskOperation(MaskOperation):
         layout.addWidget(self.cboMode, row, 1)
 
         row += 1
+        self.cboBorderMode = QtWidgets.QComboBox()
+        self.cboBorderMode.addItem("Reflect", (cv.BORDER_REFLECT, 0))
+        self.cboBorderMode.addItem("Replicate", (cv.BORDER_REPLICATE, 0))
+        self.cboBorderMode.addItem("Const Black", (cv.BORDER_CONSTANT, 0))
+        self.cboBorderMode.addItem("Const White", (cv.BORDER_CONSTANT, 255))
+        layout.addWidget(QtWidgets.QLabel("Border:"), row, 0)
+        layout.addWidget(self.cboBorderMode, row, 1)
+
+        row += 1
         self.spinRadius = QtWidgets.QSpinBox()
         self.spinRadius.setRange(1, 4096)
         self.spinRadius.setSingleStep(1)
@@ -674,10 +740,17 @@ class BlurMaskOperation(MaskOperation):
         self.setLayout(layout)
 
     @staticmethod
-    def operate(mat: np.ndarray, mode: str, radius: int) -> np.ndarray:
-        blurBorder  = cv.BORDER_ISOLATED
-        morphBorder = cv.BORDER_CONSTANT
-        borderVal   = (0,)
+    def operate(mat: np.ndarray, mode: str, radius: int, border: int = cv.BORDER_CONSTANT, borderVal: int = 0) -> np.ndarray:
+        # cv.GaussianBlur has no borderVal argument and I don't want to pad the image.
+        # https://github.com/opencv/opencv/issues/25032
+        if border == cv.BORDER_CONSTANT:
+            #blurBorder = cv.BORDER_ISOLATED
+            blurBorder = cv.BORDER_REPLICATE
+        else:
+            blurBorder = border
+        
+        morphBorder = border
+        bv = (borderVal,)
 
         if mode == "both" or radius <= 1:
             kernelSize = radius*2 + 1 # needs odd kernel size
@@ -690,9 +763,9 @@ class BlurMaskOperation(MaskOperation):
             morphKernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (morphSize, morphSize))
 
             if mode == "out":
-                mat = cv.dilate(mat, morphKernel, borderType=morphBorder, borderValue=borderVal)
+                mat = cv.dilate(mat, morphKernel, borderType=morphBorder, borderValue=bv)
             else:
-                mat = cv.erode(mat, morphKernel, borderType=morphBorder, borderValue=borderVal)
+                mat = cv.erode(mat, morphKernel, borderType=morphBorder, borderValue=bv)
             mat = cv.GaussianBlur(mat, blurKernel, sigmaX=0, sigmaY=0, borderType=blurBorder)
         
         return mat
@@ -700,14 +773,15 @@ class BlurMaskOperation(MaskOperation):
     @override
     def onMousePress(self, pos, pressure: float, alt=False):
         mode = self.cboMode.currentData()
+        borderType, borderVal = self.cboBorderMode.currentData()
         radius = self.spinRadius.value()
 
         mat = self.maskItem.toNumpy()
-        mat = self.operate(mat, mode, radius)
+        mat = self.operate(mat, mode, radius, borderType, borderVal)
         self.maskItem.fromNumpy(mat)
 
         self.maskTool.setEdited()
-        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.GaussBlur, mode=mode, radius=radius)
+        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.GaussBlur, mode=mode, radius=radius, border=borderType, borderVal=borderVal)
         self.maskTool._toolbar.addHistory(f"Gaussian Blur ({mode} {radius})", mat, macroItem)
 
 
@@ -811,6 +885,11 @@ class MacroMaskOperation(MaskOperation):
         layout.addWidget(self.cboMacro, row, 1)
         self.reloadMacros()
 
+        row += 1
+        btnInspect = QtWidgets.QPushButton("Inspect...")
+        btnInspect.clicked.connect(self.inspectMacro)
+        layout.addWidget(btnInspect, row, 0, 1, 2)
+
         self.setLayout(layout)
 
     def reloadMacros(self):
@@ -822,6 +901,14 @@ class MacroMaskOperation(MaskOperation):
 
         index = self.cboMacro.findText(selectedText)
         self.cboMacro.setCurrentIndex(max(0, index))
+
+    @Slot()
+    def inspectMacro(self):
+        from lib.mask_macro_vis import MacroInspectWindow
+        name, path = self.cboMacro.currentText(), self.cboMacro.currentData()
+        win = MacroInspectWindow(self, name, path)
+        win.exec()
+
 
     @override
     def onMousePress(self, pos, pressure: float, alt=False):
