@@ -28,7 +28,7 @@ class Format:
 FORMATS = {
     "PNG":  Format({"optimize": True, "compress_level": 9}),
     "JPG":  Format({"optimize": True, "quality": 95}, {"RGBA": "RGB", "P": "RGB"}),
-    "WEBP": Format({"lossless": True, "quality": 100})
+    "WEBP": Format({"lossless": True, "quality": 100, "exact": True})
 }
 
 
@@ -65,7 +65,7 @@ class BatchScale(QtWidgets.QWidget):
         layout.setRowStretch(1, 0)
         layout.setRowStretch(2, 1)
         layout.setRowStretch(3, 0)
-        layout.setColumnMinimumWidth(0, 240)
+        layout.setColumnMinimumWidth(0, 250)
 
         layout.addWidget(self._buildScaleMode(), 0, 0)
         layout.addWidget(self._buildExportSettings(), 1, 0)
@@ -112,7 +112,7 @@ class BatchScale(QtWidgets.QWidget):
 
         self._onScaleModeChanged(self.cboScaleMode.currentIndex())
 
-        groupBox = QtWidgets.QGroupBox("Scale Mode")
+        groupBox = QtWidgets.QGroupBox("Target Size")
         groupBox.setLayout(self.scaleModeLayout)
         return groupBox
 
