@@ -337,7 +337,7 @@ Examples:
             text, varPositions = self.parser.parseWithPositions(text)
             text = os.path.abspath(text) # FIXME: abspath() messes with variable positions
             self.txtPreview.setPlainText(text + f".{self._extension}")
-            self.highlighter.highlight(self.txtPathTemplate, self.txtPreview, varPositions)
+            self.highlighter.highlight(self.txtPathTemplate, self.txtPreview, varPositions, not self.isEnabled())
 
     def _choosePath(self):
         path = self.txtPathTemplate.toPlainText()
@@ -356,6 +356,14 @@ Examples:
         if path:
             self.txtPathTemplate.setPlainText(os.path.join(path, tail))
 
+
+    def setEnabled(self, enabled: bool) -> None:
+        super().setEnabled(enabled)
+        if enabled:
+            self._onOverwriteToggled(self.chkOverwrite.isChecked())
+        else:
+            self.chkOverwrite.setStyleSheet("")
+        self.updatePreview()
 
 
 class PathSettingsWindow(QtWidgets.QDialog):

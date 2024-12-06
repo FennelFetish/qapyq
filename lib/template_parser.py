@@ -201,7 +201,7 @@ class VariableHighlighter:
     def __init__(self):
         self.formats = qtlib.ColorCharFormats()
 
-    def highlight(self, source: QtWidgets.QPlainTextEdit, target: QtWidgets.QPlainTextEdit, positions) -> None:
+    def highlight(self, source: QtWidgets.QPlainTextEdit, target: QtWidgets.QPlainTextEdit, positions, disabled=False) -> None:
         sourceCursor = source.textCursor()
         sourceCursor.setPosition(0)
 
@@ -214,6 +214,9 @@ class VariableHighlighter:
             format = self.formats.getFormat(varIndex)
             varIndex += 1
 
+            if disabled:
+                format = qtlib.toDisabledFormat(format)
+            
             # Source (Variables)
             qtlib.setBoldFormat(format)
             sourceCursor.setPosition(srcStart, QtGui.QTextCursor.KeepAnchor)

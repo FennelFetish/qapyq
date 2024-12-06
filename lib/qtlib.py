@@ -30,8 +30,6 @@ def setShowWhitespace(textEdit):
     opt.setFlags(QtGui.QTextOption.ShowTabsAndSpaces)
     doc.setDefaultTextOption(opt)
 
-def setBoldFormat(charFormat: QtGui.QTextCharFormat, bold=True) -> None:
-    charFormat.setFontWeight(700 if bold else 400)
 
 
 class DynamicLineEdit(QtWidgets.QLineEdit):
@@ -447,7 +445,7 @@ class ColorCharFormats:
 
     def getFormat(self, index: int) -> QtGui.QTextCharFormat:
         while index >= len(self._formats):
-            color= util.hsv_to_rgb(self._nextHue, self.saturation, self._colorV)
+            color = util.hsv_to_rgb(self._nextHue, self.saturation, self._colorV)
             self._nextHue += 0.3819444
 
             charFormat = QtGui.QTextCharFormat()
@@ -458,6 +456,18 @@ class ColorCharFormats:
 
     def addFormat(self, format: QtGui.QTextCharFormat) -> None:
         self._formats.append(format)
+
+
+def setBoldFormat(charFormat: QtGui.QTextCharFormat, bold=True) -> None:
+    charFormat.setFontWeight(700 if bold else 400)
+
+def toDisabledFormat(charFormat: QtGui.QTextCharFormat) -> QtGui.QTextCharFormat:
+    color = charFormat.foreground().color()
+    h, s, v, a = color.getHsvF()
+    color.setHsvF(h, 0.25, 0.5, a)
+    charFormat = QtGui.QTextCharFormat()
+    charFormat.setForeground(color)
+    return charFormat
 
 
 
