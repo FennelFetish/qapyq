@@ -173,9 +173,8 @@ class MaskTool(ViewTool):
         if not self.layers:
             return
 
-        exportWidget = self._toolbar.exportWidget
         currentFile = self.tab.filelist.getCurrentFile()
-        destFile = exportWidget.getExportPath(currentFile)
+        destFile = self._toolbar.exportWidget.getExportPath(currentFile)
         if not destFile:
             return
 
@@ -205,7 +204,7 @@ class MaskTool(ViewTool):
         combined = np.dstack(masks)
 
         # TODO: Save layer names to meta data?
-        task = MaskExportTask(currentFile, destFile, combined, exportWidget.getSaveParams())
+        task = MaskExportTask(currentFile, destFile, combined)
         task.signals.done.connect(self.onExportDone, Qt.ConnectionType.BlockingQueuedConnection)
         task.signals.fail.connect(self.onExportFailed, Qt.ConnectionType.BlockingQueuedConnection)
         QThreadPool.globalInstance().start(task)
@@ -231,8 +230,8 @@ class MaskTool(ViewTool):
         self._toolbar.updateExport()
 
     @Slot()
-    def onExportFailed(self):
-        self.tab.statusBar().showColoredMessage("Export failed", success=False)
+    def onExportFailed(self, msg: str):
+        self.tab.statusBar().showColoredMessage(f"Export failed: {msg}", False, 0)
 
 
     @property
@@ -518,30 +517,27 @@ class MaskItem(QtWidgets.QGraphicsRectItem):
 class MaskExportTask(QRunnable):
     class ExportTaskSignals(QObject):
         done = Signal(str, str)
-        fail = Signal()
+        fail = Signal(str)
 
         def __init__(self):
             super().__init__()
 
-    def __init__(self, srcFile, destFile, mask, saveParams):
+    def __init__(self, srcFile, destFile, mask):
         super().__init__()
         self.signals = self.ExportTaskSignals()
 
         self.srcFile = srcFile
         self.destFile = destFile
         self.mask = mask
-        self.saveParams = saveParams
 
     @Slot()
     def run(self):
         try:
-            export.createFolders(self.destFile)
-            cv.imwrite(self.destFile, self.mask, self.saveParams)
+            export.saveImage(self.destFile, self.mask)
             self.signals.done.emit(self.srcFile, self.destFile)
         except Exception as ex:
-            print("Error while exporting:")
-            print(ex)
-            self.signals.fail.emit()
+            print(f"Export failed: {ex}")
+            self.signals.fail.emit(str(ex))
         finally:
             del self.mask
 

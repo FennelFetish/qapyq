@@ -14,13 +14,6 @@ import ui.export_settings as export
 
 # TODO: Store detections in json (or separate batch detect?)
 
-# TODO: Use PIL to save images. Set WebP exact=True to preserve color channels when exporting with alpha.
-
-SAVE_PARAMS = {
-    "PNG":  [cv.IMWRITE_PNG_COMPRESSION, 9],
-    "WEBP": [cv.IMWRITE_WEBP_QUALITY, 100]
-}
-
 
 class BatchMask(QtWidgets.QWidget):
     EXPORT_PRESET_KEY = "batch-mask"
@@ -98,7 +91,6 @@ class BatchMask(QtWidgets.QWidget):
         self.cboDestType = QtWidgets.QComboBox()
         self.cboDestType.addItem("Separate Image  (Max 4 Layers)", "file")
         self.cboDestType.addItem("Alpha Channel  (Max 1 Layer)", "alpha")
-        self.cboDestType.currentIndexChanged.connect(self._onDestTypeChanged)
         layout.addWidget(QtWidgets.QLabel("Save in:"), row, 0, Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self.cboDestType, row, 1)
 
@@ -109,7 +101,7 @@ class BatchMask(QtWidgets.QWidget):
         layout.addWidget(self.lblFormat, row, 0, Qt.AlignmentFlag.AlignTop)
 
         self.cboFormat = QtWidgets.QComboBox()
-        self.cboFormat.addItems(SAVE_PARAMS.keys())
+        self.cboFormat.addItems(["PNG", "WEBP"])
         self.cboFormat.currentTextChanged.connect(self._onExtensionChanged)
         self._onExtensionChanged(self.cboFormat.currentText())
         layout.addWidget(self.cboFormat, row, 1)
@@ -130,14 +122,6 @@ class BatchMask(QtWidgets.QWidget):
 
         self.pathSettings.updatePreview()
 
-
-    @Slot()
-    def _onDestTypeChanged(self, index):
-        target = self.cboDestType.itemData(index)
-        enabled = (target == "file")
-
-        # for widget in (self.lblFormat, self.cboFormat, self.pathSettings):
-        #     widget.setEnabled(enabled)
 
     @Slot()
     def _onExtensionChanged(self, ext: str):
@@ -179,8 +163,7 @@ class BatchMask(QtWidgets.QWidget):
 
             macroPath = self.cboMacro.currentData()
             saveMode = self.cboDestType.currentData()
-            saveParams = SAVE_PARAMS[ self.cboFormat.currentText() ]
-            self._task = BatchMaskTask(self.log, self.tab.filelist, macroPath, saveMode, saveParams, self.pathSettings)
+            self._task = BatchMaskTask(self.log, self.tab.filelist, macroPath, saveMode, self.pathSettings)
 
             self._task.signals.progress.connect(self.onProgress)
             self._task.signals.progressMessage.connect(self.onProgressMessage)
@@ -219,11 +202,10 @@ class BatchMask(QtWidgets.QWidget):
 
 
 class BatchMaskTask(BatchTask):
-    def __init__(self, log, filelist, macroPath: str, saveMode: str, saveParams: list, pathSettings: export.PathSettings):
+    def __init__(self, log, filelist, macroPath: str, saveMode: str, pathSettings: export.PathSettings):
         super().__init__("mask", log, filelist)
         self.macroPath      = macroPath
         self.saveMode       = saveMode # file / alpha
-        self.saveParams     = saveParams
 
         self.pathTemplate   = pathSettings.pathTemplate
         self.extension      = pathSettings.extension
@@ -251,8 +233,7 @@ class BatchMaskTask(BatchTask):
         self.parser.height = h
 
         path = self.parser.parsePath(self.pathTemplate, self.extension, self.overwriteFiles)
-        export.createFolders(path, self.log)
-        cv.imwrite(path, combined, self.saveParams)
+        export.saveImage(path, combined, self.log)
         return path
 
 

@@ -162,7 +162,6 @@ class BatchCrop(QtWidgets.QWidget):
         layout.addWidget(self.lblInputMacro, row, 0)
 
         self.cboInputMacro = QtWidgets.QComboBox()
-        #self.cboInputMacro.currentIndexChanged.connect(self._onMacroChanged)
         layout.addWidget(self.cboInputMacro, row, 1)
 
         row += 1
@@ -206,7 +205,7 @@ class BatchCrop(QtWidgets.QWidget):
         layout.addWidget(self.lblOutputMaskFormat, row, 0)
 
         self.cboOutputMaskFormat = QtWidgets.QComboBox()
-        self.cboOutputMaskFormat.addItems(export.SAVE_PARAMS.keys())
+        self.cboOutputMaskFormat.addItems(("PNG", "WEBP"))
         self.cboOutputMaskFormat.currentTextChanged.connect(self._onOutputMaskExtensionChanged)
         self._onOutputMaskExtensionChanged(self.cboOutputMaskFormat.currentText())
         layout.addWidget(self.cboOutputMaskFormat, row, 1)
@@ -252,7 +251,7 @@ class BatchCrop(QtWidgets.QWidget):
 
         row += 1
         self.cboOutputImageFormat = QtWidgets.QComboBox()
-        self.cboOutputImageFormat.addItems(export.SAVE_PARAMS.keys())
+        self.cboOutputImageFormat.addItems(export.FORMATS.keys())
         self.cboOutputImageFormat.currentTextChanged.connect(self._onOutputImageExtensionChanged)
         self._onOutputImageExtensionChanged(self.cboOutputImageFormat.currentText())
         layout.addWidget(QtWidgets.QLabel("Format:"), row, 0)
@@ -372,13 +371,11 @@ class BatchCrop(QtWidgets.QWidget):
             case "discard":
                 maskDestFunc = createDiscardMaskDest()
             case "file":
-                outputMaskSaveParams = export.SAVE_PARAMS[ self.cboOutputMaskFormat.currentText() ]
-                maskDestFunc = createFileMaskDest(self.outputMaskPathSettings, outputMaskSaveParams)
+                maskDestFunc = createFileMaskDest(self.outputMaskPathSettings, self.log)
             case "alpha":
                 maskDestFunc = createAlphaMaskDest()
 
         self._task = BatchCropTask(self.log, self.tab.filelist, maskSrcFunc, maskDestFunc, self.outputImagePathSettings)
-        self._task.outSaveParams = export.SAVE_PARAMS[ self.cboOutputImageFormat.currentText() ]
         self._task.combined      = not self.chkMultipleOutputs.isChecked()
         self._task.allowUpscale  = self.chkAllowUpscale.isChecked()
         self._task.sizeFactor    = self.spinCropSize.value()
@@ -476,11 +473,10 @@ def createDiscardMaskDest():
         return imgCropped
     return writeMask
 
-def createFileMaskDest(pathSettings: export.PathSettings, saveParams):
+def createFileMaskDest(pathSettings: export.PathSettings, log):
     pathTemplate   = pathSettings.pathTemplate
     extension      = pathSettings.extension
     overwriteFiles = pathSettings.overwriteFiles
-    saveParams     = saveParams
     parser = export.ExportVariableParser()
 
     def writeMask(imgPath: str, imgCropped: np.ndarray, maskLayers: list[np.ndarray], region: CropRegion, targetSize: SizeBucket):
@@ -492,9 +488,6 @@ def createFileMaskDest(pathSettings: export.PathSettings, saveParams):
             masks.append( np.zeros_like(masks[0]) )
 
         masks[:3] = masks[2::-1] # RGB(A) -> BGR(A)
-
-        # BGRA, shape: (h, w, channels)
-        # Creates a copy of the data.
         combined = np.dstack(masks)
 
         h, w = combined.shape[:2]
@@ -506,8 +499,7 @@ def createFileMaskDest(pathSettings: export.PathSettings, saveParams):
         parser.height = targetSize.h
 
         path = parser.parsePath(pathTemplate, extension, overwriteFiles)
-        export.createFolders(path)
-        cv.imwrite(path, scaled, saveParams)
+        export.saveImage(path, scaled, log)
 
         return imgCropped
 
@@ -561,7 +553,6 @@ class BatchCropTask(BatchTask):
         self.outPathTemplate   = imgPathSettings.pathTemplate
         self.outExtension      = imgPathSettings.extension
         self.outOverwriteFiles = imgPathSettings.overwriteFiles
-        self.outSaveParams     = []
 
         self.combined       = True
         self.allowUpscale   = False
@@ -723,14 +714,6 @@ class BatchCropTask(BatchTask):
 
 
     def saveCroppedImage(self, index: int, cropped: np.ndarray, targetSize: SizeBucket) -> str:
-        # x0, y0, x1, y1 = region.toTuple()
-
-        # # TODO: If src image has alpha, only save if output mask mode is set to alpha? <<<--
-        # #       Preserve original image alpha when mask source is "macro" or "file" and mask dest is "discard".
-        # #       Add Mask Operation: Load from Alpha
-        # #cropped = matImg[y0:y1+1, x0:x1+1, :]
-        # cropped = matImg[y0:y1+1, x0:x1+1, :3]
-
         h, w = cropped.shape[:2]
         interp = self.interpUp if (targetSize.w>w or targetSize.h>h) else self.interpDown
         scaled = cv.resize(cropped, (targetSize.w, targetSize.h), interpolation=interp)
@@ -740,9 +723,7 @@ class BatchCropTask(BatchTask):
         self.outPathParser.height = targetSize.h
 
         # TODO: Add template variable for crop region index?
-        #pathTemplate = self.outPathTemplate #if index == 0 else f"{self.outPathTemplate}_crop{index}"
-        pathTemplate = f"{self.outPathTemplate}_crop{index}"
+        pathTemplate = self.outPathTemplate #if index == 0 else f"{self.outPathTemplate}_crop{index}"
         path = self.outPathParser.parsePath(pathTemplate, self.outExtension, self.outOverwriteFiles)
-        export.createFolders(path, self.log)
-        cv.imwrite(path, scaled, self.outSaveParams)
+        export.saveImage(path, scaled, self.log)
         return path

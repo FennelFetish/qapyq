@@ -3,6 +3,8 @@ from typing_extensions import override
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker
 import cv2 as cv
+import numpy as np
+from PIL import Image
 from datetime import datetime
 from lib import qtlib, template_parser
 from config import Config
@@ -16,11 +18,47 @@ INTERP_MODES = {
     "Lanczos": cv.INTER_LANCZOS4
 }
 
-SAVE_PARAMS = {
-    "PNG":  [cv.IMWRITE_PNG_COMPRESSION, 9],
-    "JPG":  [cv.IMWRITE_JPEG_QUALITY, 100],
-    "WEBP": [cv.IMWRITE_WEBP_QUALITY, 100]
+
+class Format:
+    def __init__(self, saveParams: dict, conversion: dict = {}):
+        self.saveParams = saveParams
+        self.conversion = conversion
+
+# https://pillow.readthedocs.io/en/stable/handbook/concepts.html#concept-modes
+FORMATS = {
+    "PNG":  Format({"optimize": True, "compress_level": 9}),
+    "JPG":  Format({"optimize": True, "quality": 100, "subsampling": 0}, {"RGBA": "RGB", "P": "RGB"}),
+    "WEBP": Format({"lossless": True, "quality": 100, "exact": True})
 }
+
+EXTENSION_MAP = {
+    "JPEG": "JPG"
+}
+
+def getFormat(extension: str):
+    key = extension.lstrip('.').upper()
+    if format := FORMATS.get(key):
+        return format
+    key = EXTENSION_MAP.get(key, "")
+    return FORMATS.get(key)
+
+def saveImage(path, mat: np.ndarray, logger=print):
+    _, ext = os.path.splitext(path)
+    format = getFormat(ext)
+
+    mat[..., :3] = mat[..., 2::-1] # Convert BGR(A) -> RGB(A)
+    img = Image.fromarray(mat.squeeze()) # No copy!
+
+    createFolders(path, logger)
+    if not format:
+        img.save(path)
+        return
+
+    if convertMode := format.conversion.get(img.mode):
+        logger(f"Save Image: Converting color mode from {img.mode} to {convertMode}")
+        img = img.convert(convertMode)
+    
+    img.save(path, **format.saveParams)
 
 
 def createFolders(filename, logger=print) -> None:
@@ -30,11 +68,12 @@ def createFolders(filename, logger=print) -> None:
         os.makedirs(folder)
 
 
+
 class ExportWidget(QtWidgets.QWidget):
     MODE_AUTO = "auto"
     MODE_MANUAL = "manual"
 
-    def __init__(self, configKey: str, filelist, showInterpolation=True):
+    def __init__(self, configKey: str, filelist, showInterpolation=True, formats: list[str]=[]):
         super().__init__()
         self.configKey = configKey
         self.filelist = filelist
@@ -48,15 +87,15 @@ class ExportWidget(QtWidgets.QWidget):
 
         self.parser = ExportVariableParser()
 
-        self._build()
+        self._build(formats)
         self._onSaveModeChanged(self.cboSaveMode.currentIndex())
         
-    def _build(self):
+    def _build(self, formats: list[str]):
         collapsible = superqt.QCollapsible("Export Settings")
         collapsible.layout().setContentsMargins(2, 2, 2, 0)
         collapsible.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
         collapsible.setLineWidth(0)
-        collapsible.addWidget(self._buildParams())
+        collapsible.addWidget(self._buildParams(formats))
         collapsible.addWidget(self._buildPathSettings())
 
         self.txtPathSample = ClickableTextEdit()
@@ -71,7 +110,7 @@ class ExportWidget(QtWidgets.QWidget):
         layout.addWidget(self.txtPathSample)
         self.setLayout(layout)
 
-    def _buildParams(self):
+    def _buildParams(self, formats: list[str]):
         self.cboInterpUp = QtWidgets.QComboBox()
         self.cboInterpUp.addItems(INTERP_MODES.keys())
         self.cboInterpUp.setCurrentIndex(4) # Default: Lanczos
@@ -81,7 +120,7 @@ class ExportWidget(QtWidgets.QWidget):
         self.cboInterpDown.setCurrentIndex(3) # Default: Area
 
         self.cboFormat = QtWidgets.QComboBox()
-        self.cboFormat.addItems(SAVE_PARAMS.keys())
+        self.cboFormat.addItems(formats if formats else FORMATS.keys())
         self.cboFormat.currentTextChanged.connect(self._onExtensionChanged)
 
         layout = QtWidgets.QFormLayout()
@@ -118,7 +157,7 @@ class ExportWidget(QtWidgets.QWidget):
 
     @Slot()
     def _onExtensionChanged(self, ext: str):
-        self.extension = self.cboFormat.currentText()
+        self.extension = ext # property assignment with sanitation
 
     @Slot()
     def _onSaveModeChanged(self, index):
@@ -167,10 +206,6 @@ class ExportWidget(QtWidgets.QWidget):
         cbo = self.cboInterpUp if upscale else self.cboInterpDown
         return INTERP_MODES[ cbo.currentText() ]
 
-    def getSaveParams(self):
-        key = self.cboFormat.currentText()
-        return SAVE_PARAMS[key]
-    
 
     def setExportSize(self, width: int, height: int):
         self.parser.width = width
@@ -189,13 +224,14 @@ class ExportWidget(QtWidgets.QWidget):
         path = os.path.basename(path)
         path = os.path.join(self._defaultPath, path)
 
-        fileFilter = f"{self._extension.upper()} Image (*.{self._extension})"
+        fileFilter = f"All Files (*.*)"
         path, selectedFilter = QtWidgets.QFileDialog.getSaveFileName(self, "Save Image", path, fileFilter)
         if not path:
             return ""
         
         _, ext = os.path.splitext(path)
         if not ext:
+            # Do not simply append an extension: That would bypass overwrite confirmation.
             QtWidgets.QMessageBox.warning(self, "Invalid Path", "The extension is missing from the filename.")
             return ""
 

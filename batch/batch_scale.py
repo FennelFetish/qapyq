@@ -19,19 +19,6 @@ INTERP_MODES = {
 }
 
 
-class Format:
-    def __init__(self, saveParams: dict, conversion: dict = {}):
-        self.saveParams = saveParams
-        self.conversion = conversion
-
-# https://pillow.readthedocs.io/en/stable/handbook/concepts.html#concept-modes
-FORMATS = {
-    "PNG":  Format({"optimize": True, "compress_level": 9}),
-    "JPG":  Format({"optimize": True, "quality": 95}, {"RGBA": "RGB", "P": "RGB"}),
-    "WEBP": Format({"lossless": True, "quality": 100, "exact": True})
-}
-
-
 class BatchScale(QtWidgets.QWidget):
     EXPORT_PRESET_KEY = "batch-scale"
 
@@ -130,7 +117,7 @@ class BatchScale(QtWidgets.QWidget):
         layout.addRow("Interpolation Down:", self.cboInterpDown)
 
         self.cboFormat = QtWidgets.QComboBox()
-        self.cboFormat.addItems(FORMATS.keys())
+        self.cboFormat.addItems(export.FORMATS.keys())
         self.cboFormat.currentTextChanged.connect(self._onExtensionChanged)
         layout.addRow("Format:", self.cboFormat)
         self._onExtensionChanged(self.cboFormat.currentText())
@@ -207,7 +194,7 @@ class BatchScale(QtWidgets.QWidget):
             self._task = BatchScaleTask(self.log, self.tab.filelist, scaleFunc, self.pathSettings)
             self._task.interpUp   = INTERP_MODES[ self.cboInterpUp.currentText() ]
             self._task.interpDown = INTERP_MODES[ self.cboInterpDown.currentText() ]
-            self._task.format     = FORMATS[ self.cboFormat.currentText() ]
+            self._task.format     = export.FORMATS[ self.cboFormat.currentText() ]
 
             self._task.signals.progress.connect(self.onProgress)
             self._task.signals.progressMessage.connect(self.onProgressMessage)
@@ -255,7 +242,7 @@ class BatchScaleTask(BatchTask):
 
         self.interpUp       = None
         self.interpDown     = None
-        self.format: Format = None
+        self.format: export.Format = None
 
     def runPrepare(self):
         self.parser = export.ExportVariableParser()

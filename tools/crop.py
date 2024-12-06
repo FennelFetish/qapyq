@@ -15,6 +15,10 @@ from config import Config
 # TODO: Crop Modes:
 #       - Start selection in top left corner, drag to bottom right corner
 #       - Crop by selecting 4 points, transform using warpPerspective
+#       - "Crop by Mask" mode for previewing effect of macros.
+# TODO: Size modes for rect selection:
+#       - Try to use same buckets: Quantize to Q, separate preview rect
+
 
 def createPen(r, g, b):
     pen = QPen( QColor(r, g, b, 180) )
@@ -147,9 +151,8 @@ class CropTool(ViewTool):
 
         interp = exportWidget.getInterpolationMode(self._targetHeight > self._cropHeight)
         border = cv.BORDER_REPLICATE if self._toolbar.constrainToImage else cv.BORDER_CONSTANT
-        params = exportWidget.getSaveParams()
 
-        task = ExportTask(currentFile, destFile, pixmap, poly, self._targetWidth, self._targetHeight, interp, border, params)
+        task = ExportTask(currentFile, destFile, pixmap, poly, self._targetWidth, self._targetHeight, interp, border)
         task.signals.done.connect(self.onExportDone, Qt.ConnectionType.BlockingQueuedConnection)
         task.signals.fail.connect(self.onExportFailed, Qt.ConnectionType.BlockingQueuedConnection)
         QThreadPool.globalInstance().start(task)
@@ -161,10 +164,10 @@ class CropTool(ViewTool):
         self.tab.statusBar().showColoredMessage("Exported cropped image to: " + path, success=True)
         self._imgview.filelist.setData(file, DataKeys.CropState, DataKeys.IconStates.Saved)
         self._toolbar.updateExport()
-    
+
     @Slot()
-    def onExportFailed(self):
-        self.tab.statusBar().showColoredMessage("Export failed", success=False)
+    def onExportFailed(self, msg: str):
+        self.tab.statusBar().showColoredMessage(f"Export failed: {msg}", False, 0)
 
 
     # === Tool Interface ===
@@ -279,12 +282,12 @@ class CropTool(ViewTool):
 class ExportTask(QRunnable):
     class ExportTaskSignals(QObject):
         done = Signal(str, str)
-        fail = Signal()
+        fail = Signal(str)
 
         def __init__(self):
             super().__init__()
 
-    def __init__(self, srcFile, destFile, pixmap, poly, targetWidth, targetHeight, interp, border, saveParams):
+    def __init__(self, srcFile, destFile, pixmap, poly, targetWidth, targetHeight, interp, border):
         super().__init__()
         self.signals = self.ExportTaskSignals()
 
@@ -295,7 +298,6 @@ class ExportTask(QRunnable):
         self.targetHeight = targetHeight
         self.interp = interp
         self.border = border
-        self.saveParams = saveParams
 
         self.rect = self.calcCutRect(poly, pixmap)
         self.img = pixmap.copy(self.rect).toImage()
@@ -347,16 +349,14 @@ class ExportTask(QRunnable):
             matSrc  = self.toCvMat(self.img)
             matDest = cv.warpAffine(src=matSrc, M=matrix, dsize=dsize, flags=self.interp, borderMode=self.border)
 
-            export.createFolders(self.destFile)
-            cv.imwrite(self.destFile, matDest, self.saveParams)
+            export.saveImage(self.destFile, matDest)
             self.signals.done.emit(self.srcFile, self.destFile)
 
             del matSrc
             del matDest
         except Exception as ex:
-            print("Error while exporting:")
-            print(ex)
-            self.signals.fail.emit()
+            print(f"Export failed: {ex}")
+            self.signals.fail.emit(str(ex))
         finally:
             del self.img
 

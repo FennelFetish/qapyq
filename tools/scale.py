@@ -41,10 +41,8 @@ class ScaleTool(ViewTool):
         rot = self._toolbar.rotation
         w, h = self._toolbar.targetSize
         interp = exportWidget.getInterpolationMode(h > pixmap.height() or w > pixmap.width())
-        border = cv.BORDER_REPLICATE
-        params = exportWidget.getSaveParams()
 
-        task = ScaledExportTask(currentFile, destFile, pixmap, rot, w, h, interp, border, params)
+        task = ScaledExportTask(currentFile, destFile, pixmap, rot, w, h, interp)
         task.signals.done.connect(self.onExportDone, Qt.ConnectionType.BlockingQueuedConnection)
         task.signals.fail.connect(self.onExportFailed, Qt.ConnectionType.BlockingQueuedConnection)
         QThreadPool.globalInstance().start(task)
@@ -59,8 +57,8 @@ class ScaleTool(ViewTool):
         self._toolbar.updateExport()
     
     @Slot()
-    def onExportFailed(self):
-        self.tab.statusBar().showColoredMessage("Export failed", success=False)
+    def onExportFailed(self, msg: str):
+        self.tab.statusBar().showColoredMessage(f"Export failed: {msg}", False, 0)
 
 
     # === Tool Interface ===
@@ -263,12 +261,12 @@ class ScaleToolBar(QtWidgets.QToolBar):
 class ScaledExportTask(QRunnable):
     class ExportTaskSignals(QObject):
         done = Signal(str, str)
-        fail = Signal()
+        fail = Signal(str)
 
         def __init__(self):
             super().__init__()
 
-    def __init__(self, srcFile, destFile, pixmap, rotation, targetWidth, targetHeight, interp, border, saveParams):
+    def __init__(self, srcFile, destFile, pixmap, rotation, targetWidth, targetHeight, interp):
         super().__init__()
         self.signals = self.ExportTaskSignals()
 
@@ -280,8 +278,6 @@ class ScaledExportTask(QRunnable):
         self.targetWidth  = targetWidth
         self.targetHeight = targetHeight
         self.interp = interp
-        self.border = border
-        self.saveParams = saveParams
 
     @staticmethod
     def toCvMat(image):
@@ -324,18 +320,16 @@ class ScaledExportTask(QRunnable):
             matrix  = cv.getAffineTransform(ptsSrc, ptsDest)
             dsize   = (self.targetWidth, self.targetHeight)
             matSrc  = self.toCvMat(self.img)
-            matDest = cv.warpAffine(src=matSrc, M=matrix, dsize=dsize, flags=self.interp, borderMode=self.border)
+            matDest = cv.warpAffine(src=matSrc, M=matrix, dsize=dsize, flags=self.interp, borderMode=cv.BORDER_REPLICATE)
 
-            export.createFolders(self.destFile)
-            cv.imwrite(self.destFile, matDest, self.saveParams)
+            export.saveImage(self.destFile, matDest)
             self.signals.done.emit(self.srcFile, self.destFile)
 
             del matSrc
             del matDest
         except Exception as ex:
-            print("Error while exporting:")
-            print(ex)
-            self.signals.fail.emit()
+            print(f"Export failed: {ex}")
+            self.signals.fail.emit(str(ex))
         finally:
             del self.img
 

@@ -24,7 +24,7 @@ class MaskToolBar(QtWidgets.QToolBar):
         layout.addWidget(self._buildHistory())
         layout.addWidget(self._buildMacro())
 
-        self.exportWidget = export.ExportWidget("mask", maskTool.tab.filelist, showInterpolation=False)
+        self.exportWidget = export.ExportWidget("mask", maskTool.tab.filelist, showInterpolation=False, formats=["PNG","WEBP"])
         layout.addWidget(self.exportWidget)
 
         btnExport = QtWidgets.QPushButton("Export")
@@ -35,7 +35,7 @@ class MaskToolBar(QtWidgets.QToolBar):
         self._recordBlinkTimer.setInterval(500)
         self._recordBlinkTimer.timeout.connect(self._blinkRecordMacro)
 
-        # TODO: Also load from image's alpha channel
+        # TODO: Also load from image's alpha channel 
         #       Only if file is PNG/WEBP
         # btnApplyAlpha = QtWidgets.QPushButton("Set as Alpha Channel")
         # btnApplyAlpha.clicked.connect(self.maskTool.applyAlpha)
@@ -153,13 +153,19 @@ class MaskToolBar(QtWidgets.QToolBar):
             self.cboOperation.addItem("Blend Layers", "blend_layers")
             self.cboOperation.addItem("Run Macro", "macro")
             
-            for preset, config in Config.inferMaskPresets.items():
+            for preset in sorted(Config.inferMaskPresets.keys(), key=self._customOpSortKey):
+                config = Config.inferMaskPresets[preset]
                 self._buildCustomOp(preset, config)
 
             index = max(0, self.cboOperation.findData(selectedKey))
             self.cboOperation.setCurrentIndex(index)
             self.onOpChanged(index)
     
+    @staticmethod
+    def _customOpSortKey(preset: str):
+        segment = 1 if (Config.inferMaskPresets[preset].get("classes") is None) else 0
+        return (segment, preset.lower())
+
     def _buildCustomOp(self, preset: str, config: dict):
         match config.get("backend"):
             case "yolo-detect":
@@ -170,6 +176,7 @@ class MaskToolBar(QtWidgets.QToolBar):
                 key = f"segment {preset}"
                 self.ops[key] = mask_ops.SegmentMaskOperation(self.maskTool, preset)
                 self.cboOperation.addItem(f"Segment: {preset}", key)
+
 
     def _buildHistory(self):
         layout = QtWidgets.QGridLayout()
@@ -191,14 +198,6 @@ class MaskToolBar(QtWidgets.QToolBar):
 
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(1, 1, 1, 1)
-
-        # Pause/Continue?
-        # Stop macro on image change
-        # Save when? When stopping? Or add save button?
-        # Set macro name before saving? Use filename as name?
-
-        # Load macros into list of operations?
-        # Provide default macros in subfolder
 
         self.btnStartStopMacro = QtWidgets.QPushButton("⚫ Start Recording")
         self.btnStartStopMacro.clicked.connect(self.startStopRecordMacro)
