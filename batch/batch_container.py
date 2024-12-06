@@ -5,6 +5,7 @@ from .batch_rules import BatchRules
 from .batch_apply import BatchApply
 from .batch_scale import BatchScale
 from .batch_mask import BatchMask
+from .batch_crop import BatchCrop
 from .batch_log import BatchLog
 import lib.qtlib as qtlib
 
@@ -27,6 +28,7 @@ class BatchContainer(QtWidgets.QTabWidget):
         self.applyWidget     = BatchApply(tab, log, self.progressbar, self.statusBar)
         self.scaleWidget     = BatchScale(tab, log, self.progressbar, self.statusBar)
         self.maskWidget      = BatchMask(tab, log, self.progressbar, self.statusBar)
+        self.cropWidget      = BatchCrop(tab, log, self.progressbar, self.statusBar)
 
         self.addTab(captionWidget, "Caption (json)")
         self.addTab(self.rulesWidget, "Rules (json → json)")
@@ -34,7 +36,7 @@ class BatchContainer(QtWidgets.QTabWidget):
         self.addTab(self.applyWidget, "Apply (json → txt)")
         self.addTab(self.scaleWidget, "Scale (Image)")
         self.addTab(self.maskWidget, "Mask (Image)")
-        #self.addTab(QtWidgets.QWidget(), "Crop (Image)")
+        self.addTab(self.cropWidget, "Crop (Image)")
         self.addTab(self.logWidget, "Log")
 
         tab.filelist.addListener(self)
@@ -47,6 +49,7 @@ class BatchContainer(QtWidgets.QTabWidget):
         self.applyWidget.onFileChanged(currentFile)
         self.scaleWidget.onFileChanged(currentFile)
         self.maskWidget.onFileChanged(currentFile)
+        self.cropWidget.onFileChanged(currentFile)
         self.logWidget.onFileChanged(currentFile)
 
     def onFileListChanged(self, currentFile):

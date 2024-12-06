@@ -72,8 +72,9 @@ class BatchTask(QRunnable):
             try:
                 outputFile = self.runProcessFile(imgFile)
             except Exception as ex:
-                self.log(f"WARNING: {str(ex)}")
                 outputFile = None
+                self.log(f"WARNING: {str(ex)}")
+                traceback.print_exc()
             finally:
                 self.signals.progress.emit(fileNr+1, numFiles, outputFile)
 
