@@ -43,7 +43,7 @@ class BriaRmbgMask:
 
         hMask, wMask = mask.shape
         interp = cv.INTER_CUBIC if (wOrig>wMask or hOrig>hMask) else cv.INTER_AREA
-        mask = cv.resize(mask, (wOrig, hOrig), interpolation=interp) # why are w/h inverted?
+        mask = cv.resize(mask, (wOrig, hOrig), interpolation=interp)
         return mask.tobytes()
 
 

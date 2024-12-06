@@ -155,7 +155,7 @@ class MaskingMacro:
 
     # TODO: Macros that use scratch layers may expect a fixed number of input layers (like 1)
     #       and blend the results from wrong layers when starting with 2 layers.
-    def run(self, imgPath: str, layers: list[np.ndarray], currentLayerIndex: int) -> tuple[list[np.ndarray], list[bool]]:
+    def run(self, imgPath: str, layers: list[np.ndarray], currentLayerIndex=0) -> tuple[list[np.ndarray], list[bool]]:
         '''
         Must run in inference thread.
         '''

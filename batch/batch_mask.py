@@ -14,6 +14,7 @@ import ui.export_settings as export
 
 # TODO: Store detections in json (or separate batch detect?)
 
+# TODO: Use PIL to save images. Set WebP exact=True to preserve color channels when exporting with alpha.
 
 SAVE_PARAMS = {
     "PNG":  [cv.IMWRITE_PNG_COMPRESSION, 9],
@@ -261,7 +262,7 @@ class BatchMaskTask(BatchTask):
         w, h = imgSize.width(), imgSize.height()
 
         layers = [ np.zeros((h, w), dtype=np.uint8) ]
-        layers, layerChanged = self.macro.run(imgFile, layers, 0)
+        layers, layerChanged = self.macro.run(imgFile, layers)
         layers = layers[:4]
 
         # Can't write images with only 2 channels. Need 1/3/4 channels.
@@ -284,6 +285,6 @@ class BatchMaskTask(BatchTask):
             imgChannels = list(cv.split(mat))[:3]
 
         layers = [ np.zeros((h, w), dtype=np.uint8) ]
-        layers, layerChanged = self.macro.run(imgFile, layers, 0)
+        layers, layerChanged = self.macro.run(imgFile, layers)
         imgChannels.append(layers[0])
         return imgChannels

@@ -38,8 +38,8 @@ class MacroVisualization(QtWidgets.QScrollArea):
         macro.loadFrom(path)
         
         row = 0
-        for col, header in enumerate(("Layer 0", "Layer 1", "Layer 2", "Layer 3")):
-            self.gridLayout.addWidget(CellLabel(header, bold=True), row, col)
+        for col in range(4):
+            self.gridLayout.addWidget(CellLabel(f"Layer {col}", bold=True), row, col)
 
         row += 1
         self.gridLayout.addWidget(QtWidgets.QWidget(), row, 0)
@@ -64,7 +64,7 @@ class MacroVisualization(QtWidgets.QScrollArea):
         for op in ops:
             match op.op:
                 case MacroOp.SetLayer:
-                    layer = int(op.args.get("index", 0))
+                    layer = int(op.args["index"])
                     if layer > maxLayer:
                         self._fillBackground(row, startRow, layer, maxLayer, colors)
                         maxLayer = layer
@@ -75,7 +75,7 @@ class MacroVisualization(QtWidgets.QScrollArea):
                     row = self._addRow(op, row, maxLayer, maxLayer, colors)
 
                 case MacroOp.DeleteLayer:
-                    col = int(op.args.get("index", 0))
+                    col = int(op.args["index"])
                     row = self._addRow(op, row, col, maxLayer, colors)
 
                     colors.append(colors[col])
@@ -84,7 +84,7 @@ class MacroVisualization(QtWidgets.QScrollArea):
                     layer = min(maxLayer, layer)
 
                 case MacroOp.BlendLayers:
-                    srcLayer = int(op.args.get("srcLayer", 0))
+                    srcLayer = int(op.args["srcLayer"])
                     color1, color2 = colors[layer], colors[srcLayer]
                     if srcLayer < layer:
                         color1, color2 = color2, color1
@@ -102,7 +102,7 @@ class MacroVisualization(QtWidgets.QScrollArea):
         return row
 
 
-    def _addRow(self, op: MacroOpItem, row: int, col: int, maxCol: int, colors: list, color1: str = "", color2: str = ""):
+    def _addRow(self, op: MacroOpItem, row: int, col: int, maxCol: int, colors: list[str], color1="", color2=""):
         if not color1:
             color1 = colors[col]
 
@@ -115,20 +115,16 @@ class MacroVisualization(QtWidgets.QScrollArea):
         
         return row + 1
 
-    def _addSpacing(self, row: int, maxCol: int, colors: list):
+    def _addSpacing(self, row: int, maxCol: int, colors: list[str]):
         if maxCol < 0:
-            cell = CellBg("")
-            cell.setFixedHeight(self.SPACING)
-            self.gridLayout.addWidget(cell, row, 0)
+            self.gridLayout.addWidget(CellBg("", self.SPACING), row, 0)
         else:
             for i in range(maxCol+1):
-                cell = CellBg(colors[i])
-                cell.setFixedHeight(self.SPACING)
-                self.gridLayout.addWidget(cell, row, i)
+                self.gridLayout.addWidget(CellBg(colors[i], self.SPACING), row, i)
         
         return row + 1
 
-    def _fillBackground(self, row: int, startRow: int, layer: int, maxLayer: int, colors: list):
+    def _fillBackground(self, row: int, startRow: int, layer: int, maxLayer: int, colors: list[str]):
         # When a layer is selected without previous AddLayer op, that layer is expected as input.
         # Fill background above current row to visualize its existence.
         for col in range(maxLayer+1, layer+1):
@@ -136,15 +132,9 @@ class MacroVisualization(QtWidgets.QScrollArea):
 
             for r in range(startRow, row, 2):
                 self.gridLayout.addWidget(CellBg(color), r, col)
+                self.gridLayout.addWidget(CellBg(color, self.SPACING), r+1, col)
 
-                cell = CellBg(color)
-                cell.setFixedHeight(self.SPACING)
-                self.gridLayout.addWidget(cell, r+1, col)
-
-            cell = CellBg(color)
-            cell.setFixedHeight(self.SPACING)
-            self.gridLayout.addWidget(cell, startRow-1, col)
-
+            self.gridLayout.addWidget(CellBg(color, self.SPACING), startRow-1, col)
             self.gridLayout.itemAtPosition(0, col).widget().setInput(color)
 
 
@@ -158,7 +148,7 @@ class CellLabel(QtWidgets.QLabel):
             fontWeight, height = "400", 26
 
         if color2:
-            background = "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 " + color1 + ", stop:1 " + color2 + ")"
+            background = "background: qlineargradient(x1:0.1, y1:0, x2:0.9, y2:0, stop:0 " + color1 + ", stop:1 " + color2 + ")"
         else:
             background = "background-color: " + color1
 
@@ -188,8 +178,10 @@ class CellLabel(QtWidgets.QLabel):
 
 
 class CellBg(QtWidgets.QLabel):
-    def __init__(self, color: str):
+    def __init__(self, color: str, height=0):
         super().__init__()
+        if height:
+            self.setFixedHeight(height)
 
         # Reduce opacity
         if color:
