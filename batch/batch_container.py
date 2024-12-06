@@ -20,7 +20,7 @@ class BatchContainer(QtWidgets.QTabWidget):
         self.statusBar.addPermanentWidget(self.progressbar)
 
         self.logWidget = BatchLog()
-        log = self.logWidget.addLog
+        log = self.logWidget.emitLog
 
         captionWidget        = BatchCaption(tab, log, self.progressbar, self.statusBar)
         self.rulesWidget     = BatchRules(tab, log, self.progressbar, self.statusBar)

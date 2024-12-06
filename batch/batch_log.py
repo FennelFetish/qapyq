@@ -1,11 +1,13 @@
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, Signal
 from datetime import datetime
 import os
 from config import Config
 
 
 class BatchLog(QtWidgets.QWidget):
+    log = Signal(str)
+
     def __init__(self):
         super().__init__()
         self._savePath = Config.pathExport
@@ -29,13 +31,15 @@ class BatchLog(QtWidgets.QWidget):
         layout.addWidget(self.btnSave, 1, 1)
         self.setLayout(layout)
 
+        self.log.connect(self.addLog, Qt.ConnectionType.BlockingQueuedConnection)
+
 
     def onFileChanged(self, currentFile):
         self._savePath = os.path.dirname(currentFile)
 
 
     @Slot()
-    def addLog(self, line):
+    def addLog(self, line: str):
         logScrollBar = self.txtLog.verticalScrollBar()
         scrollDown = (logScrollBar.value() == logScrollBar.maximum())
 
@@ -45,6 +49,10 @@ class BatchLog(QtWidgets.QWidget):
             logScrollBar.setValue(logScrollBar.maximum())
         
         print(line)
+    
+    def emitLog(self, line: str):
+        self.log.emit(line)
+
 
     @Slot()
     def saveLog(self):
