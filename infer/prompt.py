@@ -117,6 +117,10 @@ class PromptWidget(QtWidgets.QWidget):
         if currentConversation:
             conversations.append(currentConversation)
 
+        # Empty prompt
+        if not conversations:
+            conversations.append({defaultName: ""})
+
         # Apply rounds
         conversations.extend([
             {f"{name}_round{r}": prompt for name, prompt in conv.items()}
