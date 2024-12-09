@@ -1,5 +1,5 @@
 from transformers import Qwen2VLForConditionalGeneration, AutoProcessor, GenerationConfig, set_seed
-import torch
+import torch, math
 from PIL import Image
 from typing import List, Dict
 from .backend import InferenceBackend
@@ -47,6 +47,7 @@ class Qwen2VLBackend(InferenceBackend):
 
     def caption(self, imgPath: str, prompts: List[Dict[str, str]], systemPrompt: str = None) -> Dict[str, str]:
         image = Image.open(imgPath)
+        image = self.downscaleImage(image)
         answers = dict()
 
         set_seed(self.randomSeed())
@@ -89,6 +90,20 @@ class Qwen2VLBackend(InferenceBackend):
             return prompt.strip()
 
 
+    def downscaleImage(self, image: Image.Image):
+        width, height = image.size
+        pixels = width * height
+        maxPixels = 1024*1536
+
+        scale = math.sqrt(maxPixels / pixels)
+        if scale >= 1.0:
+            return image
+        
+        newWidth  = round(width * scale)
+        newHeight = round(height * scale)
+        return image.resize((newWidth, newHeight), resample=Image.Resampling.BOX)
+
+
     @staticmethod
     def makeDeviceMap(modelPath, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
         devmap = DevMap.fromConfig(
@@ -113,10 +128,3 @@ class Qwen2VLBackend(InferenceBackend):
 
         devmap.setCudaLayer("lm_head")
         return devmap
-
-
-
-# def printErr(text):
-#     import sys, os
-#     sys.stderr.write(text + os.linesep)
-#     sys.stderr.flush()
