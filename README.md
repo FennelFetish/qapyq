@@ -68,8 +68,11 @@
   - Models in GGUF format with embedded chat template (llama-cpp backend).
 
 - **Masking**
-  - YOLO/Adetailer detection models
-  - [RMBG-2.0](https://huggingface.co/briaai/RMBG-2.0)
+  - Box Detection
+    - YOLO/Adetailer detection models
+  - Segmentation / Background Removal
+    - [InSPyReNet](https://github.com/plemeri/InSPyReNet/blob/main/docs/model_zoo.md) (Plus_Ultra)
+    - [RMBG-2.0](https://huggingface.co/briaai/RMBG-2.0)
 
 
 ## Setup

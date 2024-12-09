@@ -167,15 +167,14 @@ class MaskToolBar(QtWidgets.QToolBar):
         return (segment, preset.lower())
 
     def _buildCustomOp(self, preset: str, config: dict):
-        match config.get("backend"):
-            case "yolo-detect":
-                key = f"detect {preset}"
-                self.ops[key] = mask_ops.DetectMaskOperation(self.maskTool, preset)
-                self.cboOperation.addItem(f"Detect: {preset}", key)
-            case "bria-rmbg":
-                key = f"segment {preset}"
-                self.ops[key] = mask_ops.SegmentMaskOperation(self.maskTool, preset)
-                self.cboOperation.addItem(f"Segment: {preset}", key)
+        if "classes" in config:
+            key = f"detect {preset}"
+            self.ops[key] = mask_ops.DetectMaskOperation(self.maskTool, preset)
+            self.cboOperation.addItem(f"Detect: {preset}", key)
+        else:
+            key = f"segment {preset}"
+            self.ops[key] = mask_ops.SegmentMaskOperation(self.maskTool, preset)
+            self.cboOperation.addItem(f"Segment: {preset}", key)
 
 
     def _buildHistory(self):

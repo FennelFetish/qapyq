@@ -1,4 +1,4 @@
-from PySide6.QtCore import QProcess, QByteArray, QMutex, QMutexLocker, QThread
+from PySide6.QtCore import QProcess, QByteArray, QMutex, QMutexLocker, QThread, QProcessEnvironment
 import sys, struct, msgpack, copy, traceback
 from lib.util import Singleton
 from config import Config
@@ -39,11 +39,14 @@ class InferenceProcess(metaclass=Singleton):
             if self.proc:
                 return
 
+            env = QProcessEnvironment.systemEnvironment()
+            env.insert("NO_ALBUMENTATIONS_UPDATE", "1")
+
             self.proc = QProcess()
             self.proc.setProgram(sys.executable)
             self.proc.setArguments(["-u", "main_inference.py"]) # Unbuffered pipes
             #self.proc.setArguments(["main_inference.py"])
-            #self.proc.setProcessEnvironment(QProcessEnvironment.systemEnvironment())
+            self.proc.setProcessEnvironment(env)
             self.proc.setProcessChannelMode(QProcess.ProcessChannelMode.ForwardedErrorChannel)
             self.proc.finished.connect(self._onProcessEnded)
             self.proc.start()

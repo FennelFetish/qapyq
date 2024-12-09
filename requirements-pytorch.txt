@@ -1,5 +1,5 @@
-#--index-url https://download.pytorch.org/whl/cu121
---index-url https://download.pytorch.org/whl/cu124
+#--extra-index-url https://download.pytorch.org/whl/cu121
+--extra-index-url https://download.pytorch.org/whl/cu124
 
 # Molmo is slow with torch 2.5.0
 

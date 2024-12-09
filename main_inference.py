@@ -81,6 +81,9 @@ def loadMaskingBackend(config: dict):
         case "bria-rmbg":
             from infer.mask_briarmbg import BriaRmbgMask
             return BriaRmbgMask(config)
+        case "inspyrenet":
+            from infer.mask_inspyrenet import InspyrenetMask
+            return InspyrenetMask(config)
     
     raise ValueError(f"Unknown masking backend: {backendName}")
 

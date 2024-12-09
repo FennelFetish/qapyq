@@ -3,7 +3,7 @@ PySide6
 superqt
 
 # Image
-opencv-python
+opencv-python-headless
 pillow
 
 # Inter-process communication
@@ -20,7 +20,7 @@ bitsandbytes
 diskcache
 
 # onnx
-numpy<2.0,>=1.26.3
+numpy
 protobuf
 humanfriendly
 
@@ -38,3 +38,6 @@ onnx
 
 # BriaAI RMBG
 kornia
+
+# InSPyReNet rembg
+transparent_background

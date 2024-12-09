@@ -12,30 +12,35 @@ class BackendTypes:
     TORCH        = "torch"
     ULTRALYTICS  = "ultralytics"
 
+class BackendPathModes:
+    FILE   = "file"
+    FOLDER = "folder"
+
 
 BackendsCaption = {
-    "Florence-2": ("florence2", BackendTypes.TRANSFORMERS),
-    "InternVL2": ("internvl2", BackendTypes.TRANSFORMERS),
-    "MiniCPM-V-2.6": ("minicpm", BackendTypes.LLAMA_CPP),
-    "Molmo": ("molmo", BackendTypes.TRANSFORMERS),
-    "Ovis-1.6": ("ovis16", BackendTypes.TRANSFORMERS),
-    "Qwen2-VL": ("qwen2vl", BackendTypes.TRANSFORMERS)
+    "Florence-2": ("florence2", BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER),
+    "InternVL2": ("internvl2", BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER),
+    "MiniCPM-V-2.6": ("minicpm", BackendTypes.LLAMA_CPP, BackendPathModes.FILE),
+    "Molmo": ("molmo", BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER),
+    "Ovis-1.6": ("ovis16", BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER),
+    "Qwen2-VL": ("qwen2vl", BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER)
 }
 
 # TODO: Allow loading of caption models as LLM.
 #       Set visual layers to 0? -> No, load as defined in config to prevent reloading.
 BackendsLLM = {
-    "GGUF": ("gguf", BackendTypes.LLAMA_CPP)
+    "GGUF": ("gguf", BackendTypes.LLAMA_CPP, BackendPathModes.FILE)
 }
 
 BackendsTag = {
-    "WD": ("wd", BackendTypes.ONNX),
-    "JoyTag": ("joytag", BackendTypes.TORCH)
+    "WD": ("wd", BackendTypes.ONNX, BackendPathModes.FILE),
+    "JoyTag": ("joytag", BackendTypes.TORCH, BackendPathModes.FOLDER)
 }
 
 BackendsMask = {
-    "Yolo Detect": ("yolo-detect", BackendTypes.ULTRALYTICS),
-    "BriaAI RMBG-2.0": ("bria-rmbg", BackendTypes.TRANSFORMERS)
+    "Yolo Detect": ("yolo-detect", BackendTypes.ULTRALYTICS, BackendPathModes.FILE),
+    "BriaAI RMBG-2.0": ("bria-rmbg", BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER),
+    "Inspyrenet RemBg": ("inspyrenet", BackendTypes.TORCH, BackendPathModes.FILE)
 }
 
 
@@ -187,6 +192,10 @@ class BaseSettingsWidget(QtWidgets.QWidget):
     @property
     def backendType(self) -> str:
         return self.cboBackend.currentData()[1]
+    
+    @property
+    def backendPathMode(self) -> str:
+        return self.cboBackend.currentData()[2]
 
 
     def reloadPresetList(self, selectName: str | None = None) -> None:
@@ -256,7 +265,7 @@ class BaseSettingsWidget(QtWidgets.QWidget):
         if not path and altTarget:
             path = altTarget.text()
 
-        if self.backendType in [BackendTypes.LLAMA_CPP, BackendTypes.ONNX, BackendTypes.ULTRALYTICS]:
+        if self.backendPathMode == BackendPathModes.FILE:
             path, filter = QtWidgets.QFileDialog.getOpenFileName(self, "Choose model file", path)
         else:
             path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose model directory", path)
