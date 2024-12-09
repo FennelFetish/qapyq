@@ -239,8 +239,7 @@ class MaskingMacro:
         threshold = args.pop("threshold")
         config: dict = Config.inferMaskPresets.get(preset)
         classes = config.get("classes")
-        
-        # TODO: This must run in inference thread
+
         boxes = inferProc.maskBoxes(config, imgPath)
         for box in boxes:
             name = box["name"]

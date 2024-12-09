@@ -58,7 +58,10 @@ class BatchLog(QtWidgets.QWidget):
     def saveLog(self):
         filter = "Log Files (*.log);;Text Files (*.txt)"
 
-        path, filter = QtWidgets.QFileDialog.getSaveFileName(self, "Choose target file", self._savePath, filter)
+        filename = datetime.now().strftime("batch_%Y-%m-%d_%H%M%S.log")
+        path = os.path.join(self._savePath, filename)
+        
+        path, filter = QtWidgets.QFileDialog.getSaveFileName(self, "Choose target file", path, filter)
         if path:
             with open(path, 'w') as file:
                 file.writelines(self.txtLog.toPlainText())

@@ -60,7 +60,7 @@ class BatchRules(QtWidgets.QWidget):
         layout.addWidget(QtWidgets.QLabel("Separator:"), row, 0)
         layout.addWidget(self.txtSeparator, row, 1)
 
-        btnLoadFromCaption = QtWidgets.QPushButton("Load from Caption window")
+        btnLoadFromCaption = QtWidgets.QPushButton("Load from Caption Window")
         btnLoadFromCaption.clicked.connect(self.loadFromCaptionWindow)
         layout.addWidget(btnLoadFromCaption, row, 2, Qt.AlignRight)
 
