@@ -57,7 +57,7 @@ def saveImage(path, mat: np.ndarray, logger=print):
     if convertMode := format.conversion.get(img.mode):
         logger(f"Save Image: Converting color mode from {img.mode} to {convertMode}")
         img = img.convert(convertMode)
-    
+
     img.save(path, **format.saveParams)
 
 
@@ -67,6 +67,9 @@ def createFolders(filename, logger=print) -> None:
         logger(f"Creating folder: {folder}")
         os.makedirs(folder)
 
+
+
+INVALID_CHARS = str.maketrans('', '', '\n\r\t')
 
 
 class ExportWidget(QtWidgets.QWidget):
@@ -157,7 +160,7 @@ class ExportWidget(QtWidgets.QWidget):
 
     @Slot()
     def _onExtensionChanged(self, ext: str):
-        self.extension = ext # property assignment with sanitation
+        self.extension = ext # property assignment with sanitization
 
     @Slot()
     def _onSaveModeChanged(self, index):
@@ -238,9 +241,10 @@ class ExportWidget(QtWidgets.QWidget):
         self._defaultPath = os.path.dirname(path)
         return path
     
-    def getAutoExportPath(self, imgFile) -> str:
+    def getAutoExportPath(self, imgFile, forReading=False) -> str:
         self.parser.setup(imgFile)
-        return self.parser.parsePath(self.pathTemplate, self._extension, self.overwriteFiles)
+        overwriteFiles = self.overwriteFiles or forReading
+        return self.parser.parsePath(self.pathTemplate, self._extension, overwriteFiles)
 
 
 
@@ -254,6 +258,7 @@ class PathSettings(QtWidgets.QWidget):
     {{folder-1}}  Parent folder 1 (or 2, 3...)
     {{w}}         Width
     {{h}}         Height
+    {{region}}    Crop region number
     {{date}}      Date yyyymmdd
     {{time}}      Time hhmmss
 
@@ -332,8 +337,7 @@ Examples:
     @property
     def pathTemplate(self) -> str:
         template = self.txtPathTemplate.toPlainText()
-        # TODO: Remove tabs, also in other places like in updatePreview()
-        return template.replace('\n', '').replace('\r', '')
+        return template.translate(INVALID_CHARS)
     
     @pathTemplate.setter
     def pathTemplate(self, template: str):
@@ -358,7 +362,7 @@ Examples:
     def updatePreview(self):
         text = self.txtPathTemplate.toPlainText()
         textLen = len(text)
-        text = text.replace('\n', '').replace('\r', '')
+        text = text.translate(INVALID_CHARS)
 
         with QSignalBlocker(self.txtPathTemplate):
             # When newlines are pasted and removed, put text cursor at end of pasted text.
@@ -370,8 +374,7 @@ Examples:
                 cursor.setPosition(cursorPos)
                 self.txtPathTemplate.setTextCursor(cursor)
 
-            text, varPositions = self.parser.parseWithPositions(text)
-            text = os.path.abspath(text) # FIXME: abspath() messes with variable positions
+            text, varPositions = self.parser.parsePathWithPositions(text)
             self.txtPreview.setPlainText(text + f".{self._extension}")
             self.highlighter.highlight(self.txtPathTemplate, self.txtPreview, varPositions, not self.isEnabled())
 
@@ -439,11 +442,12 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
         self.stripMultiWhitespace = False
         self.width  = 0
         self.height = 0
+        self.region = 0
 
     def parsePath(self, pathTemplate: str, extension: str, overwriteFiles: bool) -> str:
         path = self.parse(pathTemplate)
-        path = path.replace('\n', '').replace('\r', '')
-        path = os.path.abspath(path)
+        path = path.translate(INVALID_CHARS)
+        path = os.path.normpath(os.path.join(Config.pathExport, path))
 
         if overwriteFiles:
             path = f"{path}.{extension}"
@@ -456,6 +460,35 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
                 counter += 1
 
         return path
+    
+    def parsePathWithPositions(self, pathTemplate: str) -> tuple[str, list[list[int]]]:
+        firstVarIdx = pathTemplate.find("{{")
+        if firstVarIdx < 0:
+            path, varPositions = self.parseWithPositions(pathTemplate)
+        else:
+            # Normalize part of path before the first variable
+            pathHead = pathTemplate[:firstVarIdx] + "@" # The added character prevents removal of trailing slashes.
+            pathHead = os.path.normpath(os.path.join(Config.pathExport, pathHead))
+            pathHead = pathHead[:-1] # Cut '@'
+            lenHead = len(pathHead)
+
+            pathTail = pathTemplate[firstVarIdx:]
+            pathTail, varPositions = self.parseWithPositions(pathTail)
+            path = pathHead + pathTail
+
+            for pos in varPositions:
+                pos[0] += firstVarIdx
+                pos[1] += firstVarIdx
+                pos[2] += lenHead
+                pos[3] += lenHead
+
+        pathNorm = path.translate(INVALID_CHARS)
+        pathNorm = os.path.normpath(os.path.join(Config.pathExport, pathNorm))
+
+        # Highlighting will be wrong if path elements were removed in normpath().
+        if len(pathNorm) != len(path):
+            return pathNorm, []
+        return pathNorm, varPositions
 
     @override
     def _getImgProperties(self, var: str) -> str | None:
@@ -465,6 +498,7 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
         match var:
             case "w": return str(self.width)
             case "h": return str(self.height)
+            case "region": return str(self.region)
 
             case "date": return datetime.now().strftime('%Y%m%d')
             case "time": return datetime.now().strftime('%H%M%S')

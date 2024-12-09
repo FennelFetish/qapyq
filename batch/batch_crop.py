@@ -721,9 +721,8 @@ class BatchCropTask(BatchTask):
 
         self.outPathParser.width  = targetSize.w
         self.outPathParser.height = targetSize.h
+        self.outPathParser.region = index
 
-        # TODO: Add template variable for crop region index?
-        pathTemplate = self.outPathTemplate #if index == 0 else f"{self.outPathTemplate}_crop{index}"
-        path = self.outPathParser.parsePath(pathTemplate, self.outExtension, self.outOverwriteFiles)
+        path = self.outPathParser.parsePath(self.outPathTemplate, self.outExtension, self.outOverwriteFiles)
         export.saveImage(path, scaled, self.log)
         return path

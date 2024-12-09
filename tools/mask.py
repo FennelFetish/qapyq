@@ -69,7 +69,7 @@ class MaskTool(ViewTool):
         self._toolbar.setHistory(self.maskItem)
 
     def loadLayersFromFile(self):
-        maskPath = self._toolbar.exportWidget.getAutoExportPath(self.tab.filelist.getCurrentFile()) # TODO: When overwrite disabled, load latest counter
+        maskPath = self._toolbar.exportWidget.getAutoExportPath(self.tab.filelist.getCurrentFile(), forReading=True) # TODO: When overwrite disabled, load latest counter
         if not os.path.exists(maskPath):
             return None
 
