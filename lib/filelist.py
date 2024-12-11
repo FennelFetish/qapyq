@@ -3,6 +3,15 @@ from PySide6.QtGui import QImageReader
 from config import Config
 
 
+try:
+    import natsort as ns
+    sortKey = ns.natsort_keygen(alg=ns.INT | ns.PATH | ns.IGNORECASE)
+except:
+    print("natsort not installed. Cannot sort files in natural order.")
+    def sortKey(path: str):
+        return os.path.split(path)
+
+
 class DataKeys:
     Caption         = "caption"
     CaptionState    = "caption_state"
@@ -195,7 +204,7 @@ class FileList:
         self.files = list(set(self.files))
 
     def _sortFiles(self):
-        self.files.sort(key=lambda path: os.path.split(path))
+        self.files.sort(key=sortKey)
 
 
     def addListener(self, listener):
