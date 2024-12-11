@@ -19,8 +19,14 @@ class TagBackend:
         raise NotImplementedError()
 
     # TODO: Instead of padding, infer each half of image and combine tags. ("out of frame" problem?)
-    def loadImageSquare(self, imgPath: str, targetSize: int):
+    @staticmethod
+    def loadImageSquare(imgPath: str, targetSize: int):
         imgSrc = cv.imread(imgPath, cv.IMREAD_UNCHANGED) # BGR(A) uint8
+
+        # Greyscale -> BGR
+        if len(imgSrc.shape) < 3:
+            imgSrc = np.stack([imgSrc] * 3, axis=-1)
+
         srcHeight, srcWidth, srcChannels = imgSrc.shape
 
         if srcHeight < srcWidth:
