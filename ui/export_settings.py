@@ -463,7 +463,9 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
     
     def parsePathWithPositions(self, pathTemplate: str) -> tuple[str, list[list[int]]]:
         firstVarIdx = pathTemplate.find("{{")
-        if firstVarIdx < 0:
+        # Templates starting with {{path}} or {{path.ext}} will only become absolute paths after variable replacement.
+        # In this case, Config.pathExport would be prefixed, resulting in a wrong path.
+        if firstVarIdx < 0 or pathTemplate.startswith("{{path"):
             path, varPositions = self.parseWithPositions(pathTemplate)
         else:
             # Normalize part of path before the first variable
