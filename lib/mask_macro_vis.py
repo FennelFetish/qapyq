@@ -159,7 +159,9 @@ class CellLabel(QtWidgets.QLabel):
     def _buildTitle(title: str, args: dict) -> str:
         params = []
         for k, v in args.items():
-            if type(v) == float:
+            if type(v) == list:
+                params.append(f"{k}=[{len(v)}]")
+            elif type(v) == float:
                 params.append(f"{k}={v:.2f}")
             else:
                 params.append(f"{k}={v}")

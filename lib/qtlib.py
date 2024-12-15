@@ -1,5 +1,6 @@
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QRect, QSize, QMimeData
+import numpy as np
 import lib.util as util
 
 
@@ -29,6 +30,24 @@ def setShowWhitespace(textEdit):
     opt = doc.defaultTextOption()
     opt.setFlags(QtGui.QTextOption.ShowTabsAndSpaces)
     doc.setDefaultTextOption(opt)
+
+
+
+def numpyToQImageMask(mat: np.ndarray) -> QtGui.QImage:
+    # QImage needs alignment to 32bit/4bytes. Add padding.
+    height, width = mat.shape
+    bytesPerLine = ((width+3) // 4) * 4
+    if width != bytesPerLine:
+        padded = np.zeros((height, bytesPerLine), dtype=np.uint8)
+        padded[:, :width] = mat
+        mat = padded
+
+    return QtGui.QImage(mat, width, height, QtGui.QImage.Format.Format_Grayscale8)
+
+def qimageToNumpyMask(image: QtGui.QImage) -> np.ndarray:
+    buffer = np.frombuffer(image.constBits(), dtype=np.uint8)
+    buffer.shape = (image.height(), image.bytesPerLine())
+    return np.copy( buffer[:, :image.width()] ) # Remove padding
 
 
 

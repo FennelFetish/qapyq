@@ -14,6 +14,9 @@ from lib.filelist import DataKeys
 # Use OpenCV's GrabCut for bounding box -> segmentation conversion.
 # Or cv.watershed()? https://docs.opencv.org/3.4/d3/db4/tutorial_py_watershed.html
 
+# TODO: Add Mask Operation: Load from Alpha
+# TODO: Add ConvexHull op? Move/Shift op?
+
 
 class MaskOperation(QtWidgets.QWidget):
     def __init__(self, maskTool, cursor=None):
@@ -88,6 +91,9 @@ class DrawMaskOperation(MaskOperation):
         self._lastPoint: QPointF = None
         self._lastColor: QColor = None
         self._strokeLength = 0
+
+        self._recordingStroke = False
+        self._strokePoints: list[tuple[QPointF, float]] = []
 
         self._painter = QPainter()
         
@@ -205,8 +211,28 @@ class DrawMaskOperation(MaskOperation):
         if valid:
             self.maskTool.setEdited()
             mode = "Erase" if erase else "Stroke"
-            self.maskTool._toolbar.addHistory(f"Brush {mode} ({self._strokeLength:.1f})")
-            # TODO: Macro recording
+            macroItem = self.tryCreateMacroItem(erase)
+            self.maskTool._toolbar.addHistory(f"Brush {mode} ({self._strokeLength:.1f})", None, macroItem)
+
+        self._strokePoints.clear()
+        self._recordingStroke = False
+
+    def tryCreateMacroItem(self, erase: bool):
+        if not self._recordingStroke:
+            return None
+
+        w, h = self.maskItem.size
+        w, h = w-1, h-1
+
+        points = []
+        for point, pressure in self._strokePoints:
+            x, y = point.x()/w, point.y()/h
+            points.append((x, y, pressure))
+        
+        color  = 0 if erase else self.spinBrushColor.value()
+        size   = self.spinBrushSize.value()
+        smooth = self.chkBrushAntiAlias.isChecked()
+        return self.maskTool.macro.addOperation(mask_macro.MacroOp.Brush, color=color, size=size, smooth=smooth, stroke=points)
 
 
     @override
@@ -232,9 +258,11 @@ class DrawMaskOperation(MaskOperation):
             return
 
         self._painter.begin(self.maskItem.mask)
+        color = pressure * self.spinBrushColor.value()
         if alt: # Erase
             self._drawing = self.DRAW_ERASE
             self._painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
+            color = 0
         else:
             self._drawing = self.DRAW_STROKE
             self._painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Lighten)
@@ -242,7 +270,6 @@ class DrawMaskOperation(MaskOperation):
         if self.chkBrushAntiAlias.isChecked():
             self._painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        color = pressure * self.spinBrushColor.value()
         self._lastColor = QColor.fromRgbF(color, color, color, 1.0)
         self._lastPoint = self.mapPosToImage(pos)
         self._strokeLength = 0
@@ -250,6 +277,10 @@ class DrawMaskOperation(MaskOperation):
         self.updatePen(pressure, self._lastPoint)
         self._painter.drawPoint(self._lastPoint)
         self.maskItem.update()
+
+        self._recordingStroke = self.maskTool.macro.recording
+        if self._recordingStroke:
+            self._strokePoints.append((self._lastPoint, pressure))
 
     @override
     def onMouseMove(self, pos, pressure: float):
@@ -259,12 +290,6 @@ class DrawMaskOperation(MaskOperation):
             return
 
         currentPoint = self.mapPosToImage(pos)
-        # dx = currentPoint.x() - self._lastPoint.x()
-        # dy = currentPoint.y() - self._lastPoint.y()
-        # len = np.sqrt((dx*dx) + (dy*dy))
-        # if len < 5:
-        #     return
-
         self._lastColor = self.updatePen(pressure, currentPoint)
         self._painter.drawLine(self._lastPoint, currentPoint)
         self.maskItem.update()
@@ -273,6 +298,9 @@ class DrawMaskOperation(MaskOperation):
         dy = currentPoint.y() - self._lastPoint.y()
         self._strokeLength += np.sqrt((dx*dx) + (dy*dy))
         self._lastPoint = currentPoint
+
+        if self._recordingStroke:
+            self._strokePoints.append((currentPoint, pressure))
 
     @override
     def onMouseRelease(self, alt: bool):
@@ -942,9 +970,11 @@ class MacroMaskOperation(MaskOperation):
 
         # Undoing the macro in one layer will disable it for all other layers too!
         # Recording macros into macros could lead to all kind of weird interactions and mess up layers.
+        # --> This could work: Create special item in Macro that allows setting which layers the results are applied to.
+        #     This special item is referenced by history entries and control result application per layer.
         #macroItem = self.maskTool.macro.addOperation(MacroOp.Macro, name=macroName)
 
-        # TODO: If only one layer is returned, apply that one to current layer without modifying/adding/deleting other layers?
+        # TODO: If only one layer is returned, always apply that one to current layer without modifying/adding/deleting other layers?
         #       Though, there are use cases where this interferes.
 
         for item, mat, changed in zip(layerItems, layerMats, layerChanged):
@@ -992,7 +1022,6 @@ class DetectMaskOperation(MaskOperation):
     def __init__(self, maskTool, preset: str):
         super().__init__(maskTool)
         self.preset = preset
-        self.config = Config.inferMaskPresets[preset]
         self.running = False
 
         layout = QtWidgets.QGridLayout()
@@ -1039,8 +1068,9 @@ class DetectMaskOperation(MaskOperation):
 
         imgPath = self.maskTool._imgview.image.filepath
         color = 0.0 if alt else self.spinColor.value()
+        config = Config.inferMaskPresets[self.preset]
 
-        task = MaskTask("maskBoxes", self.maskTool.maskItem, self.config, imgPath, color)
+        task = MaskTask("maskBoxes", self.maskTool.maskItem, config, imgPath, color)
         task.signals.loaded.connect(self.onLoaded)
         task.signals.done.connect(self.onDone)
         task.signals.fail.connect(self.onFail)
@@ -1061,7 +1091,7 @@ class DetectMaskOperation(MaskOperation):
         self.running = False
 
         colorFill = round(color * 255)
-        classes = set(self.config["classes"])
+        classes = set(Config.inferMaskPresets[self.preset]["classes"])
         threshold = self.spinThreshold.value()
 
         mat = maskItem.toNumpy()

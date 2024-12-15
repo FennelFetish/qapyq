@@ -1,8 +1,11 @@
 from enum import Enum, auto # StrEnum available in python >=3.11
+from PySide6.QtGui import QPainter, QPen, QBrush, QColor, QLinearGradient
+from PySide6.QtCore import Qt, QPoint
 import os, json
 import numpy as np
 from config import Config
 import tools.mask_ops as mask_ops
+from lib.qtlib import numpyToQImageMask, qimageToNumpyMask
 
 
 class MacroOp(Enum):
@@ -206,7 +209,7 @@ class MaskingMacro:
 
         match op:
             case MacroOp.Brush:
-                return mat
+                return self.opBrush(mat, args)
             case MacroOp.FloodFill:
                 return self.opFloodFill(mat, args)
             case MacroOp.Detect:
@@ -260,3 +263,67 @@ class MaskingMacro:
 
         maskBytes = inferProc.mask(config, imgPath)
         return mask_ops.SegmentMaskOperation.operate(mat, maskBytes, **args)
+
+    def opBrush(self, mat: np.ndarray, args: dict) -> np.ndarray:
+        strokeColor  = args["color"]
+        strokeSize   = args["size"]
+        strokeSmooth = args["smooth"]
+        strokePoints = args["stroke"]
+
+        if not strokePoints:
+            return mat
+
+        height, width = mat.shape
+        image = numpyToQImageMask(mat)
+
+        # Prepare painter
+        pen = QPen()
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setWidth(strokeSize)
+        gradient = QLinearGradient()
+
+        x, y, pressure = strokePoints[0]
+        x = round(x * width)
+        y = round(y * height)
+        lastPoint = QPoint(x, y)
+
+        color = pressure * strokeColor
+        lastColor = QColor.fromRgbF(color, color, color, 1.0)
+
+        painter = QPainter()
+        painter.begin(image)
+
+        if strokeColor > 0.0:
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Lighten)
+        else: # erase
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
+        
+        if strokeSmooth:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Draw point
+        if len(strokePoints) == 1:
+            pen.setColor(lastColor)
+            painter.setPen(pen)
+            painter.drawPoint(lastPoint)
+
+        # Draw stroke
+        for x, y, pressure in strokePoints[1:]:
+            x: int = round(x * width)
+            y: int = round(y * height)
+            currentPoint = QPoint(x, y)
+
+            color = pressure * strokeColor
+            currentColor = QColor.fromRgbF(color, color, color, 1.0)
+            gradient.setStops([(0.0, lastColor), (1.0, currentColor)])
+
+            pen.setBrush(QBrush(gradient))
+            painter.setPen(pen)
+            painter.drawLine(lastPoint, currentPoint)
+            lastPoint = currentPoint
+            lastColor = currentColor
+
+        painter.end()
+
+        # Convert QImage to numpy
+        return qimageToNumpyMask(image)

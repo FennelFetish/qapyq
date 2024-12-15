@@ -12,6 +12,7 @@ from config import Config
 from .view import ViewTool
 from .mask_ops import MaskOperation
 from lib.mask_macro import MaskingMacro, MacroOp, MacroOpItem
+from lib.qtlib import numpyToQImageMask, qimageToNumpyMask
 
 MaskItem = ForwardRef("MaskItem")
 
@@ -444,20 +445,10 @@ class MaskItem(QtWidgets.QGraphicsRectItem):
 
 
     def toNumpy(self) -> np.ndarray:
-        buffer = np.frombuffer(self.image.constBits(), dtype=np.uint8)
-        buffer.shape = (self.image.height(), self.image.bytesPerLine())
-        return np.copy( buffer[:, :self.image.width()] ) # Remove padding
+        return qimageToNumpyMask(self.image)
 
     def fromNumpy(self, data: np.ndarray) -> None:
-        # QImage needs alignment to 32bit/4bytes. Add padding.
-        height, width = data.shape
-        bytesPerLine = ((width+3) // 4) * 4
-        if width != bytesPerLine:
-            padded = np.zeros((height, bytesPerLine), dtype=np.uint8)
-            padded[:, :width] = data
-            data = padded
-
-        image = QImage(data, width, height, QImage.Format.Format_Grayscale8)
+        image = numpyToQImageMask(data)
         self.setImage(image)
 
 
