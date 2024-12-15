@@ -21,7 +21,7 @@ class BatchTask(QRunnable):
         self.name     = name
         self.log      = log
 
-        self.files = list(filelist.files)
+        self.files = list(filelist.getFiles())
         if len(self.files) == 0 and filelist.currentFile:
             self.files.append(filelist.currentFile)
 
