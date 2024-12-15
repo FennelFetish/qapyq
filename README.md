@@ -7,7 +7,16 @@
 <br clear="left"/>
 <br /><br />
 
-![Screenshot of qapyq with its 4 windows open.](https://www.alchemists.ch/qapyq/overview.jpg)
+![Screenshot of qapyq with its 4 windows open.](https://www.alchemists.ch/qapyq/overview-2.jpg)
+
+<a href="https://camo.githubusercontent.com/2cfe9d36a4920abfbe30172373048a8b6e23a796c18b11651c7cdd7105c0433c/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f647261672d6e2d64726f702e676966"><img alt="Edit captions quickly with drag-and-drop support" src="https://camo.githubusercontent.com/2cfe9d36a4920abfbe30172373048a8b6e23a796c18b11651c7cdd7105c0433c/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f647261672d6e2d64726f702e676966" width="30%"></img></a>
+<a href="https://camo.githubusercontent.com/5a27e2ae34499523dfba4d412409af0b7ae3ce7a81f8f966f2c3f9b154151715/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f7461675f6d75742d6578636c75736976652e676966"><img alt="Select one-of-many" src="https://camo.githubusercontent.com/5a27e2ae34499523dfba4d412409af0b7ae3ce7a81f8f966f2c3f9b154151715/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f7461675f6d75742d6578636c75736976652e676966" width="30%"></img></a>
+<a href="https://camo.githubusercontent.com/74f8628523509b94014f88162823125706f9e07933b1e3a24b6ed1bd0a8de9cb/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f72756c65732e676966"><img alt="Apply sorting and filtering rules" src="https://camo.githubusercontent.com/74f8628523509b94014f88162823125706f9e07933b1e3a24b6ed1bd0a8de9cb/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f72756c65732e676966" width="30%"></img></a>
+
+<a href="https://camo.githubusercontent.com/2099d08b3e161e7dd1ba906ef7a1a134b078c83001c2ce604f751b26d225168f/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f63726f702e676966"><img alt="Quick cropping" src="https://camo.githubusercontent.com/2099d08b3e161e7dd1ba906ef7a1a134b078c83001c2ce604f751b26d225168f/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f63726f702e676966" width="30%"></img></a>
+<a href="https://camo.githubusercontent.com/9400e59363cb8ba71b2eca5b45ec33e7d06b6e6dd27de427f86fc109f987ebc6/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f636f6d706172652e676966"><img alt="Image comparison" src="https://camo.githubusercontent.com/9400e59363cb8ba71b2eca5b45ec33e7d06b6e6dd27de427f86fc109f987ebc6/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f636f6d706172652e676966" width="30%"></img></a>
+<a href="https://camo.githubusercontent.com/7ccd546901e97b3b5f23723a5200afff2b2bd86a7243fdf5716555bf12770bcf/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f6d61736b2d322e676966"><img alt="Draw masks manually or apply automatic detection and segmentation" src="https://camo.githubusercontent.com/7ccd546901e97b3b5f23723a5200afff2b2bd86a7243fdf5716555bf12770bcf/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f6d61736b2d322e676966" width="30%"></img></a>
+
 
 ## Features
 
@@ -42,7 +51,7 @@
   - Flexible batch captioning, tagging and transformation
   - Batch scaling of images
   - Batch masking with user-defined macros
-  - Customizable batch cropping of images
+  - Batch cropping of images using your macros
 
 - **AI Assistance**:
   - Support for state-of-the-art captioning and masking models
@@ -111,7 +120,7 @@ How to use: [User Guide](https://github.com/FennelFetish/qapyq/wiki/User-Guide)
 
 
 ## Planned Features
-- [ ] Natural sorting of files
+- [x] Natural sorting of files
 - [ ] Gallery list view with captions
 - [ ] Summary and stats of captions and tags
 - [ ] Shortcuts and improved ease-of-use
