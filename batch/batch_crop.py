@@ -584,15 +584,15 @@ class BatchCropTask(BatchTask):
         savePath = None
 
         for i, region in enumerate(cropRegions):
-            region, targetSize = self.getTargetSize(imgW, imgH, region)
-            if region and targetSize:
+            fitRegion, targetSize = self.getTargetSize(imgW, imgH, region)
+            if fitRegion and targetSize:
                 # Do Cropping
-                cropped = imgMat[region.y0 : region.y1+1, region.x0 : region.x1+1, :3] # Remove alpha
-                cropped = self.maskDestFunc(imgFile, cropped, maskLayers, region, targetSize)
+                cropped = imgMat[fitRegion.y0 : fitRegion.y1+1, fitRegion.x0 : fitRegion.x1+1, :3] # Remove alpha
+                cropped = self.maskDestFunc(imgFile, cropped, maskLayers, fitRegion, targetSize)
                 savePath = self.saveCroppedImage(i, cropped, targetSize)
+            else:
+                self.log(f"No suitable target size found for region {i} ({region.width()}x{region.height()})")
 
-        if not savePath:
-            self.log("No suitable target size found for region")
         return savePath
 
 
