@@ -241,9 +241,9 @@ class MaskingMacro:
         preset = args.pop("preset")
         threshold = args.pop("threshold")
         config: dict = Config.inferMaskPresets.get(preset)
-        classes = config.get("classes")
+        classes = config.get("classes", [])
 
-        boxes = inferProc.maskBoxes(config, imgPath)
+        boxes = inferProc.maskBoxes(config, classes, imgPath)
         for box in boxes:
             name = box["name"]
             if box["confidence"] < threshold or (classes and name not in classes):
@@ -260,8 +260,9 @@ class MaskingMacro:
 
         preset = args.pop("preset")
         config: dict = Config.inferMaskPresets.get(preset)
+        classes = config.get("classes", [])
 
-        maskBytes = inferProc.mask(config, imgPath)
+        maskBytes = inferProc.mask(config, classes, imgPath)
         return mask_ops.SegmentMaskOperation.operate(mat, maskBytes, **args)
 
     def opBrush(self, mat: np.ndarray, args: dict) -> np.ndarray:

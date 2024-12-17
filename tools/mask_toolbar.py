@@ -7,7 +7,8 @@ from config import Config
 from infer.model_settings import ModelSettingsWindow
 from .mask import MaskTool, MaskItem
 from . import mask_ops
-from lib.mask_macro import MacroOpItem
+from lib.mask_macro import MaskingMacro, MacroOpItem
+from lib.qtlib import MenuComboBox
 
 
 class MaskToolBar(QtWidgets.QToolBar):
@@ -17,8 +18,9 @@ class MaskToolBar(QtWidgets.QToolBar):
         self.ops: dict[str, mask_ops.MaskOperation] = {}
         self.selectedOp: mask_ops.MaskOperation = None
 
-        layout = QtWidgets.QVBoxLayout()
+        layout = QtWidgets.QGridLayout()
         layout.setContentsMargins(1, 1, 1, 1)
+        layout.setRowStretch(2, 1)
         layout.addWidget(self._buildLayers())
         layout.addWidget(self._buildOps())
         layout.addWidget(self._buildHistory())
@@ -104,12 +106,11 @@ class MaskToolBar(QtWidgets.QToolBar):
         self.opLayout.setContentsMargins(1, 1, 1, 1)
         self.opLayout.addLayout(shortcutLayout)
 
-        # TODO: Use Menu. Arrange macros so directory structure is reflected. Group detection/segmentation ops under submenu?
-        self.cboOperation = QtWidgets.QComboBox()
+        self.cboOperation = MenuComboBox("Operations")
         self.cboOperation.currentIndexChanged.connect(self.onOpChanged)
         self.opLayout.addWidget(self.cboOperation)
         self._reloadOps()
-        ModelSettingsWindow(self).signals.presetListUpdated.connect(self._reloadOps)
+        ModelSettingsWindow.signals.presetListUpdated.connect(self._reloadOps)
         
         group = QtWidgets.QGroupBox("Operations")
         group.setLayout(self.opLayout)
@@ -117,28 +118,33 @@ class MaskToolBar(QtWidgets.QToolBar):
 
     @Slot()
     def _reloadOps(self):
+        opClasses = {
+            "brush":        mask_ops.DrawMaskOperation,
+            "brush_magic":  mask_ops.MagicDrawMaskOperation,
+            "fill":         mask_ops.FillMaskOperation,
+            "clear":        mask_ops.ClearMaskOperation,
+            "invert":       mask_ops.InvertMaskOperation,
+            "threshold":    mask_ops.ThresholdMaskOperation,
+            "normalize":    mask_ops.NormalizeMaskOperation,
+            "morph":        mask_ops.MorphologyMaskOperation,
+            "blur_gauss":   mask_ops.BlurMaskOperation,
+            "blend_layers": mask_ops.BlendLayersMaskOperation
+        }
+
+        # Try to keep existing ops and their current settings.
+        newOps = dict()
+        for key, cls in opClasses.items():
+            newOps[key] = self.ops.pop(key, None) or cls(self.maskTool)
+        
         for op in self.ops.values():
             op.deleteLater()
-
-        # TODO: Keep existing ops and their current settings.
-        self.ops = {
-            "brush": mask_ops.DrawMaskOperation(self.maskTool),
-            "brush_magic": mask_ops.MagicDrawMaskOperation(self.maskTool),
-            "fill": mask_ops.FillMaskOperation(self.maskTool),
-            "clear": mask_ops.ClearMaskOperation(self.maskTool),
-            "invert": mask_ops.InvertMaskOperation(self.maskTool),
-            "threshold": mask_ops.ThresholdMaskOperation(self.maskTool),
-            "normalize": mask_ops.NormalizeMaskOperation(self.maskTool),
-            "morph": mask_ops.MorphologyMaskOperation(self.maskTool),
-            "blur_gauss": mask_ops.BlurMaskOperation(self.maskTool),
-            "blend_layers": mask_ops.BlendLayersMaskOperation(self.maskTool),
-            "macro": mask_ops.MacroMaskOperation(self.maskTool)
-        }
+        self.ops = newOps
 
         with QSignalBlocker(self.cboOperation):
             selectedKey = self.cboOperation.currentData()
             self.cboOperation.clear()
 
+            # Add basic operations
             self.cboOperation.addItem("Brush", "brush")
             #self.cboOperation.addItem("Magic Brush", "brush_magic") # Flood fill from cursor position, keep inside brush circle (or GrabCut init with mask)
             #self.cboOperation.addItem("Rectangle", "rect")
@@ -151,30 +157,62 @@ class MaskToolBar(QtWidgets.QToolBar):
             #self.cboOperation.addItem("Linear Gradient", "gradient_linear")
             self.cboOperation.addItem("Gaussian Blur", "blur_gauss")
             self.cboOperation.addItem("Blend Layers", "blend_layers")
-            self.cboOperation.addItem("Run Macro", "macro")
-            
-            for preset in sorted(Config.inferMaskPresets.keys(), key=self._customOpSortKey):
-                config = Config.inferMaskPresets[preset]
-                self._buildCustomOp(preset, config)
 
+            # Add detect / segment operations
+            self.cboOperation.addSeparator()
+            detectMenu = self.cboOperation.addSubmenu("Detect")
+            segmentMenu = self.cboOperation.addSubmenu("Segment")
+            for preset in sorted(Config.inferMaskPresets.keys(), key=self._customOpSortKey):
+                self._buildCustomOp(preset, detectMenu, segmentMenu)
+
+            detectMenu.addSeparator()
+            detectMenu.addAction("Model Settings...").triggered.connect(self._openModelSettings)
+
+            segmentMenu.addSeparator()
+            segmentMenu.addAction("Model Settings...").triggered.connect(self._openModelSettings)
+
+            # Add macro operations
+            self.cboOperation.addSeparator()
+            macroMenu = self.cboOperation.addSubmenu("Macros")
+            for name, path in MaskingMacro.loadMacros():
+                self._buildMacroOp(macroMenu, name, path)
+            
+            macroMenu.addSeparator()
+            actReloadMacros = macroMenu.addAction("Reload Macros")
+            actReloadMacros.triggered.connect(self._reloadOps)
+            
+            # Restore selection
             index = max(0, self.cboOperation.findData(selectedKey))
             self.cboOperation.setCurrentIndex(index)
             self.onOpChanged(index)
-    
+
     @staticmethod
-    def _customOpSortKey(preset: str):
-        segment = 1 if (Config.inferMaskPresets[preset].get("classes") is None) else 0
+    def _isDetectionPreset(preset: str) -> bool:
+        return "-detect" in Config.inferMaskPresets[preset]["backend"]
+
+    @classmethod
+    def _customOpSortKey(cls, preset: str):
+        segment = 0 if cls._isDetectionPreset(preset) else 1
         return (segment, preset.lower())
 
-    def _buildCustomOp(self, preset: str, config: dict):
-        if "classes" in config:
+    def _buildCustomOp(self, preset: str, detectMenu, segmentMenu):
+        if self._isDetectionPreset(preset):
             key = f"detect {preset}"
             self.ops[key] = mask_ops.DetectMaskOperation(self.maskTool, preset)
-            self.cboOperation.addItem(f"Detect: {preset}", key)
+            self.cboOperation.addSubmenuItem(detectMenu, preset, "Detect: ", key)
         else:
             key = f"segment {preset}"
             self.ops[key] = mask_ops.SegmentMaskOperation(self.maskTool, preset)
-            self.cboOperation.addItem(f"Segment: {preset}", key)
+            self.cboOperation.addSubmenuItem(segmentMenu, preset, "Segment: ", key)
+
+    def _buildMacroOp(self, macroMenu, name, path):
+        key = f"macro {name}"
+        self.ops[key] = mask_ops.MacroMaskOperation(self.maskTool, name, path)
+        self.cboOperation.addSubmenuItem(macroMenu, name, "Macro: ", key)
+    
+    @Slot()
+    def _openModelSettings(self):
+        ModelSettingsWindow.openInstance(self, "inferMaskPresets")
 
 
     def _buildHistory(self):

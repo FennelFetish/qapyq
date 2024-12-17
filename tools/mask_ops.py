@@ -7,6 +7,7 @@ import numpy as np
 from config import Config
 from ui.imgview import ImgView
 import lib.mask_macro as mask_macro
+import lib.qtlib as qtlib
 from lib.filelist import DataKeys
 
 
@@ -898,8 +899,10 @@ class BlendLayersMaskOperation(MaskOperation):
 
 
 class MacroMaskOperation(MaskOperation):
-    def __init__(self, maskTool):
+    def __init__(self, maskTool, name, path):
         super().__init__(maskTool)
+        self.macroName = name
+        self.macroPath = path
         self.running = False
 
         layout = QtWidgets.QGridLayout()
@@ -908,33 +911,16 @@ class MacroMaskOperation(MaskOperation):
         layout.setColumnStretch(1, 1)
 
         row = 0
-        self.cboMacro = QtWidgets.QComboBox()
-        layout.addWidget(QtWidgets.QLabel("Macro:"), row, 0)
-        layout.addWidget(self.cboMacro, row, 1)
-        self.reloadMacros()
-
-        row += 1
         btnInspect = QtWidgets.QPushButton("Inspect...")
         btnInspect.clicked.connect(self.inspectMacro)
         layout.addWidget(btnInspect, row, 0, 1, 2)
 
         self.setLayout(layout)
 
-    def reloadMacros(self):
-        selectedText = self.cboMacro.currentText()
-        self.cboMacro.clear()
-
-        for name, path in mask_macro.MaskingMacro.loadMacros():
-            self.cboMacro.addItem(name, path)
-
-        index = self.cboMacro.findText(selectedText)
-        self.cboMacro.setCurrentIndex(max(0, index))
-
     @Slot()
     def inspectMacro(self):
         from lib.mask_macro_vis import MacroInspectWindow
-        name, path = self.cboMacro.currentText(), self.cboMacro.currentData()
-        win = MacroInspectWindow(self, name, path)
+        win = MacroInspectWindow(self, self.macroName, self.macroPath)
         win.exec()
 
 
@@ -949,10 +935,9 @@ class MacroMaskOperation(MaskOperation):
             self.maskTool.tab.statusBar().showColoredMessage("Cannot run macros while recording macros", False)
             return
 
-        macroName, macroPath = self.cboMacro.currentText(), self.cboMacro.currentData()
         layerIndex = self.maskTool.layers.index(self.maskTool.maskItem)
 
-        task = MacroMaskTask(macroPath, macroName, imgPath, layerIndex, self.maskTool.layers)
+        task = MacroMaskTask(self.macroPath, self.macroName, imgPath, layerIndex, self.maskTool.layers)
         task.signals.done.connect(self.onDone)
         task.signals.fail.connect(self.onFail)
 
@@ -1045,7 +1030,48 @@ class DetectMaskOperation(MaskOperation):
         layout.addWidget(QtWidgets.QLabel("Threshold:"), row, 0)
         layout.addWidget(self.spinThreshold, row, 1)
 
+        row += 1
+        layout.addWidget(QtWidgets.QLabel("Classes:"), row, 0)
+
+        btnGetClasses = QtWidgets.QPushButton("Retrieve")
+        btnGetClasses.clicked.connect(self.retrieveClassNames)
+        layout.addWidget(btnGetClasses, row, 1)
+
+        row += 1
+        classes = ", ".join( Config.inferMaskPresets[self.preset].get("classes") )
+        self.txtClasses = QtWidgets.QPlainTextEdit()
+        self.txtClasses.setPlainText(classes)
+        layout.addWidget(self.txtClasses, row, 0, 1, 2)
+
         self.setLayout(layout)
+
+    @property
+    def classes(self) -> list[str]:
+        classes = (name.strip() for name in self.txtClasses.toPlainText().split(","))
+        return [name for name in classes if name]
+
+    @Slot()
+    def retrieveClassNames(self):
+        config = Config.inferMaskPresets[self.preset]
+        task = RetrieveDetectionClassesTask(config)
+        task.signals.done.connect(self.onRetrieveClassesDone)
+        task.signals.fail.connect(self.onRetrieveClassesFail)
+
+        from infer import Inference
+        Inference().queueTask(task)
+        self.maskTool.tab.statusBar().showMessage("Loading detection model...", 0)
+
+    @Slot()
+    def onRetrieveClassesDone(self, classes: list[str]):
+        text = ", ".join(classes)
+        self.txtClasses.setPlainText(text)
+        self.maskTool.tab.statusBar().showColoredMessage(f"Retrieved {len(classes)} classes", True)
+
+    @Slot()
+    def onRetrieveClassesFail(self, msg: str):
+        self.maskTool.tab.statusBar().showColoredMessage(f"Failed to retrieve classes: {msg}", False, 0)
+        print(msg)
+
 
     @staticmethod
     def operate(mat: np.ndarray, box: dict, color: int) -> np.ndarray:
@@ -1070,7 +1096,7 @@ class DetectMaskOperation(MaskOperation):
         color = 0.0 if alt else self.spinColor.value()
         config = Config.inferMaskPresets[self.preset]
 
-        task = MaskTask("maskBoxes", self.maskTool.maskItem, config, imgPath, color)
+        task = MaskTask(MaskTask.MODE_DETECT, self.maskTool.maskItem, config, self.classes, imgPath, color)
         task.signals.loaded.connect(self.onLoaded)
         task.signals.done.connect(self.onDone)
         task.signals.fail.connect(self.onFail)
@@ -1091,8 +1117,8 @@ class DetectMaskOperation(MaskOperation):
         self.running = False
 
         colorFill = round(color * 255)
-        classes = set(Config.inferMaskPresets[self.preset]["classes"])
         threshold = self.spinThreshold.value()
+        classes = set(self.classes)
 
         mat = maskItem.toNumpy()
 
@@ -1140,7 +1166,6 @@ class SegmentMaskOperation(MaskOperation):
     def __init__(self, maskTool, preset: str):
         super().__init__(maskTool)
         self.preset = preset
-        self.config = Config.inferMaskPresets[preset]
         self.running = False
 
         layout = QtWidgets.QGridLayout()
@@ -1156,7 +1181,26 @@ class SegmentMaskOperation(MaskOperation):
         layout.addWidget(QtWidgets.QLabel("Color:"), row, 0)
         layout.addWidget(self.spinColor, row, 1)
 
+        config = Config.inferMaskPresets[self.preset]
+        if "classes" in config:
+            row += 1
+            layout.addWidget(QtWidgets.QLabel("Classes:"), row, 0)
+
+            row += 1
+            classes = ", ".join(config["classes"])
+            self.txtClasses = QtWidgets.QPlainTextEdit()
+            self.txtClasses.setPlainText(classes)
+            qtlib.setTextEditHeight(self.txtClasses, 3)
+            layout.addWidget(self.txtClasses, row, 0, 1, 2)
+
         self.setLayout(layout)
+
+    @property
+    def classes(self) -> list[str]:
+        if not hasattr(self, "txtClasses"):
+            return []
+        classes = (name.strip() for name in self.txtClasses.toPlainText().split(","))
+        return [name for name in classes if name]
 
     @staticmethod
     def operate(mat: np.ndarray, maskBytes: bytes, color: float) -> np.ndarray:
@@ -1181,8 +1225,9 @@ class SegmentMaskOperation(MaskOperation):
 
         imgPath = self.maskTool._imgview.image.filepath
         color = self.spinColor.value()
+        config = Config.inferMaskPresets[self.preset]
 
-        task = MaskTask("mask", self.maskItem, self.config, imgPath, color)
+        task = MaskTask(MaskTask.MODE_SEGMENT, self.maskItem, config, self.classes, imgPath, color)
         task.signals.loaded.connect(self.onLoaded)
         task.signals.done.connect(self.onDone)
         task.signals.fail.connect(self.onFail)
@@ -1224,17 +1269,21 @@ class SegmentMaskOperation(MaskOperation):
 
 
 class MaskTask(QRunnable):
+    MODE_DETECT  = "detect"
+    MODE_SEGMENT = "segment"
+
     class Signals(QObject):
         loaded = Signal()
         done = Signal(object, str, float, object)
         fail = Signal(str)
     
-    def __init__(self, funcName: str, maskItem, config: dict, imgPath: str, color: float):
+    def __init__(self, mode: str, maskItem, config: dict, classes: list[str], imgPath: str, color: float):
         super().__init__()
         self.signals  = self.Signals()
-        self.funcName = funcName
+        self.mode     = mode
         self.maskItem = maskItem
         self.config   = config
+        self.classes  = classes
         self.imgPath  = imgPath
         self.color    = color
 
@@ -1248,8 +1297,11 @@ class MaskTask(QRunnable):
             inferProc.setupMasking(self.config)
             self.signals.loaded.emit()
 
-            func = getattr(inferProc, self.funcName)
-            result = func(self.config, self.imgPath)
+            if self.mode == self.MODE_DETECT:
+                result = inferProc.maskBoxes(self.config, self.classes, self.imgPath)
+            else:
+                result = inferProc.mask(self.config, self.classes, self.imgPath)
+            
             self.signals.done.emit(self.maskItem, self.imgPath, self.color, result)
         except Exception as ex:
             import traceback
@@ -1281,6 +1333,32 @@ class MacroMaskTask(QRunnable):
             layerMats, layerChanged = macro.run(self.imgPath, self.layerMats, self.currentLayerIndex)
 
             self.signals.done.emit(self.imgPath, self.macroName, self.layers, layerMats, layerChanged)
+        except Exception as ex:
+            import traceback
+            traceback.print_exc()
+            self.signals.fail.emit(str(ex))
+
+
+
+class RetrieveDetectionClassesTask(QRunnable):
+    class Signals(QObject):
+        done = Signal(list) # classes: list
+        fail = Signal(str)
+
+    def __init__(self, config: dict):
+        super().__init__()
+        self.signals = self.Signals()
+        self.config = config
+
+    @Slot()
+    def run(self):
+        try:
+            from infer import Inference
+            inferProc = Inference().proc
+            inferProc.start()
+
+            classes = inferProc.getDetectClasses(self.config)
+            self.signals.done.emit(classes)
         except Exception as ex:
             import traceback
             traceback.print_exc()

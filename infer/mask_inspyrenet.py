@@ -16,7 +16,7 @@ class InspyrenetMask:
         )
 
 
-    def mask(self, imgPath: str) -> bytes:
+    def mask(self, imgPath: str, classes: list[str]) -> bytes:
         image = cv.imread(imgPath, cv.IMREAD_UNCHANGED)
 
         channels = image.shape[2] if len(image.shape)>2 else 1

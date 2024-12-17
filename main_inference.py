@@ -75,15 +75,21 @@ def getTag(config: dict = None):
 
 def loadMaskingBackend(config: dict):
     match backendName := config["backend"]:
-        case "yolo-detect":
-            from infer.mask_yolo import YoloMask
-            return YoloMask(config)
         case "bria-rmbg":
             from infer.mask_briarmbg import BriaRmbgMask
             return BriaRmbgMask(config)
+        case "florence2-detect":
+            from infer.backend_florence2 import Florence2Backend
+            return Florence2Backend(config)
+        case "florence2-segment":
+            from infer.backend_florence2 import Florence2Backend
+            return Florence2Backend(config)
         case "inspyrenet":
             from infer.mask_inspyrenet import InspyrenetMask
             return InspyrenetMask(config)
+        case "yolo-detect":
+            from infer.mask_yolo import YoloMask
+            return YoloMask(config)
     
     raise ValueError(f"Unknown masking backend: {backendName}")
 
@@ -94,6 +100,7 @@ def getMaskBackend(config: dict):
     if not backend:
         backend = loadMaskingBackend(config)
         masking[key] = backend
+
     return backend
 
 
@@ -174,7 +181,8 @@ def handleMessage(protocol) -> bool:
 
         case "mask":
             img = msg["img"]
-            mask = getMaskBackend(msg["config"]).mask(img)
+            classes = msg["classes"]
+            mask = getMaskBackend(msg["config"]).mask(img, classes)
             protocol.writeMessage({
                 "cmd": cmd,
                 "img": img,
@@ -183,11 +191,20 @@ def handleMessage(protocol) -> bool:
 
         case "mask_boxes":
             img = msg["img"]
-            boxes = getMaskBackend(msg["config"]).detectBoxes(img)
+            classes = msg["classes"]
+            boxes = getMaskBackend(msg["config"]).detectBoxes(img, classes)
             protocol.writeMessage({
                 "cmd": cmd,
                 "img": img,
                 "boxes": boxes
+            })
+
+
+        case "get_detect_classes":
+            classes = getMaskBackend(msg["config"]).getClassNames()
+            protocol.writeMessage({
+                "cmd": cmd,
+                "classes": classes
             })
 
     return True

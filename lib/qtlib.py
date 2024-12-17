@@ -520,6 +520,57 @@ def getHighlightColor(colorHex: str) -> QtGui.QColor:
 
 
 
+
+
+class MenuComboBox(QtWidgets.QComboBox):
+    def __init__(self, title: str = None):
+        super().__init__()
+        self.menu = QtWidgets.QMenu(title)
+        self._nextIndex = 0
+
+    def showPopup(self):
+        self.menu.setMinimumWidth(self.width())
+        point = self.mapToGlobal(self.rect().topLeft())
+        self.menu.exec_(point)
+        self.hidePopup()
+
+
+    def addItem(self, text: str, userData=None):
+        super().addItem(text, userData)
+
+        index = self._nextIndex
+        self._nextIndex += 1
+
+        act = self.menu.addAction(text)
+        act.triggered.connect(lambda checked, i=index: self.setCurrentIndex(i))
+
+    def addMenuAction(self, text):
+        return self.menu.addAction(text)
+
+    def addSubmenu(self, text):
+        submenu = QtWidgets.QMenu(text)
+        self.menu.addMenu(submenu)
+        return submenu
+
+    def addSubmenuItem(self, submenu: QtWidgets.QMenu, text: str, prefix: str, userData=None):
+        super().addItem(prefix + text, userData)
+
+        index = self._nextIndex
+        self._nextIndex += 1
+
+        act = submenu.addAction(text)
+        act.triggered.connect(lambda checked, i=index: self.setCurrentIndex(i))
+
+    def addSeparator(self):
+        self.menu.addSeparator()
+
+    def clear(self):
+        super().clear()
+        self.menu.clear()
+        self._nextIndex = 0
+
+
+
 class TestWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()

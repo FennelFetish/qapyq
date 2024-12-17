@@ -4,6 +4,8 @@ from .inference_settings import InferenceSettingsWidget
 from config import Config
 from lib import qtlib
 
+# TODO: Define GPU layers as percentage
+
 
 class BackendTypes:
     LLAMA_CPP    = "llama.cpp"
@@ -18,12 +20,12 @@ class BackendPathModes:
 
 
 BackendsCaption = {
-    "Florence-2": ("florence2", BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER),
-    "InternVL2": ("internvl2", BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER),
-    "MiniCPM-V-2.6": ("minicpm", BackendTypes.LLAMA_CPP, BackendPathModes.FILE),
-    "Molmo": ("molmo", BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER),
-    "Ovis-1.6": ("ovis16", BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER),
-    "Qwen2-VL": ("qwen2vl", BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER)
+    "Florence-2":       ("florence2", BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER),
+    "InternVL2":        ("internvl2", BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER),
+    "MiniCPM-V-2.6":    ("minicpm",   BackendTypes.LLAMA_CPP, BackendPathModes.FILE),
+    "Molmo":            ("molmo",     BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER),
+    "Ovis-1.6":         ("ovis16",    BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER),
+    "Qwen2-VL":         ("qwen2vl",   BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER)
 }
 
 # TODO: Allow loading of caption models as LLM.
@@ -33,14 +35,17 @@ BackendsLLM = {
 }
 
 BackendsTag = {
-    "WD": ("wd", BackendTypes.ONNX, BackendPathModes.FILE),
-    "JoyTag": ("joytag", BackendTypes.TORCH, BackendPathModes.FOLDER)
+    "WD":       ("wd",     BackendTypes.ONNX,  BackendPathModes.FILE),
+    "JoyTag":   ("joytag", BackendTypes.TORCH, BackendPathModes.FOLDER)
 }
 
+# Last element defines whether the backend supports classes: bool
 BackendsMask = {
-    "Yolo Detect": ("yolo-detect", BackendTypes.ULTRALYTICS, BackendPathModes.FILE),
-    "BriaAI RMBG-2.0": ("bria-rmbg", BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER),
-    "Inspyrenet RemBg": ("inspyrenet", BackendTypes.TORCH, BackendPathModes.FILE)
+    "BriaAI RMBG-2.0":      ("bria-rmbg",         BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER, False),
+    "Florence-2 Detect":    ("florence2-detect",  BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER, True),
+    "Florence-2 Segment":   ("florence2-segment", BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER, True),
+    "Inspyrenet RemBg":     ("inspyrenet",        BackendTypes.TORCH,        BackendPathModes.FILE,   False),
+    "Yolo Detect":          ("yolo-detect",       BackendTypes.ULTRALYTICS,  BackendPathModes.FILE,   True)
 }
 
 
@@ -510,25 +515,29 @@ class MaskModelSettings(BaseSettingsWidget):
         layout.addWidget(self.lblClasses, row, 0, Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self.txtClasses, row, 1, 1, 5)
 
+    @property
+    def backendNeedsClasses(self) -> bool:
+        return self.cboBackend.currentData()[3]
+
 
     @Slot()
     def _onBackendChanged(self, index):
         super()._onBackendChanged(index)
-        enabled = (self.backendType == BackendTypes.ULTRALYTICS)
+        enabled = self.backendNeedsClasses
         for widget in (self.lblClasses, self.txtClasses):
             widget.setEnabled(enabled)
 
 
     def fromDict(self, settings: dict) -> None:
         super().fromDict(settings)
-        if self.backendType == BackendTypes.ULTRALYTICS:
-            classes = ", ".join(settings.get("classes", ""))
+        if self.backendNeedsClasses:
+            classes = ", ".join(settings.get("classes", []))
             self.txtClasses.setPlainText(classes)
 
     def toDict(self) -> dict:
         settings = super().toDict()
 
-        if self.backendType == BackendTypes.ULTRALYTICS:
+        if self.backendNeedsClasses:
             classes = (name.strip() for name in self.txtClasses.toPlainText().split(","))
             exist = {""}
             settings["classes"] = [ name for name in classes if not (name in exist or exist.add(name)) ]

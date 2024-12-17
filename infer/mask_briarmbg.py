@@ -26,7 +26,7 @@ class BriaRmbgMask:
 
 
     @torch.inference_mode()
-    def mask(self, imgPath: str) -> bytes:
+    def mask(self, imgPath: str, classes: list[str]) -> bytes:
         image = Image.open(imgPath)
         wOrig, hOrig = image.size
 

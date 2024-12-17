@@ -1,3 +1,4 @@
+from typing import Any
 from PySide6.QtCore import QProcess, QByteArray, QMutex, QMutexLocker, QThread, QProcessEnvironment
 import sys, struct, msgpack, copy, traceback
 from lib.util import Singleton
@@ -144,21 +145,29 @@ class InferenceProcess(metaclass=Singleton):
             "sysPrompt": sysPrompt
         })
 
-    def mask(self, config: dict, imgPath: str) -> bytes:
+    def mask(self, config: dict, classes: list[str], imgPath: str) -> bytes:
         return self._query("mask", {
             "cmd": "mask",
             "config": config,
+            "classes": classes,
             "img": imgPath
         })
 
-    def maskBoxes(self, config: dict, imgPath: str) -> list[dict]:
+    def maskBoxes(self, config: dict, classes: list[str], imgPath: str) -> list[dict]:
         return self._query("boxes", {
             "cmd": "mask_boxes",
             "config": config,
+            "classes": classes,
             "img": imgPath
         })
 
-    def _query(self, returnKey: str, msg: dict):
+    def getDetectClasses(self, config: dict) -> list[str]:
+        return self._query("classes", {
+            "cmd": "get_detect_classes",
+            "config": config
+        })
+
+    def _query(self, returnKey: str, msg: dict) -> Any:
         with QMutexLocker(self.mutex):
             self._writeMessage(msg)
             answer = self._blockReadMessage()

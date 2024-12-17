@@ -17,7 +17,11 @@ class YoloMask:
         }
 
 
-    def detectBoxes(self, imgPath: str):
+    def getClassNames(self) -> list[str]:
+        return list(self.model.names.values())
+
+
+    def detectBoxes(self, imgPath: str, classes: list[str]):
         image = Image.open(imgPath)
         image = self.scaleImage(image)
         
