@@ -17,8 +17,6 @@ import ui.export_settings as export
 # TODO: When writing multiple regions into multiple files, when Size Factor is large, the regions may overlap.
 #       Should this be handled when writing output mask is enabled? Remove other regions from mask?
 
-# TODO: Florence detection/segmentation?
-
 
 class SizeBucket:
     def __init__(self, w: int, h: int):
@@ -341,6 +339,9 @@ class BatchCrop(QtWidgets.QWidget):
         for bucket in self.parseSizeBuckets(False):
             buckets.append(f"{bucket.w}x{bucket.h}")
         Config.cropSizePresets = buckets
+
+        from tools.crop import CROP_SIGNALS
+        CROP_SIGNALS.sizePresetsUpdated.emit(buckets)
 
 
     def saveExportPreset(self):

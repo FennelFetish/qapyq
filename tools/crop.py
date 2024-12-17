@@ -1,8 +1,8 @@
 import cv2 as cv
 import numpy as np
 from PySide6.QtCore import QBuffer, QPointF, QRect, QRectF, Qt, QTimer, QRunnable, QObject, QThreadPool, Signal, Slot
-from PySide6.QtGui import QBrush, QPen, QColor, QPainterPath, QPolygonF, QTransform
-from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem
+from PySide6.QtGui import QBrush, QPen, QColor, QPainterPath, QPolygonF, QTransform, QCursor
+from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QMenu
 from .crop_toolbar import CropToolBar
 from .view import ViewTool
 from lib.filelist import DataKeys
@@ -26,12 +26,18 @@ def createPen(r, g, b):
     return pen
 
 
+class CropToolSignals(QObject):
+    sizePresetsUpdated = Signal(list)
+
+CROP_SIGNALS = CropToolSignals()
+
+
 class CropTool(ViewTool):
     PEN_DOWNSCALE = createPen(0, 255, 0)
     PEN_UPSCALE   = createPen(255, 0, 0)
 
     BUTTON_CROP   = Qt.MouseButton.LeftButton
-    BUTTON_ABORT  = Qt.MouseButton.RightButton
+    BUTTON_MENU   = Qt.MouseButton.RightButton
 
 
     def __init__(self, tab):
@@ -55,6 +61,10 @@ class CropTool(ViewTool):
         self._waitForConfirmation = False
 
         self._toolbar = CropToolBar(self)
+        CROP_SIGNALS.sizePresetsUpdated.connect(self._toolbar.onSizePresetsUpdated)
+
+        self._menu = CropContextMenu(self)
+        CROP_SIGNALS.sizePresetsUpdated.connect(self._menu.onSizePresetsUpdated)
 
 
     def setTargetSize(self, width, height):
@@ -135,6 +145,10 @@ class CropTool(ViewTool):
         self._cropRect.setVisible(visible)
         self._mask.setVisible(visible)
         self._imgview.scene().update()
+    
+    def resetSelection(self, mousePos: QPointF):
+        self._waitForConfirmation = False
+        self.updateSelection(mousePos)
 
     def exportImage(self, poly: QPolygonF) -> bool:
         pixmap = self._imgview.image.pixmap()
@@ -230,7 +244,7 @@ class CropTool(ViewTool):
         # CTRL pressed -> Use default controls (pan)
         if (event.modifiers() & Qt.ControlModifier) == Qt.ControlModifier:
             return super().onMousePress(event)
-        
+
         button = event.button()
         if button == self.BUTTON_CROP:
             if self._waitForConfirmation:
@@ -245,15 +259,13 @@ class CropTool(ViewTool):
                         self._confirmRect.setRect(rect)
                         self._confirmRect.startAnim()
 
-                self._waitForConfirmation = False
-                self.updateSelection(event.position())
+                self.resetSelection(event.position())
             else:
                 self._waitForConfirmation = True
             return True
-        
-        elif button == self.BUTTON_ABORT:
-            self._waitForConfirmation = False
-            self.updateSelection(event.position())
+
+        elif button == self.BUTTON_MENU:
+            self._menu.exec_(self._imgview.mapToGlobal(event.position()).toPoint())
             return True
 
         return super().onMousePress(event)
@@ -412,3 +424,36 @@ class ConfirmRect(QGraphicsRectItem):
         self._scene.update()
 
         self.alpha = max(0, self.alpha-7)
+
+
+
+class CropContextMenu(QMenu):
+    def __init__(self, cropTool: CropTool):
+        super().__init__()
+        self.cropTool = cropTool
+        self.onSizePresetsUpdated(Config.cropSizePresets)
+
+    def onSizePresetsUpdated(self, presets: list[str]):
+        self.clear()
+
+        actResetSelection = self.addAction("Reset Selection")
+        actResetSelection.triggered.connect(self._onResetSelection)
+        self.addSeparator()
+
+        for size in presets:
+            actSize = self.addAction(size)
+            actSize.triggered.connect(lambda chosen, text=size: self._onSizeSelected(text))
+        
+        self.addSeparator()
+        actResetSelection = self.addAction("Swap")
+        actResetSelection.triggered.connect(lambda chosen: self.cropTool._toolbar.sizeSwap())
+
+    @Slot()
+    def _onResetSelection(self):
+        mousePos = self.cropTool._imgview.mapFromGlobal( QCursor.pos() )
+        self.cropTool.resetSelection(mousePos.toPointF())
+
+    def _onSizeSelected(self, text: str):
+        self.cropTool._toolbar.sizePreset(text)
+        mousePos = self.cropTool._imgview.mapFromGlobal( QCursor.pos() )
+        self.cropTool.updateSelection(mousePos.toPointF())

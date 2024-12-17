@@ -1,5 +1,5 @@
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, QSignalBlocker
 from ui.export_settings import ExportWidget
 from config import Config
 
@@ -46,8 +46,8 @@ class CropToolBar(QtWidgets.QToolBar):
         btnQuad.clicked.connect(self.sizeQuad)
 
         self.cboSizePresets = QtWidgets.QComboBox()
-        self.cboSizePresets.addItems([""] + Config.cropSizePresets)
         self.cboSizePresets.currentTextChanged.connect(self.sizePreset)
+        self.onSizePresetsUpdated(Config.cropSizePresets)
 
         layout = QtWidgets.QGridLayout()
         layout.setContentsMargins(1, 1, 1, 1)
@@ -185,6 +185,12 @@ class CropToolBar(QtWidgets.QToolBar):
         self.updateSize()
         self.cboSizePresets.setCurrentIndex(0)
     
+    @Slot()
+    def onSizePresetsUpdated(self, presets: list[str]):
+        with QSignalBlocker(self.cboSizePresets):
+            self.cboSizePresets.clear()
+            self.cboSizePresets.addItems([""] + presets)
+
 
     @Slot()
     def updateRotationFromSlider(self, rot: int):
