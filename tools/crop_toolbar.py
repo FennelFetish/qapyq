@@ -2,10 +2,11 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QSignalBlocker
 from ui.export_settings import ExportWidget
 from config import Config
+from .crop import CropTool
 
 
 class CropToolBar(QtWidgets.QToolBar):
-    def __init__(self, cropTool):
+    def __init__(self, cropTool: CropTool):
         super().__init__("Crop")
         self._cropTool = cropTool
         self.exportWidget = ExportWidget("crop", cropTool.tab.filelist)
@@ -169,6 +170,7 @@ class CropToolBar(QtWidgets.QToolBar):
         self.spinW.setValue(self.spinH.value())
         self.spinH.setValue(w)
         self.updateSize()
+        self._cropTool.swapCropSize()
 
     @Slot()
     def sizeQuad(self):

@@ -312,8 +312,13 @@ class BatchCrop(QtWidgets.QWidget):
         lines = self.txtBuckets.toPlainText().splitlines()
         buckets = []
         for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
             elements = self.BUCKET_SPLIT.split(line)
             if len(elements) != 2:
+                print(f"Invalid format for bucket size: {line}")
                 continue
 
             try:
@@ -324,7 +329,7 @@ class BatchCrop(QtWidgets.QWidget):
                 if includeSwapped and w != h:
                     buckets.append(SizeBucket(h, w))
             except ValueError:
-                print(f"Invalid bucket size: {line}")
+                print(f"Invalid format for bucket size: {line}")
 
         return buckets
 
