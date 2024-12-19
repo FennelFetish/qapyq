@@ -1,4 +1,5 @@
 from typing import Callable, List, Dict
+import math
 from llama_cpp import Llama
 from .backend import InferenceBackend
 
@@ -9,10 +10,10 @@ class LlamaCppBackend(InferenceBackend):
 
         self.llm = Llama(
             model_path=config.get("model_path"),
-            n_gpu_layers=config.get("gpu_layers", -1),
+            n_gpu_layers=self._getNumGpuLayers(config),
             n_ctx=config.get("ctx_length", 32768), # n_ctx should be increased to accommodate the image embedding
             n_batch=config.get("batch_size", 512),
-            n_threads=config.get("num_threads", 15),
+            n_threads=config.get("num_threads", 11),
             flash_attn=True,
             seed=self.randomSeed(),
             #logits_all=True,# needed to make llava work (DEPRECATED - set llama_batch.logits instead)
@@ -20,8 +21,49 @@ class LlamaCppBackend(InferenceBackend):
             **kwargs
         )
 
-    # def __del__(self):
-    #     self.llm.close()
+
+    def _getNumGpuLayers(self, config: dict) -> int:
+        gpuLayersPercent = config.get("gpu_layers", 100)
+        if gpuLayersPercent < 0:
+            gpuLayersPercent = 100
+
+        numLayers = self.readGgufLayers(config.get("model_path"))
+        if numLayers == 0:
+            print("Failed to read number of layers from GGUF file. Loading all layers to GPU.")
+            return -1
+        
+        numGpuLayers = math.ceil((gpuLayersPercent / 100) * numLayers)
+        print(f"Total GGUF layers: {numLayers}, GPU: {numGpuLayers} ({gpuLayersPercent}%), CPU: {numLayers-numGpuLayers}")
+        return numGpuLayers
+
+    # https://github.com/ggerganov/ggml/blob/master/docs/gguf.md
+    @staticmethod
+    def readGgufLayers(modelPath: str) -> int:
+        with open(modelPath, 'rb') as file:
+            data = file.read(8192)
+        if not data.startswith(b'GGUF'):
+            return 0
+        
+        key = b'.block_count'
+        pos = data.find(key)
+        if pos < 0:
+            return 0
+        pos += len(key)
+        
+        fieldType = int.from_bytes(data[pos:pos+4], "little")
+        match fieldType:
+            case 0: fieldLen, fieldSigned = 1, False
+            case 1: fieldLen, fieldSigned = 1, True
+            case 2: fieldLen, fieldSigned = 2, False
+            case 3: fieldLen, fieldSigned = 2, True
+            case 4: fieldLen, fieldSigned = 4, False
+            case 5: fieldLen, fieldSigned = 4, True
+            case 10: fieldLen, fieldSigned = 8, False
+            case 11: fieldLen, fieldSigned = 8, True
+            case _: fieldLen, fieldSigned = 0, False
+
+        pos += 4
+        return int.from_bytes(data[pos:pos+fieldLen], "little", signed=fieldSigned)
 
 
     def answer(self, prompts: List[Dict[str, str]], systemPrompt=None) -> Dict[str, str]:

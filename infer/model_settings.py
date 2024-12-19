@@ -318,9 +318,7 @@ class LLMModelSettings(BaseSettingsWidget):
         row += 1
         self.lblGpuLayers = QtWidgets.QLabel("GPU Layers:")
         layout.addWidget(self.lblGpuLayers, row, 0)
-        self.spinGpuLayers = QtWidgets.QSpinBox()
-        self.spinGpuLayers.setRange(-1, 999)
-        self.spinGpuLayers.setSingleStep(1)
+        self.spinGpuLayers = qtlib.PercentageSpinBox()
         layout.addWidget(self.spinGpuLayers, row, 1)
 
         row += 1
@@ -365,9 +363,12 @@ class LLMModelSettings(BaseSettingsWidget):
         self.cboQuant.setCurrentIndex(max(quantIndex, 0))
         self.spinCtxLen.setValue(settings.get("ctx_length", 32768))
 
-        self.spinGpuLayers.setValue(settings.get("gpu_layers", -1))
+        gpuLayers = settings.get("gpu_layers", 100)
+        if gpuLayers < 0:
+            gpuLayers = 100
+        self.spinGpuLayers.setValue(gpuLayers)
         
-        self.spinThreadCount.setValue(settings.get("num_threads", 15))
+        self.spinThreadCount.setValue(settings.get("num_threads", 11))
         self.spinBatchSize.setValue(settings.get("batch_size", 512))
 
         sampleSettings = settings.get(Config.INFER_PRESET_SAMPLECFG_KEY, {})
@@ -411,9 +412,7 @@ class CaptionModelSettings(LLMModelSettings):
         row += 1
         self.lblVisGpuLayers = QtWidgets.QLabel("Vis GPU Layers:")
         layout.addWidget(self.lblVisGpuLayers, row, 3)
-        self.spinVisGpuLayers = QtWidgets.QSpinBox()
-        self.spinVisGpuLayers.setRange(-1, 999)
-        self.spinVisGpuLayers.setSingleStep(1)
+        self.spinVisGpuLayers = qtlib.PercentageSpinBox()
         layout.addWidget(self.spinVisGpuLayers, row, 4, 1, 2)
 
         self.lblGpuLayers.setText("LLM GPU Layers:")
@@ -436,7 +435,11 @@ class CaptionModelSettings(LLMModelSettings):
     def fromDict(self, settings: dict) -> None:
         super().fromDict(settings)
         self.txtProjectorPath.setText(settings.get("proj_path", ""))
-        self.spinVisGpuLayers.setValue(settings.get("vis_gpu_layers", -1))
+
+        visGpuLayers = settings.get("vis_gpu_layers", 100)
+        if visGpuLayers < 0:
+            visGpuLayers = 100
+        self.spinVisGpuLayers.setValue(visGpuLayers)
 
     def toDict(self) -> dict:
         settings = super().toDict()

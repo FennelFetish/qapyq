@@ -1,4 +1,4 @@
-import json, os, sys
+import json, os, sys, math
 
 class DevMap:
     CPU = "cpu"
@@ -39,22 +39,38 @@ class DevMap:
         self.hasCpuLayers = True
     
 
-    def setLLMLayers(self, prefix: str, numGpuLayers: int, device: int = 0) -> None:
+    def setLLMLayers(self, prefix: str, gpuLayersPercent: int, device: int = 0) -> None:
+        numGpuLayers = self._getNumLayers("LLM", gpuLayersPercent, self.maxLayerLLM)
         self._setLayers(prefix, numGpuLayers, self.maxLayerLLM, device)
 
-    def setVisLayers(self, prefix: str, numGpuLayers: int, device: int = 0) -> None:
+    def setVisLayers(self, prefix: str, gpuLayersPercent: int, device: int = 0) -> None:
+        numGpuLayers = self._getNumLayers("Vis", gpuLayersPercent, self.maxLayerVis)
         self._setLayers(prefix, numGpuLayers, self.maxLayerVis, device)
 
-    def _setLayers(self, prefix: str, numGpuLayers: int, maxGpuLayer: int, device: int) -> None:
-        numGpuLayers = min(numGpuLayers, maxGpuLayer)
-        if numGpuLayers < 0:
-            numGpuLayers = maxGpuLayer
+    @staticmethod
+    def _getNumLayers(type: str, percent: int, maxLayer: int):
+        if percent < 0:
+            percent = 100
+        
+        numGpuLayers = math.ceil((percent / 100) * (maxLayer+1))
+        print(f"Total {type} layers: {maxLayer+1}, GPU: {numGpuLayers} ({percent}%), CPU: {(maxLayer+1)-numGpuLayers}")
+        return numGpuLayers
 
-        if numGpuLayers == maxGpuLayer:
+    def _setLayers(self, prefix: str, numGpuLayers: int, maxGpuLayer: int, device: int) -> None:
+        if numGpuLayers == 0:
+            self.deviceMap[prefix] = self.CPU
+            return
+
+        numGpuLayers = min(numGpuLayers, maxGpuLayer+1)
+        if numGpuLayers < 0:
+            numGpuLayers = maxGpuLayer+1
+
+        if numGpuLayers == maxGpuLayer+1:
             self.deviceMap[prefix] = device
             return
         self.hasCpuLayers = True
 
+        # Set last layer first (if 1 GPU layer), then (with increasing layer count) continue at the beginning.
         self.deviceMap[f"{prefix}.0"] = device
 
         for l in range(1, numGpuLayers-1):
@@ -101,3 +117,19 @@ class DevMap:
         with open(path, 'w') as file:
             for k, v in deviceMap.items():
                 file.write(f"{k} => {v}{os.linesep}")
+
+
+
+if __name__ == "__main__":
+    layers = 20
+    # for i in range(layers+1):
+    #     devmap = DevMap(layers-1)
+    #     devmap._setLayers("llm", i, layers-1, 0)
+    #     print(f"=== {i} / {layers} LLM Layers ===")
+    #     devmap.print()
+
+    for p in range(0, 101, 5):
+        devmap = DevMap(layers-1)
+        devmap.setLLMLayers("llm", p, 0)
+        print(f"=== {p}% / {layers} LLM Layers ===")
+        devmap.print()

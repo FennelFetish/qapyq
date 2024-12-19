@@ -1,7 +1,6 @@
 import base64, random
 from PySide6.QtGui import QImage
 from PySide6.QtCore import QBuffer
-from typing import List, Dict
 from config import Config
 
 
@@ -55,7 +54,7 @@ class InferenceBackend:
 
 
     @staticmethod
-    def mergeSystemPrompt(prompts: List[Dict[str, str]], systemPrompt: str) -> List[Dict[str, str]]:
+    def mergeSystemPrompt(prompts: list[dict[str, str]], systemPrompt: str) -> list[dict[str, str]]:
         for conv in prompts:
             name, prompt  = next(iter(conv.items())) # First entry
             text = Config.sysPromptFallbackTemplate.replace("{{systemPrompt}}", systemPrompt)
@@ -64,8 +63,8 @@ class InferenceBackend:
         return prompts
 
 
-    def caption(self, imgPath: str, prompts: List[Dict[str, str]], systemPrompt: str = None) -> Dict[str, str]:
+    def caption(self, imgPath: str, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
         raise NotImplementedError()
 
-    def answer(self, prompts: List[Dict[str, str]], systemPrompt: str = None) -> Dict[str, str]:
+    def answer(self, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
         raise NotImplementedError()

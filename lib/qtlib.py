@@ -571,6 +571,16 @@ class MenuComboBox(QtWidgets.QComboBox):
 
 
 
+class PercentageSpinBox(QtWidgets.QSpinBox):
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setRange(0, 100)
+        self.setValue(100)
+        self.setSingleStep(5)
+        self.setSuffix(" %")
+
+
+
 class TestWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
