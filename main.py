@@ -194,16 +194,15 @@ class MainMenu(QtWidgets.QMenu):
         actFullscreen.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_F))
         actFullscreen.triggered.connect(mainWindow.toggleFullscreen)
 
-        # TODO: Don't focus MainWindow when using this shortcuts
-        # actNextImage = QtGui.QAction("Next Image", self)
-        # actNextImage.setShortcutContext(Qt.ApplicationShortcut)
-        # actNextImage.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_PageUp))
-        # actNextImage.triggered.connect(lambda: mainWindow.currentTab.filelist.setNextFile())
+        actPrevImage = QtGui.QAction("Previous Image", self)
+        actPrevImage.setShortcutContext(Qt.ApplicationShortcut)
+        actPrevImage.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_PageUp))
+        actPrevImage.triggered.connect(lambda: self.changeImage(False))
 
-        # actPrevImage = QtGui.QAction("Previous Image", self)
-        # actPrevImage.setShortcutContext(Qt.ApplicationShortcut)
-        # actPrevImage.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_PageDown))
-        # actPrevImage.triggered.connect(lambda: mainWindow.currentTab.filelist.setPrevFile())
+        actNextImage = QtGui.QAction("Next Image", self)
+        actNextImage.setShortcutContext(Qt.ApplicationShortcut)
+        actNextImage.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_PageDown))
+        actNextImage.triggered.connect(lambda: self.changeImage(True))
 
         actAddTab = QtGui.QAction("New &Tab", self)
         actAddTab.setShortcutContext(Qt.ApplicationShortcut)
@@ -240,8 +239,8 @@ class MainMenu(QtWidgets.QMenu):
         self.addAction(actOpenDir)
         self.addSeparator()
         self.addAction(actFullscreen)
-        # self.addAction(actNextImage)
-        # self.addAction(actPrevImage)
+        self.addAction(actPrevImage)
+        self.addAction(actNextImage)
         self.addSeparator()
         self.addAction(actAddTab)
         self.addAction(actSwitchTab)
@@ -292,6 +291,18 @@ class MainMenu(QtWidgets.QMenu):
     def showModelSettings(self):
         from infer.model_settings import ModelSettingsWindow
         ModelSettingsWindow.openInstance(self.mainWindow)
+
+    def changeImage(self, forward: bool):
+        tab = self.mainWindow.currentTab
+
+        try:
+            tab.imgview.takeFocusOnFilechange = False
+            if forward:
+                tab.filelist.setNextFile()
+            else:
+                tab.filelist.setPrevFile()
+        finally:
+            tab.imgview.takeFocusOnFilechange = True
 
 
 
