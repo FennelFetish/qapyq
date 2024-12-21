@@ -3,14 +3,13 @@ from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Signal, Slot, QSignalBlocker
 from lib import qtlib
 from lib.filelist import DataKeys
-from lib.captionfile import CaptionFile
+from lib.captionfile import FileTypeSelector
 from .caption_bubbles import CaptionBubbles
 from .caption_filter import CaptionRulesProcessor
 from .caption_generate import CaptionGenerate
 from .caption_groups import CaptionGroups
-from .caption_settings import CaptionSettings, FileTypeSelector
+from .caption_settings import CaptionSettings
 
-# TODO: Ctrl+S saves current caption
 
 class CaptionContext(QtWidgets.QTabWidget):
     captionClicked      = Signal(str)
@@ -43,8 +42,6 @@ class CaptionContainer(QtWidgets.QWidget):
         super().__init__()
         self.captionCache = CaptionCache(tab.filelist)
 
-        self.captionFile = None
-        self.captionFileExt = ".txt"
         self.captionSeparator = ', '
 
         self.ctx = CaptionContext(tab, self.getSelectedCaption)
@@ -104,6 +101,7 @@ class CaptionContainer(QtWidgets.QWidget):
 
     def setCaption(self, text):
         self.txtCaption.setPlainText(text)
+        self.txtCaption.moveCursor(QtGui.QTextCursor.MoveOperation.End)
 
     def _onCaptionEdited(self):
         text = self.txtCaption.toPlainText()
@@ -234,40 +232,13 @@ class CaptionContainer(QtWidgets.QWidget):
     @Slot()
     def saveCaption(self):
         text = self.txtCaption.toPlainText()
-
         destSelector = self.ctx.settings.destSelector
-        success = False
-        if destSelector.type == FileTypeSelector.TYPE_TXT:
-            success = self.saveCaptionTxt(text)
-        else:
-            success = self.saveCaptionJson(text, destSelector.type, destSelector.name)
+        currentFile = self.ctx.tab.filelist.getCurrentFile()
 
-        if success:
+        if destSelector.saveCaption(currentFile, text):
             self.captionCache.remove()
             self.captionCache.setState(DataKeys.IconStates.Saved)
             self._setSaveButtonStyle(False)
-
-    def saveCaptionTxt(self, text: str) -> bool:
-        with open(self.captionFile, 'w') as file:
-            file.write(text)
-        print("Saved caption to file:", self.captionFile)
-        return True
-
-    def saveCaptionJson(self, text: str, type: str, name: str) -> bool:
-        captionFile = CaptionFile(self.captionFile)
-        
-        if type == FileTypeSelector.TYPE_CAPTIONS:
-            captionFile.addCaption(name, text)
-        else:
-            captionFile.addTags(name, text)
-        
-        if captionFile.updateToJson():
-            print(f"Saved caption to file: {captionFile.jsonPath} [{type}.{name}]")
-            return True
-        else:
-            print(f"Failed to save caption to file: {captionFile.jsonPath} [{type}.{name}]")
-            return False
-
 
     def loadCaption(self):
         # Use cached caption if it exists in dictionary
@@ -281,10 +252,8 @@ class CaptionContainer(QtWidgets.QWidget):
     @Slot()
     def resetCaption(self):
         srcSelector = self.ctx.settings.srcSelector
-        if srcSelector.type == FileTypeSelector.TYPE_TXT:
-            text = self.resetCaptionTxt()
-        else:
-            text = self.resetCaptionJson(srcSelector.type, srcSelector.name)
+        currentFile = self.ctx.tab.filelist.getCurrentFile()
+        text = srcSelector.loadCaption(currentFile)
 
         if text:
             self.setCaption(text)
@@ -297,22 +266,6 @@ class CaptionContainer(QtWidgets.QWidget):
         self.captionCache.remove()
         self._setSaveButtonStyle(False)
 
-    def resetCaptionTxt(self) -> str | None:
-        if os.path.exists(self.captionFile):
-            with open(self.captionFile, 'r') as file:
-                return file.read()
-        return None
-
-    def resetCaptionJson(self, type: str, name: str):
-        captionFile = CaptionFile(self.captionFile)
-        if not captionFile.loadFromJson():
-            return None
-
-        if type == FileTypeSelector.TYPE_CAPTIONS:
-            return captionFile.getCaption(name)
-        else:
-            return captionFile.getTags(name)
-        
 
     @Slot()
     def _onSeparatorChanged(self, separator):
@@ -322,18 +275,20 @@ class CaptionContainer(QtWidgets.QWidget):
 
 
     def onFileChanged(self, currentFile):
-        filename = os.path.normpath(currentFile)
-        dirname, filename = os.path.split(filename)
-        filename = os.path.basename(filename)
-        filename = os.path.splitext(filename)[0]
-        self.captionFile = os.path.join(dirname, filename + self.captionFileExt)
         self.loadCaption()
-
         if self.ctx.settings.isAutoApplyRules:
             self.applyRules()
     
     def onFileListChanged(self, currentFile):
         self.onFileChanged(currentFile)
+
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        if event.matches(QtGui.QKeySequence.StandardKey.Save):
+            self.saveCaption()
+            event.accept()
+            return
+        return super().keyPressEvent(event)
 
 
 
@@ -359,4 +314,3 @@ class CaptionCache:
             self.filelist.setData(file, DataKeys.CaptionState, state)
         else:
             self.filelist.removeData(file, DataKeys.CaptionState)
-            

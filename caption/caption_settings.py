@@ -2,6 +2,7 @@ import os
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
 import lib.qtlib as qtlib
+from lib.captionfile import FileTypeSelector
 from .caption_preset import CaptionPreset
 from config import Config
 
@@ -35,11 +36,13 @@ class CaptionSettings(QtWidgets.QWidget):
         layout.setColumnStretch(4, 1)
         
         row = 0
-        self.srcSelector = FileTypeSelector(self.ctx)
+        self.srcSelector = FileTypeSelector()
+        self.srcSelector.fileTypeUpdated.connect(lambda: self.ctx.fileTypeUpdated.emit())
         layout.addWidget(QtWidgets.QLabel("Load From:"), row, 0)
         layout.addLayout(self.srcSelector, row, 1)
 
-        self.destSelector = FileTypeSelector(self.ctx)
+        self.destSelector = FileTypeSelector()
+        self.destSelector.fileTypeUpdated.connect(lambda: self.ctx.fileTypeUpdated.emit())
         layout.addWidget(QtWidgets.QLabel("Save To:"), row, 3)
         layout.addLayout(self.destSelector, row, 4)
 
@@ -231,54 +234,3 @@ class CaptionSettings(QtWidgets.QWidget):
 
         self.ctx.groups.loadFromPreset(preset)
         self.ctx.controlUpdated.emit()
-
-
-
-class FileTypeSelector(QtWidgets.QHBoxLayout):
-    TYPE_TXT = "txt"
-    TYPE_TAGS = "tags"
-    TYPE_CAPTIONS = "captions"
-
-    def __init__(self, ctx):
-        super().__init__()
-        self.ctx = ctx
-
-        self.cboType = QtWidgets.QComboBox()
-        self.cboType.addItem(".txt File", self.TYPE_TXT)
-        self.cboType.addItem(".json Tags:", self.TYPE_TAGS)
-        self.cboType.addItem(".json Caption:", self.TYPE_CAPTIONS)
-        self.cboType.currentIndexChanged.connect(self._onTypeChanged)
-        self.addWidget(self.cboType)
-
-        self.txtName = QtWidgets.QLineEdit("tags")
-        self.txtName.editingFinished.connect(self._onEdited)
-        qtlib.setMonospace(self.txtName)
-        self.addWidget(self.txtName)
-
-        self._onTypeChanged(self.cboType.currentIndex())
-    
-    @Slot()
-    def _onTypeChanged(self, index):
-        nameEnabled = self.cboType.itemData(index) != self.TYPE_TXT
-        self.txtName.setEnabled(nameEnabled)
-
-        self.ctx.fileTypeUpdated.emit()
-
-    @Slot()
-    def _onEdited(self):
-        if not self.name:
-            if self.type == self.TYPE_TAGS:
-                self.txtName.setText("tags")
-            else:
-                self.txtName.setText("caption")
-        
-        self.ctx.fileTypeUpdated.emit()
-
-
-    @property
-    def type(self) -> str:
-        return self.cboType.currentData()
-
-    @property
-    def name(self) -> str:
-        return self.txtName.text()
