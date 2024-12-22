@@ -120,11 +120,11 @@ class Gallery(QtWidgets.QWidget):
 
 
     @Slot()
-    def onHeadersUpdated(self, headers: dict):
+    def onHeadersUpdated(self, headers: list):
         self.rowToHeader.clear()
         with QSignalBlocker(self.cboFolders):
             self.cboFolders.clear()
-            for i, (folder, row) in enumerate(headers.items()):
+            for i, (folder, row) in enumerate(headers):
                 self.cboFolders.addItem(folder, row)
                 self.rowToHeader[row] = i
         

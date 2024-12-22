@@ -16,7 +16,7 @@ DATA_ICONS = {
 
 
 class GalleryGrid(QtWidgets.QWidget):
-    headersUpdated  = Signal(dict)
+    headersUpdated  = Signal(list)
     fileChanged     = Signal(object, int)
     reloaded        = Signal()
     thumbnailLoaded = Signal()
@@ -72,6 +72,7 @@ class GalleryGrid(QtWidgets.QWidget):
         self.reloaded.emit()
 
     def reloadCaptions(self):
+        # TODO: Thread. Invalidate all and only load visible.
         for item in self.fileItems.values():
             item.loadCaption()
 
@@ -97,7 +98,7 @@ class GalleryGrid(QtWidgets.QWidget):
         self._selectedCompare = None
 
         existingItems: dict = self.freeLayout()
-        headers = dict()
+        headers = list()
 
         currentDir = ""
         row, col = 0, 0
@@ -108,7 +109,7 @@ class GalleryGrid(QtWidgets.QWidget):
                     col = 0
                 currentDir = dirname
                 self.addHeader(dirname, row)
-                headers[dirname] = row
+                headers.append((dirname, row))
                 row += 1
 
             if not (galleryItem := existingItems.pop(file, None)):
@@ -188,7 +189,7 @@ class GalleryGrid(QtWidgets.QWidget):
         for i in reversed(range(layout.count())):
             items.append(layout.takeAt(i))
 
-        headers = dict()
+        headers = list()
         row, col = 0, 0
         for widget in (item.widget() for item in reversed(items)):
             if isinstance(widget, self.itemClass):
@@ -203,7 +204,7 @@ class GalleryGrid(QtWidgets.QWidget):
                     row += 1
                     col = 0
                 layout.addWidget(widget, row, 0, 1, cols)
-                headers[widget.text()] = row
+                headers.append((widget.text(), row))
                 row += 1
         
         layout.update()
