@@ -8,6 +8,36 @@ from ui.tab import ImgTab
 from .gallery_item import GalleryGridItem, GalleryItem, GalleryListItem, ImageIcon
 
 
+class Header(QtWidgets.QFrame):
+    def __init__(self, dir: str, row: int):
+        super().__init__()
+        self.dir = dir
+        self.row = row
+        self.numImages = 0
+
+        layout = QtWidgets.QHBoxLayout()
+        layout.setContentsMargins(4, 4, 4, 4)
+
+        lblTitle = QtWidgets.QLabel(dir)
+        qtlib.setMonospace(lblTitle, 1.2, bold=True)
+        layout.addWidget(lblTitle)
+
+        layout.addStretch(1)
+
+        self.lblImgCount = QtWidgets.QLabel()
+        layout.addWidget(self.lblImgCount)
+
+        self.setLayout(layout)
+        self.setStyleSheet(f"color: #fff; background-color: #161616")
+
+    def updateImageLabel(self):
+        text = f"{self.numImages} Image"
+        if self.numImages != 1:
+            text += "s"
+        self.lblImgCount.setText(text)
+
+
+
 class GalleryGrid(QtWidgets.QWidget):
     headersUpdated  = Signal(list)
     fileChanged     = Signal(object, int)
@@ -98,16 +128,17 @@ class GalleryGrid(QtWidgets.QWidget):
         headers = list()
         rows = set()
 
-        currentDir = ""
+        currentHeader: Header = None
         row, col = 0, 0
         for file in self.filelist.getFiles():
-            if (dirname := os.path.dirname(file)) != currentDir:
+            dirname = os.path.dirname(file)
+            if not currentHeader or currentHeader.dir != dirname:
                 if col > 0:
                     row += 1
                     col = 0
-                currentDir = dirname
-                self.addHeader(dirname, row)
-                headers.append((dirname, row))
+                
+                currentHeader = self.addHeader(dirname, row)
+                headers.append(currentHeader)
                 rows.add(row)
                 row += 1
 
@@ -115,7 +146,9 @@ class GalleryGrid(QtWidgets.QWidget):
                 galleryItem = self.itemClass(self, file)
             
             self.addImage(galleryItem, file, row, col)
+            currentHeader.numImages += 1
             rows.add(row)
+
             col += 1
             if col >= self.columns:
                 col = 0
@@ -126,6 +159,8 @@ class GalleryGrid(QtWidgets.QWidget):
         for widget in existingItems.values():
             widget.deleteLater()
 
+        for header in headers:
+            header.updateImageLabel()
         self.headersUpdated.emit(headers)
     
     def addImage(self, galleryItem: GalleryItem, file: str, row: int, col: int):
@@ -146,15 +181,10 @@ class GalleryGrid(QtWidgets.QWidget):
         else:
             galleryItem.setCompare(False)
 
-    def addHeader(self, text: str, row: int):
-        label = QtWidgets.QLabel(text)
-        qtlib.setMonospace(label, 1.2, bold=True)
-        label.setContentsMargins(4, 4, 4, 4)
-
-        palette = QtWidgets.QApplication.palette()
-        colorFg = palette.color(QtGui.QPalette.ColorRole.BrightText).name()
-        label.setStyleSheet(f"color: {colorFg}; background-color: #161616")
-        self.layout().addWidget(label, row, 0, 1, self.columns)
+    def addHeader(self, dir: str, row: int) -> Header:
+        header = Header(dir, row)
+        self.layout().addWidget(header, row, 0, 1, self.columns)
+        return header
 
 
     def setSelectedItem(self, item: GalleryItem, updateFileList=False):
@@ -210,17 +240,17 @@ class GalleryGrid(QtWidgets.QWidget):
                 if col >= cols:
                     row += 1
                     col = 0
-            else:
+            elif isinstance(widget, Header):
                 if col > 0:
                     row += 1
                     col = 0
+                widget.row = row
+                headers.append(widget)
                 layout.addWidget(widget, row, 0, 1, cols)
-                headers.append((widget.text(), row))
                 rows.add(row)
                 row += 1
         
         self.rows = len(rows)
-
         layout.update()
         self.headersUpdated.emit(headers)
 
@@ -231,37 +261,34 @@ class GalleryGrid(QtWidgets.QWidget):
 
         # Binary search
         lo = 0
-        hi = self.rows-1
+        hi = max(self.rows-1, 0)
 
         while lo < hi:
             row = lo + ((hi-lo) // 2)
             rect = layout.cellRect(row, 0)
             if not rect.isValid():
-                return 0
+                return -1
             
             if y > rowY(rect):
                 lo = row+1 # Continue in upper half
             else:
                 hi = row   # Continue in lower half
 
+        #assert(lo == hi)
         return lo
 
     def getYforRow(self, row: int, skipDownwards=False):
         layout: QtWidgets.QGridLayout = self.layout()
+
+        # Check for header above current row
+        itemAbove = layout.itemAtPosition(row-1, 0)
+        if itemAbove and isinstance(itemAbove.widget(), Header):
+            row += 1 if skipDownwards else -1
+
         rect = layout.cellRect(row, 0)
         if not rect.isValid():
             return -1
 
-        # Check for header above current row
-        rectAbove = layout.cellRect(row-1, 0)
-        if rectAbove.height() < 100 and rectAbove.isValid():
-            if skipDownwards:
-                row += 1
-                rect = layout.cellRect(row, 0)
-            else:
-                row -= 1
-                rect = rectAbove
-        
         y = rect.top()
         for col in range(1, self.columns):
             if (rect := layout.cellRect(row, col)).isValid():

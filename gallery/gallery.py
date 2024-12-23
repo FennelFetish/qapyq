@@ -2,7 +2,7 @@ import time
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QSignalBlocker, QTimer
 from bisect import bisect_right
-from .gallery_grid import GalleryGrid
+from .gallery_grid import GalleryGrid, Header
 import lib.qtlib as qtlib
 from lib.captionfile import FileTypeSelector
 
@@ -75,7 +75,7 @@ class Gallery(QtWidgets.QWidget):
         layout.setColumnStretch(2, 0)
         layout.setColumnStretch(3, 0)
         layout.setColumnStretch(4, 0)
-        layout.setColumnMinimumWidth(1, 20)
+        layout.setColumnMinimumWidth(1, 6)
         layout.addWidget(self.cboFolders, 0, 0)
         layout.addWidget(QtWidgets.QLabel("Captions:"), 0, 2)
         layout.addLayout(self.captionSrc, 0, 3)
@@ -120,13 +120,13 @@ class Gallery(QtWidgets.QWidget):
 
 
     @Slot()
-    def onHeadersUpdated(self, headers: list):
+    def onHeadersUpdated(self, headers: list[Header]):
         self.rowToHeader.clear()
         with QSignalBlocker(self.cboFolders):
             self.cboFolders.clear()
-            for folder, row in headers:
-                self.cboFolders.addItem(folder, row)
-                self.rowToHeader.append(row)
+            for header in headers:
+                self.cboFolders.addItem(header.dir, header.row)
+                self.rowToHeader.append(header.row)
         
         self.updateComboboxFolder(self.scrollArea.verticalScrollBar().value())
         self.updateStatusBar(len(headers))
@@ -173,7 +173,7 @@ class FastScrollArea(QtWidgets.QScrollArea):
 
     def wheelEvent(self, event):
         scrollBar = self.verticalScrollBar()
-        gallery = self.widget()
+        gallery: GalleryGrid = self.widget()
 
         scrollDown = event.angleDelta().y() < 0
 
@@ -182,4 +182,3 @@ class FastScrollArea(QtWidgets.QScrollArea):
         y = gallery.getYforRow(row, scrollDown)
         if y >= 0:
             scrollBar.setValue(y)
-        
