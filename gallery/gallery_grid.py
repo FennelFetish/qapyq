@@ -1,18 +1,11 @@
 import os
 from PySide6 import QtGui, QtWidgets
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QRect
 from lib.captionfile import FileTypeSelector
 from lib.filelist import DataKeys
 from lib import qtlib
 from ui.tab import ImgTab
 from .gallery_item import GalleryGridItem, GalleryItem, GalleryListItem, ImageIcon
-
-
-DATA_ICONS = {
-    DataKeys.CaptionState: ImageIcon.Caption,
-    DataKeys.CropState: ImageIcon.Crop,
-    DataKeys.MaskState: ImageIcon.Mask
-}
 
 
 class GalleryGrid(QtWidgets.QWidget):
@@ -45,12 +38,15 @@ class GalleryGrid(QtWidgets.QWidget):
         }
 
         self.columns = 4
+        self.rows = 0
 
         self._selectedItem: GalleryItem | None = None
         self._selectedCompare: GalleryItem | None = None
         self._ignoreFileChange = False
 
+        # TODO: This layout has a maximum height of 524287. Why??
         layout = QtWidgets.QGridLayout()
+        layout.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetNoConstraint)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
@@ -65,8 +61,9 @@ class GalleryGrid(QtWidgets.QWidget):
 
         for widget in self.freeLayout().values():
             widget.deleteLater()
-        
+
         self.layout().setSpacing(newItemClass.getSpacing())
+        self.columns = self.calcColumnCount()
 
         self.reloadImages()
         self.reloaded.emit()
@@ -99,6 +96,7 @@ class GalleryGrid(QtWidgets.QWidget):
 
         existingItems: dict = self.freeLayout()
         headers = list()
+        rows = set()
 
         currentDir = ""
         row, col = 0, 0
@@ -110,16 +108,20 @@ class GalleryGrid(QtWidgets.QWidget):
                 currentDir = dirname
                 self.addHeader(dirname, row)
                 headers.append((dirname, row))
+                rows.add(row)
                 row += 1
 
             if not (galleryItem := existingItems.pop(file, None)):
                 galleryItem = self.itemClass(self, file)
             
             self.addImage(galleryItem, file, row, col)
+            rows.add(row)
             col += 1
             if col >= self.columns:
                 col = 0
                 row += 1
+
+        self.rows = len(rows)
 
         for widget in existingItems.values():
             widget.deleteLater()
@@ -130,7 +132,7 @@ class GalleryGrid(QtWidgets.QWidget):
         galleryItem.row = row
         self.fileItems[file] = galleryItem
 
-        self.layout().addWidget(galleryItem, row, col, Qt.AlignTop)
+        self.layout().addWidget(galleryItem, row, col, Qt.AlignmentFlag.AlignTop)
 
         if self.filelist.getCurrentFile() == file:
             self._selectedItem = galleryItem
@@ -177,24 +179,33 @@ class GalleryGrid(QtWidgets.QWidget):
         item.setCompare(True)
         self._selectedCompare = item
 
+
+    def calcColumnCount(self):
+        colWidth = self.itemClass.getColumnWidth()
+        spacing  = self.layout().spacing()
+        cols = int(self.width() // (colWidth + spacing))
+        return max(cols, 1)
+
     def adjustGrid(self):
-        layout = self.layout()
-        cols = int(self.width() // (self.itemClass.getColumnWidth()+layout.spacing()))
-        cols = max(cols, 1)
+        cols = self.calcColumnCount()
         if cols == self.columns:
             return
         self.columns = cols
-        
+
+        layout = self.layout()
         items = []
         for i in reversed(range(layout.count())):
             items.append(layout.takeAt(i))
 
         headers = list()
+        rows = set()
+
         row, col = 0, 0
         for widget in (item.widget() for item in reversed(items)):
             if isinstance(widget, self.itemClass):
                 widget.row = row
-                layout.addWidget(widget, row, col, Qt.AlignTop)
+                layout.addWidget(widget, row, col, Qt.AlignmentFlag.AlignTop)
+                rows.add(row)
                 col += 1
                 if col >= cols:
                     row += 1
@@ -205,22 +216,35 @@ class GalleryGrid(QtWidgets.QWidget):
                     col = 0
                 layout.addWidget(widget, row, 0, 1, cols)
                 headers.append((widget.text(), row))
+                rows.add(row)
                 row += 1
         
+        self.rows = len(rows)
+
         layout.update()
         self.headersUpdated.emit(headers)
 
 
-    def getRowForY(self, y: int, compareBottom=False):
-        layout = self.layout()
-        row = 0
-        while (rect := layout.cellRect(row, 0)).isValid():
-            itemY = rect.bottom() if compareBottom else rect.top()
-            if itemY < y:
-                row += 1
+    def getRowForY(self, y: int, compareBottom=False) -> int:
+        layout: QtWidgets.QGridLayout = self.layout()
+        rowY = QRect.bottom if compareBottom else QRect.top
+
+        # Binary search
+        lo = 0
+        hi = self.rows-1
+
+        while lo < hi:
+            row = lo + ((hi-lo) // 2)
+            rect = layout.cellRect(row, 0)
+            if not rect.isValid():
+                return 0
+            
+            if y > rowY(rect):
+                lo = row+1 # Continue in upper half
             else:
-                break
-        return row
+                hi = row   # Continue in lower half
+
+        return lo
 
     def getYforRow(self, row: int, skipDownwards=False):
         layout: QtWidgets.QGridLayout = self.layout()
@@ -263,14 +287,15 @@ class GalleryGrid(QtWidgets.QWidget):
             self.reloaded.emit()
 
     def onFileDataChanged(self, file: str, key: str):
-        if not (icon := DATA_ICONS.get(key)):
+        widget = self.fileItems.get(file)
+        if not widget:
             return
 
-        if not (widget := self.fileItems.get(file)):
-            return
+        match key:
+            case DataKeys.ImageSize:
+                if imgSize := self.filelist.getData(file, key):
+                    widget.setImageSize(imgSize[0], imgSize[1])
 
-        if iconState := self.filelist.getData(file, key):
-            widget.setIcon(icon, iconState)
-        else:
-            widget.removeIcon(icon)
-        widget.update()
+            case DataKeys.CaptionState | DataKeys.CropState | DataKeys.MaskState:
+                iconState = self.filelist.getData(file, key)
+                widget.setIcon(key, iconState)

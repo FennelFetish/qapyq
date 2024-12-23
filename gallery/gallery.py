@@ -1,6 +1,7 @@
 import time
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QSignalBlocker, QTimer
+from bisect import bisect_right
 from .gallery_grid import GalleryGrid
 import lib.qtlib as qtlib
 from lib.captionfile import FileTypeSelector
@@ -15,7 +16,7 @@ class Gallery(QtWidgets.QWidget):
         super().__init__()
         self.tab = tab
         self.galleryGrid = None
-        self.rowToHeader = dict()
+        self.rowToHeader: list[int] = list()
 
         self.gridUpdateTimer = QTimer()
         self.gridUpdateTimer.setSingleShot(True)
@@ -51,7 +52,7 @@ class Gallery(QtWidgets.QWidget):
         self.scrollArea = FastScrollArea()
         self.scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scrollArea.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        #self.scrollArea.setSizeAdjustPolicy(FastScrollArea.SizeAdjustPolicy.AdjustToContents)
+        self.scrollArea.setSizeAdjustPolicy(FastScrollArea.SizeAdjustPolicy.AdjustToContents)
         self.scrollArea.setWidgetResizable(True)
         self.scrollArea.verticalScrollBar().valueChanged.connect(self.updateComboboxFolder)
 
@@ -59,7 +60,6 @@ class Gallery(QtWidgets.QWidget):
         self.tab.filelist.addListener(self.galleryGrid)
         self.tab.filelist.addDataListener(self.galleryGrid)
 
-        #self.galleryGrid.adjustGrid(self.width()) # Adjust grid before connecting slot onHeadersUpdated()
         self.galleryGrid.headersUpdated.connect(self.onHeadersUpdated)
         self.galleryGrid.reloadImages() # Slot onHeadersUpdated() needs access to cboFolders and scrollArea
         self.galleryGrid.reloaded.connect(self.scrollTop)
@@ -124,9 +124,9 @@ class Gallery(QtWidgets.QWidget):
         self.rowToHeader.clear()
         with QSignalBlocker(self.cboFolders):
             self.cboFolders.clear()
-            for i, (folder, row) in enumerate(headers):
+            for folder, row in headers:
                 self.cboFolders.addItem(folder, row)
-                self.rowToHeader[row] = i
+                self.rowToHeader.append(row)
         
         self.updateComboboxFolder(self.scrollArea.verticalScrollBar().value())
         self.updateStatusBar(len(headers))
@@ -145,12 +145,9 @@ class Gallery(QtWidgets.QWidget):
     @Slot()
     def updateComboboxFolder(self, y):
         row = self.galleryGrid.getRowForY(y, True)
-        index = 0
-        for headerRow, i in self.rowToHeader.items():
-            if headerRow > row:
-                break
-            index = i
-        
+        index = bisect_right(self.rowToHeader, row)
+        index = max(index-1, 0)
+
         with QSignalBlocker(self.cboFolders):
             self.cboFolders.setCurrentIndex(index)
 

@@ -5,13 +5,18 @@ from PySide6.QtCore import QSize, Qt, Slot
 from lib.filelist import DataKeys
 from lib import qtlib
 from .thumbnail_cache import ThumbnailCache
-from config import Config
 
 
 class ImageIcon:
     Caption = "caption"
     Crop = "crop"
     Mask = "mask"
+
+DATA_ICONS = {
+    DataKeys.CaptionState: ImageIcon.Caption,
+    DataKeys.CropState: ImageIcon.Crop,
+    DataKeys.MaskState: ImageIcon.Mask
+}
 
 
 class GalleryItem(QtWidgets.QWidget):
@@ -32,45 +37,42 @@ class GalleryItem(QtWidgets.QWidget):
         self.icons = {}
 
         self.setMinimumSize(ThumbnailCache.THUMBNAIL_SIZE, ThumbnailCache.THUMBNAIL_SIZE)
-        self._checkIcons(file)
 
-        if thumbnail := self.gallery.filelist.getData(file, DataKeys.Thumbnail):
-            self._pixmap = thumbnail
-            self._height = thumbnail.height()
+        # Load initial state
+        filelist = self.gallery.filelist
+        for key in (DataKeys.CaptionState, DataKeys.CropState, DataKeys.MaskState):
+            if state := filelist.getData(file, key):
+                self.setIcon(key, state)
+
+        if pixmap := filelist.getData(file, DataKeys.Thumbnail):
+            self._pixmap = pixmap
+            self._height = pixmap.height()
         else:
             self._pixmap = None
             self._height = ThumbnailCache.THUMBNAIL_SIZE
-
-
-    def _checkIcons(self, file):
-        # TODO: Do I/O in separate thread
-        filelist = self.gallery.filelist
-
-        if captionState := filelist.getData(file, DataKeys.CaptionState):
-            self.setIcon(ImageIcon.Caption, captionState)
-        else:
-            filenameNoExt, ext = os.path.splitext(self.file)
-            captionFile = filenameNoExt + ".txt"
-            if os.path.exists(captionFile):
-                self.setIcon(ImageIcon.Caption, DataKeys.IconStates.Exists)
-
-        if cropState := filelist.getData(file, DataKeys.CropState):
-            self.setIcon(ImageIcon.Crop, cropState)
         
-        if maskState := filelist.getData(file, DataKeys.MaskState):
-            self.setIcon(ImageIcon.Mask, maskState)
+        if imgSize := filelist.getData(file, DataKeys.ImageSize):
+            self.setImageSize(imgSize[0], imgSize[1])
         else:
-            filenameNoExt, ext = os.path.splitext(self.file)
-            maskFile = f"{filenameNoExt}{Config.maskSuffix}.png"
-            if os.path.exists(maskFile):
-                self.setIcon(ImageIcon.Mask, DataKeys.IconStates.Exists)
+            self.setImageSize(0, 0)
+
 
     def setIcon(self, key, state):
-        self.icons[key] = state
+        icon = DATA_ICONS.get(key)
+        if not icon:
+            return
 
-    def removeIcon(self, key):
-        if key in self.icons:
-            del self.icons[key]
+        if state is None:
+            if icon not in self.icons:
+                return
+            del self.icons[icon]
+        else:
+            self.icons[icon] = state
+        
+        self.update()
+
+    def setImageSize(self, w: int, h: int):
+        self.imgWidth, self.imgHeight = w, h
 
 
     def loadCaption(self):
@@ -215,10 +217,16 @@ class GalleryListItem(GalleryItem):
     HEADER_HEIGHT = 18
 
     def __init__(self, gallery, file):
+        self._built = False
         super().__init__(gallery, file)
         self._captionLoaded = False
 
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.MinimumExpanding)
+        self.setMinimumSize(ThumbnailCache.THUMBNAIL_SIZE * 2, ThumbnailCache.THUMBNAIL_SIZE)
+
+
+    def _build(self):
+        self._built = True
 
         layout = QtWidgets.QGridLayout()
         layout.setContentsMargins(self.BORDER_SIZE, self.BORDER_SIZE, self.BORDER_SIZE, self.BORDER_SIZE)
@@ -232,6 +240,7 @@ class GalleryListItem(GalleryItem):
         self.lblFilename = QtWidgets.QLabel(self.filename)
         self.lblFilename.setFixedHeight(self.HEADER_HEIGHT)
         layout.addWidget(self.lblFilename, row, 1)
+        self.setImageSize(self.imgWidth, self.imgHeight)
 
         self.btnSave = QtWidgets.QPushButton("Save")
         self.btnSave.clicked.connect(self._saveCaption)
@@ -255,6 +264,12 @@ class GalleryListItem(GalleryItem):
 
         self.setLayout(layout)
 
+
+    @override
+    def setImageSize(self, w: int, h: int):
+        super().setImageSize(w, h)
+        if self._built:
+            self.lblFilename.setText(f"{self.filename} ({self.imgWidth}x{self.imgHeight})")
 
     @Slot()
     def loadCaption(self):
@@ -293,8 +308,9 @@ class GalleryListItem(GalleryItem):
 
     @override
     def takeFocus(self):
-        self.txtCaption.setFocus()
-        self.txtCaption.moveCursor(QtGui.QTextCursor.MoveOperation.End)
+        if self._built:
+            self.txtCaption.setFocus()
+            self.txtCaption.moveCursor(QtGui.QTextCursor.MoveOperation.End)
 
 
     @staticmethod
@@ -308,6 +324,8 @@ class GalleryListItem(GalleryItem):
 
     @override
     def paintEvent(self, event):
+        if not self._built:
+            self._build()
         if not self._captionLoaded:
             self.loadCaption()
 

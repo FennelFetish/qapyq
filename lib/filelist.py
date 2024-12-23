@@ -13,15 +13,17 @@ except:
 
 
 class DataKeys:
-    Caption         = "caption"
-    CaptionState    = "caption_state"
-    CropState       = "crop_state"
-    Thumbnail       = "thumbnail"
-    ThumbnailRequestTime = "thumbnail_time"
+    ImageSize       = "img_size"            # tuple[w, h]
 
-    MaskLayers      = "mask_layers"
-    MaskIndex       = "mask_selected_index"
-    MaskState       = "mask_state"
+    Caption         = "caption"             # str
+    CaptionState    = "caption_state"       # IconStates
+    CropState       = "crop_state"          # IconStates
+    Thumbnail       = "thumbnail"           # QPixmap
+    ThumbnailRequestTime = "thumbnail_time" # int (ns)
+
+    MaskLayers      = "mask_layers"         # list[MaskItem]
+    MaskIndex       = "mask_selected_index" # int
+    MaskState       = "mask_state"          # IconStates
 
     class IconStates(enum.Enum):
         Exists  = "exists"
