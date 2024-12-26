@@ -1,6 +1,6 @@
 import sys
 from PySide6 import QtGui, QtWidgets
-from PySide6.QtCore import Qt, Slot, QPoint
+from PySide6.QtCore import Qt, Slot, QPoint, QThreadPool
 from config import Config
 from ui import aux_window
 from ui.tab import ImgTab
@@ -393,6 +393,10 @@ def restoreWindows(win: MainWindow):
 def main() -> int:
     app = QtWidgets.QApplication([])
     app.setStyle("Fusion")
+
+    threadCount = QThreadPool.globalInstance().maxThreadCount()
+    threadCount = max(threadCount // 2, 4)
+    QThreadPool.globalInstance().setMaxThreadCount(threadCount)
 
     win = MainWindow(app)
     win.show()
