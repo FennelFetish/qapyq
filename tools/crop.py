@@ -270,6 +270,7 @@ class CropTool(ViewTool):
 
         elif button == self.BUTTON_MENU:
             self._menu.exec_(self._imgview.mapToGlobal(event.position()).toPoint())
+            self._waitForConfirmation = False
             return True
 
         return super().onMousePress(event)
@@ -442,15 +443,16 @@ class CropContextMenu(QMenu):
 
         actResetSelection = self.addAction("Reset Selection")
         actResetSelection.triggered.connect(self._onResetSelection)
+
+        actResetSelection = self.addAction("Swap")
+        actResetSelection.triggered.connect(self._onSwap)
+
         self.addSeparator()
 
         for size in presets:
             actSize = self.addAction(size)
             actSize.triggered.connect(lambda chosen, text=size: self._onSizeSelected(text))
-        
-        self.addSeparator()
-        actResetSelection = self.addAction("Swap")
-        actResetSelection.triggered.connect(self._onSwap)
+
 
     def getMousePos(self) -> QPointF:
         mousePos = self.cropTool._imgview.mapFromGlobal( QCursor.pos() )
