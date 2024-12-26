@@ -5,12 +5,14 @@ from bisect import bisect_right
 from .gallery_grid import GalleryGrid, Header
 import lib.qtlib as qtlib
 from lib.captionfile import FileTypeSelector
+from config import Config
 
 
 # TODO: Contains directory tree toolbar ... folder navigation with hierarchal menu?
 
 class Gallery(QtWidgets.QWidget):
-    MIN_GRID_UPDATE_DELAY = 0.5
+    MIN_GRID_UPDATE_DELAY = 1.0
+    THUMBNAIL_SIZE_STEP = 50
 
     def __init__(self, tab):
         super().__init__()
@@ -20,7 +22,7 @@ class Gallery(QtWidgets.QWidget):
 
         self.gridUpdateTimer = QTimer()
         self.gridUpdateTimer.setSingleShot(True)
-        self.gridUpdateTimer.setInterval(200)
+        self.gridUpdateTimer.setInterval(100)
         self.gridUpdateTimer.timeout.connect(self.updateGrid)
         self.lastGridUpdate = 0
 
@@ -34,10 +36,35 @@ class Gallery(QtWidgets.QWidget):
 
         self.statusBar = QtWidgets.QStatusBar()
         self.statusBar.addPermanentWidget(self.chkFollowSelection)
+        self.statusBar.addPermanentWidget(self._buildThumbnailSize())
         self.statusBar.addPermanentWidget(self.cboViewMode)
 
         self._build()
 
+    def _buildThumbnailSize(self):
+        layout = QtWidgets.QHBoxLayout()
+        layout.setContentsMargins(6, 0, 6, 0)
+        layout.addWidget(QtWidgets.QLabel("Thumbnail Size:"))
+
+        self.slideThumbnailSize = QtWidgets.QSlider(Qt.Orientation.Horizontal)
+        self.slideThumbnailSize.setRange(100, 400)
+        self.slideThumbnailSize.setTickPosition(QtWidgets.QSlider.TickPosition.TicksAbove)
+        self.slideThumbnailSize.setTickInterval(self.THUMBNAIL_SIZE_STEP * 2)
+        self.slideThumbnailSize.setSingleStep(self.THUMBNAIL_SIZE_STEP)
+        self.slideThumbnailSize.setPageStep(self.THUMBNAIL_SIZE_STEP)
+        self.slideThumbnailSize.setFixedWidth(120)
+        self.slideThumbnailSize.setValue(Config.galleryThumbnailSize)
+        self.slideThumbnailSize.valueChanged.connect(self.onThumbnailSizeChanged)
+        layout.addWidget(self.slideThumbnailSize)
+
+        self.lblThumbnailSize = QtWidgets.QLabel(str(Config.galleryThumbnailSize))
+        self.lblThumbnailSize.setFixedWidth(30)
+        layout.addWidget(self.lblThumbnailSize)
+
+        widget = QtWidgets.QWidget()
+        widget.setLayout(layout)
+        widget.setSizePolicy(QtWidgets.QSizePolicy.Policy.Maximum, QtWidgets.QSizePolicy.Policy.Maximum)
+        return widget
 
     def _build(self):
         self.captionSrc = FileTypeSelector()
@@ -57,6 +84,7 @@ class Gallery(QtWidgets.QWidget):
         self.scrollArea.verticalScrollBar().valueChanged.connect(self.updateComboboxFolder)
 
         self.galleryGrid = GalleryGrid(self.tab, self.captionSrc)
+        self.galleryGrid.thumbnailSize = Config.galleryThumbnailSize
         self.tab.filelist.addListener(self.galleryGrid)
         self.tab.filelist.addDataListener(self.galleryGrid)
 
@@ -89,6 +117,17 @@ class Gallery(QtWidgets.QWidget):
         mode = self.cboViewMode.itemData(index)
         self.galleryGrid.setViewMode(mode)
         self.scrollToSelection()
+
+    @Slot()
+    def onThumbnailSizeChanged(self, size: int):
+        size = round(size / self.THUMBNAIL_SIZE_STEP) * self.THUMBNAIL_SIZE_STEP
+        with QSignalBlocker(self.slideThumbnailSize):
+            self.slideThumbnailSize.setValue(size)
+
+        self.lblThumbnailSize.setText(f"{size}")
+        self.galleryGrid.setThumbnailSize(size)
+        Config.galleryThumbnailSize = size
+
 
     def updateStatusBar(self, numFolders):
         numFiles = self.galleryGrid.filelist.getNumFiles()
@@ -125,12 +164,13 @@ class Gallery(QtWidgets.QWidget):
         with QSignalBlocker(self.cboFolders):
             self.cboFolders.clear()
             for header in headers:
+                # TODO: Elide long text
                 self.cboFolders.addItem(header.dir, header.row)
                 self.rowToHeader.append(header.row)
         
         self.updateComboboxFolder(self.scrollArea.verticalScrollBar().value())
         self.updateStatusBar(len(headers))
-        
+
     @Slot()
     def onFolderSelected(self, index):
         row = self.cboFolders.itemData(index)

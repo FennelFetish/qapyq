@@ -85,7 +85,8 @@ class Config:
     batchTemplate           = "{{captions.refined}}\n{{tags.tags}}"
 
     # Gallery
-    galleryThumbnailSize    = 192
+    galleryThumbnailSize    = 200
+    galleryThumbnailThreads = 6
 
     # Window state
     windowStates            = dict()
@@ -134,7 +135,8 @@ class Config:
 
         cls.batchTemplate         = data.get("batch_template", cls.batchTemplate)
 
-        cls.galleryThumbnailSize  = int(data.get("gallery_thumbnail_size", cls.galleryThumbnailSize))
+        cls.galleryThumbnailSize    = int(data.get("gallery_thumbnail_size", cls.galleryThumbnailSize))
+        cls.galleryThumbnailThreads = int(data.get("gallery_thumbnail_threads", cls.galleryThumbnailThreads))
 
         cls.windowStates          = data.get("window_states", cls.windowStates)
         cls.windowOpen            = data.get("window_open", cls.windowOpen)
@@ -177,6 +179,7 @@ class Config:
         data["batch_template"]              = cls.batchTemplate
 
         data["gallery_thumbnail_size"]      = cls.galleryThumbnailSize
+        data["gallery_thumbnail_threads"]   = cls.galleryThumbnailThreads
 
         data["window_states"]               = cls.windowStates
         data["window_open"]                 = cls.windowOpen

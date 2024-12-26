@@ -7,8 +7,11 @@ import time
 
 
 class ThumbnailCache:
-    THUMBNAIL_SIZE = Config.galleryThumbnailSize
+    THUMBNAIL_SIZE = 300
     REQUEST_TIMEOUT = 1000 * 1000000
+
+    THREAD_POOL = QThreadPool()
+    THREAD_POOL.setMaxThreadCount(Config.galleryThumbnailThreads)
 
     @classmethod
     def updateThumbnail(cls, filelist: FileList, target, file):
@@ -25,7 +28,7 @@ class ThumbnailCache:
 
         task = ThumbnailTask(filelist, target, file)
         task.signals.done.connect(cls._onThumbnailLoaded, Qt.ConnectionType.BlockingQueuedConnection)
-        QThreadPool.globalInstance().start(task)
+        cls.THREAD_POOL.start(task)
 
     @Slot()
     @staticmethod
@@ -63,7 +66,8 @@ class ThumbnailTask(QRunnable):
         reader.setQuality(100)
         imgSize = reader.size()
 
-        targetWidth = int(ThumbnailCache.THUMBNAIL_SIZE * 1.25)
+        targetWidth = ThumbnailCache.THUMBNAIL_SIZE
+        targetWidth = min(targetWidth, imgSize.width())
         targetHeight = targetWidth * (imgSize.height() / imgSize.width())
         targetHeight = int(targetHeight + 0.5)
         reader.setScaledSize(QSize(targetWidth, targetHeight))

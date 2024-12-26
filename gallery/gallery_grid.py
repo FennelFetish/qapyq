@@ -19,6 +19,7 @@ class Header(QtWidgets.QFrame):
         layout.setContentsMargins(4, 4, 4, 4)
 
         lblTitle = QtWidgets.QLabel(dir)
+        # lblTitle.setWordWrap(True) # TODO: Wrap long lines. Word wrap messes with scrolling (invalid rects)
         qtlib.setMonospace(lblTitle, 1.2, bold=True)
         layout.addWidget(lblTitle)
 
@@ -67,6 +68,7 @@ class GalleryGrid(QtWidgets.QWidget):
             DataKeys.IconStates.Changed: (QtGui.QPen(colorRed), QtGui.QBrush(colorRed)),
         }
 
+        self.thumbnailSize = 200
         self.columns = 4
         self.rows = 0
 
@@ -75,12 +77,12 @@ class GalleryGrid(QtWidgets.QWidget):
         self._ignoreFileChange = False
 
         # TODO: This layout has a maximum height of 524287. Why??
-        layout = QtWidgets.QGridLayout()
-        layout.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetNoConstraint)
-        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
-        self.setLayout(layout)
+        self._layout = QtWidgets.QGridLayout()
+        self._layout.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetNoConstraint)
+        self._layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(self.itemClass.getSpacing())
+        self.setLayout(self._layout)
 
 
     def setViewMode(self, mode: str):
@@ -92,11 +94,20 @@ class GalleryGrid(QtWidgets.QWidget):
         for widget in self.freeLayout().values():
             widget.deleteLater()
 
-        self.layout().setSpacing(newItemClass.getSpacing())
+        self._layout.setSpacing(newItemClass.getSpacing())
         self.columns = self.calcColumnCount()
 
         self.reloadImages()
         self.reloaded.emit()
+
+    def setThumbnailSize(self, size: int):
+        if size == self.thumbnailSize:
+            return
+
+        self.thumbnailSize = size
+        self.adjustGrid()
+        for item in self.fileItems.values():
+            item.onThumbnailSizeUpdated()
 
     def reloadCaptions(self):
         # TODO: Thread. Invalidate all and only load visible.
@@ -106,16 +117,13 @@ class GalleryGrid(QtWidgets.QWidget):
 
     def freeLayout(self) -> dict:
         galleryItems = dict()
-        layout: QtWidgets.QGridLayout = self.layout()
-        for i in reversed(range(layout.count())):
-            item = layout.takeAt(i)
+        for i in reversed(range(self._layout.count())):
+            item = self._layout.takeAt(i)
             if widget := item.widget():
                 if isinstance(widget, self.itemClass):
                     galleryItems[widget.file] = widget
                 else:
                     widget.deleteLater()
-            else:
-                item.spacerItem().deleteLater()
 
         return galleryItems
 
@@ -167,7 +175,7 @@ class GalleryGrid(QtWidgets.QWidget):
         galleryItem.row = row
         self.fileItems[file] = galleryItem
 
-        self.layout().addWidget(galleryItem, row, col, Qt.AlignmentFlag.AlignTop)
+        self._layout.addWidget(galleryItem, row, col, Qt.AlignmentFlag.AlignTop)
 
         if self.filelist.getCurrentFile() == file:
             self._selectedItem = galleryItem
@@ -183,7 +191,7 @@ class GalleryGrid(QtWidgets.QWidget):
 
     def addHeader(self, dir: str, row: int) -> Header:
         header = Header(dir, row)
-        self.layout().addWidget(header, row, 0, 1, self.columns)
+        self._layout.addWidget(header, row, 0, 1, self.columns)
         return header
 
 
@@ -211,9 +219,10 @@ class GalleryGrid(QtWidgets.QWidget):
 
 
     def calcColumnCount(self):
-        colWidth = self.itemClass.getColumnWidth()
-        spacing  = self.layout().spacing()
-        cols = int(self.width() // (colWidth + spacing))
+        colWidth = self.thumbnailSize if self.itemClass == GalleryGridItem else GalleryListItem.COLUMN_WIDTH
+        spacing  = self._layout.spacing()
+        w = self.parent().width() # Parent width seems more reliable after updates, and it has exactly the same value.
+        cols = int(w // (colWidth + spacing))
         return max(cols, 1)
 
     def adjustGrid(self):
@@ -222,10 +231,9 @@ class GalleryGrid(QtWidgets.QWidget):
             return
         self.columns = cols
 
-        layout = self.layout()
         items = []
-        for i in reversed(range(layout.count())):
-            items.append(layout.takeAt(i))
+        for i in reversed(range(self._layout.count())):
+            items.append(self._layout.takeAt(i))
 
         headers = list()
         rows = set()
@@ -234,7 +242,7 @@ class GalleryGrid(QtWidgets.QWidget):
         for widget in (item.widget() for item in reversed(items)):
             if isinstance(widget, self.itemClass):
                 widget.row = row
-                layout.addWidget(widget, row, col, Qt.AlignmentFlag.AlignTop)
+                self._layout.addWidget(widget, row, col, Qt.AlignmentFlag.AlignTop)
                 rows.add(row)
                 col += 1
                 if col >= cols:
@@ -246,17 +254,16 @@ class GalleryGrid(QtWidgets.QWidget):
                     col = 0
                 widget.row = row
                 headers.append(widget)
-                layout.addWidget(widget, row, 0, 1, cols)
+                self._layout.addWidget(widget, row, 0, 1, cols)
                 rows.add(row)
                 row += 1
         
         self.rows = len(rows)
-        layout.update()
+        self._layout.update()
         self.headersUpdated.emit(headers)
 
 
     def getRowForY(self, y: int, compareBottom=False) -> int:
-        layout: QtWidgets.QGridLayout = self.layout()
         rowY = QRect.bottom if compareBottom else QRect.top
 
         # Binary search
@@ -265,7 +272,7 @@ class GalleryGrid(QtWidgets.QWidget):
 
         while lo < hi:
             row = lo + ((hi-lo) // 2)
-            rect = layout.cellRect(row, 0)
+            rect = self._layout.cellRect(row, 0)
             if not rect.isValid():
                 return -1
             
@@ -278,20 +285,18 @@ class GalleryGrid(QtWidgets.QWidget):
         return lo
 
     def getYforRow(self, row: int, skipDownwards=False):
-        layout: QtWidgets.QGridLayout = self.layout()
-
         # Check for header above current row
-        itemAbove = layout.itemAtPosition(row-1, 0)
+        itemAbove = self._layout.itemAtPosition(row-1, 0)
         if itemAbove and isinstance(itemAbove.widget(), Header):
             row += 1 if skipDownwards else -1
 
-        rect = layout.cellRect(row, 0)
+        rect = self._layout.cellRect(row, 0)
         if not rect.isValid():
             return -1
 
         y = rect.top()
         for col in range(1, self.columns):
-            if (rect := layout.cellRect(row, col)).isValid():
+            if (rect := self._layout.cellRect(row, col)).isValid():
                 y = min(y, rect.top())
         return y
 

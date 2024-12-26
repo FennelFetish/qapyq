@@ -36,8 +36,6 @@ class GalleryItem(QtWidgets.QWidget):
         self.selectionStyle: int = 0
         self.icons = {}
 
-        self.setMinimumSize(ThumbnailCache.THUMBNAIL_SIZE, ThumbnailCache.THUMBNAIL_SIZE)
-
         # Load initial state
         filelist = self.gallery.filelist
         for key in (DataKeys.CaptionState, DataKeys.CropState, DataKeys.MaskState):
@@ -49,12 +47,14 @@ class GalleryItem(QtWidgets.QWidget):
             self._height = pixmap.height()
         else:
             self._pixmap = None
-            self._height = ThumbnailCache.THUMBNAIL_SIZE
+            self._height = self.gallery.thumbnailSize
         
         if imgSize := filelist.getData(file, DataKeys.ImageSize):
             self.setImageSize(imgSize[0], imgSize[1])
         else:
             self.setImageSize(0, 0)
+        
+        self.onThumbnailSizeUpdated()
 
 
     def setIcon(self, key, state):
@@ -73,6 +73,10 @@ class GalleryItem(QtWidgets.QWidget):
 
     def setImageSize(self, w: int, h: int):
         self.imgWidth, self.imgHeight = w, h
+
+    def onThumbnailSizeUpdated(self):
+        size = self.gallery.thumbnailSize
+        self.setMinimumSize(size, size)
 
 
     def loadCaption(self):
@@ -95,7 +99,7 @@ class GalleryItem(QtWidgets.QWidget):
 
 
     def sizeHint(self):
-        return QSize(ThumbnailCache.THUMBNAIL_SIZE, self._height)
+        return QSize(self.gallery.thumbnailSize, self._height)
 
 
     @property
@@ -148,7 +152,7 @@ class GalleryItem(QtWidgets.QWidget):
 
             painter.drawRoundedRect(x, y, sizeX, sizeY, 3, 3)
             painter.drawPixmap(x, y, sizeX, sizeY, self.gallery.icons[iconKey])
-            y += sizeX + 8
+            x += sizeX + 8
         
         painter.restore()
 
@@ -157,10 +161,6 @@ class GalleryItem(QtWidgets.QWidget):
 class GalleryGridItem(GalleryItem):
     def __init__(self, gallery, file):
         super().__init__(gallery, file)
-    
-    @staticmethod
-    def getColumnWidth() -> int:
-        return ThumbnailCache.THUMBNAIL_SIZE
 
     @staticmethod
     def getSpacing() -> int:
@@ -214,25 +214,27 @@ class GalleryGridItem(GalleryItem):
 
 
 class GalleryListItem(GalleryItem):
+    COLUMN_WIDTH = 800
     HEADER_HEIGHT = 18
 
     def __init__(self, gallery, file):
         self._built = False
+        self.gridLayout = QtWidgets.QGridLayout()
+
         super().__init__(gallery, file)
         self._captionLoaded = False
 
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.MinimumExpanding)
-        self.setMinimumSize(ThumbnailCache.THUMBNAIL_SIZE * 2, ThumbnailCache.THUMBNAIL_SIZE)
 
 
     def _build(self):
         self._built = True
 
-        layout = QtWidgets.QGridLayout()
+        layout = self.gridLayout
         layout.setContentsMargins(self.BORDER_SIZE, self.BORDER_SIZE, self.BORDER_SIZE, self.BORDER_SIZE)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 1)
-        layout.setColumnMinimumWidth(0, ThumbnailCache.THUMBNAIL_SIZE + 4)
+        layout.setColumnMinimumWidth(0, self.gallery.thumbnailSize + 4)
         layout.setRowStretch(0, 0)
         layout.setRowStretch(1, 1)
 
@@ -270,6 +272,13 @@ class GalleryListItem(GalleryItem):
         super().setImageSize(w, h)
         if self._built:
             self.lblFilename.setText(f"{self.filename} ({self.imgWidth}x{self.imgHeight})")
+
+    @override
+    def onThumbnailSizeUpdated(self):
+        size = self.gallery.thumbnailSize
+        self.setMinimumSize(size*2, size)
+        self.gridLayout.setColumnMinimumWidth(0, self.gallery.thumbnailSize + 4)
+
 
     @Slot()
     def loadCaption(self):
@@ -314,10 +323,6 @@ class GalleryListItem(GalleryItem):
 
 
     @staticmethod
-    def getColumnWidth() -> int:
-        return 800
-
-    @staticmethod
     def getSpacing() -> int:
         return 10
 
@@ -345,7 +350,7 @@ class GalleryListItem(GalleryItem):
             imgW = self._pixmap.width()
             imgH = self._pixmap.height()
             aspect = imgH / imgW
-            imgW = ThumbnailCache.THUMBNAIL_SIZE
+            imgW = self.gallery.thumbnailSize
             imgH = imgW * aspect
             painter.drawPixmap(x, y, imgW, imgH, self._pixmap)
         else:
