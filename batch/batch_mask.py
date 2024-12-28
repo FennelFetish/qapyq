@@ -1,6 +1,7 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QSignalBlocker
 from PySide6.QtGui import QImageReader
+import os
 import cv2 as cv
 import numpy as np
 from config import Config
@@ -29,7 +30,7 @@ class BatchMask(QtWidgets.QWidget):
         self.parser.setup(self.tab.filelist.getCurrentFile(), None)
 
         config = Config.exportPresets.get(self.EXPORT_PRESET_KEY, {})
-        self.pathSettings = export.PathSettings(self.parser, showInfo=False)
+        self.pathSettings = export.PathSettings(self.parser, showInfo=False, showSkip=True)
         self.pathSettings.pathTemplate   = config.get("path_template", "{{path}}-masklabel")
         self.pathSettings.overwriteFiles = config.get("overwrite", True)
 
@@ -210,6 +211,7 @@ class BatchMaskTask(BatchTask):
         self.pathTemplate   = pathSettings.pathTemplate
         self.extension      = pathSettings.extension
         self.overwriteFiles = pathSettings.overwriteFiles
+        self.skipExistingFiles = pathSettings.skipExistingFiles
 
 
     def runPrepare(self):
@@ -218,29 +220,42 @@ class BatchMaskTask(BatchTask):
         self.macro.loadFrom(self.macroPath)
 
     def runProcessFile(self, imgFile: str) -> str:
+        self.parser.setup(imgFile)
+
         if self.saveMode == "file":
-            layers = self.processAsSeparateFile(imgFile)
+            path, layers = self.processAsSeparateFile(imgFile)
         else:
-            layers = self.processAsAlpha(imgFile)
+            path, layers = self.processAsAlpha(imgFile)
+
+        if layers is None:
+            self.log(f"Existing file skipped: {path}")
+            return None
 
         # BGRA, shape: (h, w, channels)
         # Creates a copy of the data.
         combined = np.dstack(layers)
-        h, w = combined.shape[:2]
 
-        self.parser.setup(imgFile)
-        self.parser.width = w
-        self.parser.height = h
-
-        path = self.parser.parsePath(self.pathTemplate, self.extension, self.overwriteFiles)
         export.saveImage(path, combined, self.log)
         return path
 
+    def getPath(self, w: int, h: int) -> tuple[str, bool]:
+        self.parser.width = w
+        self.parser.height = h
 
-    def processAsSeparateFile(self, imgFile: str) -> list[np.ndarray]:
+        noCounter = self.overwriteFiles or self.skipExistingFiles
+        path = self.parser.parsePath(self.pathTemplate, self.extension, noCounter)
+        skip = self.skipExistingFiles and os.path.exists(path)
+        return path, skip
+
+
+    def processAsSeparateFile(self, imgFile: str) -> tuple[str, list[np.ndarray] | None]:
         imgReader = QImageReader(imgFile)
         imgSize = imgReader.size()
         w, h = imgSize.width(), imgSize.height()
+
+        path, skip = self.getPath(w, h)
+        if skip:
+            return path, None
 
         layers = [ np.zeros((h, w), dtype=np.uint8) ]
         layers, layerChanged = self.macro.run(imgFile, layers)
@@ -252,12 +267,16 @@ class BatchMaskTask(BatchTask):
 
         # Reverse order of first 3 layers to convert from BGR(A) to RGB(A)
         layers[:3] = layers[2::-1]
-        return layers
+        return path, layers
 
 
-    def processAsAlpha(self, imgFile: str) -> list[np.ndarray]:
+    def processAsAlpha(self, imgFile: str) -> tuple[str, list[np.ndarray] | None]:
         mat = cv.imread(imgFile, cv.IMREAD_UNCHANGED)
         h, w = mat.shape[:2]
+
+        path, skip = self.getPath(w, h)
+        if skip:
+            return path, None
 
         channels = mat.shape[2] if len(mat.shape) > 2 else 1
         if channels == 1:
@@ -268,4 +287,4 @@ class BatchMaskTask(BatchTask):
         layers = [ np.zeros((h, w), dtype=np.uint8) ]
         layers, layerChanged = self.macro.run(imgFile, layers)
         imgChannels.append(layers[0])
-        return imgChannels
+        return path, imgChannels

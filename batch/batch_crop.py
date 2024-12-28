@@ -150,9 +150,8 @@ class BatchCrop(QtWidgets.QWidget):
 
         config = Config.exportPresets.get("batch-mask", {})
         self.inputMaskPathSettings = export.PathSettings(self.parser, showInfo=False)
-        self.inputMaskPathSettings.pathTemplate   = config.get("path_template", "{{path}}-masklabel")
-        self.inputMaskPathSettings.overwriteFiles = True # Set to true to suppress adding counter
-        self.inputMaskPathSettings.chkOverwrite.hide()
+        self.inputMaskPathSettings.pathTemplate = config.get("path_template", "{{path}}-masklabel")
+        self.inputMaskPathSettings.setAsInput()
         layout.addWidget(self.inputMaskPathSettings, row, 3, 3, 1)
 
         row += 1

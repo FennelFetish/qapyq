@@ -271,21 +271,21 @@ Examples:
     /home/user/Pictures/{{folder}}/{{date}}_{{time}}_{{w}}x{{h}}"""
 
 
-    def __init__(self, parser, showInfo=True) -> None:
+    def __init__(self, parser, showInfo=True, showSkip=False) -> None:
         super().__init__()
         self._extension = "ext"
 
         self.parser: ExportVariableParser = parser
         self.highlighter = template_parser.VariableHighlighter()
 
-        self._build(showInfo)
+        self._build(showInfo, showSkip)
         self.updatePreview()
 
-    def _build(self, showInfo: bool):
+    def _build(self, showInfo: bool, showSkip: bool):
         layout = QtWidgets.QGridLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setColumnStretch(0, 0)
-        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(1, 0)
         layout.setColumnStretch(2, 1)
         layout.setColumnStretch(3, 0)
 
@@ -324,6 +324,17 @@ Examples:
         self.chkOverwrite.setChecked(False)
         layout.addWidget(self.chkOverwrite, row, 1)
 
+        self.chkSkipExisting = QtWidgets.QCheckBox("Skip existing files")
+        self.chkSkipExisting.toggled.connect(self._onSkipExistingToggled)
+        self.chkSkipExisting.setChecked(False)
+        if showSkip:
+            layout.addWidget(self.chkSkipExisting, row, 2)
+
+    def setAsInput(self):
+        self.chkOverwrite.hide()
+        self.chkSkipExisting.hide()
+        self.overwriteFiles = True # Set to true to suppress adding counter
+
 
     @property
     def extension(self) -> str:
@@ -352,11 +363,30 @@ Examples:
     def overwriteFiles(self, overwrite: bool):
         self.chkOverwrite.setChecked(overwrite)
 
-
     @Slot()
     def _onOverwriteToggled(self, state: bool):
         style = "color: #FF1616" if state else None
         self.chkOverwrite.setStyleSheet(style)
+
+        if state:
+            self.skipExistingFiles = False
+        self.chkSkipExisting.setEnabled(not state)
+
+
+    @property
+    def skipExistingFiles(self) -> bool:
+        return self.chkSkipExisting.isChecked()
+    
+    @skipExistingFiles.setter
+    def skipExistingFiles(self, skip: bool):
+        self.chkSkipExisting.setChecked(skip)
+
+    @Slot()
+    def _onSkipExistingToggled(self, state: bool):
+        if state:
+            self.overwriteFiles = False
+        self.chkOverwrite.setEnabled(not state)
+
 
     @Slot()
     def updatePreview(self):
