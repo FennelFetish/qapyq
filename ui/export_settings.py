@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image
 from datetime import datetime
 from lib import qtlib, template_parser
+from infer.model_settings import ModelSettingsWindow, ScaleModelSettings
 from config import Config
 
 
@@ -42,11 +43,13 @@ def getFormat(extension: str):
     key = EXTENSION_MAP.get(key, "")
     return FORMATS.get(key)
 
-def saveImage(path, mat: np.ndarray, logger=print):
+def saveImage(path, mat: np.ndarray, logger=print, convertFromBGR=True):
     _, ext = os.path.splitext(path)
     format = getFormat(ext)
 
-    mat[..., :3] = mat[..., 2::-1] # Convert BGR(A) -> RGB(A)
+    if convertFromBGR:
+        mat[..., :3] = mat[..., 2::-1] # Convert BGR(A) -> RGB(A)
+
     img = Image.fromarray(mat.squeeze()) # No copy!
 
     createFolders(path, logger)
@@ -114,24 +117,21 @@ class ExportWidget(QtWidgets.QWidget):
         self.setLayout(layout)
 
     def _buildParams(self, formats: list[str]):
-        self.cboInterpUp = QtWidgets.QComboBox()
-        self.cboInterpUp.addItems(INTERP_MODES.keys())
-        self.cboInterpUp.setCurrentIndex(4) # Default: Lanczos
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(1, 1, 1, 1)
 
-        self.cboInterpDown = QtWidgets.QComboBox()
-        self.cboInterpDown.addItems(INTERP_MODES.keys())
-        self.cboInterpDown.setCurrentIndex(3) # Default: Area
-
+        self.cboScalePreset = ScalePresetComboBox()
+        if self.showInterpolation:
+            lblScaling = QtWidgets.QLabel("<a href='model_settings'>Scaling</a>:")
+            lblScaling.linkActivated.connect(self.cboScalePreset.showModelSettings)
+            layout.addWidget(lblScaling, 0, 0)
+            layout.addWidget(self.cboScalePreset, 0, 1)
+        
         self.cboFormat = QtWidgets.QComboBox()
         self.cboFormat.addItems(formats if formats else FORMATS.keys())
         self.cboFormat.currentTextChanged.connect(self._onExtensionChanged)
-
-        layout = QtWidgets.QFormLayout()
-        layout.setContentsMargins(1, 1, 1, 1)
-        if self.showInterpolation:
-            layout.addRow("Interp 🠕:", self.cboInterpUp)
-            layout.addRow("Interp 🠗:", self.cboInterpDown)
-        layout.addRow("Format:", self.cboFormat)
+        layout.addWidget(QtWidgets.QLabel("Format:"), 1, 0)
+        layout.addWidget(self.cboFormat, 1, 1)
 
         group = QtWidgets.QGroupBox("Parameter")
         group.setLayout(layout)
@@ -206,8 +206,10 @@ class ExportWidget(QtWidgets.QWidget):
 
 
     def getInterpolationMode(self, upscale):
-        cbo = self.cboInterpUp if upscale else self.cboInterpDown
-        return INTERP_MODES[ cbo.currentText() ]
+        return self.cboScalePreset.getInterpolationMode(upscale)
+
+    def getScaleConfig(self, scaleFactor: float):
+        return self.cboScalePreset.getScaleConfig(scaleFactor)
 
 
     def setExportSize(self, width: int, height: int):
@@ -570,3 +572,95 @@ class ClickableTextEdit(QtWidgets.QPlainTextEdit):
             self.clicked.emit()
         
         self._pressPos = None
+
+
+
+class ScaleConfig:
+    def __init__(self, interpUp: str, interpDown: str, modelPath: str | None = None):
+        self.interpUp   = INTERP_MODES[interpUp]
+        self.interpDown = INTERP_MODES[interpDown]
+        self.modelPath  = modelPath
+    
+    @property
+    def useUpscaleModel(self) -> bool:
+        return self.modelPath is not None
+    
+    def getInterpolationMode(self, upscale: bool) -> int:
+        return self.interpUp if upscale else self.interpDown
+    
+    def toDict(self) -> dict:
+        config = {
+            ScaleModelSettings.KEY_BACKEND:     ScaleModelSettings.DEFAULT_BACKEND,
+            ScaleModelSettings.KEY_INTERP_UP:   self.interpUp,
+            ScaleModelSettings.KEY_INTERP_DOWN: self.interpDown
+        }
+
+        if self.modelPath:
+            config[ScaleModelSettings.LEVELKEY_MODELPATH] = self.modelPath
+        return config
+
+
+class ScalePresetComboBox(QtWidgets.QComboBox):
+    CONFIG_ATTR = "inferScalePresets"
+
+    def __init__(self):
+        super().__init__()
+        self.reloadPresets(Config.inferSelectedPresets.get(self.CONFIG_ATTR))
+        self.currentTextChanged.connect(self._onPresetChanged)
+        ModelSettingsWindow.signals.presetListUpdated.connect(self._onPresetListChanged)
+
+    def reloadPresets(self, selectedText: str | None = None):
+        if selectedText is None:
+            selectedText = self.currentText()
+
+        self.clear()
+
+        presets: dict = Config.inferScalePresets
+        for name in sorted(presets.keys()):
+            self.addItem(name)
+
+        index = self.findText(selectedText)
+        index = max(index, 0)
+        self.setCurrentIndex(index)
+
+    @Slot()
+    def _onPresetChanged(self, presetName: str):
+        Config.inferSelectedPresets[self.CONFIG_ATTR] = presetName
+
+    @Slot()
+    def _onPresetListChanged(self, attr):
+        if attr == self.CONFIG_ATTR:
+            with QSignalBlocker(self):
+                self.reloadPresets()
+
+
+    def getSelectedPreset(self) -> dict:
+        # Don't store presets as item data. Updating the stored data would require another signal when presets change.
+        # Instead, retrieve up-to-date values as needed.
+        presetName = self.currentText()
+        return Config.inferScalePresets[presetName]
+
+    def getInterpolationMode(self, upscale: bool) -> int:
+        preset = self.getSelectedPreset()
+        interpName: str = ScaleModelSettings.getInterpUp(preset) if upscale else ScaleModelSettings.getInterpDown(preset)
+        return INTERP_MODES[ interpName ]
+
+    def getScaleConfig(self, scaleFactor: float) -> ScaleConfig:
+        scaleFactor = round(scaleFactor, 2)
+
+        preset = self.getSelectedPreset()
+        interpUp   = ScaleModelSettings.getInterpUp(preset)
+        interpDown = ScaleModelSettings.getInterpDown(preset)
+
+        modelPath = None
+        levels: list[dict] = preset.get(ScaleModelSettings.KEY_LEVELS, [])
+        for level in levels:
+            if scaleFactor > round(level.get(ScaleModelSettings.LEVELKEY_THRESHOLD), 2):
+                modelPath = level.get(ScaleModelSettings.LEVELKEY_MODELPATH)
+
+        return ScaleConfig(interpUp, interpDown, modelPath)
+
+
+    @Slot()
+    def showModelSettings(self):
+        ModelSettingsWindow.openInstance(self, self.CONFIG_ATTR, self.currentText())

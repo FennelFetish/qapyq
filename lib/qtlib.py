@@ -49,6 +49,13 @@ def qimageToNumpyMask(image: QtGui.QImage) -> np.ndarray:
     buffer.shape = (image.height(), image.bytesPerLine())
     return np.copy( buffer[:, :image.width()] ) # Remove padding
 
+def qimageToNumpy(image: QtGui.QImage) -> np.ndarray:
+    buffer = np.frombuffer(image.constBits(), dtype=np.uint8)
+    channels = image.depth() // 8
+    width = image.bytesPerLine() // channels
+    buffer.shape = (image.height(), width, channels)
+    return np.copy( buffer[:, :image.width(), :] ).squeeze() # Remove padding
+
 
 
 class DynamicLineEdit(QtWidgets.QLineEdit):

@@ -87,7 +87,7 @@ class InferenceProcess(metaclass=Singleton):
         self._setup(config, "setup_llm", "currentLLMConfig")
     
     def setupMasking(self, config: dict):
-        self._query("cmd", {
+        self._queryKey("cmd", {
             "cmd": "setup_masking",
             "config": config
         })
@@ -125,7 +125,7 @@ class InferenceProcess(metaclass=Singleton):
 
 
     def caption(self, imgPath, prompts: dict, sysPrompt=None) -> dict[str, str]:
-        return self._query("captions", {
+        return self._queryKey("captions", {
             "cmd": "caption",
             "img": imgPath,
             "prompts": prompts,
@@ -133,20 +133,20 @@ class InferenceProcess(metaclass=Singleton):
         })
 
     def tag(self, imgPath) -> str:
-        return self._query("tags", {
+        return self._queryKey("tags", {
             "cmd": "tag",
             "img": imgPath
         })
 
     def answer(self, prompts: dict, sysPrompt=None) -> dict[str, str]:
-        return self._query("answers", {
+        return self._queryKey("answers", {
             "cmd": "answer",
             "prompts": prompts,
             "sysPrompt": sysPrompt
         })
 
     def mask(self, config: dict, classes: list[str], imgPath: str) -> bytes:
-        return self._query("mask", {
+        return self._queryKey("mask", {
             "cmd": "mask",
             "config": config,
             "classes": classes,
@@ -154,7 +154,7 @@ class InferenceProcess(metaclass=Singleton):
         })
 
     def maskBoxes(self, config: dict, classes: list[str], imgPath: str) -> list[dict]:
-        return self._query("boxes", {
+        return self._queryKey("boxes", {
             "cmd": "mask_boxes",
             "config": config,
             "classes": classes,
@@ -162,12 +162,31 @@ class InferenceProcess(metaclass=Singleton):
         })
 
     def getDetectClasses(self, config: dict) -> list[str]:
-        return self._query("classes", {
+        return self._queryKey("classes", {
             "cmd": "get_detect_classes",
             "config": config
         })
 
-    def _query(self, returnKey: str, msg: dict) -> Any:
+    def upscaleImageFile(self, config: dict, imgPath: str) -> tuple[int, int, bytes]:
+        answer = self._query({
+            "cmd": "imgfile_upscale",
+            "config": config,
+            "img": imgPath
+        })
+        return answer["w"], answer["h"], answer["img"]
+
+    def upscaleImage(self, config: dict, imgData: bytes, w: int, h: int) -> tuple[int, int, bytes]:
+        answer = self._query({
+            "cmd": "img_upscale",
+            "config": config,
+            "img_data": imgData,
+            "w": w,
+            "h": h
+        })
+        return answer["w"], answer["h"], answer["img"]
+
+
+    def _query(self, msg: dict) -> dict[str, Any]:
         with QMutexLocker(self.mutex):
             self._writeMessage(msg)
             answer = self._blockReadMessage()
@@ -175,9 +194,12 @@ class InferenceProcess(metaclass=Singleton):
             if not answer:
                 raise InferenceException("Unknown error")
             if error := answer.get("error"):
-                raise InferenceException(error, msg.get("error_type"))
+                raise InferenceException(error, answer.get("error_type"))
             
-            return answer.get(returnKey)
+            return answer
+
+    def _queryKey(self, returnKey: str, msg: dict) -> Any:
+        return self._query(msg).get(returnKey)
 
 
     def _onProcessEnded(self, exitCode, exitStatus):

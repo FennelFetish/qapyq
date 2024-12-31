@@ -5,11 +5,10 @@ from PySide6.QtGui import QBrush, QPen, QColor, QPainterPath, QPolygonF, QTransf
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QMenu
 from .view import ViewTool
 from lib.filelist import DataKeys
+from lib.qtlib import qimageToNumpy
 import ui.export_settings as export
 from config import Config
 
-
-# TODO: Upscale using model (whole image upscaled before crop so selected area matches target size? or upscale cropped region only?)
 
 # TODO: Crop Modes:
 #       - Start selection in top left corner, drag to bottom right corner
@@ -89,7 +88,7 @@ class CropTool(ViewTool):
         self._cropHeight = cropH
         return (cropW, cropH)
 
-    def constraingCropPos(self, poly, imgSize):
+    def constrainCropPos(self, poly, imgSize):
         rect = poly.boundingRect()
         moveX, moveY = 0, 0
         
@@ -126,7 +125,7 @@ class CropTool(ViewTool):
 
         # Constrain selection position
         if self._toolbar.constrainToImage:
-            self.constraingCropPos(poly, imgSize)
+            self.constrainCropPos(poly, imgSize)
 
         # Map selected polygon to viewport
         poly = self._imgview.image.mapToParent(poly)
@@ -154,7 +153,24 @@ class CropTool(ViewTool):
         self._waitForConfirmation = False
         self.updateSelection(mousePos)
 
-    def exportImage(self, poly: QPolygonF) -> bool:
+    def getSelectionPoly(self, rect: QRect) -> QPolygonF:
+        poly = self._imgview.mapToScene(rect)
+        poly = self._imgview.image.mapFromParent(poly)
+
+        # Constrain polygon to image
+        imgSize = self._imgview.image.pixmap().size()
+        for i in range(poly.size()):
+            p = poly[i]
+            x = min(p.x(), imgSize.width())
+            x = max(x, 0)
+
+            y = min(p.y(), imgSize.height())
+            y = max(y, 0)
+            poly[i] = QPointF(x, y)
+        
+        return poly
+
+    def exportImage(self, selectionRect: QRect) -> bool:
         pixmap = self._imgview.image.pixmap()
         if not pixmap:
             return False
@@ -167,13 +183,21 @@ class CropTool(ViewTool):
 
         self.tab.statusBar().showMessage("Saving cropped image...")
 
-        interp = exportWidget.getInterpolationMode(self._targetHeight > self._cropHeight)
+        poly = self.getSelectionPoly(selectionRect)
+        scaleFactor = self._targetHeight / self._cropHeight
+        scaleConfig = exportWidget.getScaleConfig(scaleFactor)
         border = cv.BORDER_REPLICATE if self._toolbar.constrainToImage else cv.BORDER_CONSTANT
 
-        task = ExportTask(currentFile, destFile, pixmap, poly, self._targetWidth, self._targetHeight, interp, border)
+        task = ExportTask(currentFile, destFile, pixmap, poly, self._targetWidth, self._targetHeight, scaleConfig, border)
         task.signals.done.connect(self.onExportDone, Qt.ConnectionType.BlockingQueuedConnection)
         task.signals.fail.connect(self.onExportFailed, Qt.ConnectionType.BlockingQueuedConnection)
-        QThreadPool.globalInstance().start(task)
+
+        if scaleConfig.useUpscaleModel:
+            from infer import Inference
+            Inference().queueTask(task)
+        else:
+            QThreadPool.globalInstance().start(task)
+
         return True
 
     @Slot()
@@ -257,9 +281,7 @@ class CropTool(ViewTool):
 
                 # Start export if mouse click is inside selection rectangle
                 if rect.contains(event.position().toPoint()):
-                    poly = self._imgview.mapToScene(rect)
-                    poly = self._imgview.image.mapFromParent(poly)
-                    if self.exportImage(poly):
+                    if self.exportImage(rect):
                         self._confirmRect.setRect(rect)
                         self._confirmRect.startAnim()
 
@@ -304,22 +326,23 @@ class ExportTask(QRunnable):
         def __init__(self):
             super().__init__()
 
-    def __init__(self, srcFile, destFile, pixmap, poly, targetWidth, targetHeight, interp, border):
+    def __init__(self, srcFile: str, destFile: str, pixmap, poly: QPolygonF, targetWidth: int, targetHeight: int, scaleConfig: export.ScaleConfig, border):
         super().__init__()
         self.signals = self.ExportTaskSignals()
 
-        self.srcFile = srcFile
-        self.destFile = destFile
-        self.poly = poly
-        self.targetWidth  = targetWidth
-        self.targetHeight = targetHeight
-        self.interp = interp
-        self.border = border
+        self.srcFile        = srcFile
+        self.destFile       = destFile
+        self.poly           = poly
+        self.targetWidth    = targetWidth
+        self.targetHeight   = targetHeight
+        self.scaleConfig    = scaleConfig
+        self.border         = border
 
         self.rect = self.calcCutRect(poly, pixmap)
-        self.img = pixmap.copy(self.rect).toImage()
+        self.img  = pixmap.copy(self.rect).toImage()
 
-    def calcCutRect(self, poly: QPolygonF, pixmap):
+    @staticmethod
+    def calcCutRect(poly: QPolygonF, pixmap) -> QRect:
         pad  = 4
         rect = poly.boundingRect().toRect()
 
@@ -329,17 +352,19 @@ class ExportTask(QRunnable):
         rect.setBottom(min(pixmap.height(), rect.bottom()+pad))
         return rect
 
-    def toCvMat(self, image):
-        buffer = QBuffer()
-        buffer.open(QBuffer.ReadWrite)
-        image.save(buffer, "PNG", 100) # Preserve transparency with PNG. quality 100 actually fastest?
-
-        buf = np.frombuffer(buffer.data(), dtype=np.uint8)
-        return cv.imdecode(buf, cv.IMREAD_UNCHANGED)
+    @staticmethod
+    def distance(p0: list[int], p1: list[int]) -> float:
+        dx = p0[0] - p1[0]
+        dy = p0[1] - p1[1]
+        return np.sqrt(dx*dx + dy*dy)
 
     @Slot()
     def run(self):
         try:
+            matSrc = qimageToNumpy(self.img)
+            if self.scaleConfig.useUpscaleModel:
+                matSrc = self.inferUpscale(matSrc)
+
             p0, p1, p2, _ = self.poly
 
             # Origin of cut image (with padding), offset by half pixel to maintain pixel borders
@@ -354,6 +379,9 @@ class ExportTask(QRunnable):
                 [round(p2.x())-ox, round(p2.y())-oy]
             ])
 
+            srcWidth  = self.distance(ptsSrc[1], ptsSrc[0])
+            srcHeight = self.distance(ptsSrc[2], ptsSrc[1])
+
             ptsDest = np.float32([
                 [-0.5, -0.5],
                 [self.targetWidth-0.5, -0.5],
@@ -363,8 +391,8 @@ class ExportTask(QRunnable):
             # https://docs.opencv.org/3.4/da/d6e/tutorial_py_geometric_transformations.html
             matrix  = cv.getAffineTransform(ptsSrc, ptsDest)
             dsize   = (self.targetWidth, self.targetHeight)
-            matSrc  = self.toCvMat(self.img)
-            matDest = cv.warpAffine(src=matSrc, M=matrix, dsize=dsize, flags=self.interp, borderMode=self.border)
+            interp  = self.scaleConfig.getInterpolationMode(self.targetWidth > srcWidth or self.targetHeight > srcHeight)
+            matDest = cv.warpAffine(src=matSrc, M=matrix, dsize=dsize, flags=interp, borderMode=self.border)
 
             export.saveImage(self.destFile, matDest)
             self.signals.done.emit(self.srcFile, self.destFile)
@@ -376,6 +404,33 @@ class ExportTask(QRunnable):
             self.signals.fail.emit(str(ex))
         finally:
             del self.img
+
+    def inferUpscale(self, mat: np.ndarray) -> np.ndarray:
+        from infer import Inference
+        inferProc = Inference().proc
+        inferProc.start()
+
+        hOrig, wOrig = mat.shape[:2]
+        w, h, imgData = inferProc.upscaleImage(self.scaleConfig.toDict(), mat.tobytes(), wOrig, hOrig)
+        channels = len(imgData) // (w*h)
+        mat = np.frombuffer(imgData, dtype=np.uint8)
+        mat.shape = (h, w, channels)
+
+        # Adjust poly and rect 
+        wScale = w / wOrig
+        hScale = h / hOrig
+
+        for i in range(self.poly.size()):
+            p = self.poly[i]
+            x = round(p.x()) * wScale
+            y = round(p.y()) * hScale
+            self.poly[i] = QPointF(x, y)
+        
+        x = int(self.rect.left() * wScale)
+        y = int(self.rect.top() * hScale)
+        self.rect.setCoords(x, y, x+w-1, y+h-1)
+        
+        return mat
 
 
 

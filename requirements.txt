@@ -42,3 +42,7 @@ kornia
 
 # InSPyReNet rembg
 transparent_background
+
+# Image Upscaling
+spandrel
+spandrel_extra_arches

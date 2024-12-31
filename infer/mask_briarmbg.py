@@ -38,7 +38,8 @@ class BriaRmbgMask:
         inputImages = self.transform(image).unsqueeze(0).to('cuda')
 
         preds: list[torch.Tensor] = self.model(inputImages)[-1].sigmoid().cpu()
-        mask = preds[0].squeeze().numpy() * 255
+        mask = preds[0].squeeze().numpy()
+        mask *= 255
         mask = mask.astype(np.uint8) # Convert before resize to prevent artifacts
 
         hMask, wMask = mask.shape

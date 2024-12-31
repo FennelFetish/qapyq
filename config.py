@@ -78,6 +78,16 @@ class Config:
     inferLLMPresets         = dict()
     inferTagPresets         = dict()
     inferMaskPresets        = dict()
+
+    inferScalePresets       = {
+        "Default": {
+            "backend":      "upscale",
+            "interp_up":    "Lanczos",
+            "interp_down":  "Area",
+            "levels":       []
+        }
+    }
+
     inferSelectedPresets    = dict()
     INFER_PRESET_SAMPLECFG_KEY = "sample_config"
     
@@ -131,6 +141,7 @@ class Config:
         cls.inferLLMPresets       = data.get("infer_llm_presets", cls.inferLLMPresets)
         cls.inferTagPresets       = data.get("infer_tag_presets", cls.inferTagPresets)
         cls.inferMaskPresets      = data.get("infer_mask_presets", cls.inferMaskPresets)
+        cls.inferScalePresets     = data.get("infer_scale_presets", cls.inferScalePresets)
         cls.inferSelectedPresets  = data.get("infer_selected_presets", cls.inferSelectedPresets)
 
         cls.batchTemplate         = data.get("batch_template", cls.batchTemplate)
@@ -174,6 +185,7 @@ class Config:
         data["infer_llm_presets"]           = cls.inferLLMPresets
         data["infer_tag_presets"]           = cls.inferTagPresets
         data["infer_mask_presets"]          = cls.inferMaskPresets
+        data["infer_scale_presets"]         = cls.inferScalePresets
         data["infer_selected_presets"]      = cls.inferSelectedPresets
 
         data["batch_template"]              = cls.batchTemplate

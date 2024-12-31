@@ -1,108 +1,11 @@
 import sys, struct, msgpack, traceback
+from infer.backend_config import BackendLoader, LastBackendLoader
 from config import Config
 
 
-backend = None
-tag = None
-masking = {}
-
-
-def loadBackend(config: dict):
-    if not config:
-        raise ValueError("Cannot load backend without config")
-
-    match config.get("backend"):
-        case "minicpm":
-            from infer.backend_llamacpp import LlamaCppVisionBackend
-            from llama_cpp.llama_chat_format import MiniCPMv26ChatHandler
-            return LlamaCppVisionBackend(config, MiniCPMv26ChatHandler)
-        case "internvl2":
-            from infer.backend_internvl2 import InternVL2Backend
-            return InternVL2Backend(config)
-        case "qwen2vl":
-            from infer.backend_qwen2vl import Qwen2VLBackend
-            return Qwen2VLBackend(config)
-        case "ovis16":
-            from infer.backend_ovis16 import Ovis16Backend
-            return Ovis16Backend(config)
-        case "molmo":
-            from infer.backend_molmo import MolmoBackend
-            return MolmoBackend(config)
-        case "florence2":
-            from infer.backend_florence2 import Florence2Backend
-            return Florence2Backend(config)
-        case "gguf":
-            from infer.backend_llamacpp import LlamaCppBackend
-            return LlamaCppBackend(config)
-
-    raise ValueError(f"Unknown backend: {config.get('backend')}")
-
-
-def getBackend(config: dict = None):
-    global backend
-    if backend == None:
-        backend = loadBackend(config)
-    elif config:
-        backend.setConfig(config)
-    return backend
-
-
-
-def loadTag(config: dict):
-    if not config:
-        raise ValueError("Cannot load tagging backend without config")
-
-    match config.get("backend"):
-        case "joytag":
-            from infer.tag_joytag import JoyTag
-            return JoyTag(config)
-        case "wd":
-            from infer.tag_wd import WDTag
-            return WDTag(config)
-
-    raise ValueError(f"Unknown tagging backend: {config.get('backend')}")
-
-
-def getTag(config: dict = None):
-    global tag
-    if tag == None:
-        tag = loadTag(config)
-    elif config:
-        tag.setConfig(config)
-    return tag
-
-
-
-def loadMaskingBackend(config: dict):
-    match backendName := config["backend"]:
-        case "bria-rmbg":
-            from infer.mask_briarmbg import BriaRmbgMask
-            return BriaRmbgMask(config)
-        case "florence2-detect":
-            from infer.backend_florence2 import Florence2Backend
-            return Florence2Backend(config)
-        case "florence2-segment":
-            from infer.backend_florence2 import Florence2Backend
-            return Florence2Backend(config)
-        case "inspyrenet":
-            from infer.mask_inspyrenet import InspyrenetMask
-            return InspyrenetMask(config)
-        case "yolo-detect":
-            from infer.mask_yolo import YoloMask
-            return YoloMask(config)
-    
-    raise ValueError(f"Unknown masking backend: {backendName}")
-
-
-def getMaskBackend(config: dict):
-    key = (config["backend"], config["model_path"])
-    backend = masking.get(key)
-    if not backend:
-        backend = loadMaskingBackend(config)
-        masking[key] = backend
-
-    return backend
-
+backendLoader = BackendLoader()
+llmBackend = LastBackendLoader(backendLoader)
+tagBackend = LastBackendLoader(backendLoader)
 
 
 class Protocol:
@@ -135,27 +38,23 @@ def handleMessage(protocol) -> bool:
             return False
 
 
-        case "setup_caption":
-            getBackend(msg.get("config", {}))
+        case "setup_caption" | "setup_llm":
+            llmBackend.getBackend(msg.get("config", {}))
             protocol.writeMessage({"cmd": cmd})
 
         case "setup_tag":
-            getTag(msg.get("config", {}))
-            protocol.writeMessage({"cmd": cmd})
-
-        case "setup_llm":
-            getBackend(msg.get("config", {}))
+            tagBackend.getBackend(msg.get("config", {}))
             protocol.writeMessage({"cmd": cmd})
         
-        case "setup_masking":
-            getMaskBackend(msg.get("config", {}))
+        case "setup_masking" | "setup_upscale":
+            backendLoader.getBackend(msg.get("config", {}))
             protocol.writeMessage({"cmd": cmd})
 
 
         # TODO: Cache image
         case "caption":
             img = msg["img"]
-            captions = getBackend().caption(img, msg["prompts"], msg["sysPrompt"])
+            captions = llmBackend.getBackend().caption(img, msg["prompts"], msg["sysPrompt"])
             protocol.writeMessage({
                 "cmd": cmd,
                 "img": img,
@@ -165,7 +64,7 @@ def handleMessage(protocol) -> bool:
         # TODO: Cache image
         case "tag":
             img = msg["img"]
-            tags = getTag().tag(img)
+            tags = tagBackend.getBackend().tag(img)
             protocol.writeMessage({
                 "cmd": cmd,
                 "img": img,
@@ -173,16 +72,17 @@ def handleMessage(protocol) -> bool:
             })
 
         case "answer":
-            answers = getBackend().answer(msg["prompts"], msg["sysPrompt"])
+            answers = llmBackend.getBackend().answer(msg["prompts"], msg["sysPrompt"])
             protocol.writeMessage({
                 "cmd": cmd,
                 "answers": answers
             })
 
+
         case "mask":
             img = msg["img"]
             classes = msg["classes"]
-            mask = getMaskBackend(msg["config"]).mask(img, classes)
+            mask = backendLoader.getBackend(msg["config"]).mask(img, classes)
             protocol.writeMessage({
                 "cmd": cmd,
                 "img": img,
@@ -192,19 +92,42 @@ def handleMessage(protocol) -> bool:
         case "mask_boxes":
             img = msg["img"]
             classes = msg["classes"]
-            boxes = getMaskBackend(msg["config"]).detectBoxes(img, classes)
+            boxes = backendLoader.getBackend(msg["config"]).detectBoxes(img, classes)
             protocol.writeMessage({
                 "cmd": cmd,
                 "img": img,
                 "boxes": boxes
             })
 
-
         case "get_detect_classes":
-            classes = getMaskBackend(msg["config"]).getClassNames()
+            classes = backendLoader.getBackend(msg["config"]).getClassNames()
             protocol.writeMessage({
                 "cmd": cmd,
                 "classes": classes
+            })
+
+
+        case "imgfile_upscale":
+            img = msg["img"]
+            backend = backendLoader.getBackend(msg["config"])
+            w, h, imgUpscaled = backend.upscaleImage(img)
+            protocol.writeMessage({
+                "cmd": cmd,
+                "w": w,
+                "h": h,
+                "img": imgUpscaled
+            })
+        
+        case "img_upscale":
+            imgData = msg["img_data"]
+            w, h = msg["w"], msg["h"]
+            backend = backendLoader.getBackend(msg["config"])
+            w, h, imgUpscaled = backend.upscaleImageData(imgData, w, h)
+            protocol.writeMessage({
+                "cmd": cmd,
+                "w": w,
+                "h": h,
+                "img": imgUpscaled
             })
 
     return True

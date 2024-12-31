@@ -6,6 +6,7 @@ import numpy as np
 from config import Config
 from .view import ViewTool
 import ui.export_settings as export
+from lib.qtlib import qimageToNumpy
 from lib.filelist import DataKeys
 
 
@@ -40,12 +41,18 @@ class ScaleTool(ViewTool):
 
         rot = self._toolbar.rotation
         w, h = self._toolbar.targetSize
-        interp = exportWidget.getInterpolationMode(h > pixmap.height() or w > pixmap.width())
+        scaleFactor = np.sqrt( (w * h) / (pixmap.width() * pixmap.height()) )
+        scaleConfig = exportWidget.getScaleConfig(scaleFactor)
 
-        task = ScaledExportTask(currentFile, destFile, pixmap, rot, w, h, interp)
+        task = ScaledExportTask(currentFile, destFile, pixmap, rot, w, h, scaleConfig)
         task.signals.done.connect(self.onExportDone, Qt.ConnectionType.BlockingQueuedConnection)
         task.signals.fail.connect(self.onExportFailed, Qt.ConnectionType.BlockingQueuedConnection)
-        QThreadPool.globalInstance().start(task)
+
+        if scaleConfig.useUpscaleModel:
+            from infer import Inference
+            Inference().queueTask(task)
+        else:
+            QThreadPool.globalInstance().start(task)
 
     @Slot()
     def onExportDone(self, file, path):
@@ -266,52 +273,33 @@ class ScaledExportTask(QRunnable):
         def __init__(self):
             super().__init__()
 
-    def __init__(self, srcFile, destFile, pixmap, rotation, targetWidth, targetHeight, interp):
+    def __init__(self, srcFile, destFile, pixmap, rotation: float, targetWidth: int, targetHeight: int, scaleConfig: export.ScaleConfig):
         super().__init__()
-        self.signals = self.ExportTaskSignals()
+        self.signals        = self.ExportTaskSignals()
 
-        self.srcFile = srcFile
-        self.destFile = destFile
+        self.srcFile        = srcFile
+        self.destFile       = destFile
 
-        self.img = pixmap.toImage()
-        self.rotation = rotation
-        self.targetWidth  = targetWidth
-        self.targetHeight = targetHeight
-        self.interp = interp
-
-    @staticmethod
-    def toCvMat(image):
-        buffer = QBuffer()
-        buffer.open(QBuffer.ReadWrite)
-        image.save(buffer, "PNG", 100) # Preserve transparency with PNG. quality 100 actually fastest?
-
-        buf = np.frombuffer(buffer.data(), dtype=np.uint8)
-        return cv.imdecode(buf, cv.IMREAD_UNCHANGED)
-
-        # dtype = np.uint8
-        # channels = 1
-        # print("depth:", image.depth(), "format:", image.format())
-        # match image.depth():
-        #     case 16: dtype = np.uint16
-        #     case 24: channels = 3
-        #     case 32: channels = 4
-        
-        # Produces slightly different images! Why? ---> probably because of padding
-        # array = np.frombuffer(image.constBits(), dtype=np.uint8)
-        # channels = len(array) // (image.height() * image.width())
-        # array.shape = (image.height(), image.width(), channels)
-        # print("shape:", array.shape)
-        # return array
-
+        self.img            = pixmap.toImage()
+        self.rotation       = rotation
+        self.targetWidth    = targetWidth
+        self.targetHeight   = targetHeight
+        self.scaleConfig    = scaleConfig
 
     @Slot()
     def run(self):
         try:
+            matSrc = qimageToNumpy(self.img)
+            if self.scaleConfig.useUpscaleModel:
+                matSrc = self.inferUpscale(matSrc)
+
+            h, w = matSrc.shape[:2]
+
             # Offset by half pixel to maintain pixel borders
             ptsSrc = np.float32([
                 [-0.5, -0.5],
-                [self.img.width()-0.5, -0.5],
-                [self.img.width()-0.5, self.img.height()-0.5],
+                [w-0.5, -0.5],
+                [w-0.5, h-0.5],
             ])
 
             ptsDest = np.float32(self.getRotatedDestPoints())
@@ -319,8 +307,8 @@ class ScaledExportTask(QRunnable):
             # https://docs.opencv.org/3.4/da/d6e/tutorial_py_geometric_transformations.html
             matrix  = cv.getAffineTransform(ptsSrc, ptsDest)
             dsize   = (self.targetWidth, self.targetHeight)
-            matSrc  = self.toCvMat(self.img)
-            matDest = cv.warpAffine(src=matSrc, M=matrix, dsize=dsize, flags=self.interp, borderMode=cv.BORDER_REPLICATE)
+            interp  = self.scaleConfig.getInterpolationMode(self.targetWidth > w or self.targetHeight > h)
+            matDest = cv.warpAffine(src=matSrc, M=matrix, dsize=dsize, flags=interp, borderMode=cv.BORDER_REPLICATE)
 
             export.saveImage(self.destFile, matDest)
             self.signals.done.emit(self.srcFile, self.destFile)
@@ -333,6 +321,17 @@ class ScaledExportTask(QRunnable):
         finally:
             del self.img
 
+    def inferUpscale(self, mat: np.ndarray) -> np.ndarray:
+        from infer import Inference
+        inferProc = Inference().proc
+        inferProc.start()
+
+        hOrig, wOrig = mat.shape[:2]
+        w, h, imgData = inferProc.upscaleImage(self.scaleConfig.toDict(), mat.tobytes(), wOrig, hOrig)
+        channels = len(imgData) // (w*h)
+        mat = np.frombuffer(imgData, dtype=np.uint8)
+        mat.shape = (h, w, channels)
+        return mat
 
     def getRotatedDestPoints(self):
         # Apparently, whole number coordinates point to the center of pixels.
@@ -350,21 +349,6 @@ class ScaledExportTask(QRunnable):
         
         return [[z, z], [w, z], [w, h]]
 
-
-
-
-# Target Modes:
-#     Fixed (changes aspect ratio / add padding) - "Fixed size" / "Fixed size (pad)"
-#     Fixed width / fixed height (keeps aspect ratio) -> "Fixed width" / "Fixed height"
-#         Fixed width or height, whatever is smaller/larger (keeps aspect ratio) -> modes "Fixed smaller side" / "Fixed larger side"
-#     Factor (keeps aspect ratio)
-#     Megapixels (keeps aspect ratio) (use target size W*H to define number of pixels) (this will be rounded)
-#     Divisible by 64 (closest, taller, wider)
-
-# Rotation (only 90° steps)
-# Padding
-# Upscale with model
-# Export settings like CropTool
 
 
 class ScaleMode(QtWidgets.QWidget):

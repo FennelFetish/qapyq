@@ -32,7 +32,7 @@
 
 - **Image/Mask Editor**: Prepare images for training
   - Crop and save parts of images
-  - Scale images
+  - Scale images, optionally using AI upscale models
   - Manually edit masks with multiple layers
   - Support for pressure-sensitive drawing pens
   - Record masking operations into macros
@@ -76,12 +76,18 @@
 - **LLM**
   - Models in GGUF format with embedded chat template (llama-cpp backend).
 
+- **Upscaling**
+  - Model architectures supported by the [spandrel](https://github.com/chaiNNer-org/spandrel?tab=readme-ov-file#model-architecture-support) backend.
+  - Find more models at [openmodeldb.info](https://openmodeldb.info/).
+
 - **Masking**
   - Box Detection
     - YOLO/Adetailer detection models
+    - [Florence-2](https://huggingface.co/collections/microsoft/florence-6669f44df0d87d9c3bfb76de)
   - Segmentation / Background Removal
     - [InSPyReNet](https://github.com/plemeri/InSPyReNet/blob/main/docs/model_zoo.md) (Plus_Ultra)
     - [RMBG-2.0](https://huggingface.co/briaai/RMBG-2.0)
+    - [Florence-2](https://huggingface.co/collections/microsoft/florence-6669f44df0d87d9c3bfb76de)
 
 
 ## Setup

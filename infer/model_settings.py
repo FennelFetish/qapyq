@@ -1,52 +1,9 @@
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, Signal, QObject
+from PySide6.QtCore import Qt, Slot, Signal, QObject, QSignalBlocker
 from .inference_settings import InferenceSettingsWidget
+from .backend_config import BackendDef, BackendTypes, BackendPathModes, BackendsCaption, BackendsTag, BackendsLLM, BackendsMask, BackendsUpscale
 from config import Config
 from lib import qtlib
-
-# TODO: Define GPU layers as percentage
-
-
-class BackendTypes:
-    LLAMA_CPP    = "llama.cpp"
-    TRANSFORMERS = "transformers"
-    ONNX         = "onnx"
-    TORCH        = "torch"
-    ULTRALYTICS  = "ultralytics"
-
-class BackendPathModes:
-    FILE   = "file"
-    FOLDER = "folder"
-
-
-BackendsCaption = {
-    "Florence-2":       ("florence2", BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER),
-    "InternVL2":        ("internvl2", BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER),
-    "MiniCPM-V-2.6":    ("minicpm",   BackendTypes.LLAMA_CPP, BackendPathModes.FILE),
-    "Molmo":            ("molmo",     BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER),
-    "Ovis-1.6":         ("ovis16",    BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER),
-    "Qwen2-VL":         ("qwen2vl",   BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER)
-}
-
-# TODO: Allow loading of caption models as LLM.
-#       Set visual layers to 0? -> No, load as defined in config to prevent reloading.
-BackendsLLM = {
-    "GGUF": ("gguf", BackendTypes.LLAMA_CPP, BackendPathModes.FILE)
-}
-
-BackendsTag = {
-    "WD":       ("wd",     BackendTypes.ONNX,  BackendPathModes.FILE),
-    "JoyTag":   ("joytag", BackendTypes.TORCH, BackendPathModes.FOLDER)
-}
-
-# Last element defines whether the backend supports classes: bool
-BackendsMask = {
-    "BriaAI RMBG-2.0":      ("bria-rmbg",         BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER, False),
-    "Florence-2 Detect":    ("florence2-detect",  BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER, True),
-    "Florence-2 Segment":   ("florence2-segment", BackendTypes.TRANSFORMERS, BackendPathModes.FOLDER, True),
-    "Inspyrenet RemBg":     ("inspyrenet",        BackendTypes.TORCH,        BackendPathModes.FILE,   False),
-    "Yolo Detect":          ("yolo-detect",       BackendTypes.ULTRALYTICS,  BackendPathModes.FILE,   True)
-}
 
 
 class ModelSettingsSignals(QObject):
@@ -72,14 +29,16 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
         self.resize(800, self.height())
 
         self.captionSettings = CaptionModelSettings("inferCaptionPresets", BackendsCaption)
-        self.tagSettings = TagModelSettings("inferTagPresets", BackendsTag)
-        self.llmSettings = LLMModelSettings("inferLLMPresets", BackendsLLM)
-        self.maskSettings = MaskModelSettings("inferMaskPresets", BackendsMask)
+        self.tagSettings     = TagModelSettings("inferTagPresets", BackendsTag)
+        self.llmSettings     = LLMModelSettings("inferLLMPresets", BackendsLLM)
+        self.scaleSettings   = ScaleModelSettings("inferScalePresets", BackendsUpscale)
+        self.maskSettings    = MaskModelSettings("inferMaskPresets", BackendsMask)
         
         self.tabWidget = QtWidgets.QTabWidget()
         self.tabWidget.addTab(self.captionSettings, "Caption")
         self.tabWidget.addTab(self.tagSettings, "Tags")
         self.tabWidget.addTab(self.llmSettings, "LLM")
+        self.tabWidget.addTab(self.scaleSettings, "Scale")
         self.tabWidget.addTab(self.maskSettings, "Mask")
         self.setCentralWidget(self.tabWidget)
 
@@ -102,7 +61,8 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
             case "inferCaptionPresets": index, widget = 0, win.captionSettings
             case "inferTagPresets":     index, widget = 1, win.tagSettings
             case "inferLLMPresets":     index, widget = 2, win.llmSettings
-            case "inferMaskPresets":    index, widget = 3, win.maskSettings
+            case "inferScalePresets":   index, widget = 3, win.scaleSettings
+            case "inferMaskPresets":    index, widget = 4, win.maskSettings
             case _: return
 
         win.tabWidget.setCurrentIndex(index)
@@ -116,7 +76,7 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
 
 
 class BaseSettingsWidget(QtWidgets.QWidget):
-    def __init__(self, configAttr: str, backends: dict):
+    def __init__(self, configAttr: str, backends: dict[str, BackendDef]):
         super().__init__()
         self.configAttr = configAttr
         self.backends = backends
@@ -126,7 +86,7 @@ class BaseSettingsWidget(QtWidgets.QWidget):
 
     def _build(self) -> None:
         layout = QtWidgets.QGridLayout()
-        layout.setAlignment(Qt.AlignTop)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnMinimumWidth(0, 100)
         layout.setColumnMinimumWidth(2, 20)
         layout.setColumnMinimumWidth(3, 100)
@@ -151,9 +111,8 @@ class BaseSettingsWidget(QtWidgets.QWidget):
         self.btnSave.setEnabled(False)
         #self.btnSave.setFixedWidth(100)
         self.btnSave.clicked.connect(self.savePreset)
-        layout.addWidget(self.btnSave, row, 5, Qt.AlignRight)
+        layout.addWidget(self.btnSave, row, 5, Qt.AlignmentFlag.AlignRight)
 
-        #row += 1
         self.btnDelete = QtWidgets.QPushButton("Delete")
         self.btnDelete.setEnabled(False)
         self.btnDelete.clicked.connect(self.deletePreset)
@@ -164,21 +123,13 @@ class BaseSettingsWidget(QtWidgets.QWidget):
 
         row += 1
         self.cboBackend= QtWidgets.QComboBox()
-        for name, data in self.backends.items():
-            self.cboBackend.addItem(f"{name} ({data[1]})", userData=data)
+        for name, backend in self.backends.items():
+            self.cboBackend.addItem(f"{name} ({backend.type.value})", userData=backend)
         self.cboBackend.currentIndexChanged.connect(self._onBackendChanged)
         layout.addWidget(QtWidgets.QLabel("Backend:"), row, 0)
         layout.addWidget(self.cboBackend, row, 1, 1, 5)
 
-        row += 1
-        self.txtPath = QtWidgets.QLineEdit()
-        layout.addWidget(QtWidgets.QLabel("Model Path:"), row, 0)
-        layout.addWidget(self.txtPath, row, 1, 1, 5)
-
-        btnChooseModel = QtWidgets.QPushButton("Choose...")
-        btnChooseModel.clicked.connect(lambda: self._choosePath(self.txtPath))
-        layout.addWidget(btnChooseModel, row, 6)
-
+        row = self._buildBase(layout, row+1)
         self.build(layout, row+1)
         self.setLayout(layout)
 
@@ -186,21 +137,31 @@ class BaseSettingsWidget(QtWidgets.QWidget):
         self.reloadPresetList()
         self._onBackendChanged(self.cboBackend.currentIndex())
 
+    def _buildBase(self, layout: QtWidgets.QGridLayout, row: int) -> int:
+        self.txtPath = QtWidgets.QLineEdit()
+        layout.addWidget(QtWidgets.QLabel("Model Path:"), row, 0)
+        layout.addWidget(self.txtPath, row, 1, 1, 5)
+
+        btnChooseModel = QtWidgets.QPushButton("Choose...")
+        btnChooseModel.clicked.connect(lambda: self._choosePath(self.txtPath))
+        layout.addWidget(btnChooseModel, row, 6)
+        return row
+
     def build(self, layout: QtWidgets.QGridLayout, row: int) -> None:
         raise NotImplementedError()
 
 
     @property
     def backend(self) -> str:
-        return self.cboBackend.currentData()[0]
+        return self.cboBackend.currentData().name
     
     @property
     def backendType(self) -> str:
-        return self.cboBackend.currentData()[1]
+        return self.cboBackend.currentData().type
     
     @property
     def backendPathMode(self) -> str:
-        return self.cboBackend.currentData()[2]
+        return self.cboBackend.currentData().pathMode
 
 
     def reloadPresetList(self, selectName: str | None = None) -> None:
@@ -283,7 +244,7 @@ class BaseSettingsWidget(QtWidgets.QWidget):
         # Find backend index
         backend = settings.get("backend", "")
         for i in range(self.cboBackend.count()):
-            if self.cboBackend.itemData(i)[0] == backend:
+            if self.cboBackend.itemData(i).name == backend:
                 self.cboBackend.setCurrentIndex(i)
 
         self.txtPath.setText(settings.get("model_path", ""))
@@ -296,7 +257,7 @@ class BaseSettingsWidget(QtWidgets.QWidget):
 
 
 class LLMModelSettings(BaseSettingsWidget):
-    def __init__(self, configAttr: str, backends: dict):
+    def __init__(self, configAttr: str, backends: dict[str, BackendDef]):
         super().__init__(configAttr, backends)
         
     def build(self, layout: QtWidgets.QGridLayout, row: int):
@@ -393,7 +354,7 @@ class LLMModelSettings(BaseSettingsWidget):
 
 
 class CaptionModelSettings(LLMModelSettings):
-    def __init__(self, configAttr: str, backends: dict):
+    def __init__(self, configAttr: str, backends: dict[str, BackendDef]):
         super().__init__(configAttr, backends)
 
     def build(self, layout: QtWidgets.QGridLayout, row: int):
@@ -453,7 +414,7 @@ class CaptionModelSettings(LLMModelSettings):
 
 
 class TagModelSettings(BaseSettingsWidget):
-    def __init__(self, configAttr: str, backends: dict):
+    def __init__(self, configAttr: str, backends: dict[str, BackendDef]):
         super().__init__(configAttr, backends)
 
     def build(self, layout: QtWidgets.QGridLayout, row: int):
@@ -506,7 +467,7 @@ class TagModelSettings(BaseSettingsWidget):
 
 
 class MaskModelSettings(BaseSettingsWidget):
-    def __init__(self, configAttr: str, backends: dict):
+    def __init__(self, configAttr: str, backends: dict[str, BackendDef]):
         super().__init__(configAttr, backends)
 
     def build(self, layout: QtWidgets.QGridLayout, row: int):
@@ -520,7 +481,7 @@ class MaskModelSettings(BaseSettingsWidget):
 
     @property
     def backendNeedsClasses(self) -> bool:
-        return self.cboBackend.currentData()[3]
+        return self.cboBackend.currentData().supportsClasses
 
 
     @Slot()
@@ -546,3 +507,139 @@ class MaskModelSettings(BaseSettingsWidget):
             settings["classes"] = [ name for name in classes if not (name in exist or exist.add(name)) ]
 
         return settings
+
+
+
+class ScaleModelSettings(BaseSettingsWidget):
+    KEY_BACKEND        = "backend"
+    KEY_INTERP_UP      = "interp_up"
+    KEY_INTERP_DOWN    = "interp_down"
+    KEY_LEVELS         = "levels"
+    LEVELKEY_THRESHOLD = "threshold"
+    LEVELKEY_MODELPATH = "model_path"
+
+    DEFAULT_BACKEND     = "upscale"
+    DEFAULT_INTERP_UP   = "Lanczos"
+    DEFAULT_INTERP_DOWN = "Area"
+
+    @classmethod
+    def getInterpUp(cls, preset: dict):
+        return preset.get(cls.KEY_INTERP_UP, cls.DEFAULT_INTERP_UP)
+
+    @classmethod
+    def getInterpDown(cls, preset: dict):
+        return preset.get(cls.KEY_INTERP_DOWN, cls.DEFAULT_INTERP_DOWN)
+
+
+    def __init__(self, configAttr: str, backends: dict[str, BackendDef]):
+        super().__init__(configAttr, backends)
+
+    def _buildBase(self, layout: QtWidgets.QGridLayout, row: int) -> int:
+        return row
+
+    def build(self, layout: QtWidgets.QGridLayout, row: int):
+        layout.setColumnStretch(1, 0)
+        layout.setColumnMinimumWidth(3, 12)
+
+        from ui.export_settings import INTERP_MODES
+        self.cboInterpDown = QtWidgets.QComboBox()
+        self.cboInterpDown.addItems(INTERP_MODES.keys())
+        self.cboInterpDown.setCurrentIndex(3) # Default: Area
+
+        layout.addWidget(QtWidgets.QLabel("Downscale:"), row, 0)
+        layout.addWidget(QtWidgets.QLabel("Interpolation:"), row, 1)
+        layout.addWidget(self.cboInterpDown, row, 2)
+
+        row += 1
+        layout.addWidget(QtWidgets.QLabel("Upscale:"), row, 0)
+
+        self.cboInterpUp = QtWidgets.QComboBox()
+        self.cboInterpUp.addItems(INTERP_MODES.keys())
+        self.cboInterpUp.setCurrentIndex(4) # Default: Lanczos
+
+        layout.addWidget(QtWidgets.QLabel("Interpolation:"), row, 1)
+        layout.addWidget(self.cboInterpUp, row, 2)
+        layout.addWidget(QtWidgets.QLabel("Will use simple interpolation until the first threshold defined below."), row, 4)
+
+        row += 1
+        layout.setRowMinimumHeight(row, 12)
+
+        row += 1
+        layout.addWidget(QtWidgets.QLabel("Upscale Levels:"), row, 0)
+        layout.addWidget(QtWidgets.QLabel("Select model by upscale factor:"), row, 1, 1, 4)
+
+        row += 1
+        self.scaleLevels: list[tuple[QtWidgets.QDoubleSpinBox, QtWidgets.QLineEdit]] = list()
+        altPathTarget = None
+        for i in range(3):
+            spinScaleThreshold = QtWidgets.QDoubleSpinBox()
+            spinScaleThreshold.setPrefix("> ")
+            spinScaleThreshold.setRange(1.0, 1024.0)
+            spinScaleThreshold.setSingleStep(0.05)
+            spinScaleThreshold.valueChanged.connect(lambda value, index=i: self._onThresholdChanged(value, index))
+            layout.addWidget(spinScaleThreshold, row+i, 1)
+
+            txtModelPath = QtWidgets.QLineEdit()
+            txtModelPath.setPlaceholderText("Leave empty to disable")
+            layout.addWidget(txtModelPath, row+i, 2, 1, 4)
+
+            btnChoosePath = QtWidgets.QPushButton("Choose...")
+            btnChoosePath.clicked.connect(lambda checked, textfield=txtModelPath: self._choosePath(textfield, altPathTarget))
+            layout.addWidget(btnChoosePath, row+i, 6)
+
+            self.scaleLevels.append((spinScaleThreshold, txtModelPath))
+            altPathTarget = self.scaleLevels[0][1]
+
+        self._resetValues()
+
+
+    def _onThresholdChanged(self, value: float, index: int):
+        minVal = self.scaleLevels[index-1][0].value() if index > 0 else 1.0
+        if value < minVal:
+            self.scaleLevels[index][0].setValue(minVal)
+        
+        maxVal = self.scaleLevels[index+1][0].value() if index < len(self.scaleLevels)-1 else 1024
+        if value > maxVal:
+            self.scaleLevels[index][0].setValue(maxVal)
+
+    def _resetValues(self):
+        values = [1.25, 2.0, 4.0]
+        for val, level in zip(values, self.scaleLevels):
+            with QSignalBlocker(level[0]):
+                level[0].setValue(val)
+                level[1].setText("")
+
+
+    def fromDict(self, settings: dict) -> None:
+        # Ignore backend since there's only one
+
+        self._resetValues()
+
+        interpDownIndex = self.cboInterpDown.findText( self.getInterpDown(settings) )
+        self.cboInterpDown.setCurrentIndex(interpDownIndex)
+
+        interpUpIndex = self.cboInterpDown.findText( self.getInterpUp(settings) )
+        self.cboInterpUp.setCurrentIndex(interpUpIndex)
+
+        levels: list[dict] = settings.get(self.KEY_LEVELS, [])
+        for i, level in zip((0, 1, 2), levels):
+            with QSignalBlocker(self.scaleLevels[i][0]):
+                self.scaleLevels[i][0].setValue(level.get(self.LEVELKEY_THRESHOLD, 1.0))
+            self.scaleLevels[i][1].setText(level.get(self.LEVELKEY_MODELPATH, ""))
+
+
+    def toDict(self) -> dict:
+        levels = list()
+        for spinThreshold, txtModelPath in self.scaleLevels:
+            if path := txtModelPath.text():
+                levels.append({
+                    self.LEVELKEY_THRESHOLD: round(spinThreshold.value(), 2),
+                    self.LEVELKEY_MODELPATH: path
+                })
+
+        return {
+            self.KEY_BACKEND:     self.DEFAULT_BACKEND,
+            self.KEY_INTERP_UP:   self.cboInterpUp.currentText(),
+            self.KEY_INTERP_DOWN: self.cboInterpDown.currentText(),
+            self.KEY_LEVELS:      levels
+        }
