@@ -7,7 +7,8 @@ try:
     import natsort as ns
     sortKey = ns.natsort_keygen(alg=ns.INT | ns.PATH | ns.IGNORECASE)
 except:
-    print("natsort not installed. Cannot sort files in natural order.")
+    print("natsort not installed. Numbered files might appear in wrong order.")
+    print("Run the setup script to install the missing natsort package.")
     def sortKey(path: str):
         return os.path.split(path)
 
@@ -32,14 +33,13 @@ class DataKeys:
 
 
 
-VALID_EXTENSION = set([ f".{format.data().decode('utf-8')}" for format in QImageReader.supportedImageFormats() ])
+VALID_EXTENSION = set([ f".{format.data().decode('utf-8').lower()}" for format in QImageReader.supportedImageFormats() ])
 
-MASK_SUFFIX = Config.maskSuffix + ".png"
 def fileFilter(path) -> bool:
-    if path.endswith(MASK_SUFFIX):
-        return False
     name, ext = os.path.splitext(path)
-    return ext in VALID_EXTENSION
+    if name.endswith(Config.maskSuffix):
+        return False
+    return ext.lower() in VALID_EXTENSION
 
 
 class FileList:
