@@ -18,12 +18,10 @@ class Header(QtWidgets.QFrame):
         layout = QtWidgets.QHBoxLayout()
         layout.setContentsMargins(4, 4, 4, 4)
 
-        lblTitle = QtWidgets.QLabel(dir)
-        # lblTitle.setWordWrap(True) # TODO: Wrap long lines. Word wrap messes with scrolling (invalid rects)
-        qtlib.setMonospace(lblTitle, 1.2, bold=True)
-        layout.addWidget(lblTitle)
-
-        layout.addStretch(1)
+        txtTitle = QtWidgets.QLineEdit(dir)
+        txtTitle.setReadOnly(True)
+        qtlib.setMonospace(txtTitle, 1.2, bold=True)
+        layout.addWidget(txtTitle)
 
         self.lblImgCount = QtWidgets.QLabel()
         layout.addWidget(self.lblImgCount)
