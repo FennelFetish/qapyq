@@ -1,7 +1,7 @@
 import os, superqt
 from typing_extensions import override
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker
+from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QRunnable, QObject
 import cv2 as cv
 import numpy as np
 from PIL import Image
@@ -664,3 +664,100 @@ class ScalePresetComboBox(QtWidgets.QComboBox):
     @Slot()
     def showModelSettings(self):
         ModelSettingsWindow.openInstance(self, self.CONFIG_ATTR, self.currentText())
+
+
+
+class ImageExportTask(QRunnable):
+    class ExportTaskSignals(QObject):
+        done     = Signal(str, str)
+        progress = Signal(str)
+        fail     = Signal(str)
+
+        def __init__(self):
+            super().__init__()
+
+
+    def __init__(self, srcFile, destFile, pixmap, targetWidth: int, targetHeight: int, scaleConfig: ScaleConfig):
+        super().__init__()
+        self.signals        = self.ExportTaskSignals()
+
+        self.srcFile        = srcFile
+        self.destFile       = destFile
+
+        self.img            = self.toImage(pixmap)
+        self.targetWidth    = targetWidth
+        self.targetHeight   = targetHeight
+        self.scaleConfig    = scaleConfig
+
+        self.borderMode     = cv.BORDER_REPLICATE
+
+
+    def toImage(self, pixmap):
+        return pixmap.toImage()
+
+    def processImage(self, mat: np.ndarray) -> np.ndarray:
+        return mat
+
+
+    @Slot()
+    def run(self):
+        try:
+            matSrc = qtlib.qimageToNumpy(self.img)
+            if self.scaleConfig.useUpscaleModel:
+                matSrc = self.inferUpscale(matSrc)
+
+            self.signals.progress.emit("Saving image...")
+            matDest = self.processImage(matSrc)
+
+            saveImage(self.destFile, matDest)
+            self.signals.done.emit(self.srcFile, self.destFile)
+
+            del matSrc
+            del matDest
+        except Exception as ex:
+            print(f"Export failed: {ex}")
+            self.signals.fail.emit(str(ex))
+        finally:
+            del self.img
+
+    def inferUpscale(self, mat: np.ndarray) -> np.ndarray:
+        from infer import Inference
+        inferProc = Inference().proc
+        inferProc.start()
+
+        modelName = os.path.basename(self.scaleConfig.modelPath)
+        modelName = os.path.splitext(modelName)[0]
+
+        self.signals.progress.emit(f"Loading upscale model ({modelName}) ...")
+        upscaleConfig = self.scaleConfig.toDict()
+        inferProc.setupUpscale(upscaleConfig)
+        self.signals.progress.emit(f"Upscaling with model ({modelName}) ...")
+
+        hOrig, wOrig = mat.shape[:2]
+        w, h, imgData = inferProc.upscaleImage(upscaleConfig, mat.tobytes(), wOrig, hOrig)
+        channels = len(imgData) // (w*h)
+        mat = np.frombuffer(imgData, dtype=np.uint8)
+        mat.shape = (h, w, channels)
+        return mat
+
+    def resize(self, mat: np.ndarray) -> np.ndarray:
+        srcHeight, srcWidth = mat.shape[:2]
+        dsize  = (self.targetWidth, self.targetHeight)
+        interp = self.scaleConfig.getInterpolationMode(self.targetWidth > srcWidth or self.targetHeight > srcHeight)
+        return cv.resize(mat, dsize, interpolation=interp)
+
+    def warpAffine(self, mat: np.ndarray, ptsSrc: list[list[float]], ptsDest: list[list[float]]) -> np.ndarray:
+        srcWidth  = self.distance(ptsSrc[1], ptsSrc[0])
+        srcHeight = self.distance(ptsSrc[2], ptsSrc[1])
+        
+        # https://docs.opencv.org/3.4/da/d6e/tutorial_py_geometric_transformations.html
+        matrix = cv.getAffineTransform(np.float32(ptsSrc), np.float32(ptsDest))
+        dsize  = (self.targetWidth, self.targetHeight)
+        interp = self.scaleConfig.getInterpolationMode(self.targetWidth > srcWidth or self.targetHeight > srcHeight)
+        return cv.warpAffine(src=mat, M=matrix, dsize=dsize, flags=interp, borderMode=self.borderMode)
+
+    @staticmethod
+    def distance(p0: list[float], p1: list[float]) -> float:
+        dx = p0[0] - p1[0]
+        dy = p0[1] - p1[1]
+        return np.sqrt(dx*dx + dy*dy)

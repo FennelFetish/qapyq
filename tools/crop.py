@@ -1,11 +1,11 @@
+from typing_extensions import override
 import cv2 as cv
 import numpy as np
-from PySide6.QtCore import QBuffer, QPointF, QRect, QRectF, Qt, QTimer, QRunnable, QObject, QThreadPool, Signal, Slot
+from PySide6.QtCore import QPointF, QRect, QRectF, Qt, QTimer, QObject, QThreadPool, Signal, Slot
 from PySide6.QtGui import QBrush, QPen, QColor, QPainterPath, QPolygonF, QTransform, QCursor
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QMenu
 from .view import ViewTool
 from lib.filelist import DataKeys
-from lib.qtlib import qimageToNumpy
 import ui.export_settings as export
 from config import Config
 
@@ -157,16 +157,17 @@ class CropTool(ViewTool):
         poly = self._imgview.mapToScene(rect)
         poly = self._imgview.image.mapFromParent(poly)
 
-        # Constrain polygon to image
-        imgSize = self._imgview.image.pixmap().size()
-        for i in range(poly.size()):
-            p = poly[i]
-            x = min(p.x(), imgSize.width())
-            x = max(x, 0)
+        # Constrain polygon to image (again, to account for rounding errors)
+        if self._toolbar.constrainToImage:
+            imgSize = self._imgview.image.pixmap().size()
+            for i in range(poly.size()):
+                p = poly[i]
+                x = min(p.x(), imgSize.width())
+                x = max(x, 0)
 
-            y = min(p.y(), imgSize.height())
-            y = max(y, 0)
-            poly[i] = QPointF(x, y)
+                y = min(p.y(), imgSize.height())
+                y = max(y, 0)
+                poly[i] = QPointF(x, y)
         
         return poly
 
@@ -181,7 +182,7 @@ class CropTool(ViewTool):
         if not destFile:
             return False
 
-        self.tab.statusBar().showMessage("Saving cropped image...")
+        self.tab.statusBar().showMessage("Exporting image...")
 
         poly = self.getSelectionPoly(selectionRect)
         scaleFactor = self._targetHeight / self._cropHeight
@@ -190,6 +191,7 @@ class CropTool(ViewTool):
 
         task = ExportTask(currentFile, destFile, pixmap, poly, self._targetWidth, self._targetHeight, scaleConfig, border)
         task.signals.done.connect(self.onExportDone, Qt.ConnectionType.BlockingQueuedConnection)
+        task.signals.progress.connect(self.onExportProgress, Qt.ConnectionType.BlockingQueuedConnection)
         task.signals.fail.connect(self.onExportFailed, Qt.ConnectionType.BlockingQueuedConnection)
 
         if scaleConfig.useUpscaleModel:
@@ -206,6 +208,10 @@ class CropTool(ViewTool):
         self.tab.statusBar().showColoredMessage("Exported cropped image to: " + path, success=True)
         self._imgview.filelist.setData(file, DataKeys.CropState, DataKeys.IconStates.Saved)
         self._toolbar.updateExport()
+
+    @Slot()
+    def onExportProgress(self, message: str):
+        self.tab.statusBar().showMessage(message)
 
     @Slot()
     def onExportFailed(self, msg: str):
@@ -318,28 +324,13 @@ class CropTool(ViewTool):
 
 
 
-class ExportTask(QRunnable):
-    class ExportTaskSignals(QObject):
-        done = Signal(str, str)
-        fail = Signal(str)
-
-        def __init__(self):
-            super().__init__()
-
+class ExportTask(export.ImageExportTask):
     def __init__(self, srcFile: str, destFile: str, pixmap, poly: QPolygonF, targetWidth: int, targetHeight: int, scaleConfig: export.ScaleConfig, border):
-        super().__init__()
-        self.signals = self.ExportTaskSignals()
-
-        self.srcFile        = srcFile
-        self.destFile       = destFile
-        self.poly           = poly
-        self.targetWidth    = targetWidth
-        self.targetHeight   = targetHeight
-        self.scaleConfig    = scaleConfig
-        self.border         = border
-
+        self.poly = poly
         self.rect = self.calcCutRect(poly, pixmap)
-        self.img  = pixmap.copy(self.rect).toImage()
+
+        super().__init__(srcFile, destFile, pixmap, targetWidth, targetHeight, scaleConfig)
+        self.borderMode = border
 
     @staticmethod
     def calcCutRect(poly: QPolygonF, pixmap) -> QRect:
@@ -352,69 +343,39 @@ class ExportTask(QRunnable):
         rect.setBottom(min(pixmap.height(), rect.bottom()+pad))
         return rect
 
-    @staticmethod
-    def distance(p0: list[int], p1: list[int]) -> float:
-        dx = p0[0] - p1[0]
-        dy = p0[1] - p1[1]
-        return np.sqrt(dx*dx + dy*dy)
+    @override
+    def toImage(self, pixmap):
+        return pixmap.copy(self.rect).toImage()
 
-    @Slot()
-    def run(self):
-        try:
-            matSrc = qimageToNumpy(self.img)
-            if self.scaleConfig.useUpscaleModel:
-                matSrc = self.inferUpscale(matSrc)
+    @override
+    def processImage(self, mat: np.ndarray) -> np.ndarray:
+        p0, p1, p2, _ = self.poly
 
-            p0, p1, p2, _ = self.poly
+        # Origin of cut image (with padding), offset by half pixel to maintain pixel borders
+        ox, oy = self.rect.topLeft().toTuple()
+        ox, oy = ox+0.5, oy+0.5
 
-            # Origin of cut image (with padding), offset by half pixel to maintain pixel borders
-            ox, oy = self.rect.topLeft().toTuple()
-            ox, oy = ox+0.5, oy+0.5
+        # Selection relative to origin of cut image
+        # Round selection coordinates for pixel-accuracy
+        ptsSrc = [
+            [round(p0.x())-ox, round(p0.y())-oy],
+            [round(p1.x())-ox, round(p1.y())-oy],
+            [round(p2.x())-ox, round(p2.y())-oy]
+        ]
 
-            # Selection relative to origin of cut image
-            # Round selection coordinates for pixel-accuracy
-            ptsSrc = np.float32([
-                [round(p0.x())-ox, round(p0.y())-oy],
-                [round(p1.x())-ox, round(p1.y())-oy],
-                [round(p2.x())-ox, round(p2.y())-oy]
-            ])
+        ptsDest = [
+            [-0.5, -0.5],
+            [self.targetWidth-0.5, -0.5],
+            [self.targetWidth-0.5, self.targetHeight-0.5],
+        ]
 
-            srcWidth  = self.distance(ptsSrc[1], ptsSrc[0])
-            srcHeight = self.distance(ptsSrc[2], ptsSrc[1])
+        return self.warpAffine(mat, ptsSrc, ptsDest)
 
-            ptsDest = np.float32([
-                [-0.5, -0.5],
-                [self.targetWidth-0.5, -0.5],
-                [self.targetWidth-0.5, self.targetHeight-0.5],
-            ])
-
-            # https://docs.opencv.org/3.4/da/d6e/tutorial_py_geometric_transformations.html
-            matrix  = cv.getAffineTransform(ptsSrc, ptsDest)
-            dsize   = (self.targetWidth, self.targetHeight)
-            interp  = self.scaleConfig.getInterpolationMode(self.targetWidth > srcWidth or self.targetHeight > srcHeight)
-            matDest = cv.warpAffine(src=matSrc, M=matrix, dsize=dsize, flags=interp, borderMode=self.border)
-
-            export.saveImage(self.destFile, matDest)
-            self.signals.done.emit(self.srcFile, self.destFile)
-
-            del matSrc
-            del matDest
-        except Exception as ex:
-            print(f"Export failed: {ex}")
-            self.signals.fail.emit(str(ex))
-        finally:
-            del self.img
-
+    @override
     def inferUpscale(self, mat: np.ndarray) -> np.ndarray:
-        from infer import Inference
-        inferProc = Inference().proc
-        inferProc.start()
-
         hOrig, wOrig = mat.shape[:2]
-        w, h, imgData = inferProc.upscaleImage(self.scaleConfig.toDict(), mat.tobytes(), wOrig, hOrig)
-        channels = len(imgData) // (w*h)
-        mat = np.frombuffer(imgData, dtype=np.uint8)
-        mat.shape = (h, w, channels)
+        mat = super().inferUpscale(mat)
+        h, w = mat.shape[:2]
 
         # Adjust poly and rect 
         wScale = w / wOrig

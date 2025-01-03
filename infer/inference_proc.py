@@ -75,7 +75,7 @@ class InferenceProcess(metaclass=Singleton):
                 self.proc.kill()
         except Exception as ex:
             print(ex)
-                
+
 
     def setupCaption(self, config: dict):
         self._setup(config, "setup_caption", "currentLLMConfig")
@@ -89,6 +89,12 @@ class InferenceProcess(metaclass=Singleton):
     def setupMasking(self, config: dict):
         self._queryKey("cmd", {
             "cmd": "setup_masking",
+            "config": config
+        })
+    
+    def setupUpscale(self, config: dict):
+        self._queryKey("cmd", {
+            "cmd": "setup_upscale",
             "config": config
         })
 

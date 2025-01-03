@@ -1,12 +1,10 @@
 from typing import Callable
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject, QThreadPool, QBuffer, QSignalBlocker
-import cv2 as cv
+from PySide6.QtCore import Qt, Slot, Signal, QThreadPool, QSignalBlocker
 import numpy as np
 from config import Config
 from .view import ViewTool
 import ui.export_settings as export
-from lib.qtlib import qimageToNumpy
 from lib.filelist import DataKeys
 
 
@@ -37,7 +35,7 @@ class ScaleTool(ViewTool):
         if not destFile:
             return
 
-        self.tab.statusBar().showMessage("Saving scaled image...")
+        self.tab.statusBar().showMessage("Exporting image...")
 
         rot = self._toolbar.rotation
         w, h = self._toolbar.targetSize
@@ -46,6 +44,7 @@ class ScaleTool(ViewTool):
 
         task = ScaledExportTask(currentFile, destFile, pixmap, rot, w, h, scaleConfig)
         task.signals.done.connect(self.onExportDone, Qt.ConnectionType.BlockingQueuedConnection)
+        task.signals.progress.connect(self.onExportProgress, Qt.ConnectionType.BlockingQueuedConnection)
         task.signals.fail.connect(self.onExportFailed, Qt.ConnectionType.BlockingQueuedConnection)
 
         if scaleConfig.useUpscaleModel:
@@ -62,7 +61,11 @@ class ScaleTool(ViewTool):
         self._imgview.filelist.setData(file, DataKeys.CropState, DataKeys.IconStates.Saved)
 
         self._toolbar.updateExport()
-    
+
+    @Slot()
+    def onExportProgress(self, message: str):
+        self.tab.statusBar().showMessage(message)
+
     @Slot()
     def onExportFailed(self, msg: str):
         self.tab.statusBar().showColoredMessage(f"Export failed: {msg}", False, 0)
@@ -265,73 +268,25 @@ class ScaleToolBar(QtWidgets.QToolBar):
 
 
 
-class ScaledExportTask(QRunnable):
-    class ExportTaskSignals(QObject):
-        done = Signal(str, str)
-        fail = Signal(str)
-
-        def __init__(self):
-            super().__init__()
-
+class ScaledExportTask(export.ImageExportTask):
     def __init__(self, srcFile, destFile, pixmap, rotation: float, targetWidth: int, targetHeight: int, scaleConfig: export.ScaleConfig):
-        super().__init__()
-        self.signals        = self.ExportTaskSignals()
+        super().__init__(srcFile, destFile, pixmap, targetWidth, targetHeight, scaleConfig)
+        self.rotation = rotation
 
-        self.srcFile        = srcFile
-        self.destFile       = destFile
+    def processImage(self, mat: np.ndarray) -> np.ndarray:
+        if self.rotation == 0:
+            return self.resize(mat)
+        
+        # Offset by half pixel to maintain pixel borders
+        h, w = mat.shape[:2]
+        ptsSrc = [
+            [-0.5, -0.5],
+            [w-0.5, -0.5],
+            [w-0.5, h-0.5],
+        ]
 
-        self.img            = pixmap.toImage()
-        self.rotation       = rotation
-        self.targetWidth    = targetWidth
-        self.targetHeight   = targetHeight
-        self.scaleConfig    = scaleConfig
-
-    @Slot()
-    def run(self):
-        try:
-            matSrc = qimageToNumpy(self.img)
-            if self.scaleConfig.useUpscaleModel:
-                matSrc = self.inferUpscale(matSrc)
-
-            h, w = matSrc.shape[:2]
-
-            # Offset by half pixel to maintain pixel borders
-            ptsSrc = np.float32([
-                [-0.5, -0.5],
-                [w-0.5, -0.5],
-                [w-0.5, h-0.5],
-            ])
-
-            ptsDest = np.float32(self.getRotatedDestPoints())
-
-            # https://docs.opencv.org/3.4/da/d6e/tutorial_py_geometric_transformations.html
-            matrix  = cv.getAffineTransform(ptsSrc, ptsDest)
-            dsize   = (self.targetWidth, self.targetHeight)
-            interp  = self.scaleConfig.getInterpolationMode(self.targetWidth > w or self.targetHeight > h)
-            matDest = cv.warpAffine(src=matSrc, M=matrix, dsize=dsize, flags=interp, borderMode=cv.BORDER_REPLICATE)
-
-            export.saveImage(self.destFile, matDest)
-            self.signals.done.emit(self.srcFile, self.destFile)
-
-            del matSrc
-            del matDest
-        except Exception as ex:
-            print(f"Export failed: {ex}")
-            self.signals.fail.emit(str(ex))
-        finally:
-            del self.img
-
-    def inferUpscale(self, mat: np.ndarray) -> np.ndarray:
-        from infer import Inference
-        inferProc = Inference().proc
-        inferProc.start()
-
-        hOrig, wOrig = mat.shape[:2]
-        w, h, imgData = inferProc.upscaleImage(self.scaleConfig.toDict(), mat.tobytes(), wOrig, hOrig)
-        channels = len(imgData) // (w*h)
-        mat = np.frombuffer(imgData, dtype=np.uint8)
-        mat.shape = (h, w, channels)
-        return mat
+        ptsDest = self.getRotatedDestPoints()
+        return self.warpAffine(mat, ptsSrc, ptsDest)
 
     def getRotatedDestPoints(self):
         # Apparently, whole number coordinates point to the center of pixels.
