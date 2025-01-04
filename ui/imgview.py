@@ -5,6 +5,8 @@ from .dropview import DropView
 
 
 class ImgView(DropView):
+    SHOW_PIXEL_SIZE_SQUARED = 8**2
+
     def __init__(self, filelist):
         super().__init__()
 
@@ -44,13 +46,25 @@ class ImgView(DropView):
 
     def updateImageTransform(self):
         self.image.updateTransform(self.viewport().rect(), self.rotation)
-    
+
+    def updateImageSmoothness(self, imgItem):
+        p0 = imgItem.mapToParent(0, 0)
+        p0 = self.mapFromScene(p0)
+
+        p1 = imgItem.mapToParent(1, 0)
+        p1 = self.mapFromScene(p1)
+
+        # Properly calculate length to make it work with rotated images.
+        dx = p1.x() - p0.x()
+        dy = p1.y() - p0.y()
+        pixelSizeSquared = dx*dx + dy*dy
+        imgItem.setSmooth(pixelSizeSquared < self.SHOW_PIXEL_SIZE_SQUARED)
+
     def resetView(self):
         super().resetView()
         self.rotation = 0.0
         self._tool.onResetView()
 
-    
 
     @property
     def tool(self):
@@ -70,6 +84,7 @@ class ImgView(DropView):
 
     def updateScene(self):
         super().updateScene()
+        self.updateImageSmoothness(self.image)
         self._tool.onSceneUpdate()
 
     def onDrop(self, event, zoneIndex) -> None:
@@ -121,6 +136,7 @@ class ImgItem(QGraphicsPixmapItem):
     def __init__(self):
         super().__init__(None)
         self.setShapeMode(QGraphicsPixmapItem.BoundingRectShape)
+        self.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
         self.filepath = ""
 
     def loadImage(self, path) -> bool:
@@ -151,3 +167,8 @@ class ImgItem(QGraphicsPixmapItem):
         transform = transform.translate(x, y)
         transform = transform.scale(scale, scale)
         self.setTransform(transform)
+
+    def setSmooth(self, enabled: bool):
+        mode = Qt.TransformationMode.SmoothTransformation if enabled else Qt.TransformationMode.FastTransformation
+        if mode != self.transformationMode():
+            self.setTransformationMode(mode)
