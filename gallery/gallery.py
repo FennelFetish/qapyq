@@ -73,6 +73,7 @@ class Gallery(QtWidgets.QWidget):
         btnReloadCaptions.clicked.connect(lambda: self.galleryGrid.reloadCaptions())
 
         self.cboFolders = QtWidgets.QComboBox()
+        self.cboFolders.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored, QtWidgets.QSizePolicy.Policy.Preferred)
         self.cboFolders.currentIndexChanged.connect(self.onFolderSelected)
         qtlib.setMonospace(self.cboFolders)
 

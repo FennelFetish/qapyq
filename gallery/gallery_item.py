@@ -282,6 +282,10 @@ class GalleryListItem(GalleryItem):
 
     @Slot()
     def loadCaption(self):
+        # Will load caption when painted
+        if not self._built:
+            return
+
         caption = self.gallery.captionSrc.loadCaption(self.file)
         if caption is None:
             caption = ""

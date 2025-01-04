@@ -5,7 +5,7 @@ from lib.captionfile import FileTypeSelector
 from lib.filelist import DataKeys
 from lib import qtlib
 from ui.tab import ImgTab
-from .gallery_item import GalleryGridItem, GalleryItem, GalleryListItem, ImageIcon
+from .gallery_item import GalleryItem, GalleryGridItem, GalleryListItem, ImageIcon
 
 
 class Header(QtWidgets.QFrame):
@@ -118,7 +118,7 @@ class GalleryGrid(QtWidgets.QWidget):
         for i in reversed(range(self._layout.count())):
             item = self._layout.takeAt(i)
             if widget := item.widget():
-                if isinstance(widget, self.itemClass):
+                if isinstance(widget, GalleryItem):
                     galleryItems[widget.file] = widget
                 else:
                     widget.deleteLater()
@@ -238,7 +238,7 @@ class GalleryGrid(QtWidgets.QWidget):
 
         row, col = 0, 0
         for widget in (item.widget() for item in reversed(items)):
-            if isinstance(widget, self.itemClass):
+            if isinstance(widget, GalleryItem):
                 widget.row = row
                 self._layout.addWidget(widget, row, col, Qt.AlignmentFlag.AlignTop)
                 rows.add(row)
