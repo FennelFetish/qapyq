@@ -7,6 +7,7 @@ from .batch_scale import BatchScale
 from .batch_mask import BatchMask
 from .batch_crop import BatchCrop
 from .batch_log import BatchLog
+from .batch_task import BatchProgressUpdate
 import lib.qtlib as qtlib
 
 
@@ -15,7 +16,7 @@ class BatchContainer(QtWidgets.QTabWidget):
         super().__init__()
         self.tab = tab
         
-        self.progressbar = QtWidgets.QProgressBar()
+        self.progressbar = BatchProgressBar()
         self.statusBar = qtlib.ColoredMessageStatusBar()
         self.statusBar.addPermanentWidget(self.progressbar)
 
@@ -54,3 +55,52 @@ class BatchContainer(QtWidgets.QTabWidget):
 
     def onFileListChanged(self, currentFile):
         self.onFileChanged(currentFile)
+
+
+
+class BatchProgressBar(QtWidgets.QProgressBar):
+    def __init__(self):
+        super().__init__()
+        self._timeText = ""
+        self._lastTime = None
+    
+    def setTime(self, time: BatchProgressUpdate | None):
+        if time is None:
+            return
+
+        self._lastTime = time
+        timeSpent      = self.formatSeconds(time.timeSpent)
+        timeRemaining  = self.formatSeconds(time.timeRemaining)
+        self._timeText = f"{time.filesProcessed}/{time.filesTotal} Files processed in {timeSpent}, " \
+                       + f"{timeRemaining} remaining ({time.timePerFile:.2f}s per File)"
+
+    def resetTime(self):
+        self._lastTime = None
+        self._timeText = ""
+        self.update()
+
+    def text(self) -> str:
+        if text := super().text():
+            if self._timeText:
+                return f"{text}  -  {self._timeText}"
+            return text
+        return self._timeText
+
+    def reset(self):
+        super().reset()
+        if self._lastTime:
+            timeSpent = self.formatSeconds(self._lastTime.timeSpent)
+            self._timeText = f"{self._lastTime.filesProcessed} Files processed in {timeSpent} ({self._lastTime.timePerFile:.2f}s per File)"
+        else:
+            self._timeText = ""
+
+    @staticmethod
+    def formatSeconds(seconds: float):
+        s = round(seconds)
+        hours = s // 3600
+        minutes = (s % 3600) // 60
+        seconds = s % 60
+
+        if hours > 0:
+            return f"{hours:02}:{minutes:02}:{seconds:02}"
+        return f"{minutes:02}:{seconds:02}"

@@ -7,7 +7,7 @@ from config import Config
 from infer import Inference
 from lib import qtlib
 from lib.captionfile import CaptionFile
-from .batch_task import BatchTask
+from .batch_task import BatchTask, BatchSignalHandler
 
 
 BatchRulesGroup = ForwardRef("BatchRulesGroup")
@@ -23,10 +23,12 @@ class BatchRules(QtWidgets.QWidget):
 
         self.bannedSeparator = ", "
         self.captionFile: CaptionFile = None
-        self._task = None
         self._defaultPresetPath = Config.pathExport
         self._highlightFormats = dict()
         self._updateEnabled = True
+
+        self._task = None
+        self._taskSignalHandler = None
 
         self.btnStart = QtWidgets.QPushButton("Start Batch Rules")
         self.btnStart.clicked.connect(self.startStop)
@@ -333,49 +335,25 @@ class BatchRules(QtWidgets.QWidget):
     def startStop(self):
         if self._task:
             self._task.abort()
-        else:
-            self.btnStart.setText("Abort")
+            return
 
-            self._task = BatchRulesTask(self.log, self.tab.filelist, self.setupProcessor())
-            self._task.srcType = self.cboSrcType.currentText()
-            self._task.srcKey  = self.txtSourceKey.text().strip()
-            self._task.targetType = self.cboTargetType.currentText()
-            self._task.targetKey  = self.txtTargetKey.text().strip()
-            self._task.skipExisting = self.chkSkipExisting.isChecked()
+        self.btnStart.setText("Abort")
 
-            self._task.signals.progress.connect(self.onProgress)
-            self._task.signals.progressMessage.connect(self.onProgressMessage)
-            self._task.signals.done.connect(self.onFinished)
-            self._task.signals.fail.connect(self.onFail)
-            Inference().queueTask(self._task)
+        self._task = BatchRulesTask(self.log, self.tab.filelist, self.setupProcessor())
+        self._task.srcType = self.cboSrcType.currentText()
+        self._task.srcKey  = self.txtSourceKey.text().strip()
+        self._task.targetType = self.cboTargetType.currentText()
+        self._task.targetKey  = self.txtTargetKey.text().strip()
+        self._task.skipExisting = self.chkSkipExisting.isChecked()
 
-    @Slot()
-    def onFinished(self, numFiles):
-        self.statusBar.showColoredMessage(f"Processed {numFiles} files", True, 0)
-        self.taskDone()
-
-    @Slot()
-    def onFail(self, reason):
-        self.statusBar.showColoredMessage(reason, False, 0)
-        self.taskDone()
-
-    @Slot()
-    def onProgress(self, numDone, numTotal, jsonFile):
-        self.progressBar.setRange(0, numTotal)
-        self.progressBar.setValue(numDone)
-
-        if jsonFile:
-            self.statusBar.showMessage("Wrote " + jsonFile)
-
-    @Slot()
-    def onProgressMessage(self, message):
-        self.statusBar.showMessage(message)
+        self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
+        self._taskSignalHandler.finished.connect(self.taskDone)
+        Inference().queueTask(self._task)
 
     def taskDone(self):
         self.btnStart.setText("Start Batch Rules")
-        self.progressBar.setRange(0, 1)
-        self.progressBar.reset()
         self._task = None
+        self._taskSignalHandler = None
 
 
 

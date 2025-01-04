@@ -9,7 +9,7 @@ from lib import qtlib
 from lib.mask_macro import MaskingMacro
 from lib.mask_macro_vis import MacroVisualization
 from infer import Inference
-from .batch_task import BatchTask
+from .batch_task import BatchTask, BatchSignalHandler
 import ui.export_settings as export
 
 
@@ -35,6 +35,8 @@ class BatchMask(QtWidgets.QWidget):
         self.pathSettings.overwriteFiles = config.get("overwrite", True)
 
         self._task = None
+        self._taskSignalHandler = None
+
         self._build()
         self.reloadMacros()
 
@@ -158,47 +160,23 @@ class BatchMask(QtWidgets.QWidget):
     def startStop(self):
         if self._task:
             self._task.abort()
-        else:
-            self.saveExportPreset()
-            self.btnStart.setText("Abort")
+            return
 
-            macroPath = self.cboMacro.currentData()
-            saveMode = self.cboDestType.currentData()
-            self._task = BatchMaskTask(self.log, self.tab.filelist, macroPath, saveMode, self.pathSettings)
+        self.saveExportPreset()
+        self.btnStart.setText("Abort")
 
-            self._task.signals.progress.connect(self.onProgress)
-            self._task.signals.progressMessage.connect(self.onProgressMessage)
-            self._task.signals.done.connect(self.onFinished)
-            self._task.signals.fail.connect(self.onFail)
-            Inference().queueTask(self._task)
+        macroPath = self.cboMacro.currentData()
+        saveMode = self.cboDestType.currentData()
+        self._task = BatchMaskTask(self.log, self.tab.filelist, macroPath, saveMode, self.pathSettings)
 
-    @Slot()
-    def onFinished(self, numFiles):
-        self.statusBar.showColoredMessage(f"Processed {numFiles} files", True, 0)
-        self.taskDone()
-
-    @Slot()
-    def onFail(self, reason):
-        self.statusBar.showColoredMessage(reason, False, 0)
-        self.taskDone()
-
-    @Slot()
-    def onProgress(self, numDone, numTotal, maskFile):
-        self.progressBar.setRange(0, numTotal)
-        self.progressBar.setValue(numDone)
-
-        if maskFile:
-            self.statusBar.showMessage("Wrote " + maskFile)
-
-    @Slot()
-    def onProgressMessage(self, message):
-        self.statusBar.showMessage(message)
+        self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
+        self._taskSignalHandler.finished.connect(self.taskDone)
+        Inference().queueTask(self._task)
 
     def taskDone(self):
         self.btnStart.setText("Start Batch Mask")
-        self.progressBar.setRange(0, 1)
-        self.progressBar.reset()
         self._task = None
+        self._taskSignalHandler = None
 
 
 

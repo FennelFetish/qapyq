@@ -4,7 +4,7 @@ from lib import qtlib
 from lib.captionfile import CaptionFile
 from config import Config
 from infer import Inference, InferencePresetWidget, TagPresetWidget, PromptWidget
-from .batch_task import BatchTask
+from .batch_task import BatchTask, BatchSignalHandler
 
 
 # TODO: Loading of variables
@@ -33,6 +33,7 @@ class BatchCaption(QtWidgets.QWidget):
         self.setLayout(layout)
 
         self._task = None
+        self._taskSignalHandler = None
 
 
     def _buildCaptionSettings(self):
@@ -115,59 +116,36 @@ class BatchCaption(QtWidgets.QWidget):
     def startStop(self):
         if self._task:
             self._task.abort()
-        else:
-            self.btnStart.setText("Abort")
+            return
 
-            self._task = BatchCaptionTask(self.log, self.tab.filelist)
-            self._task.signals.progress.connect(self.onProgress)
-            self._task.signals.progressMessage.connect(self.onProgressMessage)
-            self._task.signals.done.connect(self.onFinished)
-            self._task.signals.fail.connect(self.onFail)
+        self.btnStart.setText("Abort")
 
-            if self.captionGroup.isChecked():
-                storeName = self.txtTargetName.text().strip()
-                rounds = self.spinRounds.value()
-                self._task.prompts = self.promptWidget.getParsedPrompts(storeName, rounds)
+        self._task = BatchCaptionTask(self.log, self.tab.filelist)
 
-                self._task.systemPrompt = self.promptWidget.systemPrompt.strip()
-                self._task.config = self.inferSettings.getInferenceConfig()
-                self._task.overwriteMode = self.cboOverwriteMode.currentData()
-                self._task.storePrompts = self.chkStorePrompts.isChecked()
+        if self.captionGroup.isChecked():
+            storeName = self.txtTargetName.text().strip()
+            rounds = self.spinRounds.value()
+            self._task.prompts = self.promptWidget.getParsedPrompts(storeName, rounds)
 
-            if self.tagGroup.isChecked():
-                self._task.tagConfig = self.tagSettings.getInferenceConfig()
-                self._task.tagName = self.txtTagTargetName.text().strip()
-                self._task.tagSkipExisting = self.chkTagSkipExisting.isChecked()
+            self._task.systemPrompt = self.promptWidget.systemPrompt.strip()
+            self._task.config = self.inferSettings.getInferenceConfig()
+            self._task.overwriteMode = self.cboOverwriteMode.currentData()
+            self._task.storePrompts = self.chkStorePrompts.isChecked()
 
-            Inference().queueTask(self._task)
+        if self.tagGroup.isChecked():
+            self._task.tagConfig = self.tagSettings.getInferenceConfig()
+            self._task.tagName = self.txtTagTargetName.text().strip()
+            self._task.tagSkipExisting = self.chkTagSkipExisting.isChecked()
 
-    @Slot()
-    def onFinished(self, numFiles):
-        self.statusBar.showColoredMessage(f"Processed {numFiles} files", True, 0)
-        self.taskDone()
+        self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
+        self._taskSignalHandler.finished.connect(self.taskDone)
+        Inference().queueTask(self._task)
 
     @Slot()
-    def onFail(self, reason):
-        self.statusBar.showColoredMessage(reason, False, 0)
-        self.taskDone()
-
-    @Slot()
-    def onProgress(self, numDone, numTotal, jsonFile):
-        self.progressBar.setRange(0, numTotal)
-        self.progressBar.setValue(numDone)
-
-        if jsonFile:
-            self.statusBar.showMessage("Wrote " + jsonFile)
-
-    @Slot()
-    def onProgressMessage(self, message):
-        self.statusBar.showMessage(message)
-
     def taskDone(self):
         self.btnStart.setText("Start Batch Caption")
-        self.progressBar.setRange(0, 1)
-        self.progressBar.reset()
         self._task = None
+        self._taskSignalHandler = None
 
 
 

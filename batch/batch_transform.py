@@ -5,7 +5,7 @@ from infer import Inference, InferencePresetWidget, PromptWidget, PromptsHighlig
 from lib import qtlib
 from lib.captionfile import CaptionFile
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
-from .batch_task import BatchTask
+from .batch_task import BatchTask, BatchSignalHandler
 
 
 class BatchTransform(QtWidgets.QWidget):
@@ -28,7 +28,9 @@ class BatchTransform(QtWidgets.QWidget):
 
         self._parser = None
         self._highlighter = VariableHighlighter()
+
         self._task = None
+        self._taskSignalHandler = None
 
 
     def _buildLLMSettings(self):
@@ -129,56 +131,32 @@ class BatchTransform(QtWidgets.QWidget):
     def startStop(self):
         if self._task:
             self._task.abort()
-        else:
-            self.btnStart.setText("Abort")
+            return
 
-            storeName = self.txtTargetName.text().strip()
-            rounds = self.spinRounds.value()
-            prompts = self.promptWidget.getParsedPrompts(storeName, rounds)
-            
-            self._task = BatchTransformTask(self.log, self.tab.filelist)
-            self._task.prompts = prompts
-            self._task.systemPrompt = self.promptWidget.systemPrompt.strip()
-            self._task.config = self.inferSettings.getInferenceConfig()
+        self.btnStart.setText("Abort")
 
-            self._task.overwriteMode = self.cboOverwriteMode.currentData()
-            self._task.storePrompts  = self.chkStorePrompts.isChecked()
-            self._task.stripAround   = self.chkStripAround.isChecked()
-            self._task.stripMulti    = self.chkStripMulti.isChecked()
+        storeName = self.txtTargetName.text().strip()
+        rounds = self.spinRounds.value()
+        prompts = self.promptWidget.getParsedPrompts(storeName, rounds)
+        
+        self._task = BatchTransformTask(self.log, self.tab.filelist)
+        self._task.prompts = prompts
+        self._task.systemPrompt = self.promptWidget.systemPrompt.strip()
+        self._task.config = self.inferSettings.getInferenceConfig()
 
-            self._task.signals.progress.connect(self.onProgress)
-            self._task.signals.progressMessage.connect(self.onProgressMessage)
-            self._task.signals.done.connect(self.onFinished)
-            self._task.signals.fail.connect(self.onFail)
-            Inference().queueTask(self._task)
+        self._task.overwriteMode = self.cboOverwriteMode.currentData()
+        self._task.storePrompts  = self.chkStorePrompts.isChecked()
+        self._task.stripAround   = self.chkStripAround.isChecked()
+        self._task.stripMulti    = self.chkStripMulti.isChecked()
 
-    @Slot()
-    def onFinished(self, numFiles):
-        self.statusBar.showColoredMessage(f"Processed {numFiles} files", True, 0)
-        self.taskDone()
-
-    @Slot()
-    def onFail(self, reason):
-        self.statusBar.showColoredMessage(reason, False, 0)
-        self.taskDone()
-
-    @Slot()
-    def onProgress(self, numDone, numTotal, jsonFile):
-        self.progressBar.setRange(0, numTotal)
-        self.progressBar.setValue(numDone)
-
-        if jsonFile:
-            self.statusBar.showMessage("Wrote " + jsonFile)
-
-    @Slot()
-    def onProgressMessage(self, message):
-        self.statusBar.showMessage(message)
+        self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
+        self._taskSignalHandler.finished.connect(self.taskDone)
+        Inference().queueTask(self._task)
 
     def taskDone(self):
         self.btnStart.setText("Start Batch Caption")
-        self.progressBar.setRange(0, 1)
-        self.progressBar.reset()
         self._task = None
+        self._taskSignalHandler = None
 
 
 

@@ -4,7 +4,7 @@ from PIL import Image
 from config import Config
 from lib import qtlib
 from infer import Inference
-from .batch_task import BatchTask
+from .batch_task import BatchTask, BatchSignalHandler
 import tools.scale as scale
 import ui.export_settings as export
 
@@ -42,6 +42,8 @@ class BatchScale(QtWidgets.QWidget):
         self.pathSettings.overwriteFiles = config.get("overwrite", False)
 
         self._task = None
+        self._taskSignalHandler = None
+
         self._build()
 
     def _build(self):
@@ -186,49 +188,25 @@ class BatchScale(QtWidgets.QWidget):
     def startStop(self):
         if self._task:
             self._task.abort()
-        else:
-            self.saveExportPreset()
-            self.btnStart.setText("Abort")
+            return
 
-            scaleFunc = self.selectedScaleMode.getScaleFunc()
-            self._task = BatchScaleTask(self.log, self.tab.filelist, scaleFunc, self.pathSettings)
-            self._task.interpUp   = INTERP_MODES[ self.cboInterpUp.currentText() ]
-            self._task.interpDown = INTERP_MODES[ self.cboInterpDown.currentText() ]
-            self._task.format     = export.FORMATS[ self.cboFormat.currentText() ]
+        self.saveExportPreset()
+        self.btnStart.setText("Abort")
 
-            self._task.signals.progress.connect(self.onProgress)
-            self._task.signals.progressMessage.connect(self.onProgressMessage)
-            self._task.signals.done.connect(self.onFinished)
-            self._task.signals.fail.connect(self.onFail)
-            Inference().queueTask(self._task)
+        scaleFunc = self.selectedScaleMode.getScaleFunc()
+        self._task = BatchScaleTask(self.log, self.tab.filelist, scaleFunc, self.pathSettings)
+        self._task.interpUp   = INTERP_MODES[ self.cboInterpUp.currentText() ]
+        self._task.interpDown = INTERP_MODES[ self.cboInterpDown.currentText() ]
+        self._task.format     = export.FORMATS[ self.cboFormat.currentText() ]
 
-    @Slot()
-    def onFinished(self, numFiles):
-        self.statusBar.showColoredMessage(f"Processed {numFiles} files", True, 0)
-        self.taskDone()
-
-    @Slot()
-    def onFail(self, reason):
-        self.statusBar.showColoredMessage(reason, False, 0)
-        self.taskDone()
-
-    @Slot()
-    def onProgress(self, numDone, numTotal, imgFile):
-        self.progressBar.setRange(0, numTotal)
-        self.progressBar.setValue(numDone)
-
-        if imgFile:
-            self.statusBar.showMessage("Wrote " + imgFile)
-
-    @Slot()
-    def onProgressMessage(self, message):
-        self.statusBar.showMessage(message)
+        self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
+        self._taskSignalHandler.finished.connect(self.taskDone)
+        Inference().queueTask(self._task)
 
     def taskDone(self):
         self.btnStart.setText("Start Batch Scale")
-        self.progressBar.setRange(0, 1)
-        self.progressBar.reset()
         self._task = None
+        self._taskSignalHandler = None
 
 
 
