@@ -34,6 +34,10 @@ class CompareTool(ViewTool):
         imgview.scene().removeItem(self._image)
         imgview._guiScene.removeItem(self._dividerLine)
 
+    def onSceneUpdate(self):
+        super().onSceneUpdate()
+        self._imgview.updateImageSmoothness(self._image)
+
 
     def getDropRects(self):
         return [QRectF(0, 0, 0.5, 1), QRectF(0.5, 0, 1, 1)]
@@ -59,8 +63,9 @@ class CompareTool(ViewTool):
 
     def onMouseMove(self, event):
         super().onMouseMove(event)
-        imgpos = self.mapPosToImage(event.position())
-        self._image.setClipWidth(imgpos.x())
+        scenePos = self._imgview.mapToScene(event.position().toPoint())
+        imgPos = self._image.mapFromParent(scenePos)
+        self._image.setClipWidth(imgPos.x())
 
         x = event.position().x()
         h = self._imgview.viewport().height()
@@ -82,7 +87,7 @@ class ClipImgItem(ImgItem):
         w = self.pixmap().width()
         h = self.pixmap().height()
         self._clipPath.clear()
-        self._clipPath.addRect(x, 0, w-x, h)
+        self._clipPath.addRect(x, 0, w-x+1, h)
         self.update()
     
     def setClipEmpty(self):
