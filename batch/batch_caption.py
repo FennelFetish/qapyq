@@ -1,13 +1,12 @@
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, QSignalBlocker
 from lib import qtlib
 from lib.captionfile import CaptionFile
 from config import Config
-from infer import Inference, InferencePresetWidget, TagPresetWidget, PromptWidget
+from infer import Inference, InferencePresetWidget, TagPresetWidget, PromptWidget, PromptsHighlighter
+from lib.template_parser import TemplateVariableParser, VariableHighlighter
 from .batch_task import BatchTask, BatchSignalHandler
 
-
-# TODO: Loading of variables
 
 class BatchCaption(QtWidgets.QWidget):
     def __init__(self, tab, logSlot, progressBar, statusBar):
@@ -32,13 +31,16 @@ class BatchCaption(QtWidgets.QWidget):
         layout.addWidget(self.btnStart)
         self.setLayout(layout)
 
+        self._parser = None
+        self._highlighter = VariableHighlighter()
+
         self._task = None
         self._taskSignalHandler = None
 
 
     def _buildCaptionSettings(self):
         layout = QtWidgets.QGridLayout()
-        layout.setAlignment(Qt.AlignTop)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 0)
@@ -50,9 +52,35 @@ class BatchCaption(QtWidgets.QWidget):
         self.promptWidget.enableHighlighting()
         qtlib.setTextEditHeight(self.promptWidget.txtSystemPrompt, 5, "min")
         qtlib.setTextEditHeight(self.promptWidget.txtPrompts, 10, "min")
+        self.promptWidget.lblPrompts.setText("Prompt(s) Template:")
+        self.promptWidget.txtPrompts.textChanged.connect(self._updatePreview)
         self.promptWidget.layout().setRowStretch(1, 1)
-        self.promptWidget.layout().setRowStretch(2, 6)
+        self.promptWidget.layout().setRowStretch(2, 2)
         layout.addWidget(self.promptWidget, row, 0, 1, 4)
+        layout.setRowStretch(row, 3)
+
+        row += 1
+        self.txtPromptPreview = QtWidgets.QPlainTextEdit()
+        self.txtPromptPreview.setReadOnly(True)
+        qtlib.setMonospace(self.txtPromptPreview)
+        qtlib.setTextEditHeight(self.txtPromptPreview, 5, "min")
+        qtlib.setShowWhitespace(self.txtPromptPreview)
+        layout.addWidget(QtWidgets.QLabel("Prompt(s) Preview:"), row, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.txtPromptPreview, row, 1, 1, 3)
+        layout.setRowStretch(row, 4)
+
+        row += 1
+        self.chkStripAround = QtWidgets.QCheckBox("Surrounding whitespace")
+        self.chkStripAround.setChecked(True)
+        self.chkStripAround.checkStateChanged.connect(self._updateParser)
+
+        self.chkStripMulti = QtWidgets.QCheckBox("Repeating whitespace")
+        self.chkStripMulti.setChecked(False)
+        self.chkStripMulti.checkStateChanged.connect(self._updateParser)
+
+        layout.addWidget(QtWidgets.QLabel("Strip:"), row, 0)
+        layout.addWidget(self.chkStripAround, row, 1)
+        layout.addWidget(self.chkStripMulti, row, 2)
 
         row += 1
         self.txtTargetName = QtWidgets.QLineEdit("caption")
@@ -87,7 +115,7 @@ class BatchCaption(QtWidgets.QWidget):
 
     def _buildTagSettings(self):
         layout = QtWidgets.QGridLayout()
-        layout.setAlignment(Qt.AlignTop)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 0)
@@ -112,6 +140,28 @@ class BatchCaption(QtWidgets.QWidget):
         return groupBox
 
 
+    def onFileChanged(self, currentFile):
+        self._parser = TemplateVariableParser(currentFile)
+        self._updateParser()
+
+    def _updateParser(self):
+        if self._parser:
+            self._parser.stripAround = self.chkStripAround.isChecked()
+            self._parser.stripMultiWhitespace = self.chkStripMulti.isChecked()
+            self._updatePreview()
+
+
+    def _updatePreview(self):
+        text = self.promptWidget.prompts
+        preview, varPositions = self._parser.parseWithPositions(text)
+        self.txtPromptPreview.setPlainText(preview)
+
+        with QSignalBlocker(self.promptWidget.txtPrompts):
+            self._highlighter.highlight(self.promptWidget.txtPrompts, self.txtPromptPreview, varPositions)
+            PromptsHighlighter.highlightPromptSeparators(self.promptWidget.txtPrompts)
+            PromptsHighlighter.highlightPromptSeparators(self.txtPromptPreview)
+
+
     @Slot()
     def startStop(self):
         if self._task:
@@ -127,10 +177,12 @@ class BatchCaption(QtWidgets.QWidget):
             rounds = self.spinRounds.value()
             self._task.prompts = self.promptWidget.getParsedPrompts(storeName, rounds)
 
-            self._task.systemPrompt = self.promptWidget.systemPrompt.strip()
-            self._task.config = self.inferSettings.getInferenceConfig()
+            self._task.systemPrompt  = self.promptWidget.systemPrompt.strip()
+            self._task.config        = self.inferSettings.getInferenceConfig()
             self._task.overwriteMode = self.cboOverwriteMode.currentData()
-            self._task.storePrompts = self.chkStorePrompts.isChecked()
+            self._task.storePrompts  = self.chkStorePrompts.isChecked()
+            self._task.stripAround   = self.chkStripAround.isChecked()
+            self._task.stripMulti    = self.chkStripMulti.isChecked()
 
         if self.tagGroup.isChecked():
             self._task.tagConfig = self.tagSettings.getInferenceConfig()
@@ -157,6 +209,8 @@ class BatchCaptionTask(BatchTask):
         self.config       = None
         self.overwriteMode = "all"
         self.storePrompts: bool = False
+        self.stripAround  = True
+        self.stripMulti   = False
 
         self.tagConfig    = None
         self.tagName      = None
@@ -165,6 +219,7 @@ class BatchCaptionTask(BatchTask):
         self.doCaption = False
         self.doTag     = False
         self.inferProc = None
+        self.varParser = None
         self.writeKeys = None
 
 
@@ -179,6 +234,10 @@ class BatchCaptionTask(BatchTask):
             self.signals.progressMessage.emit("Loading caption model ...")
             self.inferProc.setupCaption(self.config)
             self.writeKeys = {k for conv in self.prompts for k in conv.keys() if not k.startswith('?')}
+
+            self.varParser = TemplateVariableParser()
+            self.varParser.stripAround = self.stripAround
+            self.varParser.stripMultiWhitespace = self.stripMulti
 
         if self.doTag:
             self.signals.progressMessage.emit("Loading tag model ...")
@@ -214,7 +273,8 @@ class BatchCaptionTask(BatchTask):
         if not writeKeys:
             return False
 
-        answers = self.inferProc.caption(imgFile, self.prompts, self.systemPrompt)
+        prompts = self.parsePrompts(imgFile, captionFile)
+        answers = self.inferProc.caption(imgFile, prompts, self.systemPrompt)
         if not answers:
             self.log(f"WARNING: No captions returned for {imgFile}")
             return False
@@ -231,7 +291,7 @@ class BatchCaptionTask(BatchTask):
             changed = True
 
             if self.storePrompts:
-                prompt = next((conv[name] for conv in self.prompts if name in conv), None)
+                prompt = next((conv[name] for conv in prompts if name in conv), None)
                 captionFile.addPrompt(name, prompt)
         
         return changed
@@ -248,3 +308,18 @@ class BatchCaptionTask(BatchTask):
         else:
             self.log(f"WARNING: No tags returned for {imgFile}, ignoring")
             return False
+
+
+    def parsePrompts(self, imgFile: str, captionFile: CaptionFile) -> list:
+        self.varParser.setup(imgFile, captionFile)
+
+        prompts = list()
+        missingVars = list()
+        for conv in self.prompts:
+            prompts.append( {name: self.varParser.parse(prompt) for name, prompt in conv.items()} )
+            missingVars.extend(self.varParser.missingVars)
+
+        if missingVars:
+            self.log(f"WARNING: {captionFile.jsonPath} is missing values for variables: {', '.join(missingVars)}")
+
+        return prompts
