@@ -1,11 +1,10 @@
-
 from typing_extensions import override
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
 from lib.captionfile import FileTypeSelector
 from ui.tab import ImgTab
 from caption.caption_container import CaptionContainer
-from .stats_base import StatsBaseLayout
+from .stats_base import StatsLayout, StatsBaseProxyModel
 
 
 # TODO: CSV Export
@@ -17,10 +16,13 @@ class TagStats(QtWidgets.QWidget):
         self.tab = tab
 
         self.model = TagModel()
-        self.table = TagTableView(self.tab)
-        self.table.setModel(self.model)
+        self.proxyModel = TagProxyModel()
+        self.proxyModel.setSourceModel(self.model)
 
-        self._layout = TagLayout(tab, self.model, self.table, 1)
+        self.table = TagTableView(self.tab)
+        self.table.setModel(self.proxyModel)
+
+        self._layout = StatsLayout(tab, "Tags", self.proxyModel, self.table, 1)
         self._layout.addLayout(self._buildSourceSelector(), 0, 0, 1, 3)
         self._layout.addWidget(self._buildStats(), 1, 0)
         self.setLayout(self._layout)
@@ -28,19 +30,19 @@ class TagStats(QtWidgets.QWidget):
     def _buildSourceSelector(self):
         self.captionSrc = FileTypeSelector()
         self.captionSrc.cboType.setCurrentIndex(1) # Tags
-
-        btnReloadCaptions = QtWidgets.QPushButton("Reload")
-        btnReloadCaptions.clicked.connect(self.reload)
         
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(QtWidgets.QLabel("Load From:"))
         layout.addLayout(self.captionSrc)
-        layout.addWidget(btnReloadCaptions)
         return layout
 
     def _buildStats(self):
         layout = QtWidgets.QFormLayout()
         layout.setHorizontalSpacing(12)
+
+        btnReloadCaptions = QtWidgets.QPushButton("Reload")
+        btnReloadCaptions.clicked.connect(self.reload)
+        layout.addRow(btnReloadCaptions)
 
         self.lblNumFiles = QtWidgets.QLabel("0")
         layout.addRow("Tagged Files:", self.lblNumFiles)
@@ -66,10 +68,7 @@ class TagStats(QtWidgets.QWidget):
     def reload(self):
         self.model.reload(self.tab.filelist.getFiles(), self.captionSrc)
         self.table.sortByColumn(1, Qt.SortOrder.AscendingOrder)
-        self.table.resizeColumnToContents(0)
-        self.table.resizeColumnToContents(1)
-
-        #self.table.selectionModel().clear() # TODO <<<
+        self.table.resizeColumnsToContents()
 
         summary = self.model.summary
         self.lblNumFiles.setText(str(summary.numFiles))
@@ -81,7 +80,8 @@ class TagStats(QtWidgets.QWidget):
 
 
 class TagData:
-    def __init__(self):
+    def __init__(self, tag: str):
+        self.tag = tag
         self.count = 0
         self.files: set[str] = set()
 
@@ -122,17 +122,16 @@ class TagModel(QAbstractItemModel):
         super().__init__()
         self.separator = ","
 
-        self.tagData: dict[str, TagData] = dict()
-        self.tagOrder: list[str] = list()
+        self.tags: list[TagData] = list()
         self.summary = TagSummary()
 
     def reload(self, files: list[str], captionSrc: FileTypeSelector):
         self.beginResetModel()
 
-        self.tagData.clear()
-        self.tagOrder.clear()
+        self.tags.clear()
         self.summary.reset()
 
+        tagData: dict[str, TagData] = dict()
         for file in files:
             caption = captionSrc.loadCaption(file)
             if not caption:
@@ -144,42 +143,42 @@ class TagModel(QAbstractItemModel):
             self.summary.addFile(tags)
 
             for tag in tags:
-                data = self.tagData.get(tag)
+                data = tagData.get(tag)
                 if not data:
-                    self.tagData[tag] = data = TagData()
+                    tagData[tag] = data = TagData(tag)
                 data.addFile(file)
         
-        self.tagOrder.extend(tag for tag in self.tagData.keys())
+        self.tags.extend(tagData.values())
         self.endResetModel()
 
-        self.summary.uniqueTags = len(self.tagOrder)
+        self.summary.uniqueTags = len(self.tags)
 
 
     # QAbstractItemModel Interface
 
     def rowCount(self, parent=QModelIndex()):
-        return len(self.tagOrder)
+        return len(self.tags)
 
     def columnCount(self, parent=QModelIndex()):
         return 3
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
-        tag = self.tagOrder[index.row()]
+        tagData: TagData = self.tags[index.row()]
 
         if role == Qt.ItemDataRole.DisplayRole:
             match index.column():
-                case 0: return tag
-                case 1: return self.tagData[tag].count
+                case 0: return tagData.tag
+                case 1: return tagData.count
                 case 2:
                     presence = 0
                     if self.summary.numFiles > 0:
-                        presence = len(self.tagData[tag].files) / self.summary.numFiles
+                        presence = len(tagData.files) / self.summary.numFiles
                     return f"{presence*100:.2f} %"
 
         elif role == self.ROLE_TAG:
-            return tag
+            return tagData.tag
         elif role == self.ROLE_DATA:
-            return self.tagData[tag]
+            return tagData
 
         return None
 
@@ -199,22 +198,27 @@ class TagModel(QAbstractItemModel):
     def parent(self, index):
         return QModelIndex()
 
-    def sort(self, column: int, order=Qt.SortOrder.AscendingOrder) -> None:
-        defaultOrder = Qt.SortOrder.DescendingOrder
-        match column:
-            case 0:
-                sortFunc = lambda tag: tag
-                defaultOrder = Qt.SortOrder.AscendingOrder
-            case 1:
-                sortFunc = lambda tag: self.tagData[tag].count
-            case 2:
-                sortFunc = lambda tag: len(self.tagData[tag].files)
 
-        reversed = (order != defaultOrder)
+class TagProxyModel(StatsBaseProxyModel):
+    def __init__(self):
+        super().__init__()
+        self.setFilterKeyColumn(0)
 
-        self.layoutAboutToBeChanged.emit()
-        self.tagOrder.sort(reverse=reversed, key=sortFunc)
-        self.layoutChanged.emit()
+    @override
+    def getFiles(self, sourceIndex: QModelIndex) -> set[str]:
+        data: TagData = self.sourceModel().data(sourceIndex, TagModel.ROLE_DATA)
+        return data.files
+
+    def lessThan(self, left: QModelIndex, right: QModelIndex) -> bool:
+        column = left.column()
+        if column == right.column():
+            dataLeft: TagData  = self.sourceModel().data(left, TagModel.ROLE_DATA)
+            dataRight: TagData = self.sourceModel().data(right, TagModel.ROLE_DATA)
+            match column:
+                case 1: return dataRight.count < dataLeft.count
+                case 2: return len(dataRight.files) < len(dataLeft.files)
+        
+        return super().lessThan(left, right)
 
 
 
@@ -265,14 +269,3 @@ class TagTableView(QtWidgets.QTableView):
         if captionWin := self.getCaptionWindow():
             tag = self.model().data(self._index, TagModel.ROLE_TAG)
             captionWin.ctx.settings.addBannedCaption(tag)
-
-
-
-class TagLayout(StatsBaseLayout):
-    def __init__(self, tab: ImgTab, model, tableView, row=0):
-        super().__init__(tab, "Tags", model, tableView, row)
-    
-    @override
-    def getFiles(self, index: QModelIndex) -> list[str]:
-        data = self.model.data(index, TagModel.ROLE_DATA)
-        return data.files

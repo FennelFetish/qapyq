@@ -1,10 +1,9 @@
-
 from typing_extensions import override
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
 from PySide6.QtGui import QImageReader
 from ui.tab import ImgTab
-from .stats_base import StatsBaseLayout
+from .stats_base import StatsLayout, StatsBaseProxyModel
 
 
 class ImageSizeStats(QtWidgets.QWidget):
@@ -13,10 +12,13 @@ class ImageSizeStats(QtWidgets.QWidget):
         self.tab = tab
 
         self.model = SizeBucketModel()
-        self.table = QtWidgets.QTableView(self.tab)
-        self.table.setModel(self.model)
+        self.proxyModel = SizeBucketProxyModel()
+        self.proxyModel.setSourceModel(self.model)
 
-        self._layout = SizeBucketLayout(tab, self.model, self.table)
+        self.table = QtWidgets.QTableView(self.tab)
+        self.table.setModel(self.proxyModel)
+
+        self._layout = StatsLayout(tab, "Size Buckets", self.proxyModel, self.table)
         self._layout.addWidget(self._buildStats(), 0, 0)
         self.setLayout(self._layout)
 
@@ -33,7 +35,7 @@ class ImageSizeStats(QtWidgets.QWidget):
         layout.addRow("Images:", self.lblNumFiles)
 
         self.lblNumBuckets = QtWidgets.QLabel("0")
-        layout.addRow("Bucket Count:", self.lblNumBuckets)
+        layout.addRow("Size Buckets:", self.lblNumBuckets)
 
         self.lblWidth = QtWidgets.QLabel("0")
         layout.addRow("Width:", self.lblWidth)
@@ -53,10 +55,7 @@ class ImageSizeStats(QtWidgets.QWidget):
     def reload(self):
         self.model.reload(self.tab.filelist.getFiles())
         self.table.sortByColumn(3, Qt.SortOrder.AscendingOrder)
-        self.table.resizeColumnToContents(0)
-        self.table.resizeColumnToContents(1)
-        self.table.resizeColumnToContents(2)
-        self.table.resizeColumnToContents(3)
+        self.table.resizeColumnsToContents()
 
         summary = self.model.summary
         self.lblNumFiles.setText(str(summary.numFiles))
@@ -68,8 +67,11 @@ class ImageSizeStats(QtWidgets.QWidget):
 
 class SizeBucketData:
     def __init__(self, size: tuple[int, int]):
-        self.pixels = size[0] * size[1] / 1000000
-        self.count = 0
+        self.width  = size[0]
+        self.height = size[1]
+
+        self.pixels = self.width * self.height / 1000000
+        self.count  = 0
         self.files: set[str] = set()
 
     def addFile(self, file: str):
@@ -114,17 +116,15 @@ class SizeBucketModel(QAbstractItemModel):
     def __init__(self):
         super().__init__()
 
-        self.buckets: dict[tuple[int, int], SizeBucketData] = dict()
-        self.bucketOrder: list[tuple[int, int]] = list()
+        self.buckets: list[SizeBucketData] = list()
         self.summary = SizeBucketSummary()
-
 
     def reload(self, files: list[str]):
         self.beginResetModel()
 
         self.buckets.clear()
-        self.bucketOrder.clear()
         self.summary.reset()
+        buckets: dict[tuple[int, int], SizeBucketData] = dict()
 
         reader = QImageReader()
         for file in files:
@@ -133,15 +133,15 @@ class SizeBucketModel(QAbstractItemModel):
             size = (size.width(), size.height())
 
             self.summary.addFile(size)
-            bucket = self.buckets.get(size)
+            bucket = buckets.get(size)
             if not bucket:
-                self.buckets[size] = bucket = SizeBucketData(size)
+                buckets[size] = bucket = SizeBucketData(size)
             bucket.addFile(file)
 
-        self.bucketOrder.extend(bucket for bucket in self.buckets.keys())
+        self.buckets.extend(buckets.values())
         self.endResetModel()
 
-        self.summary.numBuckets = len(self.bucketOrder)
+        self.summary.numBuckets = len(self.buckets)
 
 
     # QAbstractItemModel Interface
@@ -153,22 +153,22 @@ class SizeBucketModel(QAbstractItemModel):
         return 5
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
-        size = self.bucketOrder[index.row()]
+        bucketData = self.buckets[index.row()]
 
         if role == Qt.ItemDataRole.DisplayRole:
             match index.column():
-                case 0: return size[0]
-                case 1: return size[1]
-                case 2: return f"{self.buckets[size].pixels:.2f}"
-                case 3: return self.buckets[size].count
+                case 0: return bucketData.width
+                case 1: return bucketData.height
+                case 2: return f"{bucketData.pixels:.2f}"
+                case 3: return bucketData.count
                 case 4:
                     presence = 0
                     if self.summary.numFiles > 0:
-                        presence = len(self.buckets[size].files) / self.summary.numFiles
+                        presence = len(bucketData.files) / self.summary.numFiles
                     return f"{presence*100:.2f} %"
 
         elif role == self.ROLE_DATA:
-            return self.buckets[size]
+            return bucketData
 
         return None
 
@@ -190,27 +190,31 @@ class SizeBucketModel(QAbstractItemModel):
     def parent(self, index):
         return QModelIndex()
 
-    def sort(self, column: int, order=Qt.SortOrder.AscendingOrder) -> None:
-        defaultOrder = Qt.SortOrder.DescendingOrder
-        match column:
-            case 0: sortFunc = lambda size: size[0]
-            case 1: sortFunc = lambda size: size[1]
-            case 2: sortFunc = lambda size: self.buckets[size].pixels
-            case 3 | 4: sortFunc = lambda size: self.buckets[size].count
 
-        reversed = (order != defaultOrder)
+class SizeBucketProxyModel(StatsBaseProxyModel):
+    def __init__(self):
+        super().__init__()
 
-        self.layoutAboutToBeChanged.emit()
-        self.bucketOrder.sort(reverse=reversed, key=sortFunc)
-        self.layoutChanged.emit()
-
-
-
-class SizeBucketLayout(StatsBaseLayout):
-    def __init__(self, tab: ImgTab, model, tableView, row=0):
-        super().__init__(tab, "Size Buckets", model, tableView, row)
-    
     @override
-    def getFiles(self, index: QModelIndex) -> list[str]:
-        data = self.model.data(index, SizeBucketModel.ROLE_DATA)
+    def getFiles(self, sourceIndex: QModelIndex) -> set[str]:
+        data: SizeBucketData = self.sourceModel().data(sourceIndex, SizeBucketModel.ROLE_DATA)
         return data.files
+    
+    def lessThan(self, left: QModelIndex, right: QModelIndex) -> bool:
+        column = left.column()
+        if column == right.column():
+            dataLeft: SizeBucketData  = self.sourceModel().data(left, SizeBucketModel.ROLE_DATA)
+            dataRight: SizeBucketData = self.sourceModel().data(right, SizeBucketModel.ROLE_DATA)
+            match column:
+                case 0 | 1 | 3: return super().lessThan(right, left) # Reversed
+                case 2: return dataRight.pixels < dataLeft.pixels
+                case 4: return dataRight.count < dataLeft.count
+        
+        return super().lessThan(left, right)
+
+    def filterAcceptsRow(self, sourceRow: int, sourceParent: QModelIndex) -> bool:
+        index = self.sourceModel().index(sourceRow, 0, sourceParent)
+        bucketData = self.sourceModel().data(index, SizeBucketModel.ROLE_DATA)
+        sizeString = f"{bucketData.width}x{bucketData.height}"
+        filter = self.filterRegularExpression()
+        return filter.match(sizeString).hasMatch()

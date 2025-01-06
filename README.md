@@ -128,7 +128,7 @@ How to use: [User Guide](https://github.com/FennelFetish/qapyq/wiki/User-Guide)
 ## Planned Features
 - [x] Natural sorting of files
 - [x] Gallery list view with captions
-- [ ] Summary and stats of captions and tags
+- [x] Summary and stats of captions and tags
 - [ ] Shortcuts and improved ease-of-use
 - [x] AI-assisted mask editing
 - [ ] Auto-caption after crop
