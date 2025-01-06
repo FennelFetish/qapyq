@@ -44,7 +44,7 @@ def fileFilter(path) -> bool:
 
 class FileList:
     def __init__(self):
-        self.files = []
+        self.files: list[str] = []
         self.fileData = dict()
         self.currentFile = ""
         self.currentIndex = -1  # Index < 0 means: File set, but folder not yet scanned

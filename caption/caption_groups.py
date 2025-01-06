@@ -26,6 +26,7 @@ class CaptionGroups(QtWidgets.QWidget):
 
     def _build(self):
         layout = QtWidgets.QGridLayout()
+        layout.setAlignment(Qt.AlignmentFlag.AlignBottom)
         layout.setSpacing(0)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setColumnStretch(0, 0)

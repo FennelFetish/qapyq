@@ -122,7 +122,7 @@ class CaptionSettings(QtWidgets.QWidget):
         btnAddBanned = QtWidgets.QPushButton("Ban")
         btnAddBanned.setFixedWidth(50)
         btnAddBanned.setFocusPolicy(Qt.NoFocus)
-        btnAddBanned.clicked.connect(self.addBanned)
+        btnAddBanned.clicked.connect(self.banSelectedCaption)
         layout.addWidget(btnAddBanned, row, 3)
         
         row += 1
@@ -181,14 +181,21 @@ class CaptionSettings(QtWidgets.QWidget):
         self.txtBanned.setPlainText( self.bannedSeparator.join(bannedCaptions) )
 
 
-    @Slot()
-    def addBanned(self):
-        caption = self.ctx.getSelectedCaption()
+    def addBannedCaption(self, caption: str):
+        if not caption:
+            return
+
         text = self.txtBanned.toPlainText()
         if text:
             text += self.bannedSeparator
         text += caption
         self.txtBanned.setPlainText(text)
+
+    @Slot()
+    def banSelectedCaption(self):
+        caption = self.ctx.getSelectedCaption()
+        self.addBannedCaption(caption)
+
     
     def getPreset(self):
         preset = CaptionPreset()

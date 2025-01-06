@@ -126,6 +126,9 @@ class MainWindow(QtWidgets.QMainWindow):
             case "gallery":
                 from gallery import Gallery
                 return Gallery
+            case "stats":
+                from stats.stats_container import StatsContainer
+                return StatsContainer
             case "batch":
                 from batch.batch_container import BatchContainer
                 return BatchContainer
@@ -328,6 +331,7 @@ class MainToolBar(QtWidgets.QToolBar):
 
         self.windowToggles: dict[str, QtGui.QAction] = dict()
         self.addWindowToggle("gallery", mainWindow)
+        self.addWindowToggle("stats", mainWindow)
         self.addWindowToggle("batch", mainWindow)
         self.addWindowToggle("caption", mainWindow)
 
