@@ -107,7 +107,12 @@ class TagSummary:
         self.minNumTags = min(self.minNumTags, numTags)
         self.maxNumTags = max(self.maxNumTags, numTags)
         self.numFiles += 1
-    
+
+    def finalize(self, numUniqueTags: int):
+        self.uniqueTags = numUniqueTags
+        if self.numFiles == 0:
+            self.minNumTags = 0
+
     def getAvgNumTags(self):
         if self.numFiles == 0:
             return 0.0
@@ -151,8 +156,7 @@ class TagModel(QAbstractItemModel):
         
         self.tags.extend(tagData.values())
         self.endResetModel()
-
-        self.summary.uniqueTags = len(self.tags)
+        self.summary.finalize(len(self.tags))
 
 
     # QAbstractItemModel Interface

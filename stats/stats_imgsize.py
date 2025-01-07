@@ -108,6 +108,13 @@ class SizeBucketSummary:
         self.maxPixels = max(self.maxPixels, pixels)
 
         self.numFiles += 1
+    
+    def finalize(self, numBuckets: int):
+        self.numBuckets = numBuckets
+        if self.numFiles == 0:
+            self.minWidth  = 0
+            self.minHeight = 0
+            self.minPixels = 0
 
 
 class SizeBucketModel(QAbstractItemModel):
@@ -141,8 +148,7 @@ class SizeBucketModel(QAbstractItemModel):
 
         self.buckets.extend(buckets.values())
         self.endResetModel()
-
-        self.summary.numBuckets = len(self.buckets)
+        self.summary.finalize(len(self.buckets))
 
 
     # QAbstractItemModel Interface
