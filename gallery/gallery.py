@@ -165,8 +165,8 @@ class Gallery(QtWidgets.QWidget):
         with QSignalBlocker(self.cboFolders):
             self.cboFolders.clear()
             for header in headers:
-                # TODO: Elide long text
-                self.cboFolders.addItem(header.dir, header.row)
+                path = self.tab.filelist.removeCommonRoot(header.dir)
+                self.cboFolders.addItem(path, header.row)
                 self.rowToHeader.append(header.row)
         
         self.updateComboboxFolder(self.scrollArea.verticalScrollBar().value())

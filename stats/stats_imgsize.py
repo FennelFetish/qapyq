@@ -1,5 +1,5 @@
 from typing_extensions import override
-from PySide6 import QtWidgets
+from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
 from PySide6.QtGui import QImageReader
 from ui.tab import ImgTab
@@ -115,6 +115,7 @@ class SizeBucketModel(QAbstractItemModel):
 
     def __init__(self):
         super().__init__()
+        self.font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.SystemFont.FixedFont)
 
         self.buckets: list[SizeBucketData] = list()
         self.summary = SizeBucketSummary()
@@ -155,20 +156,21 @@ class SizeBucketModel(QAbstractItemModel):
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         bucketData = self.buckets[index.row()]
 
-        if role == Qt.ItemDataRole.DisplayRole:
-            match index.column():
-                case 0: return bucketData.width
-                case 1: return bucketData.height
-                case 2: return f"{bucketData.pixels:.2f}"
-                case 3: return bucketData.count
-                case 4:
-                    presence = 0
-                    if self.summary.numFiles > 0:
-                        presence = len(bucketData.files) / self.summary.numFiles
-                    return f"{presence*100:.2f} %"
+        match role:
+            case Qt.ItemDataRole.DisplayRole:
+                match index.column():
+                    case 0: return bucketData.width
+                    case 1: return bucketData.height
+                    case 2: return f"{bucketData.pixels:.2f}"
+                    case 3: return bucketData.count
+                    case 4:
+                        presence = 0
+                        if self.summary.numFiles > 0:
+                            presence = len(bucketData.files) / self.summary.numFiles
+                        return f"{presence*100:.2f} %"
 
-        elif role == self.ROLE_DATA:
-            return bucketData
+            case Qt.ItemDataRole.FontRole: return self.font
+            case self.ROLE_DATA: return bucketData
 
         return None
 

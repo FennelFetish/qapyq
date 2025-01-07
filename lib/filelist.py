@@ -48,6 +48,7 @@ class FileList:
         self.fileData = dict()
         self.currentFile = ""
         self.currentIndex = -1  # Index < 0 means: File set, but folder not yet scanned
+        self.commonRoot = ""
 
         self.listeners = []
         self.dataListeners = []
@@ -62,7 +63,7 @@ class FileList:
             elif fileFilter(path):
                 self.files.append(path)
 
-        self._sortFiles()
+        self._postprocessList()
         numFiles = len(self.files)
         self.currentFile = self.files[0] if numFiles > 0 else ""
         self.currentIndex = 0 if numFiles > 1 else -1
@@ -76,7 +77,7 @@ class FileList:
                 self.files.append(path)
 
         self._removeDuplicates()
-        self._sortFiles()
+        self._postprocessList()
         self.notifyListChanged()
 
     def load(self, path):
@@ -90,13 +91,14 @@ class FileList:
         self.fileData = dict()
         self.currentFile = file
         self.currentIndex = -1
+        self.commonRoot = ""
         self.notifyListChanged()
 
     def loadFolder(self, path, subfolders=False):
         self.files = []
         self.fileData = dict()
         self._walkPath(path, subfolders)
-        self._sortFiles()
+        self._postprocessList()
         self.currentFile = self.files[0] if len(self.files) > 0 else ""
         self.currentIndex = 0
         self.notifyListChanged()
@@ -187,7 +189,7 @@ class FileList:
             path = os.path.dirname(self.currentFile)
             self._walkPath(path, False)
             self._removeDuplicates()
-            self._sortFiles()
+            self._postprocessList()
 
             try:
                 self.currentIndex = self.files.index(self.currentFile)
@@ -205,8 +207,22 @@ class FileList:
     def _removeDuplicates(self):
         self.files = list(set(self.files))
 
-    def _sortFiles(self):
+    def _postprocessList(self):
         self.files.sort(key=sortKey)
+
+        try:
+            self.commonRoot = os.path.commonpath(self.files).rstrip("/")
+        except ValueError:
+            self.commonRoot = ""
+
+
+    def removeCommonRoot(self, path: str) -> str:
+        if not (self.commonRoot and path.startswith(self.commonRoot)):
+            return path
+
+        if path := path[len(self.commonRoot):]:
+            return path.lstrip("/")
+        return "."
 
 
     def addListener(self, listener):

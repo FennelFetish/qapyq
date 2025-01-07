@@ -1,7 +1,8 @@
 from typing import Iterable
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, QSortFilterProxyModel, QModelIndex, QItemSelection, QRegularExpression
+from PySide6.QtCore import Qt, Slot, QSortFilterProxyModel, QModelIndex, QItemSelection, QRegularExpression, QSignalBlocker
 from ui.tab import ImgTab
+import lib.qtlib as qtlib
 from lib.filelist import sortKey
 
 
@@ -60,7 +61,8 @@ class StatsLayout(QtWidgets.QGridLayout):
         layout = QtWidgets.QVBoxLayout()
 
         self.listFiles = QtWidgets.QListWidget()
-        self.listFiles.currentTextChanged.connect(self._onFileSelected)
+        qtlib.setMonospace(self.listFiles)
+        self.listFiles.currentItemChanged.connect(self._onFileSelected)
         layout.addWidget(self.listFiles)
 
         group = QtWidgets.QGroupBox("Files")
@@ -102,12 +104,17 @@ class StatsLayout(QtWidgets.QGridLayout):
 
         files = self.proxyModel.getFiles(index)
         files = sorted(files, key=sortKey)
-        self.listFiles.addItems(files)
-        # TODO: Find longest common root of all paths and only display relative to it (implement in FileList)
+
+        for file in files:
+            path = self.tab.filelist.removeCommonRoot(file)
+            item = QtWidgets.QListWidgetItem(path)
+            item.setData(Qt.ItemDataRole.UserRole, file)
+            self.listFiles.addItem(item)
 
     @Slot()
-    def _onFileSelected(self, file: str):
-        if file:
+    def _onFileSelected(self, currentItem: QtWidgets.QListWidgetItem | None, prevItem: QtWidgets.QListWidgetItem):
+        if currentItem:
+            file: str = currentItem.data(Qt.ItemDataRole.UserRole)
             self.tab.filelist.setCurrentFile(file)
 
     @Slot()
@@ -117,5 +124,11 @@ class StatsLayout(QtWidgets.QGridLayout):
             self.txtFilter.setStyleSheet("color: red")
             return
 
-        self.proxyModel.setFilterRegularExpression(regex)
         self.txtFilter.setStyleSheet(None)
+
+        # When filter only shows 1 row, it doesn't display files. Clear selection as a workaround.
+        # Disable signals as they mess things up and select new files during update.
+        with QSignalBlocker(self.listFiles):
+            with QSignalBlocker(self.table.selectionModel()):
+                self.table.selectionModel().clear()
+                self.proxyModel.setFilterRegularExpression(regex)

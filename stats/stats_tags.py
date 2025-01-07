@@ -1,5 +1,5 @@
 from typing_extensions import override
-from PySide6 import QtWidgets
+from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
 from lib.captionfile import FileTypeSelector
 from ui.tab import ImgTab
@@ -121,6 +121,7 @@ class TagModel(QAbstractItemModel):
     def __init__(self):
         super().__init__()
         self.separator = ","
+        self.font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.SystemFont.FixedFont)
 
         self.tags: list[TagData] = list()
         self.summary = TagSummary()
@@ -165,20 +166,20 @@ class TagModel(QAbstractItemModel):
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         tagData: TagData = self.tags[index.row()]
 
-        if role == Qt.ItemDataRole.DisplayRole:
-            match index.column():
-                case 0: return tagData.tag
-                case 1: return tagData.count
-                case 2:
-                    presence = 0
-                    if self.summary.numFiles > 0:
-                        presence = len(tagData.files) / self.summary.numFiles
-                    return f"{presence*100:.2f} %"
+        match role:
+            case Qt.ItemDataRole.DisplayRole:
+                match index.column():
+                    case 0: return tagData.tag
+                    case 1: return tagData.count
+                    case 2:
+                        presence = 0
+                        if self.summary.numFiles > 0:
+                            presence = len(tagData.files) / self.summary.numFiles
+                        return f"{presence*100:.2f} %"
 
-        elif role == self.ROLE_TAG:
-            return tagData.tag
-        elif role == self.ROLE_DATA:
-            return tagData
+            case Qt.ItemDataRole.FontRole: return self.font
+            case self.ROLE_TAG:  return tagData.tag
+            case self.ROLE_DATA: return tagData
 
         return None
 
