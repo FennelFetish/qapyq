@@ -1,7 +1,9 @@
-
 from PySide6 import QtWidgets
+from ui.tab import ImgTab
 from .stats_tags import TagStats
+from .stats_json import JsonStats
 from .stats_imgsize import ImageSizeStats
+
 
 # Count of unique tags
 # Frequency of each tag
@@ -22,13 +24,30 @@ from .stats_imgsize import ImageSizeStats
 #   - Tag/string is missing
 #   - Caption/Tag property is empty
 
+
+# TODO: Co-Files with path template (for finding files without mask)
+
+
 class StatsContainer(QtWidgets.QTabWidget):
-    def __init__(self, tab):
+    def __init__(self, tab: ImgTab):
         super().__init__()
         self.tab = tab
 
         self.tagStats = TagStats(tab)
+        self.jsonStats = JsonStats(tab)
         self.imageSizeStats = ImageSizeStats(tab)
 
         self.addTab(self.tagStats, "Tag Count")
+        self.addTab(self.jsonStats, "JSON Keys")
         self.addTab(self.imageSizeStats, "Image Size")
+
+        tab.filelist.addListener(self)
+
+
+    def onFileChanged(self, currentFile):
+        pass
+    
+    def onFileListChanged(self, currentFile):
+        self.tagStats.clearData()
+        self.jsonStats.clearData()
+        self.imageSizeStats.clearData()

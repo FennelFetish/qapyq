@@ -77,6 +77,9 @@ class TagStats(QtWidgets.QWidget):
         self.lblTagsPerImage.setText(f"{summary.minNumTags} - {summary.maxNumTags}")
         self.lblAvgTagsPerImage.setText(f"{summary.getAvgNumTags():.1f}")
 
+    def clearData(self):
+        self.model.clear()
+
 
 
 class TagData:
@@ -155,8 +158,15 @@ class TagModel(QAbstractItemModel):
                 data.addFile(file)
         
         self.tags.extend(tagData.values())
-        self.endResetModel()
         self.summary.finalize(len(self.tags))
+        self.endResetModel()
+
+    def clear(self):
+        self.beginResetModel()
+        self.tags.clear()
+        self.summary.reset()
+        self.summary.finalize(0)
+        self.endResetModel()
 
 
     # QAbstractItemModel Interface

@@ -15,7 +15,7 @@ class ImageSizeStats(QtWidgets.QWidget):
         self.proxyModel = SizeBucketProxyModel()
         self.proxyModel.setSourceModel(self.model)
 
-        self.table = QtWidgets.QTableView(self.tab)
+        self.table = QtWidgets.QTableView()
         self.table.setModel(self.proxyModel)
 
         self._layout = StatsLayout(tab, "Size Buckets", self.proxyModel, self.table)
@@ -63,6 +63,10 @@ class ImageSizeStats(QtWidgets.QWidget):
         self.lblWidth.setText(f"{summary.minWidth} - {summary.maxWidth}")
         self.lblHeight.setText(f"{summary.minHeight} - {summary.maxHeight}")
         self.lblPixels.setText(f"{summary.minPixels:.2f} - {summary.maxPixels:.2f}")
+
+    def clearData(self):
+        self.model.clear()
+
 
 
 class SizeBucketData:
@@ -147,8 +151,15 @@ class SizeBucketModel(QAbstractItemModel):
             bucket.addFile(file)
 
         self.buckets.extend(buckets.values())
-        self.endResetModel()
         self.summary.finalize(len(self.buckets))
+        self.endResetModel()
+
+    def clear(self):
+        self.beginResetModel()
+        self.buckets.clear()
+        self.summary.reset()
+        self.summary.finalize(0)
+        self.endResetModel()
 
 
     # QAbstractItemModel Interface
