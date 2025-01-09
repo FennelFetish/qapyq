@@ -233,7 +233,7 @@ class SizeBucketProxyModel(StatsBaseProxyModel):
 
     def filterAcceptsRow(self, sourceRow: int, sourceParent: QModelIndex) -> bool:
         index = self.sourceModel().index(sourceRow, 0, sourceParent)
-        bucketData = self.sourceModel().data(index, SizeBucketModel.ROLE_DATA)
+        bucketData: SizeBucketData = self.sourceModel().data(index, SizeBucketModel.ROLE_DATA)
         sizeString = f"{bucketData.width}x{bucketData.height}"
         filter = self.filterRegularExpression()
         return filter.match(sizeString).hasMatch()

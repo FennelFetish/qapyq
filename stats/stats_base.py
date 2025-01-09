@@ -6,6 +6,9 @@ import lib.qtlib as qtlib
 from lib.filelist import sortKey
 
 
+# TODO: Context menu "copy cell content" for all tabs
+
+
 class StatsBaseProxyModel(QSortFilterProxyModel):
     def __init__(self):
         super().__init__()
@@ -34,7 +37,7 @@ class StatsLayout(QtWidgets.QGridLayout):
 
         row += 1
         self.setRowStretch(row, 0)
-        self.addWidget(self._buildFilterGroup(), row, 0)
+        self.addWidget(self._buildFilterGroup(name), row, 0)
 
         row += 1
         self.setRowStretch(row, 1)
@@ -89,7 +92,7 @@ class StatsLayout(QtWidgets.QGridLayout):
         group.setLayout(layout)
         return group
 
-    def _buildFilterGroup(self):
+    def _buildFilterGroup(self, name: str):
         layout = QtWidgets.QVBoxLayout()
 
         self.txtFilter = QtWidgets.QLineEdit()
@@ -101,7 +104,7 @@ class StatsLayout(QtWidgets.QGridLayout):
         btnClearFilter.clicked.connect(lambda: self.txtFilter.setText(""))
         layout.addWidget(btnClearFilter)
 
-        group = QtWidgets.QGroupBox("Filter")
+        group = QtWidgets.QGroupBox(f"Filter {name}")
         group.setLayout(layout)
         return group
 
@@ -119,8 +122,6 @@ class StatsLayout(QtWidgets.QGridLayout):
 
     @Slot()
     def _onRowsSelected(self, newItem: QItemSelection, oldItem: QItemSelection):
-        self.listFiles.clear()
-
         fileSet = set()
         union = self.radioFilesUnion.isChecked()
         first = True
@@ -142,11 +143,14 @@ class StatsLayout(QtWidgets.QGridLayout):
             fileSet = [file for file in self.tab.filelist.getFiles() if file not in fileSet]
 
         files = sorted(fileSet, key=sortKey)
-        for file in files:
-            path = self.tab.filelist.removeCommonRoot(file)
-            item = QtWidgets.QListWidgetItem(path)
-            item.setData(Qt.ItemDataRole.UserRole, file)
-            self.listFiles.addItem(item)
+
+        with QSignalBlocker(self.listFiles):
+            self.listFiles.clear()
+            for file in files:
+                path = self.tab.filelist.removeCommonRoot(file)
+                item = QtWidgets.QListWidgetItem(path)
+                item.setData(Qt.ItemDataRole.UserRole, file)
+                self.listFiles.addItem(item)
 
         numFilesText = f"{len(files)} File"
         if len(files) != 1:

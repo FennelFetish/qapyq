@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
 from lib.captionfile import FileTypeSelector
 from ui.tab import ImgTab
 from caption.caption_container import CaptionContainer
+from caption.caption_groups import CaptionControlGroup
 from .stats_base import StatsLayout, StatsBaseProxyModel
 
 
@@ -29,7 +30,7 @@ class TagStats(QtWidgets.QWidget):
 
     def _buildSourceSelector(self):
         self.captionSrc = FileTypeSelector()
-        self.captionSrc.cboType.setCurrentIndex(1) # Tags
+        self.captionSrc.type = FileTypeSelector.TYPE_TAGS
         
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(QtWidgets.QLabel("Load From:"))
@@ -246,11 +247,13 @@ class TagTableView(QtWidgets.QTableView):
         self._index: QModelIndex | None = None
 
     def _buildMenu(self) -> QtWidgets.QMenu:
-        menu = QtWidgets.QMenu(self)
+        menu = QtWidgets.QMenu("Tag Menu", self)
 
         actAdd = menu.addAction("Add to Caption")
         actAdd.triggered.connect(self._addTag)
 
+        self._groupMenu = QtWidgets.QMenu("Add to Group")
+        menu.addMenu(self._groupMenu)
         menu.addSeparator()
 
         actBan = menu.addAction("Ban")
@@ -258,13 +261,28 @@ class TagTableView(QtWidgets.QTableView):
 
         return menu
 
+    def _rebuildGroupMenu(self):
+        self._groupMenu.clear()
+
+        captionWin: CaptionContainer | None = self.tab.getWindowContent("caption")
+        if captionWin:
+            for group in captionWin.ctx.groups.groups:
+                act = self._groupMenu.addAction(group.name)
+                act.triggered.connect(lambda checked, group=group: self._addTagToGroup(group))
+        
+        if self._groupMenu.isEmpty():
+            actEmpty = self._groupMenu.addAction("No Groups")
+            actEmpty.setEnabled(False)
+
     def contextMenuEvent(self, event):
         try:
             self._index = self.indexAt(event.pos())
             if self._index.isValid():
+                self._rebuildGroupMenu()
                 self._menu.exec_(event.globalPos())
         finally:
             self._index = None
+
 
     def getCaptionWindow(self) -> CaptionContainer | None:
         if captionWin := self.tab.getWindowContent("caption"):
@@ -284,3 +302,7 @@ class TagTableView(QtWidgets.QTableView):
         if captionWin := self.getCaptionWindow():
             tag = self.model().data(self._index, TagModel.ROLE_TAG)
             captionWin.ctx.settings.addBannedCaption(tag)
+
+    def _addTagToGroup(self, group: CaptionControlGroup):
+        tag = self.model().data(self._index, TagModel.ROLE_TAG)
+        group._addCaptionDrop(tag)
