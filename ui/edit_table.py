@@ -26,6 +26,7 @@ class EditableTable(QtWidgets.QTableView):
         self.setItemDelegateForColumn(numColumns, deleteDelegate)
         deleteDelegate.deleteRow.connect(self.removeRow)
 
+        self.stringModel.dataChanged.connect(self.onCellEdited)
         self.stringModel.dataChanged.connect(self._notifyContentChanged)
         self.stringModel.modelReset.connect(self._notifyContentChanged)
         self.stringModel.rowsInserted.connect(self._notifyContentChanged)
@@ -60,6 +61,20 @@ class EditableTable(QtWidgets.QTableView):
     @Slot()
     def _notifyContentChanged(self):
         self.contentChanged.emit()
+
+    @Slot()
+    def onCellEdited(self, topLeft: QModelIndex, bottomRight: QModelIndex, roles: list[int]):
+        index = self.proxyModel.mapFromSource(topLeft)
+
+        row = index.row()
+        column = index.column() + 1
+        if column >= self.stringModel.getContentColumns():
+            column = 0
+            row += 1
+
+        index = self.proxyModel.index(row, column)
+        if index.isValid():
+            self.setCurrentIndex(index)
 
 
 
@@ -102,8 +117,12 @@ class StringModel(QAbstractItemModel):
             index = self.index(row, col)
             self.setData(index, val)
 
+
     def getContentRows(self) -> int:
         return len(self.contents)
+    
+    def getContentColumns(self) -> int:
+        return self.numColumns
 
 
     # QAbstractItemModel Interface
@@ -136,15 +155,16 @@ class StringModel(QAbstractItemModel):
 
 
     def setData(self, index: QModelIndex, value: str, role=Qt.ItemDataRole.EditRole) -> bool:
-        if role != Qt.ItemDataRole.EditRole:
-            return False
-
         col = index.column()
         if col >= self.numColumns:
+            return False
+        if col == 0 and not value:
             return False
 
         row = index.row()
         if row >= len(self.contents):
+            if col > 0:
+                return False
             self.insertRow(row)
 
         rowData: list[str] = self.contents[row]
@@ -180,9 +200,9 @@ class StringModel(QAbstractItemModel):
 
 
     def flags(self, index):
-        flags = Qt.ItemFlag.ItemIsEnabled
+        flags = Qt.ItemFlag.NoItemFlags
         if index.column() < self.numColumns:
-            flags |= Qt.ItemFlag.ItemIsEditable | Qt.ItemFlag.ItemIsSelectable
+            flags |= Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsEditable | Qt.ItemFlag.ItemIsSelectable
         return flags
 
     def index(self, row, column, parent=QModelIndex()):
@@ -214,7 +234,7 @@ class StringProxyModel(QSortFilterProxyModel):
 class DeleteButtonDelegate(QtWidgets.QStyledItemDelegate):
     deleteRow = Signal(int)
 
-    def __init__(self, rowFunc, column: int, parent) -> None:
+    def __init__(self, rowFunc, column: int, parent):
         super().__init__(parent)
         self.rowFunc = rowFunc
         self.col = column
