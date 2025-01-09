@@ -1,9 +1,11 @@
 import os, traceback
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject
-from infer import Inference, InferencePresetWidget, TagPresetWidget, PromptWidget, InferenceProcess
+from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject, QSignalBlocker
+from infer import Inference, InferencePresetWidget, TagPresetWidget, PromptWidget, PromptsHighlighter, InferenceProcess
+from lib.template_parser import TemplateVariableParser, VariableHighlighter
 from lib.filelist import DataKeys
 import lib.qtlib as qtlib
+from config import Config
 
 
 class CaptionGenerate(QtWidgets.QWidget):
@@ -11,12 +13,17 @@ class CaptionGenerate(QtWidgets.QWidget):
         super().__init__()
         self.ctx = context
 
-        self._build()
+        self._highlighter = VariableHighlighter()
+        self._parser = TemplateVariableParser()
+        self._parser.stripAround = False
+        self._parser.stripMultiWhitespace = False
 
+        self._build()
 
     def _build(self):
         layout = QtWidgets.QGridLayout()
-        layout.setAlignment(Qt.AlignTop)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 0)
         layout.setColumnStretch(2, 1)
@@ -27,10 +34,27 @@ class CaptionGenerate(QtWidgets.QWidget):
         row = 0
         self.promptWidget = PromptWidget("promptCaptionPresets", "promptCaptionDefault")
         self.promptWidget.enableHighlighting()
-        qtlib.setTextEditHeight(self.promptWidget.txtSystemPrompt, 3)
-        qtlib.setTextEditHeight(self.promptWidget.txtPrompts, 3)
+        qtlib.setTextEditHeight(self.promptWidget.txtSystemPrompt, 3, "min")
+        qtlib.setTextEditHeight(self.promptWidget.txtPrompts, 3, "min")
+        self.promptWidget.lblPrompts.setText("Prompt(s) Template:")
+        self.promptWidget.txtPrompts.textChanged.connect(self._onPromptChanged)
+        self.promptWidget.layout().setRowStretch(1, 1)
+        self.promptWidget.layout().setRowStretch(2, 1)
         layout.addWidget(self.promptWidget, row, 0, 1, 6)
+        layout.setRowStretch(row, 2)
 
+        row += 1
+        self.lblPromptPreview = QtWidgets.QLabel("Prompt(s) Preview:")
+        layout.addWidget(self.lblPromptPreview, row, 0, Qt.AlignmentFlag.AlignTop)
+
+        self.txtPromptPreview = QtWidgets.QPlainTextEdit()
+        self.txtPromptPreview.setReadOnly(True)
+        qtlib.setMonospace(self.txtPromptPreview)
+        qtlib.setTextEditHeight(self.txtPromptPreview, 3, "min")
+        qtlib.setShowWhitespace(self.txtPromptPreview)
+        layout.addWidget(self.txtPromptPreview, row, 1, 1, 5)
+        layout.setRowStretch(row, 2)
+        
         row += 1
         self.inferSettings = InferencePresetWidget()
         layout.addWidget(self.inferSettings, row, 0, 1, 6)
@@ -39,7 +63,6 @@ class CaptionGenerate(QtWidgets.QWidget):
         self.tagSettings = TagPresetWidget()
         layout.addWidget(self.tagSettings, row, 0, 2, 2)
 
-        #row += 1
         self.cboMode = QtWidgets.QComboBox()
         self.cboMode.addItem("Append")
         self.cboMode.addItem("Prepend")
@@ -66,6 +89,26 @@ class CaptionGenerate(QtWidgets.QWidget):
         self.setLayout(layout)
 
 
+    def onFileChanged(self, currentFile):
+        self._parser.setup(currentFile)
+        self._onPromptChanged()
+
+    @Slot()
+    def _onPromptChanged(self):
+        text = self.promptWidget.prompts
+        preview, varPositions = self._parser.parseWithPositions(text)
+        self.txtPromptPreview.setPlainText(preview)
+
+        with QSignalBlocker(self.promptWidget.txtPrompts):
+            self._highlighter.highlight(self.promptWidget.txtPrompts, self.txtPromptPreview, varPositions)
+            PromptsHighlighter.highlightPromptSeparators(self.promptWidget.txtPrompts)
+            PromptsHighlighter.highlightPromptSeparators(self.txtPromptPreview)
+
+        previewVisible = len(varPositions) > 0
+        self.lblPromptPreview.setVisible(previewVisible)
+        self.txtPromptPreview.setVisible(previewVisible)
+
+
     @Slot()
     def generate(self):
         file = self.ctx.tab.imgview.image.filepath
@@ -84,7 +127,11 @@ class CaptionGenerate(QtWidgets.QWidget):
         task.signals.fail.connect(self.onFail)
 
         if "caption" in content:
-            task.prompts = self.promptWidget.getParsedPrompts()
+            task.prompts = [
+                {name: self._parser.parse(prompt) for name, prompt in conv.items()}
+                for conv in self.promptWidget.getParsedPrompts()
+            ]
+
             task.systemPrompt = self.promptWidget.systemPrompt.strip()
             task.config = self.inferSettings.getInferenceConfig()
 
@@ -113,7 +160,6 @@ class CaptionGenerate(QtWidgets.QWidget):
         else:
             filelist.setData(imgPath, DataKeys.Caption, text)
             filelist.setData(imgPath, DataKeys.CaptionState, DataKeys.IconStates.Changed)
-        
 
     @Slot()
     def onFail(self, errorMsg):
@@ -128,16 +174,16 @@ class InferenceTask(QRunnable):
         done = Signal(str, str)
         fail = Signal(str)
 
-    def __init__(self, imgPath, content: [str]):
+    def __init__(self, imgPath, content: list[str]):
         super().__init__()
         self.signals = InferenceTask.Signals()
         self.imgPath = imgPath
         self.content = content
 
-        self.prompts      = None
-        self.systemPrompt = None
-        self.config       = None
-        self.tagConfig    = None
+        self.prompts: list[dict[str, str]] = None
+        self.systemPrompt: str = None
+        self.config: dict      = None
+        self.tagConfig: dict   = None
 
 
     @Slot()

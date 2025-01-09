@@ -39,7 +39,7 @@ class CaptionBubbles(qtlib.ReorderWidget):
         return captions
 
     def updateBubbles(self):
-        self.clearLayout()
+        self.layout().clear()
         colors = self._getColors()
         for i, caption in enumerate(self.text.split(self.separator)):
             caption = caption.strip()
@@ -49,16 +49,6 @@ class CaptionBubbles(qtlib.ReorderWidget):
             self.layout().addWidget(bubble)
             bubble.forceUpdateWidth()
 
-    def clearLayout(self):
-        layout = self.layout()
-        for i in reversed(range(layout.count())):
-            item = layout.takeAt(i)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-            else:
-                item.spacerItem().deleteLater()
-    
     def resizeEvent(self, event):
         self.layout().update()  # Weird: Needed for proper resize.
     

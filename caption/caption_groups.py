@@ -1,9 +1,7 @@
-from typing import ForwardRef
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot
 from lib import qtlib, util
-
-CaptionControlGroup = ForwardRef('CaptionControlGroup')
+from .caption_preset import CaptionPreset
 
 
 # TODO?: Per group matching method:
@@ -11,6 +9,9 @@ CaptionControlGroup = ForwardRef('CaptionControlGroup')
 # - substring ('b c' in 'a b c d e', but not 'b d')
 # - all words ('b c' in 'a b c d e', but not 'b f')
 # - any word  ('b d' in 'a b c d e', also 'b f')
+
+# TODO: Color picker for group color: https://doc.qt.io/qt-6/qcolordialog.html
+
 
 class CaptionGroups(QtWidgets.QWidget):
     HUE_OFFSET = 0.3819444 # 1.0 - inverted golden ratio, ~137.5°
@@ -41,8 +42,23 @@ class CaptionGroups(QtWidgets.QWidget):
 
         row = 0
         self.groupLayout = QtWidgets.QVBoxLayout()
+        self.groupLayout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.groupLayout.setContentsMargins(0, 0, 0, 0)
-        layout.addLayout(self.groupLayout, row, 0, 1, 5)
+        self.groupLayout.setSpacing(0)
+
+        groupWidget = QtWidgets.QWidget()
+        groupWidget.setLayout(self.groupLayout)
+
+        scrollGroup = QtWidgets.QScrollArea()
+        scrollGroup.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
+        scrollGroup.setWidgetResizable(True)
+        scrollGroup.setWidget(groupWidget)
+
+        palette = scrollGroup.palette()
+        bgColor = palette.color(QtGui.QPalette.ColorRole.Base)
+        palette.setColor(QtGui.QPalette.ColorRole.Window, bgColor)
+        scrollGroup.setPalette(palette)
+        layout.addWidget(scrollGroup, row, 0, 1, 5)
 
         row += 1
         layout.addWidget(Trash(), row, 0)
@@ -75,13 +91,13 @@ class CaptionGroups(QtWidgets.QWidget):
         return group
 
     def removeGroup(self, group):
-        dialog = QtWidgets.QMessageBox()
-        dialog.setIcon(QtWidgets.QMessageBox.Question)
+        dialog = QtWidgets.QMessageBox(group)
+        dialog.setIcon(QtWidgets.QMessageBox.Icon.Question)
         dialog.setWindowTitle("Confirm group removal")
         dialog.setText(f"Remove group: {group.name}")
-        dialog.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
 
-        if dialog.exec() == QtWidgets.QMessageBox.Yes:
+        if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes:
             self.groupLayout.removeWidget(group)
             group.deleteLater()
             self._emitUpdatedApplyRules()
@@ -140,29 +156,30 @@ class CaptionGroups(QtWidgets.QWidget):
         self.ctx.needsRulesApplied.emit()
 
 
-    def saveToPreset(self, preset):
+    def saveToPreset(self, preset: CaptionPreset):
         for group in self.groups:
-            preset.addGroup(group.name, group.color, group.mutuallyExclusive, group.captions)
+            preset.addGroup(group.name, group.color, group.mutuallyExclusive, group.combineTags, group.captions)
 
-    def loadFromPreset(self, preset):
+    def loadFromPreset(self, preset: CaptionPreset):
         self.removeAllGroups()
         for group in preset.groups:
-            groupWidget = self.addGroup()
+            groupWidget: CaptionControlGroup = self.addGroup()
             groupWidget.name = group.name
             groupWidget.color = group.color
             groupWidget.mutuallyExclusive = group.mutuallyExclusive
+            groupWidget.combineTags = group.combineTags
             for caption in group.captions:
                 groupWidget.addCaption(caption)
 
             self._nextGroupHue = util.get_hue(group.color) + self.HUE_OFFSET
 
 
-class CaptionControlGroup(QtWidgets.QFrame):
+class CaptionControlGroup(QtWidgets.QWidget):
     def __init__(self, groups, name):
         super().__init__()
         self.groups = groups
         self.charFormat = QtGui.QTextCharFormat()
-        self.setFrameStyle(QtWidgets.QFrame.Shape.Box | QtWidgets.QFrame.Shadow.Sunken)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Fixed)
 
         self._buildHeaderWidget(name)
 
@@ -175,10 +192,15 @@ class CaptionControlGroup(QtWidgets.QFrame):
         self.buttonWidget.dropCallback = self._addCaptionDrop
         self.buttonWidget.updateCallback = self.groups._emitUpdatedApplyRules
 
+        separatorLine = QtWidgets.QFrame()
+        separatorLine.setFrameStyle(QtWidgets.QFrame.Shape.HLine | QtWidgets.QFrame.Shadow.Sunken)
+
         layout = QtWidgets.QVBoxLayout()
-        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setContentsMargins(5, 5, 5, 0)
         layout.addWidget(self.headerWidget)
         layout.addWidget(self.buttonWidget)
+        layout.addSpacing(3)
+        layout.addWidget(separatorLine)
         self.setLayout(layout)
 
     def _buildHeaderWidget(self, name):
@@ -195,9 +217,10 @@ class CaptionControlGroup(QtWidgets.QFrame):
 
         btnAddCaption = QtWidgets.QPushButton("Add Caption")
         btnAddCaption.clicked.connect(self._addCaptionClick)
-        btnAddCaption.setFocusPolicy(Qt.NoFocus)
+        btnAddCaption.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
         self.chkExclusive = QtWidgets.QCheckBox("Mutually Exclusive")
+        self.chkCombine = QtWidgets.QCheckBox("Combine Tags")
 
         btnMoveGroupUp = QtWidgets.QPushButton("Up")
         btnMoveGroupUp.clicked.connect(lambda: self.groups.moveGroup(self, -1))
@@ -214,6 +237,7 @@ class CaptionControlGroup(QtWidgets.QFrame):
         self.headerLayout.addWidget(self.txtName)
         self.headerLayout.addWidget(btnAddCaption)
         self.headerLayout.addWidget(self.chkExclusive)
+        self.headerLayout.addWidget(self.chkCombine)
         self.headerLayout.addStretch()
 
         self.headerLayout.addWidget(btnMoveGroupUp)
@@ -222,8 +246,9 @@ class CaptionControlGroup(QtWidgets.QFrame):
         self.headerWidget = QtWidgets.QWidget()
         self.headerWidget.setContentsMargins(0, 0, 0, 0)
         self.headerWidget.setLayout(self.headerLayout)
-    
 
+
+    # TODO: When 'combine tags' is enabled, match: *prefix words* word
     def updateSelectedState(self, captions: set):
         color = self.color
         for button in self.buttons:
@@ -276,8 +301,18 @@ class CaptionControlGroup(QtWidgets.QFrame):
         return self.chkExclusive.isChecked()
 
     @mutuallyExclusive.setter
-    def mutuallyExclusive(self, checked):
+    def mutuallyExclusive(self, checked: bool):
         self.chkExclusive.setChecked(checked)
+
+
+    @property
+    def combineTags(self) -> bool:
+        return self.chkCombine.isChecked()
+    
+    @combineTags.setter
+    def combineTags(self, checked: bool):
+        self.chkCombine.setChecked(checked)
+
 
     @property
     def captions(self) -> list:

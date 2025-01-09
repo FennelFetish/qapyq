@@ -5,6 +5,8 @@ from PySide6.QtCore import Qt, Slot
 from caption import CaptionPreset, CaptionRulesProcessor
 from config import Config
 from infer import Inference
+from ui.edit_table import EditableTable
+from ui.flow_layout import SortedStringFlowWidget
 from lib import qtlib
 from lib.captionfile import CaptionFile
 from .batch_task import BatchTask, BatchSignalHandler
@@ -48,12 +50,14 @@ class BatchRules(QtWidgets.QWidget):
 
     def _buildRules(self):
         layout = QtWidgets.QGridLayout()
-        layout.setAlignment(Qt.AlignTop)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 0)
-        layout.setColumnStretch(2, 1)
-        layout.setColumnStretch(3, 0)
+        layout.setColumnStretch(2, 0)
+        layout.setColumnStretch(3, 1)
+        layout.setColumnStretch(4, 0)
+        layout.setColumnStretch(5, 0)
 
         row = 0
         self.txtSeparator = QtWidgets.QLineEdit(", ")
@@ -62,13 +66,23 @@ class BatchRules(QtWidgets.QWidget):
         layout.addWidget(QtWidgets.QLabel("Separator:"), row, 0)
         layout.addWidget(self.txtSeparator, row, 1)
 
+        self.chkRemoveDup = QtWidgets.QCheckBox("Remove Duplicates")
+        self.chkRemoveDup.setChecked(True)
+        self.chkRemoveDup.checkStateChanged.connect(self.updatePreview)
+        layout.addWidget(self.chkRemoveDup, row, 2)
+
+        self.chkSortCaptions = QtWidgets.QCheckBox("Sort Captions")
+        self.chkSortCaptions.setChecked(True)
+        self.chkSortCaptions.checkStateChanged.connect(self.updatePreview)
+        layout.addWidget(self.chkSortCaptions, row, 3)
+
         btnLoadFromCaption = QtWidgets.QPushButton("Load from Caption Window")
         btnLoadFromCaption.clicked.connect(self.loadFromCaptionWindow)
-        layout.addWidget(btnLoadFromCaption, row, 2, Qt.AlignRight)
+        layout.addWidget(btnLoadFromCaption, row, 4)
 
         btnLoadFromFile = QtWidgets.QPushButton("Load from file...")
         btnLoadFromFile.clicked.connect(self.loadFromFile)
-        layout.addWidget(btnLoadFromFile, row, 3)
+        layout.addWidget(btnLoadFromFile, row, 5)
 
         row += 1
         self.txtPrefix = QtWidgets.QPlainTextEdit()
@@ -76,13 +90,13 @@ class BatchRules(QtWidgets.QWidget):
         qtlib.setMonospace(self.txtPrefix)
         qtlib.setTextEditHeight(self.txtPrefix, 2)
         qtlib.setShowWhitespace(self.txtPrefix)
-        layout.addWidget(QtWidgets.QLabel("Prefix:"), row, 0, Qt.AlignTop)
-        layout.addWidget(self.txtPrefix, row, 1, 1, 2)
+        layout.addWidget(QtWidgets.QLabel("Prefix:"), row, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.txtPrefix, row, 1, 1, 4)
 
-        self.chkPrefixSeparator = QtWidgets.QCheckBox("Append separator")
+        self.chkPrefixSeparator = QtWidgets.QCheckBox("Append Separator")
         self.chkPrefixSeparator.setChecked(True)
         self.chkPrefixSeparator.checkStateChanged.connect(self.updatePreview)
-        layout.addWidget(self.chkPrefixSeparator, row, 3, Qt.AlignTop)
+        layout.addWidget(self.chkPrefixSeparator, row, 5, Qt.AlignmentFlag.AlignTop)
 
         row += 1
         self.txtSuffix = QtWidgets.QPlainTextEdit()
@@ -90,28 +104,33 @@ class BatchRules(QtWidgets.QWidget):
         qtlib.setMonospace(self.txtSuffix)
         qtlib.setTextEditHeight(self.txtSuffix, 2)
         qtlib.setShowWhitespace(self.txtSuffix)
-        layout.addWidget(QtWidgets.QLabel("Suffix:"), row, 0, Qt.AlignTop)
-        layout.addWidget(self.txtSuffix, row, 1, 1, 2)
+        layout.addWidget(QtWidgets.QLabel("Suffix:"), row, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.txtSuffix, row, 1, 1, 4)
 
-        self.chkSuffixSeparator = QtWidgets.QCheckBox("Prepend separator")
+        self.chkSuffixSeparator = QtWidgets.QCheckBox("Prepend Separator")
         self.chkSuffixSeparator.setChecked(True)
         self.chkSuffixSeparator.checkStateChanged.connect(self.updatePreview)
-        layout.addWidget(self.chkSuffixSeparator, row, 3, Qt.AlignTop)
+        layout.addWidget(self.chkSuffixSeparator, row, 5, Qt.AlignmentFlag.AlignTop)
 
         row += 1
-        self.txtBanned = QtWidgets.QPlainTextEdit()
-        self.txtBanned.textChanged.connect(self._onBannedChanged)
-        qtlib.setMonospace(self.txtBanned)
-        qtlib.setTextEditHeight(self.txtBanned, 5)
-        qtlib.setShowWhitespace(self.txtBanned)
-        layout.addWidget(QtWidgets.QLabel("Banned:"), row, 0, Qt.AlignTop)
-        layout.addWidget(self.txtBanned, row, 1, 1, 3)
+        layout.setRowMinimumHeight(row, 8)
 
         row += 1
-        self.chkRemoveDup = QtWidgets.QCheckBox("Remove duplicates")
-        self.chkRemoveDup.setChecked(True)
-        self.chkRemoveDup.checkStateChanged.connect(self.updatePreview)
-        layout.addWidget(self.chkRemoveDup, row, 1)
+        layout.addWidget(QtWidgets.QLabel("Replace:"), row, 0)
+        layout.addWidget(QtWidgets.QLabel("Banned:"), row, 3)
+
+        row += 1
+        self.tableReplace = EditableTable(2)
+        self.tableReplace.contentChanged.connect(self.updatePreview)
+        self.tableReplace.setHorizontalHeaderLabels(["Search Pattern", "Replacement"])
+        layout.addWidget(self.tableReplace, row, 0, 1, 3)
+
+        self.banWidget = SortedStringFlowWidget()
+        self.banWidget.changed.connect(self._onBannedChanged)
+        scrollBan = QtWidgets.QScrollArea()
+        scrollBan.setWidgetResizable(True)
+        scrollBan.setWidget(self.banWidget)
+        layout.addWidget(scrollBan, row, 3, 1, 3)
 
         groupBox = QtWidgets.QGroupBox("Rules")
         groupBox.setLayout(layout)
@@ -128,7 +147,7 @@ class BatchRules(QtWidgets.QWidget):
 
     def _buildSettings(self):
         layout = QtWidgets.QGridLayout()
-        layout.setAlignment(Qt.AlignTop)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 0)
@@ -136,7 +155,7 @@ class BatchRules(QtWidgets.QWidget):
         layout.setColumnStretch(3, 1)
 
         row = 0
-        layout.addWidget(QtWidgets.QLabel("Load key:"), row, 0, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Load key:"), row, 0, Qt.AlignmentFlag.AlignTop)
 
         self.cboSrcType = QtWidgets.QComboBox()
         self.cboSrcType.addItem("tags")
@@ -151,7 +170,7 @@ class BatchRules(QtWidgets.QWidget):
         layout.addWidget(self.txtSourceKey, row, 2)
 
         row += 1
-        layout.addWidget(QtWidgets.QLabel("Storage key:"), row, 0, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Storage key:"), row, 0, Qt.AlignmentFlag.AlignTop)
 
         self.cboTargetType = QtWidgets.QComboBox()
         self.cboTargetType.addItem("tags")
@@ -174,7 +193,7 @@ class BatchRules(QtWidgets.QWidget):
         qtlib.setMonospace(self.txtPreview)
         qtlib.setTextEditHeight(self.txtPreview, 3, mode="min")
         qtlib.setShowWhitespace(self.txtPreview)
-        layout.addWidget(QtWidgets.QLabel("Preview:"), row, 0, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Preview:"), row, 0, Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self.txtPreview, row, 1, 1, 3)
 
 
@@ -191,7 +210,7 @@ class BatchRules(QtWidgets.QWidget):
 
     @property
     def bannedCaptions(self) -> list[str]:
-        return [b.strip() for b in self.txtBanned.toPlainText().split(self.bannedSeparator.strip())]
+        return [b.strip() for b in self.banWidget.getItems()]
 
     @Slot()
     def _onBannedChanged(self):
@@ -206,8 +225,8 @@ class BatchRules(QtWidgets.QWidget):
             if widget and isinstance(widget, BatchRulesGroup):
                 yield widget
 
-    def addGroup(self, title: str, color: str, exclusive: bool, captions: list):
-        group = BatchRulesGroup(title, color, exclusive, captions, self.updatePreview)
+    def addGroup(self, title: str, color: str, exclusive: bool, combine: bool, captions: list[str]):
+        group = BatchRulesGroup(title, color, exclusive, combine, captions, self.updatePreview)
         index = self.groupLayout.count()
         self.groupLayout.insertWidget(index, group)
 
@@ -220,7 +239,7 @@ class BatchRules(QtWidgets.QWidget):
                 widget.deleteLater()
 
 
-    def applyPreset(self, preset):
+    def applyPreset(self, preset: CaptionPreset):
         try:
             self._updateEnabled = False
             
@@ -230,11 +249,13 @@ class BatchRules(QtWidgets.QWidget):
             self.chkPrefixSeparator.setChecked(preset.prefixSeparator)
             self.chkSuffixSeparator.setChecked(preset.suffixSeparator)
             self.chkRemoveDup.setChecked(preset.removeDuplicates)
-            self.txtBanned.setPlainText( self.bannedSeparator.join(preset.banned) )
+            self.chkSortCaptions.setChecked(preset.sortCaptions)
+            self.tableReplace.setContent(preset.searchReplace)
+            self.banWidget.setItems(preset.banned)
 
             self.removeAllGroups()
             for group in preset.groups:
-                self.addGroup(group.name, group.color, group.mutuallyExclusive, group.captions)
+                self.addGroup(group.name, group.color, group.mutuallyExclusive, group.combineTags, group.captions)
         finally:
             self._updateEnabled = True
             self._updateHighlightFormats()
@@ -272,12 +293,12 @@ class BatchRules(QtWidgets.QWidget):
             suffix = separator + suffix
 
         rulesProcessor = CaptionRulesProcessor()
-        rulesProcessor.setup(prefix, suffix, separator, self.chkRemoveDup.isChecked())
+        rulesProcessor.setup(prefix, suffix, separator, self.chkRemoveDup.isChecked(), self.chkSortCaptions.isChecked())
+        rulesProcessor.setSearchReplacePairs(self.tableReplace.getContent())
         rulesProcessor.setBannedCaptions(self.bannedCaptions)
-        rulesProcessor.setCaptionGroups(
-            (group.captions for group in self.groups),
-            (group.captions for group in self.groups if group.mutuallyExclusive)
-        )
+        rulesProcessor.setCaptionGroups( group.captions for group in self.groups )
+        rulesProcessor.setMutuallyExclusiveCaptionGroups( group.captions for group in self.groups if group.mutuallyExclusive )
+        rulesProcessor.setCombinationCaptionGroups( group.captions for group in self.groups if group.combineTags )
         return rulesProcessor
 
     @Slot()
@@ -305,7 +326,7 @@ class BatchRules(QtWidgets.QWidget):
     def _highlight(self, text: str):
         cursor = self.txtPreview.textCursor()
         cursor.setPosition(0)
-        cursor.movePosition(QtGui.QTextCursor.End, QtGui.QTextCursor.KeepAnchor)
+        cursor.movePosition(QtGui.QTextCursor.MoveOperation.End, QtGui.QTextCursor.MoveMode.KeepAnchor)
         cursor.setCharFormat(QtGui.QTextCharFormat())
 
         start = 0
@@ -313,7 +334,7 @@ class BatchRules(QtWidgets.QWidget):
         for caption in text.split(sep):
             if format := self._highlightFormats.get(caption.strip()):
                 cursor.setPosition(start)
-                cursor.setPosition(start+len(caption), QtGui.QTextCursor.KeepAnchor)
+                cursor.setPosition(start+len(caption), QtGui.QTextCursor.MoveMode.KeepAnchor)
                 cursor.setCharFormat(format)
             start += len(caption) + len(sep)
 
@@ -358,7 +379,7 @@ class BatchRules(QtWidgets.QWidget):
 
 
 class BatchRulesGroup(QtWidgets.QWidget):
-    def __init__(self, title: str, color: str, exclusive: bool, captions: list, updatePreview):
+    def __init__(self, title: str, color: str, exclusive: bool, combine: bool, captions: list[str], updatePreview):
         super().__init__()
         self.color = color
         self.captions = list(captions)
@@ -369,14 +390,19 @@ class BatchRulesGroup(QtWidgets.QWidget):
         lblTitle = QtWidgets.QLabel(f"{title}:")
         lblTitle.setMinimumWidth(Config.batchWinLegendWidth)
         qtlib.setMonospace(lblTitle, 1.0, True)
-        layout.addWidget(lblTitle, 0, Qt.AlignTop)
+        layout.addWidget(lblTitle, 0, Qt.AlignmentFlag.AlignTop)
 
         flowLayout = qtlib.FlowLayout(spacing=1)
 
-        self.chkExclusive = QtWidgets.QCheckBox("Mutually exclusive")
+        self.chkExclusive = QtWidgets.QCheckBox("Mutually Exclusive")
         self.chkExclusive.setChecked(exclusive)
         self.chkExclusive.checkStateChanged.connect(updatePreview)
         flowLayout.addWidget(self.chkExclusive)
+
+        self.chkCombine = QtWidgets.QCheckBox("Combine Tags")
+        self.chkCombine.setChecked(combine)
+        self.chkCombine.checkStateChanged.connect(updatePreview)
+        flowLayout.addWidget(self.chkCombine)
 
         for cap in captions:
             label = QtWidgets.QLabel(cap)
@@ -394,6 +420,10 @@ class BatchRulesGroup(QtWidgets.QWidget):
     @property
     def mutuallyExclusive(self) -> bool:
         return self.chkExclusive.isChecked()
+
+    @property
+    def combineTags(self) -> bool:
+        return self.chkCombine.isChecked()
 
     def resizeEvent(self, event) -> None:
         self.flowWidget.setMinimumHeight(self.flowWidget.sizeHint().height())
@@ -418,7 +448,7 @@ class BatchRulesTask(BatchTask):
         pass
 
 
-    def runProcessFile(self, imgFile: str) -> str:
+    def runProcessFile(self, imgFile: str) -> str | None:
         captionFile = CaptionFile(imgFile)
         if captionFile.jsonExists() and not captionFile.loadFromJson():
             self.log(f"WARNING: Failed to load captions from {captionFile.jsonPath}")

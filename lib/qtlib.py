@@ -138,6 +138,11 @@ class EditablePushButton(QtWidgets.QWidget):
     @property
     def text(self) -> str:
         return self.activeWidget().text()
+    
+    @text.setter
+    def text(self, text: str) -> None:
+        self.activeWidget().setText(text)
+        self._updateWidth()
 
     def activeWidget(self):
         return self.edit if self.edit else self.button
@@ -204,7 +209,7 @@ class FlowLayout(QtWidgets.QLayout):
 
         self.setContentsMargins(0, 0, 0, 0)
 
-        self.items = []
+        self.items: list[QtWidgets.QLayoutItem] = []
         self._size = QSize(0, 0)
 
     def addItem(self, item):
@@ -233,6 +238,18 @@ class FlowLayout(QtWidgets.QLayout):
         index = min(index, len(self.items))
         self.items.insert(index, item)
         self.invalidate()
+
+    def clear(self):
+        for i in reversed(range(self.count())):
+            item = self.takeAt(i)
+            if not item:
+                continue
+
+            widget = item.widget()
+            if widget := item.widget():
+                widget.deleteLater()
+            elif layout := item.layout():
+                layout.deleteLater()
 
     def expandingDirections(self):
         return Qt.Orientation.Vertical

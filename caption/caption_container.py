@@ -1,6 +1,6 @@
 import os
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Signal, Slot, QSignalBlocker
+from PySide6.QtCore import Qt, Signal, Slot, QSignalBlocker
 from lib import qtlib
 from lib.filelist import DataKeys
 from lib.captionfile import FileTypeSelector
@@ -15,21 +15,22 @@ class CaptionContext(QtWidgets.QTabWidget):
     captionClicked      = Signal(str)
     separatorChanged    = Signal(str)
     controlUpdated      = Signal()
-    fileTypeUpdated     = Signal()
     needsRulesApplied   = Signal()
     captionGenerated    = Signal(str, str)
 
 
-    def __init__(self, tab, getSelectedCaption):
+    def __init__(self, tab, getSelectedCaption, isAutoApplyRules, setAutoApplyRules):
         super().__init__()
         self.tab = tab
         self.getSelectedCaption = getSelectedCaption
+        self.isAutoApplyRules = isAutoApplyRules
+        self.setAutoApplyRules = setAutoApplyRules
 
         self.settings = CaptionSettings(self)
         self.groups   = CaptionGroups(self)
         self.generate = CaptionGenerate(self)
 
-        self.addTab(self.settings, "Settings")
+        self.addTab(self.settings, "Rules")
         self.addTab(self.groups, "Groups")
         #self.addTab(QtWidgets.QWidget(), "Variables (json)")
         #self.addTab(QtWidgets.QWidget(), "Folder Overrides") # Let variables from json override settings?
@@ -44,53 +45,126 @@ class CaptionContainer(QtWidgets.QWidget):
 
         self.captionSeparator = ', '
 
-        self.ctx = CaptionContext(tab, self.getSelectedCaption)
+        self.ctx = CaptionContext(tab, self.getSelectedCaption, self.isAutoApplyRules, self.setAutoApplyRules)
         self._build(self.ctx)
 
         self.ctx.captionClicked.connect(self.appendToCaption)
         self.ctx.captionGenerated.connect(self._onCaptionGenerated)
         self.ctx.separatorChanged.connect(self._onSeparatorChanged)
         self.ctx.controlUpdated.connect(self._onControlUpdated)
-        self.ctx.fileTypeUpdated.connect(self._onFileTypeUpdated)
         self.ctx.needsRulesApplied.connect(self.applyRulesIfAuto)
 
         tab.filelist.addListener(self)
         self.onFileChanged( tab.filelist.getCurrentFile() )
 
-
     def _build(self, ctx):
-        layout = QtWidgets.QGridLayout()
-        layout.addWidget(ctx, 0, 0, 1, 3)
-        layout.setRowStretch(0, 0)
+        splitter = QtWidgets.QSplitter(Qt.Orientation.Vertical)
+        splitter.addWidget(ctx)
+        splitter.setStretchFactor(0, 1)
 
         self.bubbles = CaptionBubbles(self.ctx.groups.getCaptionColors, showWeights=False, showRemove=True, editable=False)
+        self.bubbles.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.MinimumExpanding)
         self.bubbles.setContentsMargins(0, 18, 0, 0)
         self.bubbles.remove.connect(self.removeCaption)
         self.bubbles.orderChanged.connect(lambda: self.setCaption( self.captionSeparator.join(self.bubbles.getCaptions()) ))
         self.bubbles.dropped.connect(self.appendToCaption)
-        layout.addWidget(self.bubbles, 1, 0, 1, 3)
-        layout.setRowStretch(1, 0)
+        splitter.addWidget(self.bubbles)
+        splitter.setStretchFactor(1, 1)
 
         self.txtCaption = QtWidgets.QPlainTextEdit()
         self.txtCaption.textChanged.connect(self._onCaptionEdited)
         qtlib.setMonospace(self.txtCaption, 1.2)
-        layout.addWidget(self.txtCaption, 2, 0, 1, 3)
-        layout.setRowStretch(2, 1)
+        splitter.addWidget(self.txtCaption)
+        splitter.setStretchFactor(2, 1)
 
+        mainLayout = QtWidgets.QVBoxLayout()
+        mainLayout.addWidget(splitter)
+        mainLayout.addWidget(self._buildBottomRow())
+        self.setLayout(mainLayout)
+
+    def _buildBottomRow(self):
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        col = 0
+        btnMenu = QtWidgets.QPushButton("☰")
+        btnMenu.setFixedWidth(40)
+        btnMenu.setMenu(self._buildMenu())
+        layout.addWidget(btnMenu, 0, col)
+        layout.setColumnStretch(col, 0)
+
+        col += 1
         self.btnApplyRules = QtWidgets.QPushButton("Apply Rules")
+        self.btnApplyRules.setMinimumWidth(120)
         self.btnApplyRules.clicked.connect(self.applyRules)
-        layout.addWidget(self.btnApplyRules, 3, 0)
+        layout.addWidget(self.btnApplyRules, 0, col)
+        layout.setColumnStretch(col, 0)
 
-        self.btnReset = QtWidgets.QPushButton("Reload from .txt")
+        col += 1
+        self.chkAutoApply = QtWidgets.QCheckBox("Auto Apply")
+        layout.addWidget(self.chkAutoApply, 0, col)
+        layout.setColumnStretch(col, 0)
+
+        col += 1
+        layout.setColumnStretch(col, 1)
+
+        col += 1
+        layout.addWidget(QtWidgets.QLabel("Load From:"), 0, col)
+        layout.setColumnStretch(col, 0)
+
+        col += 1
+        self.srcSelector = FileTypeSelector()
+        self.srcSelector.type = FileTypeSelector.TYPE_TAGS
+        layout.addLayout(self.srcSelector, 0, col)
+        layout.setColumnStretch(col, 0)
+
+        col += 1
+        self.btnReset = QtWidgets.QPushButton("Reload")
+        self.btnReset.setFixedWidth(100)
         self.btnReset.clicked.connect(self.resetCaption)
-        layout.addWidget(self.btnReset, 3, 1)
+        layout.addWidget(self.btnReset, 0, col)
+        layout.setColumnStretch(col, 0)
 
-        self.btnSave = QtWidgets.QPushButton("Save to .txt")
+        col += 1
+        layout.setColumnMinimumWidth(col, 60)
+
+        col += 1
+        layout.addWidget(QtWidgets.QLabel("Save To:"), 0, col)
+        layout.setColumnStretch(col, 0)
+
+        col += 1
+        self.destSelector = FileTypeSelector()
+        self.destSelector.type = FileTypeSelector.TYPE_TAGS
+        layout.addLayout(self.destSelector, 0, col)
+        layout.setColumnStretch(col, 0)
+
+        col += 1
+        self.btnSave = QtWidgets.QPushButton("Save")
+        self.btnSave.setFixedWidth(100)
         self.btnSave.clicked.connect(self.saveCaption)
-        layout.addWidget(self.btnSave, 3, 2)
+        layout.addWidget(self.btnSave, 0, col)
+        layout.setColumnStretch(col, 0)
 
-        layout.setRowStretch(3, 0)
-        self.setLayout(layout)
+        widget = QtWidgets.QWidget()
+        widget.setLayout(layout)
+        return widget
+
+    def _buildMenu(self):
+        menu = QtWidgets.QMenu(self)
+        menu.addSection("Rules and Groups")
+
+        actClear = menu.addAction("Clear...")
+        actClear.triggered.connect(self.ctx.settings.clearPreset)
+
+        menu.addSeparator()
+
+        actSave = menu.addAction("Save As...")
+        actSave.triggered.connect(self.ctx.settings.savePreset)
+
+        actLoad = menu.addAction("Load from File...")
+        actLoad.triggered.connect(self.ctx.settings.loadPreset)
+
+        return menu
 
 
     def _setSaveButtonStyle(self, changed: bool):
@@ -119,7 +193,7 @@ class CaptionContainer(QtWidgets.QWidget):
         with QSignalBlocker(self.txtCaption):
             cursor = self.txtCaption.textCursor()
             cursor.setPosition(0)
-            cursor.movePosition(QtGui.QTextCursor.End, QtGui.QTextCursor.KeepAnchor)
+            cursor.movePosition(QtGui.QTextCursor.MoveOperation.End, QtGui.QTextCursor.MoveMode.KeepAnchor)
             cursor.setCharFormat(QtGui.QTextCharFormat())
 
             start = 0
@@ -127,12 +201,12 @@ class CaptionContainer(QtWidgets.QWidget):
             for caption in text.split(sep):
                 if format := formats.get(caption.strip()):
                     cursor.setPosition(start)
-                    cursor.setPosition(start+len(caption), QtGui.QTextCursor.KeepAnchor)
+                    cursor.setPosition(start+len(caption), QtGui.QTextCursor.MoveMode.KeepAnchor)
                     cursor.setCharFormat(format)
                 start += len(caption) + len(sep)
 
 
-    def getSelectedCaption(self):
+    def getSelectedCaption(self) -> str:
         text = self.txtCaption.toPlainText()
         splitSeparator = self.captionSeparator.strip()
         lenSplitSeparator = len(splitSeparator)
@@ -145,6 +219,13 @@ class CaptionContainer(QtWidgets.QWidget):
                 return part.strip()
 
         return ""
+
+
+    def isAutoApplyRules(self) -> bool:
+        return self.chkAutoApply.isChecked()
+
+    def setAutoApplyRules(self, enabled: bool):
+        self.chkAutoApply.setChecked(enabled)
 
 
     @Slot()
@@ -163,7 +244,7 @@ class CaptionContainer(QtWidgets.QWidget):
         caption += text
         self.setCaption(caption)
 
-        if self.ctx.settings.isAutoApplyRules:
+        if self.isAutoApplyRules():
             self.applyRules()
 
     @Slot()
@@ -180,7 +261,7 @@ class CaptionContainer(QtWidgets.QWidget):
             caption = text
 
         self.setCaption(caption)
-        if self.ctx.settings.isAutoApplyRules:
+        if self.isAutoApplyRules():
             self.applyRules()
 
     @Slot()
@@ -193,18 +274,21 @@ class CaptionContainer(QtWidgets.QWidget):
 
     @Slot()
     def applyRulesIfAuto(self):
-        if self.ctx.settings.isAutoApplyRules:
+        if self.isAutoApplyRules():
             self.applyRules()
 
     @Slot()
     def applyRules(self):
+        removeDup = self.ctx.settings.isRemoveDuplicates
+        sortCaptions = self.ctx.settings.isSortCaptions
+
         rulesProcessor = CaptionRulesProcessor()
-        rulesProcessor.setup(self.ctx.settings.prefix, self.ctx.settings.suffix, self.captionSeparator, self.ctx.settings.isRemoveDuplicates)
+        rulesProcessor.setup(self.ctx.settings.prefix, self.ctx.settings.suffix, self.captionSeparator, removeDup, sortCaptions)
+        rulesProcessor.setSearchReplacePairs(self.ctx.settings.searchReplacePairs)
         rulesProcessor.setBannedCaptions(self.ctx.settings.bannedCaptions)
-        rulesProcessor.setCaptionGroups(
-            (group.captions for group in self.ctx.groups.groups),
-            (group.captions for group in self.ctx.groups.groups if group.mutuallyExclusive)
-        )
+        rulesProcessor.setCaptionGroups( group.captions for group in self.ctx.groups.groups )
+        rulesProcessor.setMutuallyExclusiveCaptionGroups( group.captions for group in self.ctx.groups.groups if group.mutuallyExclusive )
+        rulesProcessor.setCombinationCaptionGroups( group.captions for group in self.ctx.groups.groups if group.combineTags )
 
         text = self.txtCaption.toPlainText()
         textNew = rulesProcessor.process(text)
@@ -215,27 +299,11 @@ class CaptionContainer(QtWidgets.QWidget):
 
 
     @Slot()
-    def _onFileTypeUpdated(self):
-        srcSelector = self.ctx.settings.srcSelector
-        if srcSelector.type == FileTypeSelector.TYPE_TXT:
-            self.btnReset.setText("Reload from .txt")
-        else:
-            self.btnReset.setText(f"Reload from .json   [{srcSelector.type}.{srcSelector.name}]")
-
-        destSelector = self.ctx.settings.destSelector
-        if destSelector.type == FileTypeSelector.TYPE_TXT:
-            self.btnSave.setText("Save to .txt")
-        else:
-            self.btnSave.setText(f"Save to .json   [{destSelector.type}.{destSelector.name}]")
-
-
-    @Slot()
     def saveCaption(self):
         text = self.txtCaption.toPlainText()
-        destSelector = self.ctx.settings.destSelector
         currentFile = self.ctx.tab.filelist.getCurrentFile()
 
-        if destSelector.saveCaption(currentFile, text):
+        if self.destSelector.saveCaption(currentFile, text):
             self.captionCache.remove()
             self.captionCache.setState(DataKeys.IconStates.Saved)
             self._setSaveButtonStyle(False)
@@ -251,9 +319,8 @@ class CaptionContainer(QtWidgets.QWidget):
 
     @Slot()
     def resetCaption(self):
-        srcSelector = self.ctx.settings.srcSelector
         currentFile = self.ctx.tab.filelist.getCurrentFile()
-        text = srcSelector.loadCaption(currentFile)
+        text = self.srcSelector.loadCaption(currentFile)
 
         if text:
             self.setCaption(text)
@@ -276,8 +343,10 @@ class CaptionContainer(QtWidgets.QWidget):
 
     def onFileChanged(self, currentFile):
         self.loadCaption()
-        if self.ctx.settings.isAutoApplyRules:
+        if self.isAutoApplyRules():
             self.applyRules()
+        
+        self.ctx.generate.onFileChanged(currentFile)
     
     def onFileListChanged(self, currentFile):
         self.onFileChanged(currentFile)

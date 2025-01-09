@@ -49,7 +49,6 @@ class BatchCaption(QtWidgets.QWidget):
 
         row = 0
         self.promptWidget = PromptWidget("promptCaptionPresets", "promptCaptionDefault")
-        self.promptWidget.enableHighlighting()
         qtlib.setTextEditHeight(self.promptWidget.txtSystemPrompt, 5, "min")
         qtlib.setTextEditHeight(self.promptWidget.txtPrompts, 10, "min")
         self.promptWidget.lblPrompts.setText("Prompt(s) Template:")

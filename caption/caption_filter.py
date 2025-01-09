@@ -1,4 +1,6 @@
 from typing import Generator, List
+import re
+
 
 class CaptionFilter:
     def __init__(self):
@@ -29,7 +31,7 @@ class BannedCaptionFilter(CaptionFilter):
         self.bannedCaptions.update(bannedCaptions)
 
     def filterCaptions(self, captions: list[str]) -> list[str]:
-        # TODO: Use matcher
+        # TODO: Use matcher or regex
         return [c for c in captions if c not in self.bannedCaptions]
 
 
@@ -89,9 +91,107 @@ class MutuallyExclusiveFilter(CaptionFilter):
 
 
 
-class PrefixSuffixFilter(CaptionFilter):
+
+class TagCombineFilter(CaptionFilter):
+    # short hair, brown hair    -> short brown hair   short, brown -> group 0
+    # messy hair, curly hair    -> messy curly hair   messy, curly -> group 1
+
     def __init__(self):
-        super().__init__()
+        self.groupMap: dict[str, int] = dict() # key: tag as-is / value: group index
+        self._nextGroupIndex = 1
+
+    def setup(self, captionGroups: Generator[List[str], None, None]) -> None:
+        self.groupMap.clear()
+        self._nextGroupIndex = 1
+        for caps in captionGroups:
+            self.registerCombinationGroup(caps)
+
+    def registerCombinationGroup(self, captions: list[str]) -> None:
+        # Create new group index for each different end-word.
+        groupWords: dict[str, int] = dict()
+
+        for cap in captions:
+            cap = cap.strip()
+            if not cap:
+                continue
+
+            groupWord = cap.rsplit(" ", 1)[-1]
+            groupIndex = groupWords.get(groupWord)
+            if groupIndex is None:
+                groupIndex = self._nextGroupIndex
+                groupWords[groupWord] = groupIndex
+                self._nextGroupIndex += 1
+
+            self.groupMap[cap] = groupIndex
+
+    def filterCaptions(self, captions: list[str]) -> list[str]:
+        newCaptions: list[str | list[str]] = list()
+        groups: dict[int, list[str]] = dict()
+
+        # Find groups
+        for caption in captions:
+            groupIndex = self.groupMap.get(caption)
+
+            # Not registered for combination: Append unmodified string.
+            if groupIndex is None:
+                newCaptions.append(caption)
+                continue
+
+            group = groups.get(groupIndex)
+
+            # First of group: Create and append list.
+            if group is None:
+                group = list()
+                newCaptions.append(group)
+                groups[groupIndex] = group
+
+            group.append(caption)
+
+        # Merge groups to string
+        for i, caption in enumerate(newCaptions):
+            if not isinstance(caption, list):
+                continue
+
+            # Extract last word
+            combined = caption[0].rsplit(" ", 1)[-1].strip()
+            for tag in reversed(caption):
+                # Remove last word from tag.
+                # Prepend to 'combined' only if tag is not empty afterwards (when tag had multiple words).
+                if tag := tag.rsplit(" ", 1)[:-1]:
+                    tag = tag[0].strip()
+                    combined = f"{tag} {combined}"
+
+            newCaptions[i] = combined
+
+        # All lists replaced by strings
+        return newCaptions
+
+
+
+class SearchReplaceFilter:
+    def __init__(self):
+        self.replacePairs: list[tuple[re.Pattern, str]] = list()
+
+    def setup(self, searchReplacePairs: list[tuple[str, str]]) -> None:
+        self.replacePairs.clear()
+        for pattern, replace in searchReplacePairs:
+            self.addReplacePair(pattern, replace)
+
+    def addReplacePair(self, pattern: str, replace: str) -> None:
+        try:
+            self.replacePairs.append((re.compile(pattern), replace))
+        except re.error as err:
+            print(f"SearchReplaceFilter: Ignoring invalid regex pattern '{pattern}': {err}")
+
+    def filterText(self, text: str) -> str:
+        for pattern, replacement in self.replacePairs:
+            text = pattern.sub(replacement, text)
+        return text
+
+
+
+class PrefixSuffixFilter:
+    def __init__(self):
         self.prefix = ""
         self.suffix = ""
 
@@ -99,7 +199,7 @@ class PrefixSuffixFilter(CaptionFilter):
         self.prefix = prefix
         self.suffix = suffix
 
-    def filterCaptions(self, text: str) -> str:
+    def filterText(self, text: str) -> str:
         if not text.startswith(self.prefix):
             text = self.prefix + text
         if not text.endswith(self.suffix):
@@ -114,31 +214,44 @@ class CaptionRulesProcessor:
         self.suffix = ""
         self.separator = ", "
         self.removeDup = True
+        self.sortCaptions = True
 
+        self.replaceFilter = SearchReplaceFilter()
         self.exclusiveFilter = MutuallyExclusiveFilter()
         self.dupFilter = DuplicateCaptionFilter()
         self.banFilter = BannedCaptionFilter()
         self.sortFilter = SortCaptionFilter()
+        self.combineFilter = TagCombineFilter()
         self.prefixSuffixFilter = PrefixSuffixFilter()
 
 
-    def setup(self, prefix: str, suffix: str, separator: str, removeDup: bool) -> None:
+    def setup(self, prefix: str, suffix: str, separator: str, removeDup: bool, sortCaptions: bool) -> None:
         self.prefix = prefix
         self.suffix = suffix
         self.separator = separator
         self.removeDup = removeDup
+        self.sortCaptions = sortCaptions
 
         self.prefixSuffixFilter.setup(prefix, suffix)
+
+    def setSearchReplacePairs(self, pairs: list[tuple[str, str]]) -> None:
+        self.replaceFilter.setup(pairs)
 
     def setBannedCaptions(self, bannedCaptions: list[str]) -> None:
         self.banFilter.setup(bannedCaptions)
 
-    def setCaptionGroups(self, allCaptionGroups: Generator[List[str], None, None], exclusiveCaptionGroups: Generator[List[str], None, None]) -> None:
-        self.exclusiveFilter.setup(exclusiveCaptionGroups)
+    def setCaptionGroups(self, allCaptionGroups: Generator[List[str], None, None]) -> None:
         self.sortFilter.setup(allCaptionGroups, self.prefix, self.suffix, self.separator)
+
+    def setMutuallyExclusiveCaptionGroups(self, exclusiveCaptionGroups: Generator[List[str], None, None]) -> None:
+        self.exclusiveFilter.setup(exclusiveCaptionGroups)
+
+    def setCombinationCaptionGroups(self, combineCaptionGroups: Generator[List[str], None, None]) -> None:
+        self.combineFilter.setup(combineCaptionGroups)
 
 
     def process(self, text: str) -> str:
+        text = self.replaceFilter.filterText(text)
         captions = [c.strip() for c in text.split(self.separator.strip())]
 
         # Filter mutually exclusive captions before removing duplicates: This will keep the last inserted caption
@@ -148,8 +261,12 @@ class CaptionRulesProcessor:
             captions = self.dupFilter.filterCaptions(captions)
 
         captions = self.banFilter.filterCaptions(captions)
-        captions = self.sortFilter.filterCaptions(captions)
+
+        if self.sortCaptions:
+            captions = self.sortFilter.filterCaptions(captions)
+
+        captions = self.combineFilter.filterCaptions(captions)
 
         text = self.separator.join(captions)
-        text = self.prefixSuffixFilter.filterCaptions(text)
+        text = self.prefixSuffixFilter.filterText(text)
         return text

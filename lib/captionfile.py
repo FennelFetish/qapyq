@@ -163,6 +163,13 @@ class FileTypeSelector(QtWidgets.QHBoxLayout):
     @property
     def type(self) -> str:
         return self.cboType.currentData()
+    
+    @type.setter
+    def type(self, type: str):
+        index = self.cboType.findData(type)
+        index = max(index, 0)
+        self.cboType.setCurrentIndex(index)
+
 
     @property
     def name(self) -> str:
@@ -191,6 +198,10 @@ class FileTypeSelector(QtWidgets.QHBoxLayout):
 
 
     def saveCaption(self, imgPath: str, text: str) -> bool:
+        if not imgPath:
+            print(f"Failed to save caption to file: Path is empty")
+            return False
+
         if self.type == FileTypeSelector.TYPE_TXT:
             self.saveCaptionTxt(imgPath, text)
             return True

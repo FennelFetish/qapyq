@@ -58,7 +58,7 @@ class PromptWidget(QtWidgets.QWidget):
         self.lblPrompts = QtWidgets.QLabel("Prompt(s):")
         layout.addWidget(self.lblPrompts, row, 0, Qt.AlignTop)
 
-        self.txtPrompts = QtWidgets.QTextEdit()
+        self.txtPrompts = QtWidgets.QPlainTextEdit()
         qtlib.setMonospace(self.txtPrompts)
         qtlib.setShowWhitespace(self.txtPrompts)
         layout.addWidget(self.txtPrompts, row, 1, 1, 4)

@@ -13,15 +13,18 @@ class CaptionPreset:
 
         self.autoApplyRules : bool = False
         self.removeDuplicates : bool = True
+        self.sortCaptions : bool = True
 
-        self.groups = []
-        self.banned = []
+        self.groups: list[CaptionPresetGroup] = []
+        self.searchReplace: list[tuple[str, str]] = []
+        self.banned: list[str] = []
 
-    def addGroup(self, name, color, mutuallyExclusive, captions):
+    def addGroup(self, name: str, color: str, mutuallyExclusive: bool, combineTags: bool, captions):
         group = CaptionPresetGroup()
         group.name = name
         group.color = color
         group.mutuallyExclusive = mutuallyExclusive
+        group.combineTags = combineTags
         group.captions.extend(captions)
         self.groups.append(group)
 
@@ -36,16 +39,18 @@ class CaptionPreset:
             "suffix_separator": self.suffixSeparator,
             "auto_apply_rules": self.autoApplyRules,
             "remove_duplicates": self.removeDuplicates,
+            "sort_captions": self.sortCaptions,
             "groups": groupData,
+            "search_replace": self.searchReplace,
             "banned": self.banned
         }
 
-    def saveTo(self, path):
+    def saveTo(self, path: str):
         data = self.toDict()
         with open(path, 'w') as file:
             json.dump(data, file, indent=4)
 
-    def loadFrom(self, path):
+    def loadFrom(self, path: str):
         with open(path, 'r') as file:
             data = json.load(file)
         
@@ -56,6 +61,8 @@ class CaptionPreset:
         self.suffixSeparator    = data.get("suffix_separator", True)
         self.autoApplyRules     = data.get("auto_apply_rules", False)
         self.removeDuplicates   = data.get("remove_duplicates", True)
+        self.sortCaptions       = data.get("sort_captions", True)
+        self.searchReplace      = data.get("search_replace", [])
         self.banned             = data.get("banned", [])
 
         if "groups" in data:
@@ -64,6 +71,7 @@ class CaptionPreset:
                     group.get("name", "Group"),
                     group.get("color", "#000"),
                     group.get("mutually_exclusive", False),
+                    group.get("combine_tags", False),
                     group.get("captions", [])
                 )
 
@@ -71,16 +79,17 @@ class CaptionPreset:
 
 class CaptionPresetGroup:
     def __init__(self):
-        self.name = "Group"
-        self.color = "#000"
-        self.mutuallyExclusive : bool = False
-        self.captions = []
+        self.name: str = "Group"
+        self.color: str = "#000"
+        self.mutuallyExclusive: bool = False
+        self.combineTags: bool = False
+        self.captions: list[str] = []
     
     def toDict(self):
-        captionData = [c for c in self.captions]
         return {
             "name": self.name,
             "color": self.color,
             "mutually_exclusive": self.mutuallyExclusive,
-            "captions": captionData
+            "combine_tags": self.combineTags,
+            "captions": list(self.captions)
         }
