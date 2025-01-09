@@ -127,10 +127,7 @@ class BatchRules(QtWidgets.QWidget):
 
         self.banWidget = SortedStringFlowWidget()
         self.banWidget.changed.connect(self._onBannedChanged)
-        scrollBan = QtWidgets.QScrollArea()
-        scrollBan.setWidgetResizable(True)
-        scrollBan.setWidget(self.banWidget)
-        layout.addWidget(scrollBan, row, 3, 1, 3)
+        layout.addWidget(qtlib.BaseColorScrollArea(self.banWidget), row, 3, 1, 3)
 
         groupBox = QtWidgets.QGroupBox("Rules")
         groupBox.setLayout(layout)

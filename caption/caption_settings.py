@@ -108,12 +108,8 @@ class CaptionSettings(QtWidgets.QWidget):
         row += 1
         self.banWidget = SortedStringFlowWidget()
         self.banWidget.changed.connect(lambda: self.ctx.controlUpdated.emit())
-
-        scrollBan = QtWidgets.QScrollArea()
-        scrollBan.setWidgetResizable(True)
-        scrollBan.setWidget(self.banWidget)
         layout.addWidget(QtWidgets.QLabel("Banned:"), row, 4, Qt.AlignmentFlag.AlignTop)
-        layout.addWidget(scrollBan, row, 5, 2, 1)
+        layout.addWidget(qtlib.BaseColorScrollArea(self.banWidget), row, 5, 2, 1)
 
         row += 1
         btnAddBanned = QtWidgets.QPushButton("Ban")

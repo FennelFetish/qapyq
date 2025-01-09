@@ -544,8 +544,6 @@ def getHighlightColor(colorHex: str) -> QtGui.QColor:
 
 
 
-
-
 class MenuComboBox(QtWidgets.QComboBox):
     def __init__(self, title: str = None):
         super().__init__()
@@ -602,6 +600,19 @@ class PercentageSpinBox(QtWidgets.QSpinBox):
         self.setValue(100)
         self.setSingleStep(5)
         self.setSuffix(" %")
+
+
+
+class BaseColorScrollArea(QtWidgets.QScrollArea):
+    def __init__(self, widget: QtWidgets.QWidget):
+        super().__init__()
+        self.setWidget(widget)
+        self.setWidgetResizable(True)
+
+        palette = self.palette()
+        bgColor = palette.color(QtGui.QPalette.ColorRole.Base)
+        palette.setColor(QtGui.QPalette.ColorRole.Window, bgColor)
+        self.setPalette(palette)
 
 
 

@@ -48,16 +48,8 @@ class CaptionGroups(QtWidgets.QWidget):
 
         groupWidget = QtWidgets.QWidget()
         groupWidget.setLayout(self.groupLayout)
-
-        scrollGroup = QtWidgets.QScrollArea()
+        scrollGroup = qtlib.BaseColorScrollArea(groupWidget)
         scrollGroup.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
-        scrollGroup.setWidgetResizable(True)
-        scrollGroup.setWidget(groupWidget)
-
-        palette = scrollGroup.palette()
-        bgColor = palette.color(QtGui.QPalette.ColorRole.Base)
-        palette.setColor(QtGui.QPalette.ColorRole.Window, bgColor)
-        scrollGroup.setPalette(palette)
         layout.addWidget(scrollGroup, row, 0, 1, 5)
 
         row += 1
