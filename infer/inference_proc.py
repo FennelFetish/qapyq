@@ -130,7 +130,7 @@ class InferenceProcess(metaclass=Singleton):
         setattr(self, configAttr, currentConfig)
 
 
-    def caption(self, imgPath, prompts: dict, sysPrompt=None) -> dict[str, str]:
+    def caption(self, imgPath, prompts: list[dict[str, str]], sysPrompt=None) -> dict[str, str]:
         return self._queryKey("captions", {
             "cmd": "caption",
             "img": imgPath,
@@ -144,7 +144,7 @@ class InferenceProcess(metaclass=Singleton):
             "img": imgPath
         })
 
-    def answer(self, prompts: dict, sysPrompt=None) -> dict[str, str]:
+    def answer(self, prompts: list[dict[str, str]], sysPrompt=None) -> dict[str, str]:
         return self._queryKey("answers", {
             "cmd": "answer",
             "prompts": prompts,
