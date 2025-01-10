@@ -10,8 +10,6 @@ from .caption_preset import CaptionPreset
 # - all words ('b c' in 'a b c d e', but not 'b f')
 # - any word  ('b d' in 'a b c d e', also 'b f')
 
-# TODO: Color picker for group color: https://doc.qt.io/qt-6/qcolordialog.html
-
 
 class CaptionGroups(QtWidgets.QWidget):
     HUE_OFFSET = 0.3819444 # 1.0 - inverted golden ratio, ~137.5°
@@ -46,9 +44,10 @@ class CaptionGroups(QtWidgets.QWidget):
         self.groupLayout.setContentsMargins(0, 0, 0, 0)
         self.groupLayout.setSpacing(0)
 
-        groupWidget = QtWidgets.QWidget()
-        groupWidget.setLayout(self.groupLayout)
-        scrollGroup = qtlib.BaseColorScrollArea(groupWidget)
+        self.groupWidget = GroupReorderWidget()
+        self.groupWidget.setLayout(self.groupLayout)
+        self.groupWidget.orderChanged.connect(self._emitUpdatedApplyRules)
+        scrollGroup = qtlib.BaseColorScrollArea(self.groupWidget)
         scrollGroup.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
         layout.addWidget(scrollGroup, row, 0, 1, 5)
 
@@ -101,13 +100,13 @@ class CaptionGroups(QtWidgets.QWidget):
 
         self.ctx.controlUpdated.emit()
 
-    def moveGroup(self, group, move: int):
-        count = self.groupLayout.count()
-        index = self.groupLayout.indexOf(group)
-        index += move
-        if 0 <= index < count:
-            self.groupLayout.insertWidget(index, group)
-            self._emitUpdatedApplyRules()
+    # def moveGroup(self, group, move: int):
+    #     count = self.groupLayout.count()
+    #     index = self.groupLayout.indexOf(group)
+    #     index += move
+    #     if 0 <= index < count:
+    #         self.groupLayout.insertWidget(index, group)
+    #         self._emitUpdatedApplyRules()
 
 
     def getCaptionColors(self):
@@ -143,6 +142,7 @@ class CaptionGroups(QtWidgets.QWidget):
             group.updateSelectedState(captions)
     
 
+    @Slot()
     def _emitUpdatedApplyRules(self):
         self.ctx.controlUpdated.emit()
         self.ctx.needsRulesApplied.emit()
@@ -166,8 +166,9 @@ class CaptionGroups(QtWidgets.QWidget):
             self._nextGroupHue = util.get_hue(group.color) + self.HUE_OFFSET
 
 
+
 class CaptionControlGroup(QtWidgets.QWidget):
-    def __init__(self, groups, name):
+    def __init__(self, groups: CaptionGroups, name: str):
         super().__init__()
         self.groups = groups
         self.charFormat = QtGui.QTextCharFormat()
@@ -187,20 +188,22 @@ class CaptionControlGroup(QtWidgets.QWidget):
         separatorLine = QtWidgets.QFrame()
         separatorLine.setFrameStyle(QtWidgets.QFrame.Shape.HLine | QtWidgets.QFrame.Shadow.Sunken)
 
-        layout = QtWidgets.QVBoxLayout()
-        layout.setContentsMargins(5, 5, 5, 0)
-        layout.addWidget(self.headerWidget)
-        layout.addWidget(self.buttonWidget)
-        layout.addSpacing(3)
-        layout.addWidget(separatorLine)
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(3, 5, 5, 0)
+        layout.setSpacing(4)
+
+        layout.addWidget(GroupDragHandle(self, self.groups.groupWidget), 0, 0, 2, 1)
+        layout.setColumnMinimumWidth(0, 10)
+        layout.addWidget(self.headerWidget, 0, 1)
+        layout.addWidget(self.buttonWidget, 1, 1)
+
+        layout.setRowMinimumHeight(2, 3)
+        layout.addWidget(separatorLine, 3, 0, 1, 2)
+
         self.setLayout(layout)
 
     def _buildHeaderWidget(self, name):
-        self.txtColor = QtWidgets.QLineEdit()
-        self.txtColor.textChanged.connect(self._updateColor)
-        self.txtColor.setFixedWidth(60)
-        qtlib.setMonospace(self.txtColor, 0.8)
-        self.color = "#000"
+        self.colorWidget = GroupColor(self)
 
         self.txtName = QtWidgets.QLineEdit(name)
         self.txtName.setMinimumWidth(160)
@@ -214,26 +217,18 @@ class CaptionControlGroup(QtWidgets.QWidget):
         self.chkExclusive = QtWidgets.QCheckBox("Mutually Exclusive")
         self.chkCombine = QtWidgets.QCheckBox("Combine Tags")
 
-        btnMoveGroupUp = QtWidgets.QPushButton("Up")
-        btnMoveGroupUp.clicked.connect(lambda: self.groups.moveGroup(self, -1))
-
-        btnMoveGroupDown = QtWidgets.QPushButton("Down")
-        btnMoveGroupDown.clicked.connect(lambda: self.groups.moveGroup(self, 1))
-
         btnRemoveGroup = QtWidgets.QPushButton("Remove Group")
         btnRemoveGroup.clicked.connect(lambda: self.groups.removeGroup(self))
 
         self.headerLayout = QtWidgets.QHBoxLayout()
         self.headerLayout.setContentsMargins(0, 0, 0, 0)
-        self.headerLayout.addWidget(self.txtColor)
+        self.headerLayout.addWidget(self.colorWidget)
         self.headerLayout.addWidget(self.txtName)
         self.headerLayout.addWidget(btnAddCaption)
         self.headerLayout.addWidget(self.chkExclusive)
         self.headerLayout.addWidget(self.chkCombine)
         self.headerLayout.addStretch()
 
-        self.headerLayout.addWidget(btnMoveGroupUp)
-        self.headerLayout.addWidget(btnMoveGroupDown)
         self.headerLayout.addWidget(btnRemoveGroup)
         self.headerWidget = QtWidgets.QWidget()
         self.headerWidget.setContentsMargins(0, 0, 0, 0)
@@ -269,21 +264,13 @@ class CaptionControlGroup(QtWidgets.QWidget):
 
     @property
     def color(self) -> str:
-        return self.txtColor.text()
+        return self.colorWidget.color
 
     @color.setter
     def color(self, color):
-        self.txtColor.setText(color)
-        self._updateCharFormat(color)
+        self.colorWidget.color = color
 
 
-    @Slot()
-    def _updateColor(self, color):
-        if util.isValidColor(color):
-            self.txtColor.setStyleSheet(f"color: #fff; background-color: {color}")
-            self._updateCharFormat(color)
-            self.groups.ctx.controlUpdated.emit()
-    
     def _updateCharFormat(self, color):
         self.charFormat.setForeground( qtlib.getHighlightColor(color) )
 
@@ -317,7 +304,7 @@ class CaptionControlGroup(QtWidgets.QWidget):
                 return False
 
         button = qtlib.EditablePushButton(text, lambda w: qtlib.setMonospace(w, 1.05))
-        button.button.setFocusPolicy(Qt.NoFocus)
+        button.button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         button.clicked.connect(self.groups.ctx.captionClicked)
         button.textEmpty.connect(self._removeCaption)
         button.textChanged.connect(lambda: self.groups._emitUpdatedApplyRules())
@@ -341,7 +328,88 @@ class CaptionControlGroup(QtWidgets.QWidget):
         self.groups._emitUpdatedApplyRules()
 
     def resizeEvent(self, event):
-        self.layout().update()  # Weird: Needed for proper resize.
+        self.buttonLayout.update()  # Weird: Needed for proper resize.
+
+
+
+class GroupColor(QtWidgets.QFrame):
+    def __init__(self, group: CaptionControlGroup):
+        super().__init__()
+        self.group = group
+        self._color = "#000"
+
+        self.setToolTip("Choose Color")
+        self.setMinimumWidth(30)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        self.setFrameShape(QtWidgets.QFrame.Shape.Box)
+        self.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
+        self.setLineWidth(1)
+        self.setMidLineWidth(0)
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        color = QtWidgets.QColorDialog.getColor(self.color, self, f"Choose Color for '{self.group.name}'")
+        if color.isValid():
+            self.color = color.name()
+
+    @property
+    def color(self) -> str:
+        return self._color
+    
+    @color.setter
+    def color(self, color: str):
+        if not util.isValidColor(color):
+            return
+
+        self._color = color
+        self.setStyleSheet(".GroupColor{background-color: " + color + "}")
+        self.group._updateCharFormat(color)
+        self.group.groups.ctx.controlUpdated.emit()
+
+
+
+class GroupReorderWidget(qtlib.ReorderWidget):
+    def __init__(self):
+        super().__init__(False)
+        self.showCursorPicture = False
+
+    def dragEnterEvent(self, e):
+        if not e.mimeData().hasText():
+            e.accept()
+
+    def mouseMoveEvent(self, e):
+        pass
+
+
+
+class GroupDragHandle(QtWidgets.QWidget):
+    def __init__(self, group: CaptionControlGroup, reorderWidget: GroupReorderWidget):
+        super().__init__()
+        self.group = group
+        self.reorderWidget = reorderWidget
+
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setCursor(Qt.CursorShape.DragMoveCursor)
+
+        layout = QtWidgets.QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        layout.addWidget(self._buildFrame())
+        layout.addWidget(self._buildFrame())
+        self.setLayout(layout)
+
+    def _buildFrame(self):
+        frame = QtWidgets.QFrame()
+        frame.setFixedWidth(2)
+        frame.setFrameShape(QtWidgets.QFrame.Shape.VLine)
+        frame.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
+        frame.setLineWidth(1)
+        frame.setMidLineWidth(1)
+        return frame
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.buttons() == Qt.MouseButton.LeftButton:
+            self.reorderWidget._startDrag(self.group)
 
 
 

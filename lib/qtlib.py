@@ -307,18 +307,20 @@ class ReorderWidget(QtWidgets.QWidget):
         super().__init__()
         self.setAcceptDrops(True)
         self._dragWidgetIndex = -1
-        self._drag_target = None
+        self._dragTarget = None
 
         self.dataCallback = None
         self.dropCallback = None # Callback returns true = Remove from source widget (takeDrop)
         self.updateCallback = None
         self.giveDrop = giveDrop
 
+        self.showCursorPicture = True
+
     def _setDragTarget(self, pixmap):
         pixmap = self._adjustBrightness(pixmap, 2, 1.9, 1.6)
-        self._drag_target = QtWidgets.QLabel()
-        self._drag_target.setPixmap(pixmap)
-        self.layout().addWidget(self._drag_target)
+        self._dragTarget = QtWidgets.QLabel()
+        self._dragTarget.setPixmap(pixmap)
+        self.layout().addWidget(self._dragTarget)
 
     def _adjustBrightness(self, pixmap, r, g, b):
         image = pixmap.toImage()
@@ -332,9 +334,9 @@ class ReorderWidget(QtWidgets.QWidget):
         return QtGui.QPixmap.fromImage(image)
 
     def _removeDragTarget(self):
-        self._drag_target.hide()
-        self._drag_target.deleteLater()
-        self._drag_target = None
+        self._dragTarget.hide()
+        self._dragTarget.deleteLater()
+        self._dragTarget = None
 
     def widgetUnderCursor(self):
         layout = self.layout()
@@ -344,14 +346,7 @@ class ReorderWidget(QtWidgets.QWidget):
                 return widget
         return None
 
-    def mouseMoveEvent(self, e):
-        if e.buttons() != Qt.MouseButton.LeftButton:
-            return
-        
-        widget = self.widgetUnderCursor() # Only drag direct children
-        if not widget:
-            return
-
+    def _startDrag(self, widget: QtWidgets.QWidget):
         pixmap = widget.grab()
         self._setDragTarget(pixmap)
 
@@ -360,11 +355,12 @@ class ReorderWidget(QtWidgets.QWidget):
             data.setText( self.dataCallback(widget) )
 
         drag = QtGui.QDrag(widget)
-        drag.setPixmap(pixmap)
         drag.setMimeData(data)
+        if self.showCursorPicture:
+            drag.setPixmap(pixmap)
 
         self._dragWidgetIndex = self.layout().indexOf(widget)
-        self.layout().insertWidget(self._dragWidgetIndex, self._drag_target)
+        self.layout().insertWidget(self._dragWidgetIndex, self._dragTarget)
         widget.hide()
 
         actions = Qt.DropAction.CopyAction
@@ -374,7 +370,7 @@ class ReorderWidget(QtWidgets.QWidget):
 
         # TODO: Prevent removal of elements when dragged into another application
         #print(f"Drag result: {result}")
-        if result == Qt.MoveAction:
+        if result == Qt.DropAction.MoveAction:
             self.layout().removeWidget(widget)
             widget.deleteLater()
         else:
@@ -385,29 +381,35 @@ class ReorderWidget(QtWidgets.QWidget):
         if self.updateCallback:
             self.updateCallback()
 
+    def mouseMoveEvent(self, e):
+        if e.buttons() != Qt.MouseButton.LeftButton:
+            return
+        if widget := self.widgetUnderCursor(): # Only drag direct children
+            self._startDrag(widget)
+
     def dragEnterEvent(self, e):
         if e.mimeData().hasText():
             e.accept()
 
     def dragLeaveEvent(self, e):
-        if self._drag_target:
-            self.layout().insertWidget(self._dragWidgetIndex, self._drag_target)
+        if self._dragTarget:
+            self.layout().insertWidget(self._dragWidgetIndex, self._dragTarget)
         e.accept()
 
     def dragMoveEvent(self, e):
-        if not self._drag_target:
+        if not self._dragTarget:
             e.accept()
             return
 
         layout = self.layout()
         index = self._findDropIndex(e)
         if index is not None:
-            layout.insertWidget(index, self._drag_target)
+            layout.insertWidget(index, self._dragTarget)
         e.accept()
 
     def dropEvent(self, e):
         # Dropped into different widget
-        if not self._drag_target:
+        if not self._dragTarget:
             if self.dropCallback:
                 takeDrop = self.dropCallback(e.mimeData().text())
                 action = Qt.DropAction.MoveAction if takeDrop else Qt.DropAction.CopyAction
@@ -418,7 +420,7 @@ class ReorderWidget(QtWidgets.QWidget):
         # Dropped into same widget
         layout = self.layout()
         widget = e.source()
-        index = layout.indexOf(self._drag_target)
+        index = layout.indexOf(self._dragTarget)
         if index is not None:
             layout.insertWidget(index, widget)
             widget.show()
@@ -604,13 +606,13 @@ class PercentageSpinBox(QtWidgets.QSpinBox):
 
 
 class BaseColorScrollArea(QtWidgets.QScrollArea):
-    def __init__(self, widget: QtWidgets.QWidget):
+    def __init__(self, widget: QtWidgets.QWidget, colorRole=QtGui.QPalette.ColorRole.Base):
         super().__init__()
         self.setWidget(widget)
         self.setWidgetResizable(True)
 
         palette = self.palette()
-        bgColor = palette.color(QtGui.QPalette.ColorRole.Base)
+        bgColor = palette.color(colorRole)
         palette.setColor(QtGui.QPalette.ColorRole.Window, bgColor)
         self.setPalette(palette)
 
