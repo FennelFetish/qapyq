@@ -16,6 +16,7 @@ from config import Config
 #       - "Crop by Mask" mode for previewing effect of macros.
 # TODO: Size modes for rect selection:
 #       - Try to use same buckets: Quantize to Q, separate preview rect
+# TODO: Display cropped image in extra window that can be toggled from CropToolBar
 
 
 def createPen(r, g, b):
@@ -57,6 +58,8 @@ class CropTool(ViewTool):
         self._mask = MaskRect()
         self._mask.setBrush( QBrush(QColor(0, 0, 0, 100)) )
         self._waitForConfirmation = False
+
+        self._lastExportedFile = ""
 
         from .crop_toolbar import CropToolBar
         self._toolbar = CropToolBar(self)
@@ -204,10 +207,13 @@ class CropTool(ViewTool):
 
     @Slot()
     def onExportDone(self, file, path):
-        print("Exported cropped image to", path)
-        self.tab.statusBar().showColoredMessage("Exported cropped image to: " + path, success=True)
+        message = f"Exported cropped image to: {path}"
+        print(message)
+        self.tab.statusBar().showColoredMessage(message, success=True)
+
         self._imgview.filelist.setData(file, DataKeys.CropState, DataKeys.IconStates.Saved)
         self._toolbar.updateExport()
+        self._lastExportedFile = path
 
     @Slot()
     def onExportProgress(self, message: str):
@@ -216,6 +222,13 @@ class CropTool(ViewTool):
     @Slot()
     def onExportFailed(self, msg: str):
         self.tab.statusBar().showColoredMessage(f"Export failed: {msg}", False, 0)
+
+
+    @Slot()
+    def openLastExportedFile(self):
+        if self._lastExportedFile:
+            tab = self.tab.mainWindow.addTab()
+            tab.filelist.load(self._lastExportedFile)
 
 
     # === Tool Interface ===

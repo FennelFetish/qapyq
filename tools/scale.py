@@ -16,6 +16,7 @@ class Size:
 class ScaleTool(ViewTool):
     def __init__(self, tab):
         super().__init__(tab)
+        self._lastExportedFile = ""
         self._toolbar = ScaleToolBar(self)
 
     def imgSize(self) -> Size | None:
@@ -58,9 +59,10 @@ class ScaleTool(ViewTool):
         message = f"Exported scaled image to: {path}"
         print(message)
         self.tab.statusBar().showColoredMessage(message, success=True)
-        self._imgview.filelist.setData(file, DataKeys.CropState, DataKeys.IconStates.Saved)
 
+        self._imgview.filelist.setData(file, DataKeys.CropState, DataKeys.IconStates.Saved)
         self._toolbar.updateExport()
+        self._lastExportedFile = path
 
     @Slot()
     def onExportProgress(self, message: str):
@@ -69,6 +71,13 @@ class ScaleTool(ViewTool):
     @Slot()
     def onExportFailed(self, msg: str):
         self.tab.statusBar().showColoredMessage(f"Export failed: {msg}", False, 0)
+
+
+    @Slot()
+    def openLastExportedFile(self):
+        if self._lastExportedFile:
+            tab = self.tab.mainWindow.addTab()
+            tab.filelist.load(self._lastExportedFile)
 
 
     # === Tool Interface ===
@@ -123,6 +132,10 @@ class ScaleToolBar(QtWidgets.QToolBar):
         btnExport = QtWidgets.QPushButton("Export")
         btnExport.clicked.connect(self.scaleTool.exportImage)
         layout.addWidget(btnExport)
+
+        btnOpenLast = QtWidgets.QPushButton("Open Last File")
+        btnOpenLast.clicked.connect(scaleTool.openLastExportedFile)
+        layout.addWidget(btnOpenLast)
         
         widget = QtWidgets.QWidget()
         widget.setLayout(layout)

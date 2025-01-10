@@ -18,9 +18,13 @@ class CropToolBar(QtWidgets.QToolBar):
         layout.addWidget(self._buildRotation())
         layout.addWidget(self.exportWidget)
 
+        btnOpenLast = QtWidgets.QPushButton("Open Last File")
+        btnOpenLast.clicked.connect(cropTool.openLastExportedFile)
+        layout.addWidget(btnOpenLast)
+
         widget = QtWidgets.QWidget()
         widget.setLayout(layout)
-        act = self.addWidget(widget)
+        self.addWidget(widget)
 
         self.setMaximumWidth(180)
 
