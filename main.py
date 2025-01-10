@@ -45,7 +45,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self._fullscreenTab:
             self.toggleFullscreen()
 
-        tab = ImgTab(self.tabWidget)
+        tab = ImgTab(self)
         tab.tabTitleChanged.connect(self.updateTitle)
         index = self.tabWidget.addTab(tab, ImgTab.EMPTY_TAB_TITLE)
         self.tabWidget.setCurrentIndex(index)
@@ -99,7 +99,10 @@ class MainWindow(QtWidgets.QMainWindow):
     
     @Slot()
     def setTool(self, toolName: str):
-        self.currentTab.setTool(toolName)
+        if self._fullscreenTab:
+            self._fullscreenTab.setTool(toolName)
+        else:
+            self.currentTab.setTool(toolName)
         self.toolbar.setTool(toolName)
 
     @Slot()
@@ -186,74 +189,93 @@ class MainMenu(QtWidgets.QMenu):
         actOpen.setShortcutContext(Qt.ApplicationShortcut)
         actOpen.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_O))
         actOpen.triggered.connect(self.openFile)
+        self.addAction(actOpen)
 
         actOpenDir = QtGui.QAction("&Open Folder...", self)
         actOpenDir.setShortcutContext(Qt.ApplicationShortcut)
         actOpenDir.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.SHIFT | Qt.Key_O))
         actOpenDir.triggered.connect(self.openDir)
+        self.addAction(actOpenDir)
+
+        self.addSeparator()
 
         actFullscreen = QtGui.QAction("Toggle &Fullscreen", self)
         actFullscreen.setShortcutContext(Qt.ApplicationShortcut)
         actFullscreen.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_F))
         actFullscreen.triggered.connect(mainWindow.toggleFullscreen)
+        self.addAction(actFullscreen)
 
         actPrevImage = QtGui.QAction("Previous Image", self)
         actPrevImage.setShortcutContext(Qt.ApplicationShortcut)
         actPrevImage.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_PageUp))
         actPrevImage.triggered.connect(lambda: self.changeImage(False))
+        self.addAction(actPrevImage)
 
         actNextImage = QtGui.QAction("Next Image", self)
         actNextImage.setShortcutContext(Qt.ApplicationShortcut)
         actNextImage.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_PageDown))
         actNextImage.triggered.connect(lambda: self.changeImage(True))
+        self.addAction(actNextImage)
+
+        self.addSeparator()
 
         actAddTab = QtGui.QAction("New &Tab", self)
         actAddTab.setShortcutContext(Qt.ApplicationShortcut)
         actAddTab.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_T))
         actAddTab.triggered.connect(mainWindow.addTab)
+        self.addAction(actAddTab)
 
         actSwitchTab = QtGui.QAction("Switch Tab", self)
         actSwitchTab.setShortcutContext(Qt.ApplicationShortcut)
         actSwitchTab.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_Tab))
         actSwitchTab.triggered.connect(mainWindow.switchTab)
+        self.addAction(actSwitchTab)
 
         actCloseTab = QtGui.QAction("Close Tab", self)
         actCloseTab.setShortcutContext(Qt.ApplicationShortcut)
         actCloseTab.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_W))
         actCloseTab.triggered.connect(mainWindow.closeCurrentTab)
+        self.addAction(actCloseTab)
+
+        self.addSeparator()
+
+        self.addMenu(self._buildToolsSubmenu(mainWindow))
+
+        self.addSeparator()
 
         actModelConfig = QtGui.QAction("Model Settings...", self)
         actModelConfig.triggered.connect(self.showModelSettings)
+        self.addAction(actModelConfig)
 
         actClearVram = QtGui.QAction("Clear V&RAM", self)
         actClearVram.setShortcutContext(Qt.ApplicationShortcut)
         actClearVram.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_R))
         actClearVram.triggered.connect(self.clearVram)
+        self.addAction(actClearVram)
 
         actKillInference = QtGui.QAction("Terminate Inference", self)
         actKillInference.triggered.connect(self.killInference)
+        self.addAction(actKillInference)
+
+        self.addSeparator()
 
         actQuit = QtGui.QAction("&Quit", self)
         actQuit.setShortcutContext(Qt.ApplicationShortcut)
         actQuit.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_Q))
-        actQuit.triggered.connect(mainWindow.close)
-
-        self.addAction(actOpen)
-        self.addAction(actOpenDir)
-        self.addSeparator()
-        self.addAction(actFullscreen)
-        self.addAction(actPrevImage)
-        self.addAction(actNextImage)
-        self.addSeparator()
-        self.addAction(actAddTab)
-        self.addAction(actSwitchTab)
-        self.addAction(actCloseTab)
-        self.addSeparator()
-        self.addAction(actModelConfig)
-        self.addAction(actClearVram)
-        self.addAction(actKillInference)
-        self.addSeparator()
+        actQuit.triggered.connect(self.quitWithConfirmation)
         self.addAction(actQuit)
+
+    def _buildToolsSubmenu(self, mainWindow: MainWindow) -> QtWidgets.QMenu:
+        menu = QtWidgets.QMenu("Tools")
+
+        for i, tool in enumerate(("view", "slideshow", "measure", "compare", "crop", "scale", "mask")):
+            act = QtGui.QAction(tool.capitalize(), self)
+            act.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+            act.setShortcut(QtGui.QKeySequence.fromString(f"Ctrl+{i+1}"))
+            act.triggered.connect(lambda checked, tool=tool: mainWindow.setTool(tool))
+            menu.addAction(act)
+
+        return menu
 
 
     @Slot()
@@ -309,6 +331,17 @@ class MainMenu(QtWidgets.QMenu):
         finally:
             tab.imgview.takeFocusOnFilechange = True
 
+    @Slot()
+    def quitWithConfirmation(self):
+        dialog = QtWidgets.QMessageBox(self.mainWindow)
+        dialog.setIcon(QtWidgets.QMessageBox.Icon.Question)
+        dialog.setWindowTitle("Confirm Quit")
+        dialog.setText(f"Do you really want to quit the application?")
+        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+
+        if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes:
+            self.mainWindow.close()
+
 
 
 class MainToolBar(QtWidgets.QToolBar):
@@ -316,7 +349,7 @@ class MainToolBar(QtWidgets.QToolBar):
         super().__init__("Main Toolbar")
         self.mainWindow = mainWindow
         self.setFloatable(False)
-        self.setContextMenuPolicy(Qt.PreventContextMenu)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
 
         self.actMenu = self.addAction("☰")
         self.actMenu.setMenu(menu)

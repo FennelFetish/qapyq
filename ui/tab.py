@@ -1,6 +1,6 @@
 import os
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from config import Config
 from lib.filelist import FileList
 from lib.qtlib import ColoredMessageStatusBar
@@ -12,9 +12,11 @@ class ImgTab(QtWidgets.QMainWindow):
 
     tabTitleChanged = Signal(str)
 
-    def __init__(self, tabWidget: QtWidgets.QTabWidget):
+    def __init__(self, mainWindow):
         super().__init__()
-        self.tabWidget = tabWidget
+        from main import MainWindow
+        self.mainWindow: MainWindow = mainWindow
+        self.tabWidget = self.mainWindow.tabWidget
         self._index = -1 # Store index when fullscreen
         self.setWindowTitle(f"{Config.windowTitle} Fullscreen Tab")
 
@@ -123,6 +125,8 @@ class ImgTab(QtWidgets.QMainWindow):
         self.imgview.setFocus()
         self.setWindowState(winState ^ Qt.WindowFullScreen)
         self.setVisible(True)
+
+        QTimer.singleShot(100, self.imgview.updateScene)
 
 
     def onTabClosed(self):
