@@ -371,7 +371,7 @@ class MaskToolBar(QtWidgets.QToolBar):
             maskItem.clearHistoryMacroItems()
 
         self.btnStartStopMacro.setText("⚫ Start Recording")
-        self.ops["macro"].reloadMacros()
+        self._reloadOps()
 
     @Slot()
     def _blinkRecordMacro(self, disable=False):
