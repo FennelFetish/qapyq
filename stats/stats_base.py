@@ -46,6 +46,7 @@ class StatsLayout(QtWidgets.QGridLayout):
     def _buildTableGroup(self, name: str):
         layout = QtWidgets.QVBoxLayout()
 
+        self.table.setAlternatingRowColors(True)
         self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft)
         self.table.verticalHeader().setVisible(False)
         self.table.setSortingEnabled(True)
@@ -84,6 +85,7 @@ class StatsLayout(QtWidgets.QGridLayout):
 
         row += 1
         self.listFiles = QtWidgets.QListWidget()
+        self.listFiles.setAlternatingRowColors(True)
         qtlib.setMonospace(self.listFiles)
         self.listFiles.currentItemChanged.connect(self._onFileSelected)
         layout.addWidget(self.listFiles, row, 0, 1, 6)

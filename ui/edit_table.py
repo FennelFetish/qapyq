@@ -13,6 +13,7 @@ class EditableTable(QtWidgets.QTableView):
         self.proxyModel.setSourceModel(self.stringModel)
         self.setModel(self.proxyModel)
 
+        self.setAlternatingRowColors(True)
         self.setSortingEnabled(True)
         self.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft)
         self.verticalHeader().setVisible(False)
