@@ -165,9 +165,10 @@ class CaptionSettings(QtWidgets.QWidget):
     def bannedCaptions(self, bannedCaptions: list[str]):
         self.banWidget.setItems(bannedCaptions)
 
-    def addBannedCaption(self, caption: str):
+    def addBannedCaption(self, caption: str) -> bool:
         if caption:
-            self.banWidget.addItem(caption)
+            return self.banWidget.addItem(caption)
+        return False
 
     @Slot()
     def banSelectedCaption(self):

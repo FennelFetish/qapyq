@@ -62,14 +62,15 @@ class SortedStringFlowWidget(QtWidgets.QWidget):
         self.setLayout(self.flowLayout)
 
     
-    def addItem(self, label: str) -> None:
+    def addItem(self, label: str) -> bool:
         if self.hasItem(label):
-            return
+            return False
 
         self.flowLayout.addWidget(self._createBubble(label))
         self.flowLayout.items.sort(key=lambda item: item.widget().text)
         self.flowLayout.invalidate()
         self.changed.emit()
+        return True
 
     def hasItem(self, label: str) -> bool:
         for i in range(self.flowLayout.count()):

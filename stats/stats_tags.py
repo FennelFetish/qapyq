@@ -1,6 +1,6 @@
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
+from PySide6.QtCore import Qt, Slot, Signal, QAbstractItemModel, QModelIndex
 from lib.captionfile import FileTypeSelector
 from ui.tab import ImgTab
 from caption.caption_container import CaptionContainer
@@ -15,6 +15,7 @@ class TagStats(QtWidgets.QWidget):
     def __init__(self, tab: ImgTab):
         super().__init__()
         self.tab = tab
+        self._captionSlotConnected = False
 
         self.model = TagModel()
         self.proxyModel = TagProxyModel()
@@ -22,6 +23,7 @@ class TagStats(QtWidgets.QWidget):
 
         self.table = TagTableView(self.tab)
         self.table.setModel(self.proxyModel)
+        self.table.captionRulesChanged.connect(self.reloadColors)
 
         self._layout = StatsLayout(tab, "Tags", self.proxyModel, self.table, 1)
         self._layout.addLayout(self._buildSourceSelector(), 0, 0, 1, 3)
@@ -78,6 +80,19 @@ class TagStats(QtWidgets.QWidget):
         self.lblTagsPerImage.setText(f"{summary.minNumTags} - {summary.maxNumTags}")
         self.lblAvgTagsPerImage.setText(f"{summary.getAvgNumTags():.1f}")
 
+        self.reloadColors()
+
+    @Slot()
+    def reloadColors(self):
+        captionWin = self.tab.getWindowContent("caption")
+        if not captionWin:
+            return
+
+        self.model.updateColors(captionWin.ctx.groups.getCaptionCharFormats())
+        if not self._captionSlotConnected:
+            captionWin.ctx.controlUpdated.connect(self.reloadColors)
+            self._captionSlotConnected = True
+
     def clearData(self):
         self.model.clear()
 
@@ -88,6 +103,7 @@ class TagData:
         self.tag = tag
         self.count = 0
         self.files: set[str] = set()
+        self.color: QtGui.QColor | None = None
 
     def addFile(self, file: str):
         self.files.add(file)
@@ -162,6 +178,18 @@ class TagModel(QAbstractItemModel):
         self.summary.finalize(len(self.tags))
         self.endResetModel()
 
+    def updateColors(self, groupCharFormats: dict[str, QtGui.QTextCharFormat]):
+        changedRoles = [Qt.ItemDataRole.ForegroundRole]
+        for row, tag in enumerate(self.tags):
+            charFormat = groupCharFormats.get(tag.tag)
+            if not charFormat:
+                continue
+
+            color = charFormat.foreground().color()
+            if tag.color != color:
+                tag.color = color
+                self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount()-1), changedRoles)
+
     def clear(self):
         self.beginResetModel()
         self.tags.clear()
@@ -193,6 +221,7 @@ class TagModel(QAbstractItemModel):
                         return f"{presence*100:.2f} %"
 
             case Qt.ItemDataRole.FontRole: return self.font
+            case Qt.ItemDataRole.ForegroundRole: return tagData.color
             case self.ROLE_TAG:  return tagData.tag
             case self.ROLE_DATA: return tagData
 
@@ -239,6 +268,8 @@ class TagProxyModel(StatsBaseProxyModel):
 
 
 class TagTableView(QtWidgets.QTableView):
+    captionRulesChanged = Signal()
+
     def __init__(self, tab: ImgTab):
         super().__init__()
         self.tab = tab
@@ -296,13 +327,16 @@ class TagTableView(QtWidgets.QTableView):
         if captionWin := self.getCaptionWindow():
             tag = self.model().data(self._index, TagModel.ROLE_TAG)
             captionWin.appendToCaption(tag)
+            self.captionRulesChanged.emit()
 
     @Slot()
     def _banTag(self):
         if captionWin := self.getCaptionWindow():
             tag = self.model().data(self._index, TagModel.ROLE_TAG)
-            captionWin.ctx.settings.addBannedCaption(tag)
+            if captionWin.ctx.settings.addBannedCaption(tag):
+                self.captionRulesChanged.emit()
 
     def _addTagToGroup(self, group: CaptionControlGroup):
         tag = self.model().data(self._index, TagModel.ROLE_TAG)
-        group._addCaptionDrop(tag)
+        if group._addCaptionDrop(tag):
+            self.captionRulesChanged.emit()
