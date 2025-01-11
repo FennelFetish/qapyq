@@ -1,7 +1,10 @@
 .venv/
+.venv*/
 __pycache__/
 /.vscode/
 *.log
 /*.json
+/user/*.json
 
 screenshots/
+benchmark/

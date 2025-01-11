@@ -382,30 +382,12 @@ class GroupReorderWidget(qtlib.ReorderWidget):
 
 
 
-class GroupDragHandle(QtWidgets.QWidget):
+class GroupDragHandle(qtlib.VerticalSeparator):
     def __init__(self, group: CaptionControlGroup, reorderWidget: GroupReorderWidget):
         super().__init__()
+        self.setCursor(Qt.CursorShape.DragMoveCursor)
         self.group = group
         self.reorderWidget = reorderWidget
-
-        self.setContentsMargins(0, 0, 0, 0)
-        self.setCursor(Qt.CursorShape.DragMoveCursor)
-
-        layout = QtWidgets.QHBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
-        layout.addWidget(self._buildFrame())
-        layout.addWidget(self._buildFrame())
-        self.setLayout(layout)
-
-    def _buildFrame(self):
-        frame = QtWidgets.QFrame()
-        frame.setFixedWidth(2)
-        frame.setFrameShape(QtWidgets.QFrame.Shape.VLine)
-        frame.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
-        frame.setLineWidth(1)
-        frame.setMidLineWidth(1)
-        return frame
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.buttons() == Qt.MouseButton.LeftButton:

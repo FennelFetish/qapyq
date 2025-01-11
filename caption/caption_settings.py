@@ -203,6 +203,20 @@ class CaptionSettings(QtWidgets.QWidget):
             preset.saveTo(path)
 
     @Slot()
+    def saveAsDefaultPreset(self):
+        dialog = QtWidgets.QMessageBox(self)
+        dialog.setIcon(QtWidgets.QMessageBox.Icon.Question)
+        dialog.setWindowTitle("Confirm Overwrite Defaults")
+        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+
+        presetPath = os.path.abspath(Config.pathDefaultCaptionRules)
+        dialog.setText(f"Overwrite the default rules and groups?\n\n This will overwrite the file:\n{presetPath}")
+
+        if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes:
+            preset = self.getPreset()
+            preset.saveTo(presetPath)
+
+    @Slot()
     def loadPreset(self):
         fileFilter = "JSON (*.json)"
         path, selectedFilter = QtWidgets.QFileDialog.getOpenFileName(self, "Load preset", self._defaultPresetPath, fileFilter)
@@ -213,6 +227,27 @@ class CaptionSettings(QtWidgets.QWidget):
         preset = CaptionPreset()
         preset.loadFrom(path)
         self.applyPreset(preset)
+
+    @Slot()
+    def loadDefaultPreset(self):
+        dialog = QtWidgets.QMessageBox(self)
+        dialog.setIcon(QtWidgets.QMessageBox.Icon.Question)
+        dialog.setWindowTitle("Confirm Reset")
+        dialog.setText(f"Reset all rules and groups to the default values?")
+        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+
+        if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes:
+            if not self._loadDefaultPreset():
+                self.applyPreset(CaptionPreset())
+
+    def _loadDefaultPreset(self) -> bool:
+        if not os.path.exists(Config.pathDefaultCaptionRules):
+            return False
+
+        preset = CaptionPreset()
+        preset.loadFrom(Config.pathDefaultCaptionRules)
+        self.applyPreset(preset)
+        return True
 
     @Slot()
     def clearPreset(self):

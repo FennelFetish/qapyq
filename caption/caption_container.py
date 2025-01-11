@@ -57,14 +57,17 @@ class CaptionContainer(QtWidgets.QWidget):
         tab.filelist.addListener(self)
         self.onFileChanged( tab.filelist.getCurrentFile() )
 
+        self.ctx.settings._loadDefaultPreset()
+
     def _build(self, ctx):
         splitter = QtWidgets.QSplitter(Qt.Orientation.Vertical)
+        splitter.setHandleWidth(12)
         splitter.addWidget(ctx)
         splitter.setStretchFactor(0, 1)
 
         self.bubbles = CaptionBubbles(self.ctx.groups.getCaptionColors, showWeights=False, showRemove=True, editable=False)
         self.bubbles.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.MinimumExpanding)
-        self.bubbles.setContentsMargins(0, 18, 0, 0)
+        self.bubbles.setContentsMargins(4, 4, 4, 4)
         self.bubbles.remove.connect(self.removeCaption)
         self.bubbles.orderChanged.connect(lambda: self.setCaption( self.captionSeparator.join(self.bubbles.getCaptions()) ))
         self.bubbles.dropped.connect(self.appendToCaption)
@@ -76,15 +79,16 @@ class CaptionContainer(QtWidgets.QWidget):
         qtlib.setMonospace(self.txtCaption, 1.2)
         splitter.addWidget(self.txtCaption)
         splitter.setStretchFactor(2, 1)
-
+        
         mainLayout = QtWidgets.QVBoxLayout()
+        mainLayout.setContentsMargins(0, 0, 0, 0)
         mainLayout.addWidget(splitter)
         mainLayout.addWidget(self._buildBottomRow())
         self.setLayout(mainLayout)
 
     def _buildBottomRow(self):
         layout = QtWidgets.QGridLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(4, 0, 4, 2)
 
         col = 0
         btnMenu = QtWidgets.QPushButton("☰")
@@ -109,40 +113,40 @@ class CaptionContainer(QtWidgets.QWidget):
         layout.setColumnStretch(col, 1)
 
         col += 1
-        layout.addWidget(QtWidgets.QLabel("Load From:"), 0, col)
-        layout.setColumnStretch(col, 0)
-
-        col += 1
-        self.srcSelector = FileTypeSelector()
-        self.srcSelector.type = FileTypeSelector.TYPE_TAGS
-        layout.addLayout(self.srcSelector, 0, col)
-        layout.setColumnStretch(col, 0)
-
-        col += 1
-        self.btnReset = QtWidgets.QPushButton("Reload")
+        self.btnReset = QtWidgets.QPushButton("Reload From:")
         self.btnReset.setFixedWidth(100)
         self.btnReset.clicked.connect(self.resetCaption)
         layout.addWidget(self.btnReset, 0, col)
         layout.setColumnStretch(col, 0)
 
         col += 1
-        layout.setColumnMinimumWidth(col, 60)
+        self.srcSelector = FileTypeSelector()
+        self.srcSelector.type = FileTypeSelector.TYPE_TAGS
+        self.srcSelector.txtName.setFixedWidth(120)
+        layout.addLayout(self.srcSelector, 0, col)
+        layout.setColumnStretch(col, 0)
 
         col += 1
-        layout.addWidget(QtWidgets.QLabel("Save To:"), 0, col)
+        layout.addWidget(qtlib.VerticalSeparator(), 0, col)
         layout.setColumnStretch(col, 0)
+
+        col += 1
+        self.btnSave = QtWidgets.QPushButton("Save To:")
+        self.btnSave.setFixedWidth(100)
+        self.btnSave.clicked.connect(self.saveCaption)
+        layout.addWidget(self.btnSave, 0, col)
+        layout.setColumnStretch(col, 0)
+
+        self.btnSavePalette = self.btnSave.palette()
+        self.btnSaveChangedPalette = self.btnSave.palette()
+        self.btnSaveChangedPalette.setColor(QtGui.QPalette.ColorRole.Button, QtGui.QColor.fromString("#440A0A"))
+        self.btnSaveChangedPalette.setColor(QtGui.QPalette.ColorRole.ButtonText, QtGui.QColor.fromString("#FFEEEE"))
 
         col += 1
         self.destSelector = FileTypeSelector()
         self.destSelector.type = FileTypeSelector.TYPE_TAGS
+        self.destSelector.txtName.setFixedWidth(120)
         layout.addLayout(self.destSelector, 0, col)
-        layout.setColumnStretch(col, 0)
-
-        col += 1
-        self.btnSave = QtWidgets.QPushButton("Save")
-        self.btnSave.setFixedWidth(100)
-        self.btnSave.clicked.connect(self.saveCaption)
-        layout.addWidget(self.btnSave, 0, col)
         layout.setColumnStretch(col, 0)
 
         widget = QtWidgets.QWidget()
@@ -152,6 +156,12 @@ class CaptionContainer(QtWidgets.QWidget):
     def _buildMenu(self):
         menu = QtWidgets.QMenu(self)
         menu.addSection("Rules and Groups")
+
+        actSaveDefaults = menu.addAction("Save as Defaults...")
+        actSaveDefaults.triggered.connect(self.ctx.settings.saveAsDefaultPreset)
+
+        actLoadDefaults = menu.addAction("Reset to Defaults...")
+        actLoadDefaults.triggered.connect(self.ctx.settings.loadDefaultPreset)
 
         actClear = menu.addAction("Clear...")
         actClear.triggered.connect(self.ctx.settings.clearPreset)
@@ -168,10 +178,7 @@ class CaptionContainer(QtWidgets.QWidget):
 
 
     def _setSaveButtonStyle(self, changed: bool):
-        if changed:
-            self.btnSave.setStyleSheet("border: 2px solid #bb3030; border-style: outset; border-radius: 4px; padding: 2px")
-        else:
-            self.btnSave.setStyleSheet("")
+        self.btnSave.setPalette(self.btnSaveChangedPalette if changed else self.btnSavePalette)
 
     def setCaption(self, text):
         self.txtCaption.setPlainText(text)

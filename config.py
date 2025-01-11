@@ -5,6 +5,7 @@ class Config:
 
     # Paths
     pathConfig              = "./qapyq_config.json"
+    pathDefaultCaptionRules = "./user/default-caption-rules.json"
     pathMaskMacros          = "./user/mask-macros/"
     pathExport              = "."
     pathDebugLoad           = ""

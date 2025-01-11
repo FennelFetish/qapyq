@@ -478,6 +478,29 @@ class SpacerWidget(QtWidgets.QWidget):
 
 
 
+class VerticalSeparator(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setContentsMargins(0, 0, 0, 0)
+
+        layout = QtWidgets.QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        layout.addWidget(self._buildFrame())
+        layout.addWidget(self._buildFrame())
+        self.setLayout(layout)
+
+    def _buildFrame(self):
+        frame = QtWidgets.QFrame()
+        frame.setFixedWidth(2)
+        frame.setFrameShape(QtWidgets.QFrame.Shape.VLine)
+        frame.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
+        frame.setLineWidth(1)
+        frame.setMidLineWidth(1)
+        return frame
+
+
+
 class ColorCharFormats:
     def __init__(self):
         self.defaultFormat = QtGui.QTextCharFormat()
