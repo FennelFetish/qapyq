@@ -42,8 +42,8 @@ class BatchRules(QtWidgets.QWidget):
         layout.addWidget(self.btnStart)
 
         layout.setStretch(0, 0)
-        layout.setStretch(1, 0)
-        layout.setStretch(2, 1)
+        layout.setStretch(1, 1)
+        layout.setStretch(2, 0)
         layout.setStretch(3, 0)
         self.setLayout(layout)
 
@@ -137,8 +137,16 @@ class BatchRules(QtWidgets.QWidget):
     def _buildGroups(self):
         self.groupLayout = QtWidgets.QVBoxLayout()
         self.groupLayout.setSpacing(8)
+
+        widget = QtWidgets.QWidget()
+        widget.setLayout(self.groupLayout)
+
+        boxLayout = QtWidgets.QVBoxLayout()
+        boxLayout.setContentsMargins(0, 0, 0, 0)
+        boxLayout.addWidget(qtlib.BaseColorScrollArea(widget))
+
         groupBox = QtWidgets.QGroupBox("Groups")
-        groupBox.setLayout(self.groupLayout)
+        groupBox.setLayout(boxLayout)
         return groupBox
 
 
