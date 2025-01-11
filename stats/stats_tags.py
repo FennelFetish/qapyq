@@ -182,10 +182,7 @@ class TagModel(QAbstractItemModel):
         changedRoles = [Qt.ItemDataRole.ForegroundRole]
         for row, tag in enumerate(self.tags):
             charFormat = groupCharFormats.get(tag.tag)
-            if not charFormat:
-                continue
-
-            color = charFormat.foreground().color()
+            color = charFormat.foreground().color() if charFormat else None
             if tag.color != color:
                 tag.color = color
                 self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount()-1), changedRoles)
