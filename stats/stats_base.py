@@ -3,6 +3,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QSortFilterProxyModel, QModelIndex, QItemSelection, QRegularExpression, QSignalBlocker
 from ui.tab import ImgTab
 import lib.qtlib as qtlib
+from lib.filelist import FileList, DataKeys
 from lib.filelist import sortKey
 
 
@@ -19,11 +20,15 @@ class StatsBaseProxyModel(QSortFilterProxyModel):
 
 
 class StatsLayout(QtWidgets.QGridLayout):
+    ROLE_FILEPATH = Qt.ItemDataRole.UserRole
+
     def __init__(self, tab: ImgTab, name: str, proxyModel: StatsBaseProxyModel, tableView: QtWidgets.QTableView, row=0):
         super().__init__()
         self.tab = tab
         self.proxyModel = proxyModel
         self.table = tableView
+
+        self._enableFileUpdate = True
 
         self.setColumnMinimumWidth(0, 200)
         self.setColumnStretch(0, 0)
@@ -33,7 +38,7 @@ class StatsLayout(QtWidgets.QGridLayout):
         rowSpan = 3
         self.setRowStretch(row, 0)
         self.addWidget(self._buildTableGroup(name), row, 1, rowSpan, 1)
-        self.addWidget(self._buildFilesGroup(), row, 2, rowSpan, 1)
+        self.addWidget(self._buildFilesGroup(name), row, 2, rowSpan, 1)
 
         row += 1
         self.setRowStretch(row, 0)
@@ -61,34 +66,43 @@ class StatsLayout(QtWidgets.QGridLayout):
         group.setLayout(layout)
         return group
 
-    def _buildFilesGroup(self):
+    def _buildFilesGroup(self, name: str):
         layout = QtWidgets.QGridLayout()
-        layout.setColumnMinimumWidth(2, 12)
+        layout.setColumnMinimumWidth(2, 4)
         layout.setColumnStretch(4, 1)
+        layout.setColumnMinimumWidth(6, 4)
 
         row = 0
-        self.radioFilesUnion = QtWidgets.QRadioButton("Union")
+        self.radioFilesUnion = QtWidgets.QRadioButton(f"Union")
+        self.radioFilesUnion.setToolTip(f"Show files which have at least one of the selected {name}")
         self.radioFilesUnion.setChecked(True)
         self.radioFilesUnion.clicked.connect(self.updateSelection)
         layout.addWidget(self.radioFilesUnion, row, 0)
 
-        self.radioFilesIntersect = QtWidgets.QRadioButton("Intersection")
+        self.radioFilesIntersect = QtWidgets.QRadioButton(f"Intersection")
+        self.radioFilesIntersect.setToolTip(f"Show files which have all selected {name}")
         self.radioFilesIntersect.clicked.connect(self.updateSelection)
         layout.addWidget(self.radioFilesIntersect, row, 1)
 
         self.chkFilesNegate = QtWidgets.QCheckBox("Negate")
+        self.chkFilesNegate.setToolTip(f"Show files which lack the Union/Intersection of the selected {name}")
         self.chkFilesNegate.checkStateChanged.connect(self.updateSelection)
         layout.addWidget(self.chkFilesNegate, row, 3)
 
         self.lblNumFilesListed = QtWidgets.QLabel("0 Files")
         layout.addWidget(self.lblNumFilesListed, row, 5)
 
+        btnNewTab = QtWidgets.QPushButton("Open Files in New Tab")
+        btnNewTab.setMinimumWidth(160)
+        btnNewTab.clicked.connect(self._loadFilesInNewTab)
+        layout.addWidget(btnNewTab, row, 7)
+
         row += 1
         self.listFiles = QtWidgets.QListWidget()
         self.listFiles.setAlternatingRowColors(True)
         qtlib.setMonospace(self.listFiles)
-        self.listFiles.currentItemChanged.connect(self._onFileSelected)
-        layout.addWidget(self.listFiles, row, 0, 1, 6)
+        self.listFiles.selectionModel().selectionChanged.connect(self._onFileSelected)
+        layout.addWidget(self.listFiles, row, 0, 1, 8)
 
         group = QtWidgets.QGroupBox("Files")
         group.setLayout(layout)
@@ -146,12 +160,12 @@ class StatsLayout(QtWidgets.QGridLayout):
 
         files = sorted(fileSet, key=sortKey)
 
-        with QSignalBlocker(self.listFiles):
+        with QSignalBlocker(self.listFiles.selectionModel()):
             self.listFiles.clear()
             for file in files:
                 path = self.tab.filelist.removeCommonRoot(file)
                 item = QtWidgets.QListWidgetItem(path)
-                item.setData(Qt.ItemDataRole.UserRole, file)
+                item.setData(self.ROLE_FILEPATH, file)
                 self.listFiles.addItem(item)
 
         numFilesText = f"{len(files)} File"
@@ -159,11 +173,27 @@ class StatsLayout(QtWidgets.QGridLayout):
             numFilesText += "s"
         self.lblNumFilesListed.setText(numFilesText)
 
+
     @Slot()
-    def _onFileSelected(self, currentItem: QtWidgets.QListWidgetItem | None, prevItem: QtWidgets.QListWidgetItem):
-        if currentItem:
-            file: str = currentItem.data(Qt.ItemDataRole.UserRole)
+    def _onFileSelected(self, selected: QItemSelection, deselected: QItemSelection):
+        if selected.isEmpty():
+            return
+
+        index = selected.indexes()[0]
+        currentItem = self.listFiles.itemFromIndex(index)
+        file: str = currentItem.data(self.ROLE_FILEPATH)
+
+        try:
+            # Changing file normally clears the selection, so disable that.
+            self._enableFileUpdate = False
             self.tab.filelist.setCurrentFile(file)
+        finally:
+            self._enableFileUpdate = True
+
+    def clearFileSelection(self):
+        if self._enableFileUpdate:
+            self.listFiles.clearSelection()
+
 
     @Slot()
     def _onFilterChanged(self, text: str):
@@ -176,7 +206,15 @@ class StatsLayout(QtWidgets.QGridLayout):
 
         # When filter only shows 1 row, it doesn't display files. Clear selection as a workaround.
         # Disable signals as they mess things up and select new files during update.
-        with QSignalBlocker(self.listFiles):
-            with QSignalBlocker(self.table.selectionModel()):
-                self.table.selectionModel().clear()
-                self.proxyModel.setFilterRegularExpression(regex)
+        with QSignalBlocker(self.table.selectionModel()):
+            self.table.selectionModel().clear()
+            self.proxyModel.setFilterRegularExpression(regex)
+
+    @Slot()
+    def _loadFilesInNewTab(self):
+        files = [self.listFiles.item(row).data(self.ROLE_FILEPATH) for row in range(self.listFiles.count())]
+        if files:
+            currentFilelist = self.tab.filelist
+            newTab = self.tab.mainWindow.addTab()
+            newFilelist: FileList = newTab.filelist
+            newFilelist.loadFilesFixed(files, currentFilelist, [DataKeys.ImageSize, DataKeys.Thumbnail])

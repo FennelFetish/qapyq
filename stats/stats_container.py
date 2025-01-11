@@ -45,7 +45,9 @@ class StatsContainer(QtWidgets.QTabWidget):
 
 
     def onFileChanged(self, currentFile):
-        pass
+        self.tagStats._layout.clearFileSelection()
+        self.jsonStats._layout.clearFileSelection()
+        self.imageSizeStats._layout.clearFileSelection()
     
     def onFileListChanged(self, currentFile):
         self.tagStats.clearData()

@@ -1,3 +1,4 @@
+from typing import Iterable, Any
 import os, enum
 from PySide6.QtGui import QImageReader
 from config import Config
@@ -45,7 +46,7 @@ def fileFilter(path) -> bool:
 class FileList:
     def __init__(self):
         self.files: list[str] = []
-        self.fileData = dict()
+        self.fileData: dict[str, dict[str, Any]] = dict()
         self.currentFile = ""
         self.currentIndex = -1  # Index < 0 means: File set, but folder not yet scanned
         self.commonRoot = ""
@@ -54,7 +55,7 @@ class FileList:
         self.dataListeners = []
 
 
-    def loadAll(self, paths):
+    def loadAll(self, paths: Iterable[str]):
         self.files.clear()
         self.fileData.clear()
         for path in paths:
@@ -69,7 +70,33 @@ class FileList:
         self.currentIndex = 0 if numFiles > 1 else -1
         self.notifyListChanged()
 
-    def loadAppend(self, paths):
+
+    def loadFilesFixed(self, paths: Iterable[str], copyFromFileList=None, copyKeys: list[str]=[]):
+        self.files.clear()
+        self.fileData.clear()
+
+        if copyFromFileList and copyKeys:
+            def copyData(file: str):
+                if data := {key: val for key in copyKeys if (val := copyFromFileList.getData(file, key))}:
+                    self.fileData[file] = data
+                    print(data)
+        else:
+            def copyData(file: str):
+                pass
+
+        for path in paths:
+            if os.path.isfile(path) and fileFilter(path):
+                self.files.append(path)
+                copyData(path)
+
+        self._postprocessList()
+        numFiles = len(self.files)
+        self.currentFile = self.files[0] if numFiles > 0 else ""
+        self.currentIndex = 0 if numFiles > 0 else -1
+        self.notifyListChanged()
+
+
+    def loadAppend(self, paths: Iterable[str]):
         for path in paths:
             if os.path.isdir(path):
                 self._walkPath(path, True)
@@ -80,13 +107,13 @@ class FileList:
         self._postprocessList()
         self.notifyListChanged()
 
-    def load(self, path):
+    def load(self, path: str):
         if os.path.isdir(path):
             self.loadFolder(path, True)
         else:
             self.loadFile(path)
 
-    def loadFile(self, file):
+    def loadFile(self, file: str):
         self.files = []
         self.fileData = dict()
         self.currentFile = file
@@ -94,7 +121,7 @@ class FileList:
         self.commonRoot = ""
         self.notifyListChanged()
 
-    def loadFolder(self, path, subfolders=False):
+    def loadFolder(self, path: str, subfolders=False):
         self.files = []
         self.fileData = dict()
         self._walkPath(path, subfolders)
@@ -114,7 +141,7 @@ class FileList:
     def getCurrentFile(self):
         return self.currentFile
 
-    def setCurrentFile(self, file):
+    def setCurrentFile(self, file: str):
         try:
             index = self.files.index(file)
         except ValueError:
@@ -125,7 +152,7 @@ class FileList:
         self.currentIndex = index
         self.notifyFileChanged()
 
-    def setCurrentIndex(self, index):
+    def setCurrentIndex(self, index: int):
         if index < 0 or index >= len(self.files):
             print(f"Warning: Index {index} out of bounds of FileList")
             return
@@ -174,7 +201,7 @@ class FileList:
             if self._switchFolderProcessFile(i, currentFolder):
                 return
 
-    def _switchFolderProcessFile(self, index, currentFolder) -> bool:
+    def _switchFolderProcessFile(self, index: int, currentFolder: str) -> bool:
         folder = os.path.dirname(self.files[index])
         if folder != currentFolder:
             self.currentIndex = index
@@ -197,7 +224,7 @@ class FileList:
                 print(f"Warning: File {self.currentFile} not in FileList")
                 self.currentIndex = -1
 
-    def _walkPath(self, path, subfolders=False):
+    def _walkPath(self, path: str, subfolders=False):
         for (root, dirs, files) in os.walk(path, topdown=True, followlinks=True):
             if not subfolders:
                 dirs[:] = []
@@ -212,6 +239,8 @@ class FileList:
 
         try:
             self.commonRoot = os.path.commonpath(self.files).rstrip("/")
+            if os.path.isfile(self.commonRoot):
+                self.commonRoot = os.path.dirname(self.commonRoot)
         except ValueError:
             self.commonRoot = ""
 
@@ -240,28 +269,30 @@ class FileList:
             l.onFileListChanged(self.currentFile)
 
 
-    def setData(self, file, key, data, notify=True):
-        if file not in self.fileData:
-            self.fileData[file] = {}
-        self.fileData[file][key] = data
+    def setData(self, file: str, key: str, data: Any, notify=True) -> None:
+        fileDict = self.fileData.get(file)
+        if fileDict is None:
+            fileDict = dict()
+            self.fileData[file] = fileDict
+        fileDict[key] = data
 
         if notify:
             self.notifyDataChanged(file, key)
 
-    def getData(self, file, key):
-        if file not in self.fileData:
-            return None
-        d = self.fileData[file]
-        return d[key] if key in d else None
+    def getData(self, file: str, key: str) -> Any | None:
+        fileDict = self.fileData.get(file)
+        if isinstance(fileDict, dict):
+            return fileDict.get(key)
+        return None
 
-    def removeData(self, file, key, notify=True):
-        if file not in self.fileData:
+    def removeData(self, file: str, key: str, notify=True):
+        fileDict = self.fileData.get(file)
+        if fileDict is None:
             return
-        d = self.fileData[file]
-        if key not in d:
+        if key not in fileDict:
             return
 
-        del d[key]
+        del fileDict[key]
         if notify:
             self.notifyDataChanged(file, key)
 
@@ -272,6 +303,6 @@ class FileList:
     def removeDataListener(self, listener):
         self.dataListeners.remove(listener)
 
-    def notifyDataChanged(self, file, key):
+    def notifyDataChanged(self, file: str, key: str):
         for l in self.dataListeners:
             l.onFileDataChanged(file, key)
