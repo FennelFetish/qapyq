@@ -157,6 +157,9 @@ class TemplateVariableParser:
             name = var[len(self._tagPrefix):]
             value =  self.getCaptionFile().getTags(name)
 
+        elif var == "text":
+            value = self._readTextFile()
+
         else:
             value = self._getImgProperties(var)
 
@@ -166,8 +169,14 @@ class TemplateVariableParser:
             self.missingVars.append(var)
             return "" if optional else "{{" + varOrig + "}}"
 
+    def _readTextFile(self) -> str | None:
+        textPath = os.path.splitext(self.imgPath)[0] + ".txt"
+        if os.path.exists(textPath):
+            with open(textPath, 'r') as file:
+                return file.read()
+        return None
 
-    def _getImgProperties(self, var):
+    def _getImgProperties(self, var: str) -> str | None:
         match var:
             case "path":
                 return os.path.splitext(self.imgPath)[0]
