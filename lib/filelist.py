@@ -79,7 +79,6 @@ class FileList:
             def copyData(file: str):
                 if data := {key: val for key in copyKeys if (val := copyFromFileList.getData(file, key))}:
                     self.fileData[file] = data
-                    print(data)
         else:
             def copyData(file: str):
                 pass
@@ -92,7 +91,7 @@ class FileList:
         self._postprocessList()
         numFiles = len(self.files)
         self.currentFile = self.files[0] if numFiles > 0 else ""
-        self.currentIndex = 0 if numFiles > 0 else -1
+        self.currentIndex = 0 if numFiles > 0 else -1 # No lazy-loading of folder when loading a single image!
         self.notifyListChanged()
 
 
