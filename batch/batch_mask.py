@@ -146,8 +146,8 @@ class BatchMask(QtWidgets.QWidget):
         self._onMacroChanged(index)
 
     def _onMacroChanged(self, index):
-        path = self.cboMacro.itemData(index)
-        self.macroVis.reload(path)
+        if path := self.cboMacro.itemData(index):
+            self.macroVis.reload(path)
 
 
     def saveExportPreset(self):
