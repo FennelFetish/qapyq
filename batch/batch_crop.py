@@ -1,4 +1,5 @@
 import os, re
+from enum import Enum
 from typing import Callable
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QSignalBlocker
@@ -8,7 +9,7 @@ from config import Config
 from lib import qtlib
 from lib.mask_macro import MaskingMacro
 from infer import Inference
-from .batch_task import BatchTask, BatchSignalHandler
+from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
 import ui.export_settings as export
 
 # TODO: Set which mask layers are used to define crop region (last layer, layer nr, each layer defines a region, maximum)
@@ -17,6 +18,17 @@ import ui.export_settings as export
 
 # TODO: When writing multiple regions into multiple files, when Size Factor is large, the regions may overlap.
 #       Should this be handled when writing output mask is enabled? Remove other regions from mask?
+
+
+class InputMaskType(Enum):
+    Macro = "macro"
+    File  = "file"
+    Alpha = "alpha"
+
+class OutputMaskType(Enum):
+    Discard = "discard"
+    File    = "file"
+    Alpha   = "alpha"
 
 
 class SizeBucket:
@@ -28,7 +40,10 @@ class SizeBucket:
 
 
 class BatchCrop(QtWidgets.QWidget):
-    EXPORT_PRESET_KEY = "batch-crop"
+    EXPORT_PRESET_KEY_INMASK  = "batch-crop-mask-in"
+    EXPORT_PRESET_KEY_OUTMASK = "batch-crop-mask-out"
+    EXPORT_PRESET_KEY_IMG     = "batch-crop"
+
     BUCKET_SPLIT = re.compile(r'[ ,x]')
 
     def __init__(self, tab, logSlot, progressBar, statusBar):
@@ -144,14 +159,14 @@ class BatchCrop(QtWidgets.QWidget):
 
         row = 0
         self.cboInputMaskMode = QtWidgets.QComboBox()
-        self.cboInputMaskMode.addItem("Macro", "macro")
-        self.cboInputMaskMode.addItem("Separate Image", "file")
-        self.cboInputMaskMode.addItem("Alpha Channel", "alpha")
+        self.cboInputMaskMode.addItem("Macro", InputMaskType.Macro)
+        self.cboInputMaskMode.addItem("Separate Image", InputMaskType.File)
+        self.cboInputMaskMode.addItem("Alpha Channel", InputMaskType.Alpha)
         self.cboInputMaskMode.currentIndexChanged.connect(self._onInputMaskModeChanged)
         layout.addWidget(QtWidgets.QLabel("Mask Source:"), row, 0)
         layout.addWidget(self.cboInputMaskMode, row, 1)
 
-        config = Config.exportPresets.get("batch-mask", {})
+        config = Config.exportPresets.get(self.EXPORT_PRESET_KEY_INMASK, {})
         self.inputMaskPathSettings = export.PathSettings(self.parser, showInfo=False)
         self.inputMaskPathSettings.pathTemplate = config.get("path_template", "{{path}}-masklabel")
         self.inputMaskPathSettings.setAsInput()
@@ -187,17 +202,17 @@ class BatchCrop(QtWidgets.QWidget):
 
         row = 0
         self.cboOutputMaskMode = QtWidgets.QComboBox()
-        self.cboOutputMaskMode.addItem("Discard", "discard")
-        self.cboOutputMaskMode.addItem("Separate Image", "file")
-        self.cboOutputMaskMode.addItem("Alpha Channel", "alpha")
+        self.cboOutputMaskMode.addItem("Discard", OutputMaskType.Discard)
+        self.cboOutputMaskMode.addItem("Separate Image", OutputMaskType.File)
+        self.cboOutputMaskMode.addItem("Alpha Channel", OutputMaskType.Alpha)
         self.cboOutputMaskMode.currentIndexChanged.connect(self._onOutputMaskModeChanged)
         layout.addWidget(QtWidgets.QLabel("Destination:"), row, 0)
         layout.addWidget(self.cboOutputMaskMode, row, 1)
 
-        config = Config.exportPresets.get("batch-mask", {})
+        config = Config.exportPresets.get(self.EXPORT_PRESET_KEY_OUTMASK, {})
         self.outputMaskPathSettings = export.PathSettings(self.parser, showInfo=False)
-        self.outputMaskPathSettings.pathTemplate   = config.get("path_template", "{{path}}-masklabel")
-        self.outputMaskPathSettings.overwriteFiles = config.get("overwrite", True)
+        self.outputMaskPathSettings.pathTemplate   = config.get("path_template", "{{path}}_{{region}}_{{w}}x{{h}}-masklabel")
+        self.outputMaskPathSettings.overwriteFiles = config.get("overwrite", False)
         layout.addWidget(self.outputMaskPathSettings, row, 3, 3, 1)
 
         row += 1
@@ -236,9 +251,9 @@ class BatchCrop(QtWidgets.QWidget):
         layout.addWidget(QtWidgets.QLabel("Interp Up:"), row, 0)
         layout.addWidget(self.cboInterpUp, row, 1)
 
-        config = Config.exportPresets.get(self.EXPORT_PRESET_KEY, {})
+        config = Config.exportPresets.get(self.EXPORT_PRESET_KEY_IMG, {})
         self.outputImagePathSettings = export.PathSettings(self.parser, showInfo=False)
-        self.outputImagePathSettings.pathTemplate   = config.get("path_template", "{{path}}_{{w}}x{{h}}")
+        self.outputImagePathSettings.pathTemplate   = config.get("path_template", "{{path}}_{{region}}_{{w}}x{{h}}")
         self.outputImagePathSettings.overwriteFiles = config.get("overwrite", False)
         layout.addWidget(self.outputImagePathSettings, row, 3, 4, 1)
 
@@ -275,16 +290,16 @@ class BatchCrop(QtWidgets.QWidget):
     @Slot()
     def _onInputMaskModeChanged(self, index: int):
         mode = self.cboInputMaskMode.itemData(index)
-        self.inputMaskPathSettings.setEnabled(mode == "file")
+        self.inputMaskPathSettings.setEnabled(mode == InputMaskType.File)
 
-        macroEnabled = (mode == "macro")
+        macroEnabled = (mode == InputMaskType.Macro)
         for widget in (self.lblInputMacro, self.cboInputMacro, self.btnReloadMacros):
             widget.setEnabled(macroEnabled)
 
     @Slot()
     def _onOutputMaskModeChanged(self, index: int):
         mode = self.cboOutputMaskMode.itemData(index)
-        enabled = (mode == "file")
+        enabled = (mode == OutputMaskType.File)
         for widget in (self.lblOutputMaskFormat, self.cboOutputMaskFormat, self.outputMaskPathSettings):
             widget.setEnabled(enabled)
 
@@ -351,37 +366,94 @@ class BatchCrop(QtWidgets.QWidget):
         CROP_SIGNALS.sizePresetsUpdated.emit(buckets)
 
 
+    def _confirmStart(self) -> bool:
+        ops = []
+
+        match self.cboInputMaskMode.currentData():
+            case InputMaskType.Macro:
+                ops.append(f"Generate masks using the '{self.cboInputMacro.currentText()}' macro")
+            case InputMaskType.File:
+                ops.append(f"Load existing masks from a separate file")
+            case InputMaskType.Alpha:
+                ops.append(f"Load the image's alpha channel as the mask")
+
+        ops.append("Crop the images according to the regions defined in the mask, and try to fit the region into the closest size bucket")
+        if self.chkMultipleOutputs.isChecked():
+            ops.append("Save each cropped region into a separate image")
+        else:
+            ops.append("Combine all cropped regions into one image")
+
+        if self.outputImagePathSettings.overwriteFiles:
+            ops.append( qtlib.htmlRed("Save the cropped images and overwrite existing images!") )
+        elif self.outputImagePathSettings.skipExistingFiles:
+            ops.append("Save the cropped images using new filenames")
+        else:
+            ops.append("Save the cropped images using new filenames with an increasing counter")
+
+        match self.cboOutputMaskMode.currentData():
+            case OutputMaskType.Discard:
+                ops.append("Discard the mask")
+            case OutputMaskType.File:
+                if self.outputMaskPathSettings.overwriteFiles:
+                    ops.append( qtlib.htmlRed("Save the cropped mask as a separate image and overwrite existing images!") )
+                else:
+                    ops.append("Save the cropped mask as a separate image, using new filenames with an increasing counter")
+            case OutputMaskType.Alpha:
+                ops.append("Save the cropped mask as the alpha channel in the cropped images")
+
+        return BatchUtil.confirmStart("Crop", self.tab.filelist.getNumFiles(), ops, self)
+
+
     def saveExportPreset(self):
-        Config.exportPresets[self.EXPORT_PRESET_KEY] = {
+        Config.exportPresets[self.EXPORT_PRESET_KEY_INMASK] = {
+            "path_template": self.inputMaskPathSettings.pathTemplate,
+            "overwrite": self.inputMaskPathSettings.overwriteFiles
+        }
+
+        Config.exportPresets[self.EXPORT_PRESET_KEY_OUTMASK] = {
+            "path_template": self.outputMaskPathSettings.pathTemplate,
+            "overwrite": self.outputMaskPathSettings.overwriteFiles
+        }
+
+        Config.exportPresets[self.EXPORT_PRESET_KEY_IMG] = {
             "path_template": self.outputImagePathSettings.pathTemplate,
             "overwrite": self.outputImagePathSettings.overwriteFiles
         }
 
+
     @Slot()
     def startStop(self):
         if self._task:
-            self._task.abort()
+            if BatchUtil.confirmAbort(self):
+                self._task.abort()
+            return
+
+        if not self._confirmStart():
             return
 
         self.saveExportPreset()
         self.btnStart.setText("Abort")
 
         match self.cboInputMaskMode.currentData():
-            case "macro":
+            case InputMaskType.Macro:
                 macroPath = self.cboInputMacro.currentData()
                 maskSrcFunc = createMacroMaskSource(macroPath)
-            case "file":
+            case InputMaskType.File:
                 maskSrcFunc = createFileMaskSource(self.inputMaskPathSettings.pathTemplate)
-            case "alpha":
+            case InputMaskType.Alpha:
                 maskSrcFunc = createAlphaMaskSource()
+            case _:
+                raise ValueError("Invalid input mask type")
         
         match self.cboOutputMaskMode.currentData():
-            case "discard":
+            case OutputMaskType.Discard:
                 maskDestFunc = createDiscardMaskDest()
-            case "file":
+            case OutputMaskType.File:
                 maskDestFunc = createFileMaskDest(self.outputMaskPathSettings, self.log)
-            case "alpha":
+            case OutputMaskType.Alpha:
                 maskDestFunc = createAlphaMaskDest()
+            case _:
+                raise ValueError("Invalid output mask type")
 
         self._task = BatchCropTask(self.log, self.tab.filelist, maskSrcFunc, maskDestFunc, self.outputImagePathSettings)
         self._task.combined      = not self.chkMultipleOutputs.isChecked()
@@ -452,7 +524,7 @@ def createAlphaMaskSource():
 
 
 def createDiscardMaskDest():
-    def writeMask(imgPath: str, imgCropped: np.ndarray, maskLayers: list[np.ndarray], region: CropRegion, targetSize: SizeBucket):
+    def writeMask(imgPath: str, imgCropped: np.ndarray, maskLayers: list[np.ndarray], region: CropRegion, regionIndex: int, targetSize: SizeBucket):
         return imgCropped
     return writeMask
 
@@ -462,7 +534,7 @@ def createFileMaskDest(pathSettings: export.PathSettings, log):
     overwriteFiles = pathSettings.overwriteFiles
     parser = export.ExportVariableParser()
 
-    def writeMask(imgPath: str, imgCropped: np.ndarray, maskLayers: list[np.ndarray], region: CropRegion, targetSize: SizeBucket):
+    def writeMask(imgPath: str, imgCropped: np.ndarray, maskLayers: list[np.ndarray], region: CropRegion, regionIndex: int, targetSize: SizeBucket):
         masks = list()
         for mask in maskLayers[:4]:
             masks.append( mask[region.y0 : region.y1+1, region.x0 : region.x1+1] )
@@ -480,6 +552,7 @@ def createFileMaskDest(pathSettings: export.PathSettings, log):
         parser.setup(imgPath)
         parser.width  = targetSize.w
         parser.height = targetSize.h
+        parser.region = regionIndex
 
         path = parser.parsePath(pathTemplate, extension, overwriteFiles)
         export.saveImage(path, scaled, log)
@@ -489,7 +562,7 @@ def createFileMaskDest(pathSettings: export.PathSettings, log):
     return writeMask
 
 def createAlphaMaskDest():
-    def writeMask(imgPath: str, imgCropped: np.ndarray, maskLayers: list[np.ndarray], region: CropRegion, targetSize: SizeBucket):
+    def writeMask(imgPath: str, imgCropped: np.ndarray, maskLayers: list[np.ndarray], region: CropRegion, regionIndex: int, targetSize: SizeBucket):
         channels = imgCropped.shape[2] if len(imgCropped.shape) > 2 else 1
         if channels == 1:
             imgChannels = [imgCropped] * 3
@@ -571,7 +644,7 @@ class BatchCropTask(BatchTask):
             if fitRegion and targetSize:
                 # Do Cropping
                 cropped = imgMat[fitRegion.y0 : fitRegion.y1+1, fitRegion.x0 : fitRegion.x1+1, :3] # Remove alpha
-                cropped = self.maskDestFunc(imgFile, cropped, maskLayers, fitRegion, targetSize)
+                cropped = self.maskDestFunc(imgFile, cropped, maskLayers, fitRegion, i, targetSize)
                 savePath = self.saveCroppedImage(i, cropped, targetSize)
             else:
                 self.log(f"No suitable target size found for region {i} ({region.width()}x{region.height()})")
