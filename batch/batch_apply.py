@@ -1,5 +1,7 @@
 import os
-from enum import Enum
+from typing import Callable
+from enum import Enum, auto
+from typing_extensions import override
 from PySide6 import QtWidgets
 from PySide6.QtCore import QSignalBlocker, Qt, Slot
 from config import Config
@@ -7,14 +9,35 @@ from infer import Inference
 from lib import qtlib
 from lib.captionfile import CaptionFile
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
-from .batch_task import BatchTask, BatchSignalHandler
+from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
 
 
 class WriteMode(Enum):
-    SeparateReplace = 0
-    SeparateSkipExisting = 1
-    SingleReplace = 2
-    SingleAppend = 3
+    SeparateReplace         = auto()
+    SeparateSkipExisting    = auto()
+    SingleReplace           = auto()
+    SingleAppend            = auto()
+    CaptionsReplace         = auto()
+    CaptionsSkipExisting    = auto()
+    TagsReplace             = auto()
+    TagsSkipExisting        = auto()
+
+JSON_WRITE_MODES = (WriteMode.CaptionsReplace, WriteMode.CaptionsSkipExisting, WriteMode.TagsReplace, WriteMode.TagsSkipExisting)
+
+WRITE_MODE_TEXT = {
+    WriteMode.SeparateReplace:      "Write to .txt files and overwrite their content!",
+    WriteMode.SeparateSkipExisting: "Write to .txt files if they don't exist",
+    WriteMode.SingleReplace:        "Write all captions to a single .txt file and overwrite its content!",
+    WriteMode.SingleAppend:         "Append all captions to a single .txt file",
+    WriteMode.CaptionsReplace:      "Write to .json files [captions.{key}] and overwrite the content!",
+    WriteMode.CaptionsSkipExisting: "Write to .json files [captions.{key}] if the key doesn't exist",
+    WriteMode.TagsReplace:          "Write to .json files [tags.{key}] and overwrite the content!",
+    WriteMode.TagsSkipExisting:     "Write to .json files [tags.{key}] if the key doesn't exist",
+}
+
+
+BACKUP_TYPE_CAPTION = "caption"
+BACKUP_TYPE_TAGS    = "tags"
 
 
 class BatchApply(QtWidgets.QWidget):
@@ -48,7 +71,7 @@ class BatchApply(QtWidgets.QWidget):
 
     def _buildFormatSettings(self):
         layout = QtWidgets.QGridLayout()
-        layout.setAlignment(Qt.AlignTop)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 0)
@@ -61,7 +84,7 @@ class BatchApply(QtWidgets.QWidget):
         qtlib.setTextEditHeight(self.txtTemplate, 10, "min")
         qtlib.setShowWhitespace(self.txtTemplate)
         self.txtTemplate.textChanged.connect(self._updatePreview)
-        layout.addWidget(QtWidgets.QLabel("Template:"), row, 0, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Template:"), row, 0, Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self.txtTemplate, row, 1, 1, 2)
         layout.setRowStretch(0, 1)
 
@@ -71,7 +94,7 @@ class BatchApply(QtWidgets.QWidget):
         qtlib.setMonospace(self.txtPreview)
         qtlib.setTextEditHeight(self.txtPreview, 10, "min")
         qtlib.setShowWhitespace(self.txtPreview)
-        layout.addWidget(QtWidgets.QLabel("Preview:"), row, 0, Qt.AlignTop)
+        layout.addWidget(QtWidgets.QLabel("Preview:"), row, 0, Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self.txtPreview, row, 1, 1, 2)
         layout.setRowStretch(1, 3)
 
@@ -95,23 +118,29 @@ class BatchApply(QtWidgets.QWidget):
 
     def _buildWriteSettings(self):
         layout = QtWidgets.QGridLayout()
-        layout.setAlignment(Qt.AlignTop)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 0)
         layout.setColumnStretch(2, 0)
         layout.setColumnStretch(3, 0)
-        layout.setColumnStretch(4, 1)
+        layout.setColumnStretch(4, 0)
+        layout.setColumnStretch(5, 1)
         layout.setColumnMinimumWidth(2, 20)
+        layout.setColumnMinimumWidth(4, 4)
 
         row = 0
-        layout.addWidget(QtWidgets.QLabel("Destination:"), row, 0)
+        layout.addWidget(QtWidgets.QLabel("Storage type:"), row, 0)
 
         self.cboWriteMode = QtWidgets.QComboBox()
         self.cboWriteMode.addItem("Separate .txt files (replace)", WriteMode.SeparateReplace)
         self.cboWriteMode.addItem("Separate .txt files (skip existing)", WriteMode.SeparateSkipExisting)
         self.cboWriteMode.addItem("Single .txt file (replace)", WriteMode.SingleReplace)
         self.cboWriteMode.addItem("Single .txt file (append)", WriteMode.SingleAppend)
+        self.cboWriteMode.addItem(".json Captions (replace)", WriteMode.CaptionsReplace)
+        self.cboWriteMode.addItem(".json Captions (skip existing)", WriteMode.CaptionsSkipExisting)
+        self.cboWriteMode.addItem(".json Tags (replace)", WriteMode.TagsReplace)
+        self.cboWriteMode.addItem(".json Tags (skip existing)", WriteMode.TagsSkipExisting)
         self.cboWriteMode.currentIndexChanged.connect(self._onWriteModeChanged)
         layout.addWidget(self.cboWriteMode, row, 1)
 
@@ -121,37 +150,51 @@ class BatchApply(QtWidgets.QWidget):
 
         self.txtDestFilePath = QtWidgets.QLineEdit("caption-list.txt")
         qtlib.setMonospace(self.txtDestFilePath)
-        layout.addWidget(self.txtDestFilePath, row, 4)
+        layout.addWidget(self.txtDestFilePath, row, 5)
 
         row += 1
-        layout.addWidget(QtWidgets.QLabel("Post Processing:"), row, 0)
+        self.lblDestKey = QtWidgets.QLabel("Storage key:")
+        layout.addWidget(self.lblDestKey, row, 0)
+
+        self.txtDestKey = QtWidgets.QLineEdit("tags")
+        qtlib.setMonospace(self.txtDestKey)
+        layout.addWidget(self.txtDestKey, row, 1)
+
+        layout.addWidget(QtWidgets.QLabel("Post Processing:"), row, 3)
 
         self.chkDeleteJson = QtWidgets.QCheckBox("Delete .json files")
-        self.chkDeleteJson.toggled.connect(self._onDeleteJsonToggled)
-        layout.addWidget(self.chkDeleteJson, row, 1)
+        self.chkDeleteJson.toggled.connect(self._updateDeleteJson)
+        layout.addWidget(self.chkDeleteJson, row, 5)
 
-
-        groupBox = QtWidgets.QGroupBox("Write to text file(s)")
-        groupBox.setLayout(layout)
-        return groupBox
+        group = QtWidgets.QGroupBox("Destination")
+        group.setLayout(layout)
+        return group
 
     def _buildBackupSettings(self):
         layout = QtWidgets.QGridLayout()
-        layout.setAlignment(Qt.AlignTop)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 0)
-        layout.setColumnStretch(2, 1)
+        layout.setColumnStretch(2, 0)
+        layout.setColumnStretch(3, 1)
 
-        self.txtBackupName = QtWidgets.QLineEdit("backup")
-        qtlib.setMonospace(self.txtBackupName)
-        layout.addWidget(QtWidgets.QLabel("Storage key:"), 0, 0)
-        layout.addWidget(self.txtBackupName, 0, 1)
+        layout.addWidget(QtWidgets.QLabel("Storage key:"), 0, 0, Qt.AlignmentFlag.AlignTop)
 
-        groupBox = QtWidgets.QGroupBox("Backup (txt → json)")
+        self.cboBackupType = QtWidgets.QComboBox()
+        self.cboBackupType.addItem(BACKUP_TYPE_CAPTION)
+        self.cboBackupType.addItem(BACKUP_TYPE_TAGS)
+        qtlib.setMonospace(self.cboBackupType)
+        layout.addWidget(self.cboBackupType, 0, 1)
+
+        self.txtBackupKey = QtWidgets.QLineEdit("backup")
+        qtlib.setMonospace(self.txtBackupKey)
+        layout.addWidget(self.txtBackupKey, 0, 2)
+
+        groupBox = QtWidgets.QGroupBox("Backup current value (txt/json → json)")
         groupBox.setCheckable(True)
         groupBox.setChecked(False)
-        groupBox.toggled.connect(self._onBackupToggled)
+        groupBox.toggled.connect(self._updateDeleteJson)
         groupBox.setLayout(layout)
         return groupBox
 
@@ -164,15 +207,22 @@ class BatchApply(QtWidgets.QWidget):
     @Slot()
     def _onWriteModeChanged(self, index: int):
         mode = self.cboWriteMode.itemData(index)
-        single = mode in (WriteMode.SingleAppend, WriteMode.SingleReplace)
 
+        singleTxt = mode in (WriteMode.SingleAppend, WriteMode.SingleReplace)
         for widget in (self.btnChooseDestFile, self.txtDestFilePath):
-            widget.setEnabled(single)
-        
-        self.backupSettings.setEnabled(not single)
-        if single:
+            widget.setEnabled(singleTxt)
+
+        jsonKey = mode in JSON_WRITE_MODES
+        for widget in (self.lblDestKey, self.txtDestKey):
+            widget.setEnabled(jsonKey)
+
+        backupPossible = not singleTxt
+        self.backupSettings.setEnabled(backupPossible)
+        if not backupPossible:
             self.backupSettings.setChecked(False)
-    
+        
+        self._updateDeleteJson()
+
     @Slot()
     def _chooseDestFile(self):
         path = self.txtDestFilePath.text()
@@ -183,14 +233,17 @@ class BatchApply(QtWidgets.QWidget):
             self.txtDestFilePath.setText(path)
 
     @Slot()
-    def _onDeleteJsonToggled(self, state: bool):
-        style = "color: #FF0000" if state else None
-        self.chkDeleteJson.setStyleSheet(style)
+    def _updateDeleteJson(self):
+        writeMode = self.cboWriteMode.currentData()
+        deletePossible = writeMode not in JSON_WRITE_MODES
+        deletePossible &= not self.backupSettings.isChecked()
 
-    @Slot()
-    def _onBackupToggled(self, state: bool):
-        self.chkDeleteJson.setChecked(False)
-        self.chkDeleteJson.setEnabled(not state)
+        deleteChecked = deletePossible and self.chkDeleteJson.isChecked()
+        self.chkDeleteJson.setChecked(deleteChecked)
+        self.chkDeleteJson.setEnabled(deletePossible)
+
+        style = f"color: {qtlib.COLOR_RED}" if deleteChecked else None
+        self.chkDeleteJson.setStyleSheet(style)
 
 
     def _updateParser(self):
@@ -210,21 +263,49 @@ class BatchApply(QtWidgets.QWidget):
             self._highlighter.highlight(self.txtTemplate, self.txtPreview, varPositions)
 
 
+    def _confirmStart(self) -> bool:
+        ops = []
+
+        if self.backupSettings.isChecked():
+            backupKey = f"{self.cboBackupType.currentText()}.{self.txtBackupKey.text().strip()}"
+            ops.append(f"Backup the current value from the destination into the '{backupKey}' key")
+
+        writeMode = self.cboWriteMode.currentData()
+        writeModeText = WRITE_MODE_TEXT.get(writeMode, "").format(key=self.txtDestKey.text())
+        if writeMode in (WriteMode.SeparateReplace, WriteMode.SingleReplace, WriteMode.CaptionsReplace, WriteMode.TagsReplace):
+            writeModeText = qtlib.htmlRed(writeModeText)
+        ops.append(writeModeText)
+
+        if self.chkDeleteJson.isChecked():
+            ops.append(qtlib.htmlRed('Delete all .json files!'))
+
+        return BatchUtil.confirmStart("Apply", self.tab.filelist.getNumFiles(), ops, self)
+
+
     @Slot()
     def startStop(self):
         if self._task:
-            self._task.abort()
+            if BatchUtil.confirmAbort(self):
+                self._task.abort()
+            return
+
+        if not self._confirmStart():
             return
 
         self.btnStart.setText("Abort")
 
         template = self.txtTemplate.toPlainText()
-        backupName = self.txtBackupName.text().strip() if self.backupSettings.isChecked() else None
-        self._task = BatchApplyTask(self.log, self.tab.filelist, template, backupName)
+        self._task = BatchApplyTask(self.log, self.tab.filelist, template)
+
+        if self.backupSettings.isChecked():
+            self._task.backupType = self.cboBackupType.currentText()
+            self._task.backupKey  = self.txtBackupKey.text().strip()
+
         self._task.stripAround = self.chkStripAround.isChecked()
         self._task.stripMulti  = self.chkStripMulti.isChecked()
         self._task.writeMode   = self.cboWriteMode.currentData()
         self._task.destPath    = self.txtDestFilePath.text()
+        self._task.destKey     = self.txtDestKey.text()
         self._task.deleteJson  = self.chkDeleteJson.isChecked()
 
         self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
@@ -239,76 +320,71 @@ class BatchApply(QtWidgets.QWidget):
 
 
 class BatchApplyTask(BatchTask):
-    def __init__(self, log, filelist, template: str, backupName: str | None):
+    def __init__(self, log, filelist, template: str):
         super().__init__("apply", log, filelist)
         self.template    = template
-        self.backupName  = backupName # None if backup disabled
-
         self.stripAround = True
         self.stripMulti  = True
 
+        self.backupType  = "" # Empty if backup disabled
+        self.backupKey   = "" # Empty if backup disabled
+
         self.writeMode   = WriteMode.SeparateSkipExisting
-        self.destPath    = ""
-        self.destFile    = None
+        self.destPath    = "" # For writing to single .txt file
+        self.destKey     = "" # For writing to .json
+        self.dest: CaptionDest = None
 
         self.deleteJson  = False
 
 
     def runPrepare(self):
+        if self.backupType and not self.backupKey:
+            raise ValueError("Backup key is empty")
+        if self.deleteJson and self.backupType:
+            raise ValueError("Cannot delete json files when backup is enabled")
+        if self.deleteJson and (self.writeMode in JSON_WRITE_MODES):
+            raise ValueError("Cannot delete json files when writing to json files")
+
         self.parser = TemplateVariableParser(None)
         self.parser.stripAround = self.stripAround
         self.parser.stripMultiWhitespace = self.stripMulti
 
         match self.writeMode:
-            case WriteMode.SingleReplace:
-                self.destFile = open(self.destPath, 'w')
-            case WriteMode.SingleAppend:
-                self.destFile = open(self.destPath, 'a')
+            case WriteMode.SeparateReplace | WriteMode.SeparateSkipExisting:
+                self.dest = TxtFileDest(self.writeMode)
+            case WriteMode.SingleReplace | WriteMode.SingleAppend:
+                self.dest = SingleTxtFileDest(self.writeMode, self.destPath)
+            case _:
+                self.dest = JsonDest(self.writeMode, self.destKey)
     
     def runCleanup(self):
-        if self.destFile:
-            self.destFile.flush()
-            self.destFile.close()
+        self.dest.cleanup()
 
 
-    def runProcessFile(self, imgFile) -> str:
-        captionFile = CaptionFile(imgFile)
-        if not captionFile.loadFromJson():
+    def runProcessFile(self, imgFile: str) -> str | None:
+        imgPathNoExt = os.path.splitext(imgFile)[0]
+
+        captionFile = CaptionFile(imgPathNoExt)
+        if captionFile.jsonExists() and not captionFile.loadFromJson():
             self.log(f"WARNING: Couldn't read captions from {captionFile.jsonPath}")
             return None
 
-        if self.destFile:
-            writtenFile = self.processFileSingleDest(imgFile, captionFile)
-        else:
-            writtenFile = self.processFile(imgFile, captionFile)
+        saveJson = False
+        if self.backupType:
+            saveJson = self.backup(imgPathNoExt, captionFile)
 
-        if self.deleteJson and not self.backupName:
-            self.deleteFile(captionFile.jsonPath)
+        writtenFile, jsonModified = self.dest.write(imgPathNoExt, captionFile, self.parseCaption)
+        saveJson |= jsonModified
 
+        if self.deleteJson:
+            self.deleteJsonFile(captionFile.jsonPath)
+        
+        if saveJson:
+            captionFile.saveToJson()
         return writtenFile
 
-
-    def processFile(self, imgFile: str, captionFile: CaptionFile):
-        txtFile = self.getTextFile(imgFile)
-        if self.backupName:
-            self.backup(txtFile, captionFile)
-
-        if (self.writeMode != WriteMode.SeparateReplace) and os.path.exists(txtFile):
-            return None
-
-        caption = self.parseCaption(imgFile, captionFile)
-        with open(txtFile, 'w') as file:
-            file.write(caption)
-        return txtFile
-
-    def processFileSingleDest(self, imgFile: str, captionFile: CaptionFile):
-        caption = self.parseCaption(imgFile, captionFile)
-        self.destFile.write(caption)
-        return self.destPath
-
-
-    def parseCaption(self, imgFile: str, captionFile: CaptionFile) -> str:
-        self.parser.setup(imgFile, captionFile)
+    def parseCaption(self, imgPathNoExt: str, captionFile: CaptionFile) -> str:
+        self.parser.setup(imgPathNoExt, captionFile)
         caption = self.parser.parse(self.template)
 
         if self.parser.missingVars:
@@ -316,19 +392,119 @@ class BatchApplyTask(BatchTask):
         
         return caption
 
+    def backup(self, imgPathNoExt: str, captionFile: CaptionFile) -> bool:
+        oldCaption = self.dest.read(imgPathNoExt, captionFile)
+        if not oldCaption:
+            return False
 
-    def backup(self, txtFile, captionFile: CaptionFile):
-        if os.path.exists(txtFile):
-            with open(txtFile, 'r') as file:
-                caption = file.read()
-            captionFile.addCaption(self.backupName, caption)
-            captionFile.saveToJson()
+        if self.backupType == BACKUP_TYPE_CAPTION:
+            captionFile.addCaption(self.backupKey, oldCaption)
+        else:
+            captionFile.addTags(self.backupKey, oldCaption)
+        return True
 
-    def getTextFile(self, imgFile):
-        path, ext = os.path.splitext(imgFile)
-        return f"{path}.txt"
-
-    def deleteFile(self, path) -> None:
-        if os.path.isfile(path):
+    def deleteJsonFile(self, path: str) -> None:
+        if path.endswith(".json") and os.path.isfile(path):
             os.remove(path)
             self.log(f"Deleted {path}")
+        else:
+            self.log(f"WARNING: Could not delete {path}")
+
+
+
+class CaptionDest:
+    def read(self, imgPathNoExt: str, captionFile: CaptionFile) -> str | None:
+        return None
+
+    def write(self, imgPathNoExt: str, captionFile: CaptionFile, captionFunc: Callable[[str, CaptionFile], str]) -> tuple[str|None, bool]:
+        'Returns the written filename and a boolean indicating if json was modified.'
+        raise NotImplementedError()
+
+    def cleanup(self):
+        pass
+
+
+
+class TxtFileDest(CaptionDest):
+    def __init__(self, writeMode: WriteMode):
+        if writeMode not in (WriteMode.SeparateReplace, WriteMode.SeparateSkipExisting):
+            raise ValueError(f"Invalid WriteMode: {writeMode}")
+        self.writeMode = writeMode
+
+    @override
+    def read(self, imgPathNoExt: str, captionFile: CaptionFile) -> str | None:
+        txtPath = imgPathNoExt + ".txt"
+        if os.path.exists(txtPath):
+            with open(txtPath, 'r') as file:
+                return file.read()
+        return None
+
+    @override
+    def write(self, imgPathNoExt: str, captionFile: CaptionFile, captionFunc: Callable[[str, CaptionFile], str]) -> tuple[str|None, bool]:
+        txtPath = imgPathNoExt + ".txt"
+        if (self.writeMode != WriteMode.SeparateReplace) and os.path.exists(txtPath):
+            return None, False
+
+        caption = captionFunc(imgPathNoExt, captionFile)
+        with open(txtPath, 'w') as file:
+            file.write(caption)
+        return txtPath, False
+
+
+
+class SingleTxtFileDest(CaptionDest):
+    def __init__(self, writeMode: WriteMode, txtPath: str):
+        if not txtPath:
+            raise ValueError("Target path is empty")
+
+        match writeMode:
+            case WriteMode.SingleReplace: openMode = 'w'
+            case WriteMode.SingleAppend:  openMode = 'a'
+            case _: raise ValueError(f"Invalid WriteMode: {writeMode}")
+
+        self.txtPath = txtPath
+        self.txtFile = open(txtPath, openMode)
+
+    @override
+    def write(self, imgPathNoExt: str, captionFile: CaptionFile, captionFunc: Callable[[str, CaptionFile], str]) -> tuple[str|None, bool]:
+        caption = captionFunc(imgPathNoExt, captionFile)
+        self.txtFile.write(caption)
+        return self.txtPath, False
+
+    @override
+    def cleanup(self):
+        self.txtFile.flush()
+        self.txtFile.close()
+
+
+
+class JsonDest(CaptionDest):
+    def __init__(self, writeMode: WriteMode, key: str):
+        if not key:
+            raise ValueError("Target key is empty")
+
+        match writeMode:
+            case WriteMode.CaptionsReplace | WriteMode.CaptionsSkipExisting:
+                self.captionGetter = CaptionFile.getCaption
+                self.captionSetter = CaptionFile.addCaption
+            case WriteMode.TagsReplace | WriteMode.TagsSkipExisting:
+                self.captionGetter = CaptionFile.getTags
+                self.captionSetter = CaptionFile.addTags
+            case _:
+                raise ValueError(f"Invalid WriteMode: {writeMode}")
+
+        self.key = key
+        self.skipExisting: bool = writeMode in (WriteMode.CaptionsSkipExisting, WriteMode.TagsSkipExisting)
+
+    @override
+    def read(self, imgPathNoExt: str, captionFile: CaptionFile) -> str | None:
+        return self.captionGetter(captionFile, self.key)
+
+    @override
+    def write(self, imgPathNoExt: str, captionFile: CaptionFile, captionFunc: Callable[[str, CaptionFile], str]) -> tuple[str|None, bool]:
+        if self.skipExisting and self.captionGetter(captionFile, self.key):
+            return None, False
+
+        caption = captionFunc(imgPathNoExt, captionFile)
+        self.captionSetter(captionFile, self.key, caption)
+        return captionFile.jsonPath, True

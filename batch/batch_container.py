@@ -11,6 +11,12 @@ from .batch_task import BatchProgressUpdate
 import lib.qtlib as qtlib
 
 
+# TODO: Batch File operations:
+#   - Move or Copy files together to new detination (image, json, txt) set by path template
+#     - Optionally copy text/json into archive instead for backup
+#     - Optionally create directory structure with symlinks instead of copy
+
+
 class BatchContainer(QtWidgets.QTabWidget):
     def __init__(self, tab):
         super().__init__()
@@ -34,7 +40,7 @@ class BatchContainer(QtWidgets.QTabWidget):
         self.addTab(self.captionWidget, "Caption (json)")
         self.addTab(self.rulesWidget, "Rules (json → json)")
         self.addTab(self.transformWidget, "Transform (json → json)")
-        self.addTab(self.applyWidget, "Apply (json → txt)")
+        self.addTab(self.applyWidget, "Apply (json → txt/json)")
         self.addTab(self.scaleWidget, "Scale (Image)")
         self.addTab(self.maskWidget, "Mask (Image)")
         self.addTab(self.cropWidget, "Crop (Image)")

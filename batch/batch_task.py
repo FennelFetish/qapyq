@@ -1,5 +1,6 @@
 from typing import Callable
-from PySide6.QtCore import Signal, Slot, QRunnable, QObject, QMutex, QMutexLocker
+from PySide6 import QtWidgets
+from PySide6.QtCore import Qt, Signal, Slot, QRunnable, QObject, QMutex, QMutexLocker
 import traceback, time
 from lib.filelist import FileList
 
@@ -228,3 +229,35 @@ class BatchSignalHandler(QObject):
         self.progressBar.setRange(0, 1)
         self.progressBar.reset()
         self.finished.emit()
+
+
+
+class BatchUtil:
+    @staticmethod
+    def confirmStart(name: str, numFiles: int, operations: list[str], parent: QtWidgets.QWidget | None = None) -> bool:
+        opText = ""
+        for op in operations:
+            if op:
+                opText += f"• {op}<br>"
+
+        text = f"This Batch will:<br><br>" \
+               f"• Process {numFiles} files<br>" \
+               + opText + \
+                "<br>Do you want to continue?"
+
+        dialog = QtWidgets.QMessageBox(parent)
+        dialog.setIcon(QtWidgets.QMessageBox.Icon.Question)
+        dialog.setWindowTitle(f"Confirm Batch {name}")
+        dialog.setTextFormat(Qt.TextFormat.RichText)
+        dialog.setText(text)
+        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel)
+        return dialog.exec() == QtWidgets.QMessageBox.StandardButton.Ok
+
+    @staticmethod
+    def confirmAbort(parent: QtWidgets.QWidget | None = None) -> bool:
+        dialog = QtWidgets.QMessageBox(parent)
+        dialog.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+        dialog.setWindowTitle("Confirm Abort")
+        dialog.setText(f"Do you really want to abort batch processing?")
+        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel)
+        return dialog.exec() == QtWidgets.QMessageBox.StandardButton.Ok
