@@ -4,7 +4,7 @@ from PIL import Image
 from config import Config
 from lib import qtlib
 from infer import Inference
-from .batch_task import BatchTask, BatchSignalHandler
+from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
 import tools.scale as scale
 import ui.export_settings as export
 
@@ -178,6 +178,16 @@ class BatchScale(QtWidgets.QWidget):
         self.pathSettings.updatePreview()
 
 
+    def _confirmStart(self) -> bool:
+        ops = [f"Resize the images using the '{self.cboScaleMode.currentText()}' mode"]
+
+        if self.pathSettings.overwriteFiles:
+            ops.append( qtlib.htmlRed("Overwrite existing images!") )
+        else:
+            ops.append("Save images using new filenames with an increasing counter")
+
+        return BatchUtil.confirmStart("Scale", self.tab.filelist.getNumFiles(), ops, self)
+
     def saveExportPreset(self):
         Config.exportPresets[self.EXPORT_PRESET_KEY] = {
             "path_template": self.pathSettings.pathTemplate,
@@ -187,7 +197,11 @@ class BatchScale(QtWidgets.QWidget):
     @Slot()
     def startStop(self):
         if self._task:
-            self._task.abort()
+            if BatchUtil.confirmAbort(self):
+                self._task.abort()
+            return
+
+        if not self._confirmStart():
             return
 
         self.saveExportPreset()

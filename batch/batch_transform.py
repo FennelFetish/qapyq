@@ -5,7 +5,11 @@ from infer import Inference, InferencePresetWidget, PromptWidget, PromptsHighlig
 from lib import qtlib
 from lib.captionfile import CaptionFile
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
-from .batch_task import BatchTask, BatchSignalHandler
+from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
+
+
+TRANSFORM_OVERWRITE_MODE_ALL     = "all"
+TRANSFORM_OVERWRITE_MODE_MISSING = "missing"
 
 
 class BatchTransform(QtWidgets.QWidget):
@@ -83,8 +87,8 @@ class BatchTransform(QtWidgets.QWidget):
         layout.addWidget(self.txtTargetName, row, 1)
 
         self.cboOverwriteMode = QtWidgets.QComboBox()
-        self.cboOverwriteMode.addItem("Overwrite all keys", "all")
-        self.cboOverwriteMode.addItem("Only write missing keys", "missing")
+        self.cboOverwriteMode.addItem("Overwrite all keys", TRANSFORM_OVERWRITE_MODE_ALL)
+        self.cboOverwriteMode.addItem("Only write missing keys", TRANSFORM_OVERWRITE_MODE_MISSING)
         layout.addWidget(self.cboOverwriteMode, row, 2)
 
         self.chkStorePrompts = QtWidgets.QCheckBox("Store Prompts")
@@ -127,10 +131,35 @@ class BatchTransform(QtWidgets.QWidget):
             PromptsHighlighter.highlightPromptSeparators(self.txtPromptPreview)
 
 
+    def _confirmStart(self) -> bool:
+        ops = [f"Use '{self.inferSettings.getSelectedPresetName()}' to transform Captions"]
+
+        targetName = self.txtTargetName.text().strip()
+        targetKey = f"captions.{targetName}"
+        targetText = f"Write the Captions to .json files [{targetKey}]"
+        if self.cboOverwriteMode.currentData() == TRANSFORM_OVERWRITE_MODE_MISSING:
+            targetText += " if the key doesn't exist"
+        else:
+            targetText = qtlib.htmlRed(targetText + " and overwrite the content!")
+        ops.append(targetText)
+
+        if self.chkStorePrompts.isChecked():
+            ops.append(f"Store the prompt in [prompts.{targetName}]")
+
+        if self.spinRounds.value() > 1:
+            ops.append(f"Do {self.spinRounds.value()} rounds of transformations")
+
+        return BatchUtil.confirmStart("Transform", self.tab.filelist.getNumFiles(), ops, self)
+
+
     @Slot()
     def startStop(self):
         if self._task:
-            self._task.abort()
+            if BatchUtil.confirmAbort(self):
+                self._task.abort()
+            return
+
+        if not self._confirmStart():
             return
 
         self.btnStart.setText("Abort")
@@ -167,7 +196,7 @@ class BatchTransformTask(BatchTask):
         self.systemPrompt = None
         self.config       = None
 
-        self.overwriteMode = "all"
+        self.overwriteMode = TRANSFORM_OVERWRITE_MODE_ALL
         self.storePrompts  = False
         self.stripAround = True
         self.stripMulti  = False
@@ -198,7 +227,7 @@ class BatchTransformTask(BatchTask):
             return None
 
         writeKeys = set(self.writeKeys)
-        if self.overwriteMode == "missing":
+        if self.overwriteMode == TRANSFORM_OVERWRITE_MODE_MISSING:
             for name in captionFile.captions.keys():
                 writeKeys.discard(name)
         

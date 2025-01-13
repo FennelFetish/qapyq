@@ -40,6 +40,9 @@ class TagPresetWidget(QtWidgets.QWidget):
         ModelSettingsWindow.signals.presetListUpdated.connect(self._onPresetListChanged)
 
 
+    def getSelectedPresetName(self) -> str:
+        return self.preset.currentText()
+
     @Slot()
     def showModelSettings(self, link):
         ModelSettingsWindow.openInstance(self, self.configAttr, self.preset.currentText())

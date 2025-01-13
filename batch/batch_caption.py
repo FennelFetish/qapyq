@@ -5,7 +5,11 @@ from lib.captionfile import CaptionFile
 from config import Config
 from infer import Inference, InferencePresetWidget, TagPresetWidget, PromptWidget, PromptsHighlighter
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
-from .batch_task import BatchTask, BatchSignalHandler
+from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
+
+
+CAPTION_OVERWRITE_MODE_ALL     = "all"
+CAPTION_OVERWRITE_MODE_MISSING = "missing"
 
 
 class BatchCaption(QtWidgets.QWidget):
@@ -88,9 +92,8 @@ class BatchCaption(QtWidgets.QWidget):
         layout.addWidget(self.txtTargetName, row, 1)
 
         self.cboOverwriteMode = QtWidgets.QComboBox()
-        self.cboOverwriteMode.addItem("Overwrite all keys", "all")
-        self.cboOverwriteMode.addItem("Only write missing keys", "missing")
-        #self.cboOverwriteMode.addItem("Skip file if default key exists", "skip-default-exists")
+        self.cboOverwriteMode.addItem("Overwrite all keys", CAPTION_OVERWRITE_MODE_ALL)
+        self.cboOverwriteMode.addItem("Only write missing keys", CAPTION_OVERWRITE_MODE_MISSING)
         layout.addWidget(self.cboOverwriteMode, row, 2)
 
         self.chkStorePrompts = QtWidgets.QCheckBox("Store Prompts")
@@ -130,9 +133,6 @@ class BatchCaption(QtWidgets.QWidget):
         self.chkTagSkipExisting = QtWidgets.QCheckBox("Skip file if key exists")
         layout.addWidget(self.chkTagSkipExisting, 1, 2)
 
-        # TODO: Apply rules. Or separate batch tab? Also: Merge tags from different models? (easy with the remove duplicate option)
-        # Separate tab probably better
-
         groupBox = QtWidgets.QGroupBox("Generate Tags")
         groupBox.setCheckable(True)
         groupBox.setLayout(layout)
@@ -161,10 +161,49 @@ class BatchCaption(QtWidgets.QWidget):
             PromptsHighlighter.highlightPromptSeparators(self.txtPromptPreview)
 
 
+    def _confirmStart(self) -> bool:
+        ops = []
+
+        targetName = self.txtTargetName.text().strip()
+        if self.captionGroup.isChecked():
+            ops.append(f"Use '{self.inferSettings.getSelectedPresetName()}' to generate new Captions")
+
+            captionKey = f"captions.{targetName}"
+            captionText = f"Write the Captions to .json files [{captionKey}]"
+            if self.cboOverwriteMode.currentData() == CAPTION_OVERWRITE_MODE_MISSING:
+                captionText += " if the key doesn't exist"
+            else:
+                captionText = qtlib.htmlRed(captionText + " and overwrite the content!")
+            ops.append(captionText)
+
+        if self.chkStorePrompts.isChecked():
+            ops.append(f"Store the prompt in [prompts.{targetName}]")
+        
+        if self.spinRounds.value() > 1:
+            ops.append(f"Do {self.spinRounds.value()} rounds of captioning")
+
+        if self.tagGroup.isChecked():
+            ops.append(f"Use '{self.tagSettings.getSelectedPresetName()}' to generate new Tags")
+
+            tagKey = f"tags.{self.txtTagTargetName.text().strip()}"
+            tagText = f"Write the Tags to .json files [{tagKey}]"
+            if self.chkTagSkipExisting.isChecked():
+                tagText += " if the key doesn't exist"
+            else:
+                tagText = qtlib.htmlRed(tagText + " and overwrite the content!")
+            ops.append(tagText)
+
+        return BatchUtil.confirmStart("Caption", self.tab.filelist.getNumFiles(), ops, self)
+
+
     @Slot()
     def startStop(self):
         if self._task:
-            self._task.abort()
+            if BatchUtil.confirmAbort(self):
+                self._task.abort()
+            return
+
+        if not self._confirmStart():
             return
 
         self.btnStart.setText("Abort")
@@ -206,7 +245,7 @@ class BatchCaptionTask(BatchTask):
         self.prompts      = None
         self.systemPrompt = None
         self.config       = None
-        self.overwriteMode = "all"
+        self.overwriteMode = CAPTION_OVERWRITE_MODE_ALL
         self.storePrompts: bool = False
         self.stripAround  = True
         self.stripMulti   = False
@@ -265,7 +304,7 @@ class BatchCaptionTask(BatchTask):
 
     def runCaption(self, imgFile: str, captionFile: CaptionFile) -> bool:
         writeKeys = set(self.writeKeys)
-        if self.overwriteMode == "missing":
+        if self.overwriteMode == CAPTION_OVERWRITE_MODE_MISSING:
             for name in captionFile.captions.keys():
                 writeKeys.discard(name)
 

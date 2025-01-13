@@ -246,6 +246,9 @@ class InferencePresetWidget(InferenceSettingsWidget):
         layout.addWidget(self.btnLoad, row, 3, 1, 2)
 
 
+    def getSelectedPresetName(self) -> str:
+        return self.preset.currentText()
+
     @Slot()
     def showModelSettings(self, link):
         ModelSettingsWindow.openInstance(self, self.configAttr, self.preset.currentText())
@@ -255,7 +258,6 @@ class InferencePresetWidget(InferenceSettingsWidget):
         if name:
             title += f": {name}"
         self.setText(title)
-
 
     def reloadPresetList(self, selectName: str = None):
         self.preset.clear()

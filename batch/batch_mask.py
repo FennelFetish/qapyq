@@ -9,11 +9,14 @@ from lib import qtlib
 from lib.mask_macro import MaskingMacro
 from lib.mask_macro_vis import MacroVisualization
 from infer import Inference
-from .batch_task import BatchTask, BatchSignalHandler
+from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
 import ui.export_settings as export
 
 
 # TODO: Store detections in json (or separate batch detect?)
+
+MASK_SAVE_MODE_FILE  = "file"
+MASK_SAVE_MODE_ALPHA = "alpha"
 
 
 class BatchMask(QtWidgets.QWidget):
@@ -92,8 +95,8 @@ class BatchMask(QtWidgets.QWidget):
 
         row = 0
         self.cboDestType = QtWidgets.QComboBox()
-        self.cboDestType.addItem("Separate Image  (Max 4 Layers)", "file")
-        self.cboDestType.addItem("Alpha Channel  (Max 1 Layer)", "alpha")
+        self.cboDestType.addItem("Separate Image  (Max 4 Layers)", MASK_SAVE_MODE_FILE)
+        self.cboDestType.addItem("Alpha Channel  (Max 1 Layer)", MASK_SAVE_MODE_ALPHA)
         layout.addWidget(QtWidgets.QLabel("Save in:"), row, 0, Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self.cboDestType, row, 1)
 
@@ -150,6 +153,27 @@ class BatchMask(QtWidgets.QWidget):
             self.macroVis.reload(path)
 
 
+    def _confirmStart(self) -> bool:
+        ops = [f"Generate masks using the '{self.cboMacro.currentText()}' macro"]
+
+        if self.pathSettings.skipExistingFiles:
+            ops.append("Skip the mask generation if the target file already exists")
+
+        if self.cboDestType.currentData() == MASK_SAVE_MODE_FILE:
+            ops.append("Store the mask as a separate image")
+        else:
+            ops.append("Store the mask as the alpha channel in the image")
+
+        if self.pathSettings.overwriteFiles:
+            ops.append( qtlib.htmlRed("Overwrite existing images!") )
+        elif self.pathSettings.skipExistingFiles:
+            ops.append("Save images using new filenames")
+        else:
+            ops.append("Save images using new filenames with an increasing counter")
+
+        return BatchUtil.confirmStart("Mask", self.tab.filelist.getNumFiles(), ops, self)
+
+
     def saveExportPreset(self):
         Config.exportPresets[self.EXPORT_PRESET_KEY] = {
             "path_template": self.pathSettings.pathTemplate,
@@ -159,7 +183,11 @@ class BatchMask(QtWidgets.QWidget):
     @Slot()
     def startStop(self):
         if self._task:
-            self._task.abort()
+            if BatchUtil.confirmAbort(self):
+                self._task.abort()
+            return
+
+        if not self._confirmStart():
             return
 
         self.saveExportPreset()
@@ -200,7 +228,7 @@ class BatchMaskTask(BatchTask):
     def runProcessFile(self, imgFile: str) -> str:
         self.parser.setup(imgFile)
 
-        if self.saveMode == "file":
+        if self.saveMode == MASK_SAVE_MODE_FILE:
             path, layers = self.processAsSeparateFile(imgFile)
         else:
             path, layers = self.processAsAlpha(imgFile)

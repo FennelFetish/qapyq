@@ -9,7 +9,7 @@ from ui.edit_table import EditableTable
 from ui.flow_layout import SortedStringFlowWidget
 from lib import qtlib
 from lib.captionfile import CaptionFile
-from .batch_task import BatchTask, BatchSignalHandler
+from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
 
 
 BatchRulesGroup = ForwardRef("BatchRulesGroup")
@@ -357,10 +357,32 @@ class BatchRules(QtWidgets.QWidget):
             self._highlightFormats[cap] = bannedFormat
 
 
+    def _confirmStart(self) -> bool:
+        loadKey = f"{self.cboSrcType.currentText()}.{self.txtSourceKey.text().strip()}"
+        ops = [
+            f"Load values from .json files [{loadKey}]",
+            f"Transform the {self.cboSrcType.currentText().capitalize()} according to the selected rules"
+        ]
+
+        storeKey = f"{self.cboTargetType.currentText()}.{self.txtTargetKey.text().strip()}"
+        storeText = f"Write to .json files [{storeKey}]"
+        if self.chkSkipExisting.isChecked():
+            storeText += " if the key doesn't exist"
+        else:
+            storeText = qtlib.htmlRed(storeText + " and overwrite the content!")
+        ops.append(storeText)
+
+        return BatchUtil.confirmStart("Rules", self.tab.filelist.getNumFiles(), ops, self)
+
+
     @Slot()
     def startStop(self):
         if self._task:
-            self._task.abort()
+            if BatchUtil.confirmAbort(self):
+                self._task.abort()
+            return
+
+        if not self._confirmStart():
             return
 
         self.btnStart.setText("Abort")
