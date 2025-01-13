@@ -131,6 +131,7 @@ class FileList:
 
 
     def getNumFiles(self):
+        self._lazyLoadFolder()
         return len(self.files)
 
     def getFiles(self):

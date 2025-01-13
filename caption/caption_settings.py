@@ -210,7 +210,7 @@ class CaptionSettings(QtWidgets.QWidget):
         dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
 
         presetPath = os.path.abspath(Config.pathDefaultCaptionRules)
-        dialog.setText(f"Overwrite the default rules and groups?\n\n This will overwrite the file:\n{presetPath}")
+        dialog.setText(f"Overwrite the default rules and groups?\n\nThis will overwrite the file:\n{presetPath}")
 
         if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes:
             preset = self.getPreset()
