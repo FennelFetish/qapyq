@@ -1,8 +1,9 @@
-from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, Signal
 from datetime import datetime
 import os
+from PySide6 import QtWidgets
+from PySide6.QtCore import Qt, Signal, Slot
 from config import Config
+from lib import qtlib
 
 
 class BatchLog(QtWidgets.QWidget):
@@ -13,6 +14,7 @@ class BatchLog(QtWidgets.QWidget):
         self._savePath = Config.pathExport
 
         self.txtLog = QtWidgets.QPlainTextEdit()
+        qtlib.setMonospace(self.txtLog)
         self.txtLog.setReadOnly(True)
 
         self.btnClear = QtWidgets.QPushButton("Clear")
@@ -22,7 +24,7 @@ class BatchLog(QtWidgets.QWidget):
         self.btnSave.clicked.connect(self.saveLog)
 
         layout = QtWidgets.QGridLayout()
-        layout.setAlignment(Qt.AlignTop)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setRowStretch(0, 1)
         layout.setRowStretch(1, 0)
 

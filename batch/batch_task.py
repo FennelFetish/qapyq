@@ -19,11 +19,22 @@ class BatchTask(QRunnable):
 
         self.signals  = BatchTask.Signals()
         self.name     = name
-        self.log      = log
+
+        self._indentLogs = False
+        self.log = self._wrapLogFunc(log)
 
         self.files = list(filelist.getFiles())
         if len(self.files) == 0 and filelist.currentFile:
             self.files.append(filelist.currentFile)
+
+
+    def _wrapLogFunc(self, log: Callable):
+        def logIndent(line: str):
+            if self._indentLogs:
+                line = "  " + line
+            log(line)
+
+        return logIndent
 
 
     def abort(self):
@@ -75,12 +86,16 @@ class BatchTask(QRunnable):
             self.log(f"Processing: {imgFile}")
 
             try:
+                self._indentLogs = True
                 outputFile = self.runProcessFile(imgFile)
+                if not outputFile:
+                    self.log(f"Skipped")
             except Exception as ex:
                 outputFile = None
                 self.log(f"WARNING: {str(ex)}")
                 traceback.print_exc()
             finally:
+                self._indentLogs = False
                 numFilesDone += 1
                 timeAvg.update()
                 update = BatchProgressUpdate(timeAvg, numFiles, numFilesDone)
