@@ -78,17 +78,17 @@ class CaptionFile:
 
         captions = data.get(Keys.CAPTIONS, {})
         captions.update(self.captions)
-        if captions:
+        if captions := self._deleteEmpty(captions):
             data[Keys.CAPTIONS] = captions
 
         prompts = data.get(Keys.PROMPTS, {})
         prompts.update(self.prompts)
-        if prompts:
+        if prompts := self._deleteEmpty(prompts):
             data[Keys.PROMPTS] = prompts
 
         tags = data.get(Keys.TAGS, {})
         tags.update(self.tags)
-        if tags:
+        if tags := self._deleteEmpty(tags):
             data[Keys.TAGS] = tags
         
         with open(self.jsonPath, 'w') as file:
@@ -101,17 +101,22 @@ class CaptionFile:
         data = dict()
         data[Keys.VERSION] = CaptionFile.VERSION
 
-        if self.captions:
-            data[Keys.CAPTIONS] = self.captions
+        if captions := self._deleteEmpty(self.captions):
+            data[Keys.CAPTIONS] = captions
 
-        if self.prompts:
-            data[Keys.PROMPTS] = self.prompts
-        
-        if self.tags:
-            data[Keys.TAGS] = self.tags
+        if prompts := self._deleteEmpty(self.prompts):
+            data[Keys.PROMPTS] = prompts
+
+        if tags := self._deleteEmpty(self.tags):
+            data[Keys.TAGS] = tags
 
         with open(self.jsonPath, 'w') as file:
             json.dump(data, file, indent=4)
+
+
+    @staticmethod
+    def _deleteEmpty(data: dict) -> dict:
+        return {k: v for k, v in data.items() if v}
 
 
 
