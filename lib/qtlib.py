@@ -4,6 +4,9 @@ import numpy as np
 import lib.util as util
 
 
+COLOR_RED = "#FF1616"
+
+
 def setTextEditHeight(textEdit, numRows, mode=None):
     lineHeight = textEdit.fontMetrics().lineSpacing()
     docMargin = textEdit.document().documentMargin()
@@ -461,7 +464,7 @@ class ColoredMessageStatusBar(QtWidgets.QStatusBar):
         if success:
             self.updateStyleSheet("#00ff00")
         else:
-            self.updateStyleSheet("#ff0000")
+            self.updateStyleSheet(COLOR_RED)
         super().showMessage(text, timeout)
 
     def updateStyleSheet(self, color=None):
@@ -566,6 +569,11 @@ def getHighlightColor(colorHex: str) -> QtGui.QColor:
     v = (1.0-vMix)*vPalette + vMix*v
 
     return QtGui.QColor.fromHsvF(h, s, v)
+
+
+
+def htmlRed(text: str) -> str:
+    return f"<font color='{COLOR_RED}'>{text}</font>"
 
 
 

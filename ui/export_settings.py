@@ -188,7 +188,7 @@ class ExportWidget(QtWidgets.QWidget):
         examplePath = self.getAutoExportPath(self.filelist.getCurrentFile())
         stylesheet = ""
         if os.path.exists(examplePath):
-            stylesheet = "color: #ff1616"
+            stylesheet = f"color: {qtlib.COLOR_RED}"
         self.txtPathSample.setStyleSheet(stylesheet)
 
         examplePath = "/\n\n".join(os.path.split(examplePath))
@@ -367,7 +367,7 @@ Examples:
 
     @Slot()
     def _onOverwriteToggled(self, state: bool):
-        style = "color: #FF1616" if state else None
+        style = f"color: {qtlib.COLOR_RED}" if state else None
         self.chkOverwrite.setStyleSheet(style)
 
         if state:
