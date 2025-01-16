@@ -19,7 +19,7 @@ class JsonStats(QtWidgets.QWidget):
         self.table.setModel(self.proxyModel)
 
         self._layout = StatsLayout(tab, "Keys", self.proxyModel, self.table)
-        self._layout.addWidget(self._buildStats(), 0, 0)
+        self._layout.setStatsWidget(self._buildStats())
         self.setLayout(self._layout)
 
 

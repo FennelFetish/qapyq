@@ -10,6 +10,8 @@ from .stats_base import StatsLayout, StatsBaseProxyModel
 
 # TODO: CSV Export
 
+# TODO: Mutually exclusive file combination mode (files which have only one of the tags / files which have more than one of the selected tags <<)
+
 
 class TagStats(QtWidgets.QWidget):
     def __init__(self, tab: ImgTab):
@@ -26,8 +28,8 @@ class TagStats(QtWidgets.QWidget):
         self.table.captionRulesChanged.connect(self.reloadColors)
 
         self._layout = StatsLayout(tab, "Tags", self.proxyModel, self.table, 1)
-        self._layout.addLayout(self._buildSourceSelector(), 0, 0, 1, 3)
-        self._layout.addWidget(self._buildStats(), 1, 0)
+        self._layout.insertLayout(0, self._buildSourceSelector())
+        self._layout.setStatsWidget(self._buildStats())
         self.setLayout(self._layout)
 
     def _buildSourceSelector(self):

@@ -19,7 +19,7 @@ class StatsBaseProxyModel(QSortFilterProxyModel):
 
 
 
-class StatsLayout(QtWidgets.QGridLayout):
+class StatsLayout(QtWidgets.QVBoxLayout):
     ROLE_FILEPATH = Qt.ItemDataRole.UserRole
 
     def __init__(self, tab: ImgTab, name: str, proxyModel: StatsBaseProxyModel, tableView: QtWidgets.QTableView, row=0):
@@ -30,23 +30,25 @@ class StatsLayout(QtWidgets.QGridLayout):
 
         self._enableFileUpdate = True
 
-        self.setColumnMinimumWidth(0, 200)
-        self.setColumnStretch(0, 0)
-        self.setColumnStretch(1, 1)
-        self.setColumnStretch(2, 2)
+        self._build(name)
 
-        rowSpan = 3
-        self.setRowStretch(row, 0)
-        self.addWidget(self._buildTableGroup(name), row, 1, rowSpan, 1)
-        self.addWidget(self._buildFilesGroup(name), row, 2, rowSpan, 1)
+    def _build(self, name: str):
+        self.col1Layout = QtWidgets.QVBoxLayout()
+        self.col1Layout.setContentsMargins(0, 0, 0, 0)
+        self.col1Layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.col1Layout.addWidget(self._buildFilterGroup(name))
 
-        row += 1
-        self.setRowStretch(row, 0)
-        self.addWidget(self._buildFilterGroup(name), row, 0)
+        col1Widget = QtWidgets.QWidget()
+        col1Widget.setLayout(self.col1Layout)
 
-        row += 1
-        self.setRowStretch(row, 1)
-
+        splitter = QtWidgets.QSplitter()
+        splitter.addWidget(col1Widget)
+        splitter.addWidget(self._buildTableGroup(name))
+        splitter.addWidget(self._buildFilesGroup(name))
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setStretchFactor(2, 1)
+        self.addWidget(splitter)
 
     def _buildTableGroup(self, name: str):
         layout = QtWidgets.QVBoxLayout()
@@ -123,6 +125,9 @@ class StatsLayout(QtWidgets.QGridLayout):
         group = QtWidgets.QGroupBox(f"Filter {name}")
         group.setLayout(layout)
         return group
+
+    def setStatsWidget(self, widget: QtWidgets.QWidget):
+        self.col1Layout.insertWidget(0, widget)
 
 
     @Slot()
