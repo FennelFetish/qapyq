@@ -53,6 +53,7 @@ class CropToolBar(QtWidgets.QToolBar):
         self.cboSizePresets = QtWidgets.QComboBox()
         self.cboSizePresets.currentTextChanged.connect(self.sizePreset)
         self.onSizePresetsUpdated(Config.cropSizePresets)
+        self.cboSizePresets.setCurrentIndex(1) # Initialize to first preset
 
         layout = QtWidgets.QGridLayout()
         layout.setContentsMargins(1, 1, 1, 1)

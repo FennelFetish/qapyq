@@ -36,6 +36,7 @@ class CropTool(ViewTool):
     PEN_UPSCALE   = createPen(255, 0, 0)
 
     BUTTON_CROP   = Qt.MouseButton.LeftButton
+    BUTTON_SWAP   = Qt.MouseButton.MiddleButton
     BUTTON_MENU   = Qt.MouseButton.RightButton
 
 
@@ -289,44 +290,47 @@ class CropTool(ViewTool):
 
     def onMousePress(self, event) -> bool:
         # CTRL pressed -> Use default controls (pan)
-        if (event.modifiers() & Qt.ControlModifier) == Qt.ControlModifier:
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             return super().onMousePress(event)
 
-        button = event.button()
-        if button == self.BUTTON_CROP:
-            if self._waitForConfirmation:
-                rect = self._cropRect.rect().toRect()
-                rect.setRect(rect.x(), rect.y(), max(1, rect.width()), max(1, rect.height()))
+        match event.button():
+            case self.BUTTON_CROP:
+                if self._waitForConfirmation:
+                    # Start export if mouse click is inside selection rectangle
+                    rect = self._cropRect.rect().toRect()
+                    rect.setRect(rect.x(), rect.y(), max(1, rect.width()), max(1, rect.height()))
+                    if rect.contains(event.position().toPoint()):
+                        if self.exportImage(rect):
+                            self._confirmRect.setRect(rect)
+                            self._confirmRect.startAnim()
 
-                # Start export if mouse click is inside selection rectangle
-                if rect.contains(event.position().toPoint()):
-                    if self.exportImage(rect):
-                        self._confirmRect.setRect(rect)
-                        self._confirmRect.startAnim()
+                    self.resetSelection(event.position())
+                else:
+                    self._waitForConfirmation = True
+                return True
+            
+            case self.BUTTON_SWAP:
+                self._menu._onSwap()
+                return True
 
-                self.resetSelection(event.position())
-            else:
-                self._waitForConfirmation = True
-            return True
-
-        elif button == self.BUTTON_MENU:
-            self._menu.exec_(self._imgview.mapToGlobal(event.position()).toPoint())
-            self._waitForConfirmation = False
-            return True
+            case self.BUTTON_MENU:
+                self._menu.exec_(self._imgview.mapToGlobal(event.position()).toPoint())
+                self._waitForConfirmation = False
+                return True
 
         return super().onMousePress(event)
 
 
     def onMouseWheel(self, event) -> bool:
         # CTRL pressed -> Use default controls (zoom)
-        if (event.modifiers() & Qt.ControlModifier) == Qt.ControlModifier:
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             return False
         
         if self._waitForConfirmation:
             return True
         
         change = round(self._imgview.image.pixmap().height() * Config.cropWheelStep)
-        if (event.modifiers() & Qt.ShiftModifier) == Qt.ShiftModifier:
+        if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
             change = 1
 
         wheelSteps = event.angleDelta().y() / 120.0 # 8*15° standard
