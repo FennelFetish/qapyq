@@ -67,7 +67,7 @@ class CaptionSettings(QtWidgets.QWidget):
         row += 1
         layout.addWidget(QtWidgets.QLabel("Options:"), row, 0, Qt.AlignmentFlag.AlignTop)
 
-        self.chkRemoveDup = QtWidgets.QCheckBox("Remove Duplicates")
+        self.chkRemoveDup = QtWidgets.QCheckBox("Remove Duplicates/Subsets")
         self.chkRemoveDup.setChecked(True)
         layout.addWidget(self.chkRemoveDup, row, 1, Qt.AlignmentFlag.AlignTop)
 

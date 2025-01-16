@@ -66,7 +66,7 @@ class BatchRules(QtWidgets.QWidget):
         layout.addWidget(QtWidgets.QLabel("Separator:"), row, 0)
         layout.addWidget(self.txtSeparator, row, 1)
 
-        self.chkRemoveDup = QtWidgets.QCheckBox("Remove Duplicates")
+        self.chkRemoveDup = QtWidgets.QCheckBox("Remove Duplicates/Subsets")
         self.chkRemoveDup.setChecked(True)
         self.chkRemoveDup.checkStateChanged.connect(self.updatePreview)
         layout.addWidget(self.chkRemoveDup, row, 2)

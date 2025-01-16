@@ -79,6 +79,7 @@ class MutuallyExclusiveFilter(CaptionFilter):
 
         for group in self.groups:
             exists = False
+            # TODO: Keep fist occurence instead? (it has highest confidence score)
             for i, cap in reversed(enumerated):
                 if cap in group:
                     if exists:
@@ -91,7 +92,8 @@ class MutuallyExclusiveFilter(CaptionFilter):
 
 
 
-
+# TODO: Wildcard that matches all colors?
+# TODO: Or make a more general combination filter not associated with groups, with regex patterns?s
 class TagCombineFilter(CaptionFilter):
     # short hair, brown hair    -> short brown hair   short, brown -> group 0
     # messy hair, curly hair    -> messy curly hair   messy, curly -> group 1
@@ -130,6 +132,7 @@ class TagCombineFilter(CaptionFilter):
 
         # Find groups
         for caption in captions:
+            # TODO: Also match When all words in this caption are part of a group separately (for adding new words to existing combined captions)
             groupIndex = self.groupMap.get(caption)
 
             # Not registered for combination: Append unmodified string.
@@ -148,23 +151,67 @@ class TagCombineFilter(CaptionFilter):
             group.append(caption)
 
         # Merge groups to string
+        existingWords: set[str] = set()
         for i, caption in enumerate(newCaptions):
             if not isinstance(caption, list):
                 continue
 
             # Extract last word
-            combined = caption[0].rsplit(" ", 1)[-1].strip()
+            lastWord = caption[0].rsplit(" ", 1)[-1].strip()
+            combined = lastWord
             for tag in reversed(caption):
                 # Remove last word from tag.
                 # Prepend to 'combined' only if tag is not empty afterwards (when tag had multiple words).
                 if tag := tag.rsplit(" ", 1)[:-1]:
                     tag = tag[0].strip()
                     combined = f"{tag} {combined}"
+            
+            # Remove duplicate words, keeping the last.
+            # This allows combining tags with 2 or more "last words".
+            existingWords.clear()
+            existingWords.add(lastWord)
+
+            words = combined.split(" ")
+            combined = lastWord
+            for word in reversed(words):
+                if word in existingWords:
+                    continue
+                existingWords.add(word)
+                combined = f"{word} {combined}"
 
             newCaptions[i] = combined
 
         # All lists replaced by strings
         return newCaptions
+
+
+
+# Remove tags when all its words occur in another longer tag
+# bamboo, forest, bamboo forest -> bamboo forest
+# Also removes newly added duplicate tags when it were already combined with others in TagCombineFilter.
+class SubsetFilter(CaptionFilter):
+    def __init__(self):
+        pass
+
+    def filterCaptions(self, captions: list[str]) -> list[str]:
+        captionWords: list[set[str]] = list()
+        for cap in captions:
+            words = (w.lower() for word in cap.split(" ") if (w := word.strip()))
+            captionWords.append(set(words))
+
+        newCaptions: list[str] = list()
+        for i, cap in enumerate(captions):
+            if not self._supersetExists(captionWords, i):
+                newCaptions.append(cap)
+
+        return newCaptions
+
+    @staticmethod
+    def _supersetExists(captionWords: list[set[str]], index: int) -> bool:
+        for k in range(len(captionWords)):
+            if k != index and captionWords[k].issuperset(captionWords[index]):
+                return True
+        return False
 
 
 
@@ -222,6 +269,7 @@ class CaptionRulesProcessor:
         self.banFilter = BannedCaptionFilter()
         self.sortFilter = SortCaptionFilter()
         self.combineFilter = TagCombineFilter()
+        self.subsetFilter = SubsetFilter()
         self.prefixSuffixFilter = PrefixSuffixFilter()
 
 
@@ -254,18 +302,31 @@ class CaptionRulesProcessor:
         text = self.replaceFilter.filterText(text)
         captions = [c.strip() for c in text.split(self.separator.strip())]
 
+        # In the original order, tags that come first have higher confidence score.
+
+        # Sort before applying exclusive filter so the caption order defines priority (last one is kept)
+        # --> No. NOTE: Sorting before the exclusive filter breaks replacement of tags when Auto Apply Rules and Mutually Exclusive are enabled.
+        # if self.sortCaptions:
+        #     captions = self.sortFilter.filterCaptions(captions)
+
         # Filter mutually exclusive captions before removing duplicates: This will keep the last inserted caption
         captions = self.exclusiveFilter.filterCaptions(captions)
 
-        if self.removeDup:
-            captions = self.dupFilter.filterCaptions(captions)
-
         captions = self.banFilter.filterCaptions(captions)
 
+        if self.removeDup:
+            # Remove subsets after banning, so no tags are wrongly merged and removed with banned tags.
+            captions = self.subsetFilter.filterCaptions(captions)
+            captions = self.dupFilter.filterCaptions(captions) # TODO: DuplicateFilter is superfluous? SubsetFilter will already remove duplicates
+
+        # Sort before combine filter so order inside group will define order of words inside combined tag
         if self.sortCaptions:
             captions = self.sortFilter.filterCaptions(captions)
 
         captions = self.combineFilter.filterCaptions(captions)
+
+        # Strip and remove empty captions
+        captions = (cap for c in captions if (cap := c.strip()))
 
         text = self.separator.join(captions)
         text = self.prefixSuffixFilter.filterText(text)
