@@ -11,12 +11,12 @@ class ImgView(DropView):
         super().__init__()
 
         bgBrush = QBrush(QColor(0, 0, 0))
-        bgBrush.setStyle(Qt.Dense2Pattern)
+        bgBrush.setStyle(Qt.BrushStyle.Dense2Pattern)
         self.setBackgroundBrush(bgBrush)
 
-        self.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
-        self.setOptimizationFlag(QGraphicsView.DontAdjustForAntialiasing, True)
-        self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+        self.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.SmoothPixmapTransform)
+        self.setOptimizationFlag(QGraphicsView.OptimizationFlag.DontAdjustForAntialiasing, True)
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
         self.setFrameStyle(0)
 
         self.rotation = 0.0
@@ -34,7 +34,7 @@ class ImgView(DropView):
         if self.image.loadImage(currentFile):
             self.resetView()
             self.updateImageTransform()
-            self.updateScene()
+            self.updateView()
         
         if self.takeFocusOnFilechange:
             self.setFocus()
@@ -79,11 +79,11 @@ class ImgView(DropView):
             self._tool.onDisabled(self)
         self._tool = tool
         tool.onEnabled(self)
-        self.updateScene()
+        self.updateView()
 
 
-    def updateScene(self):
-        super().updateScene()
+    def updateView(self):
+        super().updateView()
         self.updateImageSmoothness(self.image)
         self._tool.onSceneUpdate()
 
@@ -135,12 +135,15 @@ class ImgView(DropView):
 class ImgItem(QGraphicsPixmapItem):
     def __init__(self):
         super().__init__(None)
-        self.setShapeMode(QGraphicsPixmapItem.BoundingRectShape)
+        self.setShapeMode(QGraphicsPixmapItem.ShapeMode.BoundingRectShape)
         self.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
         self.filepath = ""
 
     def loadImage(self, path) -> bool:
-        #print("Load image:", path)
+        if not path:
+            print("Failed to load image: Path is empty")
+            return False
+
         pixmap = QPixmap(path)
         if pixmap.isNull():
             print("Failed to load image:", path)

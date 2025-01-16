@@ -4,7 +4,7 @@ from config import Config
 
 
 class ZoomPanView(QGraphicsView):
-    PAN_BUTTON = Qt.LeftButton
+    PAN_BUTTON = Qt.MouseButton.LeftButton
 
     def __init__(self, scene):
         super().__init__(scene)
@@ -17,14 +17,14 @@ class ZoomPanView(QGraphicsView):
         self._guiScene = QGraphicsScene()
 
         # Fixes dropped wheel events
-        QCoreApplication.setAttribute(Qt.AA_CompressHighFrequencyEvents, False)
-        
-        #self.setAlignment(Qt.AlignCenter) # The Default
-        self.setTransformationAnchor(QGraphicsView.NoAnchor)
-        self.setResizeAnchor(QGraphicsView.NoAnchor)
+        QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_CompressHighFrequencyEvents, False)
+        QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_CompressTabletEvents, False) # Default already false
+
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.NoAnchor)
+        self.setResizeAnchor(QGraphicsView.ViewportAnchor.NoAnchor)
         self.setMouseTracking(True)
 
-    def updateScene(self):
+    def updateView(self):
         w = self.viewport().width()
         h = self.viewport().height()
         self._guiScene.setSceneRect(0, 0, w, h)
@@ -42,7 +42,7 @@ class ZoomPanView(QGraphicsView):
 
 
     def resizeEvent(self, event):
-        self.updateScene()
+        self.updateView()
 
     def mouseMoveEvent(self, event):
         if self._eventState is not None:
@@ -51,6 +51,9 @@ class ZoomPanView(QGraphicsView):
     def mousePressEvent(self, event):
         if (self._eventState is None) and (event.button() == self.PAN_BUTTON):
             self._eventState = ViewPan(self, event.position())
+    
+    def mouseDoubleClickEvent(self, event):
+        self.mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
         self._eventState = None
@@ -65,11 +68,11 @@ class ZoomPanView(QGraphicsView):
         
         mousePos = event.position().toPoint()
         oldPos = self.mapToScene(mousePos)
-        ZoomPanView.updateScene(self)
+        ZoomPanView.updateView(self)
 
         newPos = self.mapToScene(mousePos)
         self.pan -= (newPos - oldPos) * self.zoom
-        self.updateScene()
+        self.updateView()
 
     def resetView(self):
         self.pan = QPointF(0, 0)
@@ -83,5 +86,5 @@ class ViewPan:
         
     def onMove(self, position: QPointF):
         self._view.pan += self._startPos - position
-        self._view.updateScene()
+        self._view.updateView()
         self._startPos = position

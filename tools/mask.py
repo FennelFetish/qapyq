@@ -19,6 +19,8 @@ MaskItem = ForwardRef("MaskItem")
 # Save layer names to file meta data
 # Undo/Redo with Ctrl+Z/Ctrl+Y, store vector data
 
+# TODO: Toggle color image for better visiblity of mask
+
 
 class MaskTool(ViewTool):
     BUTTON_MAIN = Qt.MouseButton.LeftButton
@@ -63,7 +65,7 @@ class MaskTool(ViewTool):
             layers = [ self.maskItem ]
 
         self._imgview.scene().addItem(self.maskItem)
-        self._imgview.updateScene()
+        self._imgview.updateView()
 
         self.layers = layers
         self._toolbar.setLayers(layers, index)

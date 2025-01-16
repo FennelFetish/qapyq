@@ -21,7 +21,7 @@ class CompareTool(ViewTool):
         self._image.loadImage(path)
         self._image.updateTransform(self._imgview.viewport().rect(), self._imgview.rotation)
         self._image.setClipWidth(0)
-        self._imgview.updateScene()
+        self._imgview.updateView()
 
     def onEnabled(self, imgview):
         super().onEnabled(imgview)

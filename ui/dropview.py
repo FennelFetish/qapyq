@@ -31,8 +31,8 @@ class DropView(ZoomPanView):
             self._guiScene.removeItem(dz)
         self._dropZones.clear()
 
-    def updateScene(self):
-        super().updateScene()
+    def updateView(self):
+        super().updateView()
         vpRect = self.viewport().rect()
         w = vpRect.width()
         h = vpRect.height()

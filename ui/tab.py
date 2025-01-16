@@ -126,7 +126,7 @@ class ImgTab(QtWidgets.QMainWindow):
         self.setWindowState(winState ^ Qt.WindowFullScreen)
         self.setVisible(True)
 
-        QTimer.singleShot(100, self.imgview.updateScene)
+        QTimer.singleShot(100, self.imgview.updateView)
 
 
     def onTabClosed(self):
