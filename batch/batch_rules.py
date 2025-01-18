@@ -58,6 +58,7 @@ class BatchRules(QtWidgets.QWidget):
         layout.setColumnStretch(3, 1)
         layout.setColumnStretch(4, 0)
         layout.setColumnStretch(5, 0)
+        layout.setColumnStretch(6, 0)
 
         row = 0
         self.txtSeparator = QtWidgets.QLineEdit(", ")
@@ -76,13 +77,17 @@ class BatchRules(QtWidgets.QWidget):
         self.chkSortCaptions.checkStateChanged.connect(self.updatePreview)
         layout.addWidget(self.chkSortCaptions, row, 3)
 
+        btnClearRules = QtWidgets.QPushButton("Clear Rules")
+        btnClearRules.clicked.connect(self.clearRules)
+        layout.addWidget(btnClearRules, row, 4)
+
         btnLoadFromCaption = QtWidgets.QPushButton("Load from Caption Window")
         btnLoadFromCaption.clicked.connect(self.loadFromCaptionWindow)
-        layout.addWidget(btnLoadFromCaption, row, 4)
+        layout.addWidget(btnLoadFromCaption, row, 5)
 
         btnLoadFromFile = QtWidgets.QPushButton("Load from file...")
         btnLoadFromFile.clicked.connect(self.loadFromFile)
-        layout.addWidget(btnLoadFromFile, row, 5)
+        layout.addWidget(btnLoadFromFile, row, 6)
 
         row += 1
         self.txtPrefix = QtWidgets.QPlainTextEdit()
@@ -91,12 +96,12 @@ class BatchRules(QtWidgets.QWidget):
         qtlib.setTextEditHeight(self.txtPrefix, 2)
         qtlib.setShowWhitespace(self.txtPrefix)
         layout.addWidget(QtWidgets.QLabel("Prefix:"), row, 0, Qt.AlignmentFlag.AlignTop)
-        layout.addWidget(self.txtPrefix, row, 1, 1, 4)
+        layout.addWidget(self.txtPrefix, row, 1, 1, 5)
 
         self.chkPrefixSeparator = QtWidgets.QCheckBox("Append Separator")
         self.chkPrefixSeparator.setChecked(True)
         self.chkPrefixSeparator.checkStateChanged.connect(self.updatePreview)
-        layout.addWidget(self.chkPrefixSeparator, row, 5, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.chkPrefixSeparator, row, 6, Qt.AlignmentFlag.AlignTop)
 
         row += 1
         self.txtSuffix = QtWidgets.QPlainTextEdit()
@@ -105,12 +110,12 @@ class BatchRules(QtWidgets.QWidget):
         qtlib.setTextEditHeight(self.txtSuffix, 2)
         qtlib.setShowWhitespace(self.txtSuffix)
         layout.addWidget(QtWidgets.QLabel("Suffix:"), row, 0, Qt.AlignmentFlag.AlignTop)
-        layout.addWidget(self.txtSuffix, row, 1, 1, 4)
+        layout.addWidget(self.txtSuffix, row, 1, 1, 5)
 
         self.chkSuffixSeparator = QtWidgets.QCheckBox("Prepend Separator")
         self.chkSuffixSeparator.setChecked(True)
         self.chkSuffixSeparator.checkStateChanged.connect(self.updatePreview)
-        layout.addWidget(self.chkSuffixSeparator, row, 5, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.chkSuffixSeparator, row, 6, Qt.AlignmentFlag.AlignTop)
 
         row += 1
         layout.setRowMinimumHeight(row, 8)
@@ -127,7 +132,7 @@ class BatchRules(QtWidgets.QWidget):
 
         self.banWidget = SortedStringFlowWidget()
         self.banWidget.changed.connect(self._onBannedChanged)
-        layout.addWidget(qtlib.BaseColorScrollArea(self.banWidget), row, 3, 1, 3)
+        layout.addWidget(qtlib.BaseColorScrollArea(self.banWidget), row, 3, 1, 4)
 
         groupBox = QtWidgets.QGroupBox("Rules")
         groupBox.setLayout(layout)
@@ -284,6 +289,17 @@ class BatchRules(QtWidgets.QWidget):
             self.applyPreset(preset)
         else:
             self.statusBar.showColoredMessage("Caption window not open", False)
+    
+    @Slot()
+    def clearRules(self):
+        dialog = QtWidgets.QMessageBox(self)
+        dialog.setIcon(QtWidgets.QMessageBox.Icon.Question)
+        dialog.setWindowTitle("Confirm Reset")
+        dialog.setText(f"Clear all rules and groups?")
+        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+
+        if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes:
+            self.applyPreset(CaptionPreset())
 
 
     def setupProcessor(self) -> CaptionRulesProcessor:
