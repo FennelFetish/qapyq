@@ -18,7 +18,7 @@ class PromptWidget(QtWidgets.QWidget):
         self.defaultAttr = defaultAttr
 
         layout = QtWidgets.QGridLayout()
-        layout.setAlignment(Qt.AlignTop)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnStretch(0, 0)
@@ -28,7 +28,8 @@ class PromptWidget(QtWidgets.QWidget):
         layout.setColumnStretch(4, 0)
 
         row = 0
-        layout.addWidget(QtWidgets.QLabel("Prompt Preset:"), row, 0)
+        self.lblPreset = QtWidgets.QLabel("Prompt Preset:")
+        layout.addWidget(self.lblPreset, row, 0)
 
         self.preset = QtWidgets.QComboBox()
         self.preset.setEditable(True)
@@ -40,7 +41,7 @@ class PromptWidget(QtWidgets.QWidget):
         self.btnSave = QtWidgets.QPushButton("Create")
         self.btnSave.setEnabled(False)
         self.btnSave.clicked.connect(self.savePreset)
-        layout.addWidget(self.btnSave, row, 3, Qt.AlignRight)
+        layout.addWidget(self.btnSave, row, 3, Qt.AlignmentFlag.AlignRight)
 
         self.btnDelete = QtWidgets.QPushButton("Delete")
         self.btnDelete.setEnabled(False)
@@ -48,15 +49,17 @@ class PromptWidget(QtWidgets.QWidget):
         layout.addWidget(self.btnDelete, row, 4)
 
         row += 1
+        self.lblSystemPrompt = QtWidgets.QLabel("System Prompt:")
+        layout.addWidget(self.lblSystemPrompt, row, 0, Qt.AlignmentFlag.AlignTop)
+
         self.txtSystemPrompt = QtWidgets.QPlainTextEdit()
         qtlib.setMonospace(self.txtSystemPrompt)
         qtlib.setShowWhitespace(self.txtSystemPrompt)
-        layout.addWidget(QtWidgets.QLabel("System Prompt:"), row, 0, Qt.AlignTop)
         layout.addWidget(self.txtSystemPrompt, row, 1, 1, 4)
 
         row += 1
         self.lblPrompts = QtWidgets.QLabel("Prompt(s):")
-        layout.addWidget(self.lblPrompts, row, 0, Qt.AlignTop)
+        layout.addWidget(self.lblPrompts, row, 0, Qt.AlignmentFlag.AlignTop)
 
         self.txtPrompts = QtWidgets.QPlainTextEdit()
         qtlib.setMonospace(self.txtPrompts)
@@ -73,6 +76,10 @@ class PromptWidget(QtWidgets.QWidget):
 
     def enableHighlighting(self):
         self.promptsHighlighter = PromptsHighlighter(self.txtPrompts)
+
+    def hideSystemPrompt(self):
+        self.lblSystemPrompt.hide()
+        self.txtSystemPrompt.hide()
 
 
     @property
@@ -149,14 +156,14 @@ class PromptWidget(QtWidgets.QWidget):
         for name in sorted(presets.keys()):
             self.preset.addItem(name)
         
-        if selectName != None:
-            index = self.preset.findText(selectName)
-        elif self.preset.count() > 0:
-            index = 0
-        else:
+        if not presets:
             defaults: dict = getattr(Config, self.defaultAttr)
             self.fromDict(defaults)
             index = -1
+        elif selectName != None:
+            index = self.preset.findText(selectName)
+        else:
+            index = 0
         
         self.preset.setCurrentIndex(index)
 
@@ -268,7 +275,7 @@ class PromptsHighlighter(QtGui.QSyntaxHighlighter):
         for line in text.splitlines(True):
             if line.startswith("---") or line.startswith("==="):
                 cursor.setPosition(lineStartPos)
-                cursor.setPosition(lineStartPos+len(line), QtGui.QTextCursor.KeepAnchor)
+                cursor.setPosition(lineStartPos+len(line), QtGui.QTextCursor.MoveMode.KeepAnchor)
 
                 isHidden = line.lstrip("-=").lstrip().startswith("?")
                 format.setFontItalic(isHidden)

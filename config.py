@@ -74,6 +74,9 @@ class Config:
 
     sysPromptFallbackTemplate = "# System Instructions:\n{{systemPrompt}}\n\n# Prompt:\n{{prompt}}"
 
+    templateApplyPresets    = dict()
+    templateApplyDefault    = { "prompts": "{{captions.caption}} {{tags.tags}}" }
+
     # Inference
     inferCaptionPresets     = dict()
     inferLLMPresets         = dict()
@@ -91,9 +94,6 @@ class Config:
 
     inferSelectedPresets    = dict()
     INFER_PRESET_SAMPLECFG_KEY = "sample_config"
-    
-    # Batch
-    batchTemplate           = "{{captions.refined}}\n{{tags.tags}}"
 
     # Gallery
     galleryThumbnailSize    = 200
@@ -137,6 +137,7 @@ class Config:
         cls.promptCaptionPresets  = data.get("prompt_caption_presets", cls.promptCaptionPresets)
         cls.promptLLMPresets      = data.get("prompt_llm_presets", cls.promptLLMPresets)
         cls.sysPromptFallbackTemplate = data.get("sys_prompt_fallback_template", cls.sysPromptFallbackTemplate)
+        cls.templateApplyPresets  = data.get("template_apply_presets", cls.templateApplyPresets)
         
         cls.inferCaptionPresets   = data.get("infer_caption_presets", cls.inferCaptionPresets)
         cls.inferLLMPresets       = data.get("infer_llm_presets", cls.inferLLMPresets)
@@ -144,8 +145,6 @@ class Config:
         cls.inferMaskPresets      = data.get("infer_mask_presets", cls.inferMaskPresets)
         cls.inferScalePresets     = data.get("infer_scale_presets", cls.inferScalePresets)
         cls.inferSelectedPresets  = data.get("infer_selected_presets", cls.inferSelectedPresets)
-
-        cls.batchTemplate         = data.get("batch_template", cls.batchTemplate)
 
         cls.galleryThumbnailSize    = int(data.get("gallery_thumbnail_size", cls.galleryThumbnailSize))
         cls.galleryThumbnailThreads = int(data.get("gallery_thumbnail_threads", cls.galleryThumbnailThreads))
@@ -181,6 +180,7 @@ class Config:
         data["prompt_caption_presets"]      = cls.promptCaptionPresets
         data["prompt_llm_presets"]          = cls.promptLLMPresets
         data["sys_prompt_fallback_template"] = cls.sysPromptFallbackTemplate
+        data["template_apply_presets"]      = cls.templateApplyPresets
 
         data["infer_caption_presets"]       = cls.inferCaptionPresets
         data["infer_llm_presets"]           = cls.inferLLMPresets
@@ -188,8 +188,6 @@ class Config:
         data["infer_mask_presets"]          = cls.inferMaskPresets
         data["infer_scale_presets"]         = cls.inferScalePresets
         data["infer_selected_presets"]      = cls.inferSelectedPresets
-
-        data["batch_template"]              = cls.batchTemplate
 
         data["gallery_thumbnail_size"]      = cls.galleryThumbnailSize
         data["gallery_thumbnail_threads"]   = cls.galleryThumbnailThreads

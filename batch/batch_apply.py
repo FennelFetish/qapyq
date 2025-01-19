@@ -5,7 +5,7 @@ from typing_extensions import override
 from PySide6 import QtWidgets
 from PySide6.QtCore import QSignalBlocker, Qt, Slot
 from config import Config
-from infer import Inference
+from infer import Inference, PromptWidget
 from lib import qtlib
 from lib.captionfile import CaptionFile
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
@@ -78,15 +78,14 @@ class BatchApply(QtWidgets.QWidget):
         layout.setColumnStretch(2, 1)
 
         row = 0
-        self.txtTemplate = QtWidgets.QPlainTextEdit()
-        self.txtTemplate.setPlainText(Config.batchTemplate)
-        qtlib.setMonospace(self.txtTemplate)
-        qtlib.setTextEditHeight(self.txtTemplate, 10, "min")
-        qtlib.setShowWhitespace(self.txtTemplate)
-        self.txtTemplate.textChanged.connect(self._updatePreview)
-        layout.addWidget(QtWidgets.QLabel("Template:"), row, 0, Qt.AlignmentFlag.AlignTop)
-        layout.addWidget(self.txtTemplate, row, 1, 1, 2)
-        layout.setRowStretch(0, 1)
+        self.promptWidget = PromptWidget("templateApplyPresets", "templateApplyDefault")
+        qtlib.setTextEditHeight(self.promptWidget.txtPrompts, 10, "min")
+        self.promptWidget.hideSystemPrompt()
+        self.promptWidget.lblPreset.setText("Template Preset")
+        self.promptWidget.lblPrompts.setText("Template:")
+        self.promptWidget.txtPrompts.textChanged.connect(self._updatePreview)
+        layout.addWidget(self.promptWidget, row, 0, 1, 3)
+        layout.setRowStretch(row, 1)
 
         row += 1
         self.txtPreview = QtWidgets.QPlainTextEdit()
@@ -96,7 +95,7 @@ class BatchApply(QtWidgets.QWidget):
         qtlib.setShowWhitespace(self.txtPreview)
         layout.addWidget(QtWidgets.QLabel("Preview:"), row, 0, Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self.txtPreview, row, 1, 1, 2)
-        layout.setRowStretch(1, 3)
+        layout.setRowStretch(row, 1)
 
         row += 1
         layout.addWidget(QtWidgets.QLabel("Strip:"), row, 0)
@@ -255,12 +254,12 @@ class BatchApply(QtWidgets.QWidget):
 
     @Slot()
     def _updatePreview(self):
-        text = self.txtTemplate.toPlainText()
+        text = self.promptWidget.prompts
         preview, varPositions = self._parser.parseWithPositions(text)
         self.txtPreview.setPlainText(preview)
 
-        with QSignalBlocker(self.txtTemplate):
-            self._highlighter.highlight(self.txtTemplate, self.txtPreview, varPositions)
+        with QSignalBlocker(self.promptWidget.txtPrompts):
+            self._highlighter.highlight(self.promptWidget.txtPrompts, self.txtPreview, varPositions)
 
 
     def _confirmStart(self) -> bool:
@@ -294,7 +293,7 @@ class BatchApply(QtWidgets.QWidget):
 
         self.btnStart.setText("Abort")
 
-        template = self.txtTemplate.toPlainText()
+        template = self.promptWidget.prompts
         self._task = BatchApplyTask(self.log, self.tab.filelist, template)
 
         if self.backupSettings.isChecked():
