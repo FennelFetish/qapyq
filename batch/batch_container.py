@@ -8,6 +8,7 @@ from .batch_mask import BatchMask
 from .batch_crop import BatchCrop
 from .batch_log import BatchLog
 from .batch_task import BatchProgressUpdate
+from .batch_file import BatchFile
 import lib.qtlib as qtlib
 
 
@@ -26,39 +27,38 @@ class BatchContainer(QtWidgets.QTabWidget):
         self.statusBar = qtlib.ColoredMessageStatusBar()
         self.statusBar.addPermanentWidget(self.progressbar)
 
-        self.logWidget = BatchLog()
-        log = self.logWidget.emitLog
+        logWidget = BatchLog()
+        log = logWidget.emitLog
 
-        self.captionWidget   = BatchCaption(tab, log, self.progressbar, self.statusBar)
-        self.rulesWidget     = BatchRules(tab, log, self.progressbar, self.statusBar)
-        self.transformWidget = BatchTransform(tab, log, self.progressbar, self.statusBar)
-        self.applyWidget     = BatchApply(tab, log, self.progressbar, self.statusBar)
-        self.scaleWidget     = BatchScale(tab, log, self.progressbar, self.statusBar)
-        self.maskWidget      = BatchMask(tab, log, self.progressbar, self.statusBar)
-        self.cropWidget      = BatchCrop(tab, log, self.progressbar, self.statusBar)
+        self._widgets = {
+            "caption":      BatchCaption(tab, log, self.progressbar, self.statusBar),
+            "rules":        BatchRules(tab, log, self.progressbar, self.statusBar),
+            "transform":    BatchTransform(tab, log, self.progressbar, self.statusBar),
+            "apply":        BatchApply(tab, log, self.progressbar, self.statusBar),
+            "scale":        BatchScale(tab, log, self.progressbar, self.statusBar),
+            "mask":         BatchMask(tab, log, self.progressbar, self.statusBar),
+            "crop":         BatchCrop(tab, log, self.progressbar, self.statusBar),
+            "file":         BatchFile(tab, log, self.progressbar, self.statusBar),
+            "log":          logWidget
+        }
 
-        self.addTab(self.captionWidget, "Caption (json)")
-        self.addTab(self.rulesWidget, "Rules (json → json)")
-        self.addTab(self.transformWidget, "Transform (json → json)")
-        self.addTab(self.applyWidget, "Apply (json → txt/json)")
-        self.addTab(self.scaleWidget, "Scale (Image)")
-        self.addTab(self.maskWidget, "Mask (Image)")
-        self.addTab(self.cropWidget, "Crop (Image)")
-        self.addTab(self.logWidget, "Log")
+        self.addTab(self._widgets["caption"], "Caption (json)")
+        self.addTab(self._widgets["rules"], "Rules (json → json)")
+        self.addTab(self._widgets["transform"], "Transform (json → json)")
+        self.addTab(self._widgets["apply"], "Apply (json → txt/json)")
+        self.addTab(self._widgets["scale"], "Scale (Image)")
+        self.addTab(self._widgets["mask"], "Mask (Image)")
+        self.addTab(self._widgets["crop"], "Crop (Image)")
+        self.addTab(self._widgets["file"], "File")
+        self.addTab(self._widgets["log"], "Log")
 
         tab.filelist.addListener(self)
         self.onFileChanged(tab.filelist.getCurrentFile())
 
 
     def onFileChanged(self, currentFile):
-        self.captionWidget.onFileChanged(currentFile)
-        self.rulesWidget.onFileChanged(currentFile)
-        self.transformWidget.onFileChanged(currentFile)
-        self.applyWidget.onFileChanged(currentFile)
-        self.scaleWidget.onFileChanged(currentFile)
-        self.maskWidget.onFileChanged(currentFile)
-        self.cropWidget.onFileChanged(currentFile)
-        self.logWidget.onFileChanged(currentFile)
+        for widget in self._widgets.values():
+            widget.onFileChanged(currentFile)
 
     def onFileListChanged(self, currentFile):
         self.onFileChanged(currentFile)
