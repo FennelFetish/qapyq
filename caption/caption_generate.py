@@ -104,9 +104,11 @@ class CaptionGenerate(QtWidgets.QWidget):
             PromptsHighlighter.highlightPromptSeparators(self.promptWidget.txtPrompts)
             PromptsHighlighter.highlightPromptSeparators(self.txtPromptPreview)
 
+        # Update visibility of preview
         previewVisible = len(varPositions) > 0
         self.lblPromptPreview.setVisible(previewVisible)
         self.txtPromptPreview.setVisible(previewVisible)
+        self.layout().setRowStretch(1, 2 if previewVisible else 0)
 
 
     @Slot()
