@@ -119,13 +119,7 @@ class BatchMask(QtWidgets.QWidget):
 
     def onFileChanged(self, file: str):
         self.parser.setup(file)
-
-        if pixmap := self.tab.imgview.image.pixmap():
-            self.parser.width = pixmap.width()
-            self.parser.height = pixmap.height()
-        else:
-            self.parser.width, self.parser.height = 0, 0
-
+        self.parser.setImageDimension(self.tab.imgview.image.pixmap())
         self.pathSettings.updatePreview()
 
 

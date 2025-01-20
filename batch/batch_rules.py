@@ -85,7 +85,7 @@ class BatchRules(QtWidgets.QWidget):
         btnLoadFromCaption.clicked.connect(self.loadFromCaptionWindow)
         layout.addWidget(btnLoadFromCaption, row, 5)
 
-        btnLoadFromFile = QtWidgets.QPushButton("Load from file...")
+        btnLoadFromFile = QtWidgets.QPushButton("Load from File...")
         btnLoadFromFile.clicked.connect(self.loadFromFile)
         layout.addWidget(btnLoadFromFile, row, 6)
 

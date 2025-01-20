@@ -1,6 +1,6 @@
 import os, superqt
 from typing_extensions import override
-from PySide6 import QtWidgets
+from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QRunnable, QObject
 import cv2 as cv
 import numpy as np
@@ -476,11 +476,20 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
         self.height = 0
         self.region = 0
 
+    def setImageDimension(self, pixmap: QtGui.QPixmap | None):
+        if pixmap:
+            self.width = pixmap.width()
+            self.height = pixmap.height()
+        else:
+            self.width, self.height = 0, 0
+
+
     def parsePath(self, pathTemplate: str, extension: str, overwriteFiles: bool) -> str:
         path = self.parse(pathTemplate)
         path = path.translate(INVALID_CHARS)
         path = os.path.normpath(os.path.join(Config.pathExport, path))
 
+        # Callers expect a '.', even when extension is empty
         if overwriteFiles:
             path = f"{path}.{extension}"
         else:

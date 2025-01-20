@@ -53,8 +53,12 @@ class BatchCrop(QtWidgets.QWidget):
         self.progressBar: QtWidgets.QProgressBar = progressBar
         self.statusBar: qtlib.ColoredMessageStatusBar = statusBar
 
-        self.parser = export.ExportVariableParser()
-        self.parser.setup(self.tab.filelist.getCurrentFile(), None)
+        self.inputPathParser = export.ExportVariableParser()
+        self.outputPathParser = export.ExportVariableParser()
+
+        currentFile = self.tab.filelist.getCurrentFile()
+        self.inputPathParser.setup(currentFile, None)
+        self.outputPathParser.setup(currentFile, None)
 
         self._task = None
         self._taskSignalHandler = None
@@ -167,7 +171,7 @@ class BatchCrop(QtWidgets.QWidget):
         layout.addWidget(self.cboInputMaskMode, row, 1)
 
         config = Config.exportPresets.get(self.EXPORT_PRESET_KEY_INMASK, {})
-        self.inputMaskPathSettings = export.PathSettings(self.parser, showInfo=False)
+        self.inputMaskPathSettings = export.PathSettings(self.inputPathParser, showInfo=False)
         self.inputMaskPathSettings.pathTemplate = config.get("path_template", "{{path}}-masklabel")
         self.inputMaskPathSettings.setAsInput()
         layout.addWidget(self.inputMaskPathSettings, row, 3, 3, 1)
@@ -210,7 +214,7 @@ class BatchCrop(QtWidgets.QWidget):
         layout.addWidget(self.cboOutputMaskMode, row, 1)
 
         config = Config.exportPresets.get(self.EXPORT_PRESET_KEY_OUTMASK, {})
-        self.outputMaskPathSettings = export.PathSettings(self.parser, showInfo=False)
+        self.outputMaskPathSettings = export.PathSettings(self.outputPathParser, showInfo=False)
         self.outputMaskPathSettings.pathTemplate   = config.get("path_template", "{{path}}_{{region}}_{{w}}x{{h}}-masklabel")
         self.outputMaskPathSettings.overwriteFiles = config.get("overwrite", False)
         layout.addWidget(self.outputMaskPathSettings, row, 3, 3, 1)
@@ -252,7 +256,7 @@ class BatchCrop(QtWidgets.QWidget):
         layout.addWidget(self.cboInterpUp, row, 1)
 
         config = Config.exportPresets.get(self.EXPORT_PRESET_KEY_IMG, {})
-        self.outputImagePathSettings = export.PathSettings(self.parser, showInfo=False)
+        self.outputImagePathSettings = export.PathSettings(self.outputPathParser, showInfo=False)
         self.outputImagePathSettings.pathTemplate   = config.get("path_template", "{{path}}_{{region}}_{{w}}x{{h}}")
         self.outputImagePathSettings.overwriteFiles = config.get("overwrite", False)
         layout.addWidget(self.outputImagePathSettings, row, 3, 4, 1)
@@ -281,7 +285,10 @@ class BatchCrop(QtWidgets.QWidget):
 
 
     def onFileChanged(self, file: str):
-        self.parser.setup(file)
+        self.outputPathParser.setup(file)
+        self.inputPathParser.setup(file)
+        self.inputPathParser.setImageDimension(self.tab.imgview.image.pixmap())
+
         self.inputMaskPathSettings.updatePreview()
         self.outputMaskPathSettings.updatePreview()
         self.outputImagePathSettings.updatePreview()
