@@ -39,12 +39,13 @@ class MaskBackendDef(BackendDef):
 
 
 BackendsCaption = {
-    "Florence-2":       BackendDef("florence2", BackendTypes.TRANSFORMERS),
-    "InternVL2":        BackendDef("internvl2", BackendTypes.TRANSFORMERS),
-    "MiniCPM-V-2.6":    BackendDef("minicpm",   BackendTypes.LLAMA_CPP),
-    "Molmo":            BackendDef("molmo",     BackendTypes.TRANSFORMERS),
-    "Ovis-1.6":         BackendDef("ovis16",    BackendTypes.TRANSFORMERS),
-    "Qwen2-VL":         BackendDef("qwen2vl",   BackendTypes.TRANSFORMERS)
+    "Florence-2":       BackendDef("florence2",     BackendTypes.TRANSFORMERS),
+    "InternVL2":        BackendDef("internvl2",     BackendTypes.TRANSFORMERS),
+    "JoyCaption":       BackendDef("joycaption",    BackendTypes.TRANSFORMERS),
+    "MiniCPM-V-2.6":    BackendDef("minicpm",       BackendTypes.LLAMA_CPP),
+    "Molmo":            BackendDef("molmo",         BackendTypes.TRANSFORMERS),
+    "Ovis-1.6":         BackendDef("ovis16",        BackendTypes.TRANSFORMERS),
+    "Qwen2-VL":         BackendDef("qwen2vl",       BackendTypes.TRANSFORMERS)
 }
 
 # TODO: Allow loading of caption models as LLM.
@@ -96,29 +97,34 @@ class BackendLoader:
     def _loadBackend(self, config: dict):
         match backendName := config.get("backend"):
             # Caption / LLM
+            case "florence2" | "florence2-detect" | "florence2-segment":
+                from .backend_florence2 import Florence2Backend
+                return Florence2Backend(config)
+            case "internvl2":
+                from .backend_internvl2 import InternVL2Backend
+                return InternVL2Backend(config)
+            case "joycaption":
+                from .backend_joycaption import JoyCaptionBackend
+                return JoyCaptionBackend(config)
             case "minicpm":
                 from .backend_llamacpp import LlamaCppVisionBackend
                 from llama_cpp.llama_chat_format import MiniCPMv26ChatHandler
                 return LlamaCppVisionBackend(config, MiniCPMv26ChatHandler)
-            case "internvl2":
-                from .backend_internvl2 import InternVL2Backend
-                return InternVL2Backend(config)
-            case "qwen2vl":
-                from .backend_qwen2vl import Qwen2VLBackend
-                return Qwen2VLBackend(config)
-            case "ovis16":
-                from .backend_ovis16 import Ovis16Backend
-                return Ovis16Backend(config)
             case "molmo":
                 from .backend_molmo import MolmoBackend
                 return MolmoBackend(config)
+            case "ovis16":
+                from .backend_ovis16 import Ovis16Backend
+                return Ovis16Backend(config)
+            case "qwen2vl":
+                from .backend_qwen2vl import Qwen2VLBackend
+                return Qwen2VLBackend(config)
+
+            # LLM
             case "gguf":
                 from .backend_llamacpp import LlamaCppBackend
                 return LlamaCppBackend(config)
-            case "florence2" | "florence2-detect" | "florence2-segment":
-                from .backend_florence2 import Florence2Backend
-                return Florence2Backend(config)
-            
+
             # Tag
             case "joytag":
                 from .tag_joytag import JoyTag

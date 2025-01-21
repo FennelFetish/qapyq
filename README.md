@@ -68,6 +68,7 @@
 - **Captioning**
   - [Florence-2](https://huggingface.co/collections/microsoft/florence-6669f44df0d87d9c3bfb76de)
   - [InternVL2](https://huggingface.co/collections/OpenGVLab/internvl-20-667d3961ab5eb12c7ed1463e)
+  - [JoyCaption](https://huggingface.co/fancyfeast/llama-joycaption-alpha-two-hf-llava)
   - [MiniCPM-V-2.6 (GGUF)](https://huggingface.co/openbmb/MiniCPM-V-2_6-gguf) ([alternative link](https://huggingface.co/bartowski/MiniCPM-V-2_6-GGUF))
   - [Molmo](https://huggingface.co/collections/allenai/molmo-66f379e6fe3b8ef090a8ca19) (recommended)
   - [Ovis-1.6](https://huggingface.co/AIDC-AI/Ovis1.6-Gemma2-9B)
