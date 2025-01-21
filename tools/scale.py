@@ -115,6 +115,16 @@ class ScaleTool(ViewTool):
         return super().onMousePress(event)
 
 
+    def onKeyPress(self, event):
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            match event.key():
+                case Qt.Key.Key_E:
+                    self.exportImage()
+                    return
+
+        return super().onKeyPress(event)
+
+
 
 class ScaleToolBar(QtWidgets.QToolBar):
     def __init__(self, scaleTool):

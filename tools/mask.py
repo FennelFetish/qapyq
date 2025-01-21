@@ -169,6 +169,7 @@ class MaskTool(ViewTool):
 
     def setEdited(self):
         self.storeLayers()
+        self._toolbar.setEdited(True)
 
 
     @Slot()
@@ -214,6 +215,7 @@ class MaskTool(ViewTool):
 
         # Set state when export starts so editing while export is in progress will correctly reflect changed status.
         self.tab.filelist.setData(currentFile, DataKeys.MaskState, DataKeys.IconStates.Saved)
+        self._toolbar.setEdited(False)
 
 
     @Slot()
@@ -387,6 +389,15 @@ class MaskTool(ViewTool):
         #print("tablet event:", event)
         return True
 
+
+    def onKeyPress(self, event):
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            match event.key():
+                case Qt.Key.Key_E:
+                    self.exportMask()
+                    return
+
+        return super().onKeyPress(event)
 
 
 

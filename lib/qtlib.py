@@ -577,6 +577,20 @@ def htmlRed(text: str) -> str:
 
 
 
+class SaveButton(QtWidgets.QPushButton):
+    def __init__(self, text: str):
+        super().__init__(text)
+
+        self._originalPalette = self.palette()
+        self._changedPalette = self.palette()
+        self._changedPalette.setColor(QtGui.QPalette.ColorRole.Button, QtGui.QColor.fromString("#440A0A"))
+        self._changedPalette.setColor(QtGui.QPalette.ColorRole.ButtonText, QtGui.QColor.fromString("#FFEEEE"))
+
+    def setChanged(self, changed: bool) -> None:
+        self.setPalette(self._changedPalette if changed else self._originalPalette)
+
+
+
 class MenuComboBox(QtWidgets.QComboBox):
     def __init__(self, title: str = None):
         super().__init__()

@@ -131,16 +131,11 @@ class CaptionContainer(QtWidgets.QWidget):
         layout.setColumnStretch(col, 0)
 
         col += 1
-        self.btnSave = QtWidgets.QPushButton("Save To:")
+        self.btnSave = qtlib.SaveButton("Save To:")
         self.btnSave.setFixedWidth(100)
         self.btnSave.clicked.connect(self.saveCaption)
         layout.addWidget(self.btnSave, 0, col)
         layout.setColumnStretch(col, 0)
-
-        self.btnSavePalette = self.btnSave.palette()
-        self.btnSaveChangedPalette = self.btnSave.palette()
-        self.btnSaveChangedPalette.setColor(QtGui.QPalette.ColorRole.Button, QtGui.QColor.fromString("#440A0A"))
-        self.btnSaveChangedPalette.setColor(QtGui.QPalette.ColorRole.ButtonText, QtGui.QColor.fromString("#FFEEEE"))
 
         col += 1
         self.destSelector = FileTypeSelector()
@@ -177,9 +172,6 @@ class CaptionContainer(QtWidgets.QWidget):
         return menu
 
 
-    def _setSaveButtonStyle(self, changed: bool):
-        self.btnSave.setPalette(self.btnSaveChangedPalette if changed else self.btnSavePalette)
-
     def setCaption(self, text):
         self.txtCaption.setPlainText(text)
         self.txtCaption.moveCursor(QtGui.QTextCursor.MoveOperation.End)
@@ -192,7 +184,7 @@ class CaptionContainer(QtWidgets.QWidget):
 
         self.captionCache.put(text)
         self.captionCache.setState(DataKeys.IconStates.Changed)
-        self._setSaveButtonStyle(True)
+        self.btnSave.setChanged(True)
 
 
     def _highlight(self, text: str):
@@ -313,7 +305,7 @@ class CaptionContainer(QtWidgets.QWidget):
         if self.destSelector.saveCaption(currentFile, text):
             self.captionCache.remove()
             self.captionCache.setState(DataKeys.IconStates.Saved)
-            self._setSaveButtonStyle(False)
+            self.btnSave.setChanged(False)
 
     def loadCaption(self):
         # Use cached caption if it exists in dictionary
@@ -338,7 +330,7 @@ class CaptionContainer(QtWidgets.QWidget):
         
         # When setting the text, _onCaptionEdited() will make a cache entry and turn the save button red. So we revert that here.
         self.captionCache.remove()
-        self._setSaveButtonStyle(False)
+        self.btnSave.setChanged(False)
 
 
     @Slot()

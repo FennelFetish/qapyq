@@ -8,7 +8,7 @@ from infer.model_settings import ModelSettingsWindow
 from .mask import MaskTool, MaskItem
 from . import mask_ops
 from lib.mask_macro import MaskingMacro, MacroOpItem
-from lib.qtlib import MenuComboBox
+from lib.qtlib import MenuComboBox, SaveButton
 
 
 class MaskToolBar(QtWidgets.QToolBar):
@@ -29,9 +29,9 @@ class MaskToolBar(QtWidgets.QToolBar):
         self.exportWidget = export.ExportWidget("mask", maskTool.tab.filelist, showInterpolation=False, formats=["PNG","WEBP"])
         layout.addWidget(self.exportWidget)
 
-        btnExport = QtWidgets.QPushButton("Export")
-        btnExport.clicked.connect(self.maskTool.exportMask)
-        layout.addWidget(btnExport)
+        self.btnExport = SaveButton("Export")
+        self.btnExport.clicked.connect(self.maskTool.exportMask)
+        layout.addWidget(self.btnExport)
 
         self._recordBlinkTimer = QTimer()
         self._recordBlinkTimer.setInterval(500)
@@ -311,6 +311,9 @@ class MaskToolBar(QtWidgets.QToolBar):
             for entry in maskItem.history:
                 self.listHistory.addItem(entry.title)
             self.listHistory.setCurrentRow(maskItem.historyIndex)
+    
+    def setEdited(self, changed: bool):
+        self.btnExport.setChanged(changed)
 
 
     def updateExport(self):
