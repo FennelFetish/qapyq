@@ -7,6 +7,7 @@ from config import Config
 from infer import Inference
 from ui.tab import ImgTab
 from lib import qtlib
+from lib.filelist import MASK_EXTENSIONS
 from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
 import ui.export_settings as export
 
@@ -18,9 +19,6 @@ class Mode(Enum):
     Copy    = "copy"
     Move    = "move"
     Symlink = "symlink"
-
-
-MASK_EXTENSIONS = ["png", "webp", "jpg", "jpeg"]
 
 
 class BatchFile(QtWidgets.QWidget):
@@ -517,7 +515,7 @@ class BatchFileTask(BatchTask):
     def createArchiveDest(self, archivePath: str):
         import zipfile, tempfile
         fd, tempArchivePath = tempfile.mkstemp(suffix=".zip")
-        self.log(f"Writing archive to temporary file: {tempArchivePath}")
+        self.log(f"Creating temporary archive: {tempArchivePath}")
         tempFile = os.fdopen(fd, 'wb')
         archive = zipfile.ZipFile(tempFile, 'w')
 
@@ -535,7 +533,7 @@ class BatchFileTask(BatchTask):
             tempFile.close()
 
             correctedArchivePath = self.prepareArchiveDestination(archivePath)
-            self.log(f"Copying temporary archive to: {correctedArchivePath}")
+            self.log(f"Moving temporary archive to: {correctedArchivePath}")
 
             # This will overwrite the destination
             shutil.move(tempArchivePath, correctedArchivePath)

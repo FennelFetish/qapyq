@@ -7,6 +7,7 @@ import cv2 as cv
 import numpy as np
 from config import Config
 from lib import qtlib
+from lib.filelist import MASK_EXTENSIONS
 from lib.mask_macro import MaskingMacro
 from infer import Inference
 from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
@@ -494,7 +495,6 @@ def createMacroMaskSource(macroPath: str) -> Callable[[str, np.ndarray], list[np
     return mask
 
 def createFileMaskSource(pathTemplate: str):
-    extensions = ["png", "webp", "jpg", "jpeg"]
     parser = export.ExportVariableParser()
 
     def loadMask(path: str):
@@ -510,7 +510,7 @@ def createFileMaskSource(pathTemplate: str):
         parser.height = h
 
         pathNoExt = parser.parsePath(pathTemplate, "", False)
-        for path in (f"{pathNoExt}{ext}" for ext in extensions):
+        for path in (f"{pathNoExt}{ext}" for ext in MASK_EXTENSIONS):
             if os.path.exists(path):
                 return loadMask(path)
         return None
