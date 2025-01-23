@@ -71,15 +71,16 @@ class BatchTask(QRunnable):
     def processAll(self):
         numFiles = len(self.files)
         numFilesDone = 0
+        numFilesSkipped = 0
 
         timeAvg = TimeAverage()
-        update = BatchProgressUpdate(timeAvg, numFiles, 0)
+        update = BatchProgressUpdate(timeAvg, numFiles, 0, 0)
         self.signals.progress.emit(None, update)
         timeAvg.init()
 
         for fileNr, imgFile in enumerate(self.files):
             if self.isAborted():
-                abortMessage = f"Batch {self.name} aborted after {fileNr} files"
+                abortMessage = f"Batch {self.name} aborted after {fileNr} files{update.getSkippedText(numFiles-fileNr)}"
                 self.log(abortMessage)
                 self.signals.fail.emit(abortMessage, update.finalize())
                 return
@@ -91,6 +92,7 @@ class BatchTask(QRunnable):
                 outputFile = self.runProcessFile(imgFile)
                 if not outputFile:
                     self.log(f"Skipped")
+                    numFilesSkipped += 1
             except Exception as ex:
                 outputFile = None
                 self.log(f"WARNING: {str(ex)}")
@@ -99,10 +101,10 @@ class BatchTask(QRunnable):
                 self._indentLogs = False
                 numFilesDone += 1
                 timeAvg.update()
-                update = BatchProgressUpdate(timeAvg, numFiles, numFilesDone)
+                update = BatchProgressUpdate(timeAvg, numFiles, numFilesDone, numFilesSkipped)
                 self.signals.progress.emit(outputFile, update)
 
-        self.log(f"Batch {self.name} finished, processed {numFiles} files in {update.timeSpent:.2f} seconds")
+        self.log(f"Batch {self.name} finished, processed {numFiles} files{update.getSkippedText()} in {update.timeSpent:.2f} seconds")
         self.signals.done.emit(update.finalize())
 
 
@@ -162,13 +164,21 @@ class TimeAverage:
 
 
 class BatchProgressUpdate:
-    def __init__(self, timeAvg: TimeAverage, numFilesTotal: int, numFilesProcessed: int):
+    def __init__(self, timeAvg: TimeAverage, numFilesTotal: int, numFilesProcessed: int, numFilesSkipped: int):
         self.filesTotal     = numFilesTotal
         self.filesProcessed = numFilesProcessed
+        self.filesSkipped   = numFilesSkipped
 
         self.timePerFile    = timeAvg.getAvgTime()
         self.timeRemaining  = self.timePerFile * (numFilesTotal - numFilesProcessed)
         self.timeSpent      = timeAvg.getTotalTime()
+
+    def getSkippedText(self, numRemaining=0) -> str:
+        msgs = [f"{self.filesSkipped} skipped"] if self.filesSkipped > 0 else []
+        if numRemaining > 0:
+            msgs.append(f"{numRemaining} remaining")
+        msgs = ", ".join(msgs)
+        return f" ({msgs})" if msgs else ""
 
     def finalize(self):
         if self.filesProcessed > 0:
@@ -198,7 +208,7 @@ class BatchSignalHandler(QObject):
 
     @Slot()
     def onFinished(self, update: BatchProgressUpdate):
-        self.statusBar.showColoredMessage(f"Processed {update.filesTotal} files", True, 0)
+        self.statusBar.showColoredMessage(f"Processed {update.filesTotal} files{update.getSkippedText()}", True, 0)
         self.progressBar.setTime(update)
         self.taskDone()
 

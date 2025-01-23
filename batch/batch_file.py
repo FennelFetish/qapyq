@@ -156,7 +156,7 @@ class BatchFile(QtWidgets.QWidget):
 
         if self.imageSettings.isChecked():
             if self.imageSettings.overwriteFiles:
-                ops.append(qtlib.htmlRed(f"Include images and overwrite existing files"))
+                ops.append(qtlib.htmlRed(f"Include images and overwrite existing files!"))
             else:
                 ops.append(f"Include images and skip existing files")
         else:
@@ -164,7 +164,7 @@ class BatchFile(QtWidgets.QWidget):
 
         if self.maskSettings.isChecked():
             if self.maskSettings.maskPathSettings.overwriteFiles:
-                ops.append(qtlib.htmlRed(f"Include masks and overwrite existing files"))
+                ops.append(qtlib.htmlRed(f"Include masks and overwrite existing files!"))
             else:
                 ops.append(f"Include masks and skip existing files")
         else:
@@ -184,12 +184,12 @@ class BatchFile(QtWidgets.QWidget):
             if captionContent:
                 if self.captionSettings.chkArchiveTextFiles.isChecked():
                     if self.captionSettings.overwriteFiles:
-                        ops.append(qtlib.htmlRed(f"Write {captionContent} into a ZIP archive and overwrite an existing file"))
+                        ops.append(qtlib.htmlRed(f"Write {captionContent} into a ZIP archive and overwrite an existing file!"))
                     else:
                         ops.append(f"Write {captionContent} into a ZIP archive and append a counter if the archive already exists")
                 else:
                     if self.captionSettings.overwriteFiles:
-                        ops.append(qtlib.htmlRed(f"Include {captionContent} and overwrite existing files"))
+                        ops.append(qtlib.htmlRed(f"Include {captionContent} and overwrite existing files!"))
                     else:
                         ops.append(f"Include {captionContent} and skip existing files")
             else:

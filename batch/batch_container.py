@@ -12,12 +12,6 @@ from .batch_file import BatchFile
 import lib.qtlib as qtlib
 
 
-# TODO: Batch File operations:
-#   - Move or Copy files together to new detination (image, json, txt) set by path template
-#     - Optionally copy text/json into archive instead for backup
-#     - Optionally create directory structure with symlinks instead of copy
-
-
 class BatchContainer(QtWidgets.QTabWidget):
     def __init__(self, tab):
         super().__init__()
