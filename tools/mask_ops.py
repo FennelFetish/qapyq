@@ -929,17 +929,12 @@ class ColorConditionMaskOperation(MaskOperation):
         if maxColor < minColor:
             maxColor = 1000
 
-        min = np.amin(mat)
-        if min < minColor:
-            mat.fill(0)
-            return mat
-        
-        max = np.amax(mat)
-        if max > maxColor:
-            mat.fill(0)
-            return mat
+        if mat.min() >= minColor and mat.max() <= maxColor:
+            fillColor = 255
+        else:
+            fillColor = 0
 
-        mat.fill(255)
+        mat.fill(fillColor)
         return mat
 
     @override
@@ -996,11 +991,8 @@ class RegionConditionMaskOperation(MaskOperation):
         if maxRegions < minRegions:
             maxRegions = numRegions
 
-        if numRegions >= minRegions and numRegions <= maxRegions:
-            mat.fill(255)
-        else:
-            mat.fill(0)
-
+        fillColor = 255 if (minRegions <= numRegions <= maxRegions) else 0
+        mat.fill(fillColor)
         return mat
 
     @override
