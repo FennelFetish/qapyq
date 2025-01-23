@@ -1,7 +1,7 @@
 from enum import Enum, auto # StrEnum available in python >=3.11
 from PySide6.QtGui import QPainter, QPen, QBrush, QColor, QLinearGradient
 from PySide6.QtCore import Qt, QPoint
-import os, json
+import os, json, re
 import numpy as np
 from config import Config
 import tools.mask_ops as mask_ops
@@ -28,8 +28,11 @@ class MacroOp(Enum):
     Morph           = auto()    # mode, radius
     GaussBlur       = auto()    # mode, radius
     BlendLayers     = auto()    # mode, srcLayer
-    Macro           = auto()    # name
 
+    CondColor       = auto()    # minColor, maxColor
+    CondRegions     = auto()    # minRegions, maxRegions
+
+    Macro           = auto()    # name
     Detect          = auto()    # preset, color, threshold
     Segment         = auto()    # preset, color
 
@@ -73,7 +76,6 @@ class MacroRunException(Exception):
 
 # https://stackoverflow.com/a/72611442/1442598
 def jsonIndentLimit(indent, limit):
-    import re
     return re.compile(f'\n({indent}){{{limit}}}(({indent})+|(?=(}}|])))')
 
 
@@ -92,7 +94,10 @@ class MaskingMacro:
             MacroOp.Threshold:  mask_ops.ThresholdMaskOperation.operate,
             MacroOp.Normalize:  mask_ops.NormalizeMaskOperation.operate,
             MacroOp.Morph:      mask_ops.MorphologyMaskOperation.operate,
-            MacroOp.GaussBlur:  mask_ops.BlurMaskOperation.operate
+            MacroOp.GaussBlur:  mask_ops.BlurMaskOperation.operate,
+
+            MacroOp.CondColor:   mask_ops.ColorConditionMaskOperation.operate,
+            MacroOp.CondRegions: mask_ops.RegionConditionMaskOperation.operate
         }
 
 

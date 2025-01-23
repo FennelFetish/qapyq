@@ -128,7 +128,10 @@ class MaskToolBar(QtWidgets.QToolBar):
             "normalize":    mask_ops.NormalizeMaskOperation,
             "morph":        mask_ops.MorphologyMaskOperation,
             "blur_gauss":   mask_ops.BlurMaskOperation,
-            "blend_layers": mask_ops.BlendLayersMaskOperation
+            "blend_layers": mask_ops.BlendLayersMaskOperation,
+
+            "cond_color":   mask_ops.ColorConditionMaskOperation,
+            "cond_regions": mask_ops.RegionConditionMaskOperation
         }
 
         # Try to keep existing ops and their current settings.
@@ -171,8 +174,14 @@ class MaskToolBar(QtWidgets.QToolBar):
             segmentMenu.addSeparator()
             segmentMenu.addAction("Model Settings...").triggered.connect(self._openModelSettings)
 
-            # Add macro operations
             self.cboOperation.addSeparator()
+
+            # Add conditions
+            condMenu = self.cboOperation.addSubmenu("Conditions")
+            self.cboOperation.addSubmenuItem(condMenu, "Color Range", "Condition: ", "cond_color")
+            self.cboOperation.addSubmenuItem(condMenu, "Region Count", "Condition: ", "cond_regions")
+
+            # Add macro operations
             macroMenu = self.cboOperation.addSubmenu("Macros")
             for name, path in MaskingMacro.loadMacros():
                 self._buildMacroOp(macroMenu, name, path)

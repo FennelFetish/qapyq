@@ -45,8 +45,6 @@ class MaskOperation(QtWidgets.QWidget):
         imgpos = self.mapPosToImage(pos)
         return ( int(np.floor(imgpos.x())), int(np.floor(imgpos.y())) )
 
-    def getCursor(self):
-        raise NotImplementedError()
 
     def onEnabled(self, imgview: ImgView):
         self._origCursor = imgview.cursor()
@@ -895,6 +893,130 @@ class BlendLayersMaskOperation(MaskOperation):
         self.maskTool.setEdited()
         macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.BlendLayers, mode=mode, srcLayer=srcMatIndex)
         self.maskTool._toolbar.addHistory(f"Blend Layers ({mode})", destMat, macroItem)
+
+
+
+class ColorConditionMaskOperation(MaskOperation):
+    def __init__(self, maskTool):
+        super().__init__(maskTool)
+
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
+
+        row = 0
+        self.spinMinColor = QtWidgets.QDoubleSpinBox()
+        self.spinMinColor.setRange(0.0, 1.0)
+        self.spinMinColor.setSingleStep(0.1)
+        self.spinMinColor.setValue(0.0)
+        layout.addWidget(QtWidgets.QLabel("Color Min:"), row, 0)
+        layout.addWidget(self.spinMinColor, row, 1)
+
+        row += 1
+        self.spinMaxColor = QtWidgets.QDoubleSpinBox()
+        self.spinMaxColor.setRange(0.0, 1.0)
+        self.spinMaxColor.setSingleStep(0.1)
+        self.spinMaxColor.setValue(1.0)
+        self.spinMaxColor.setToolTip("The maximum is disabled when it's smaller than the minimum.")
+        layout.addWidget(QtWidgets.QLabel("Color Max:"), row, 0)
+        layout.addWidget(self.spinMaxColor, row, 1)
+
+        self.setLayout(layout)
+
+    @staticmethod
+    def operate(mat: np.ndarray, minColor: int, maxColor: int) -> np.ndarray:
+        if maxColor < minColor:
+            maxColor = 1000
+
+        min = np.amin(mat)
+        if min < minColor:
+            mat.fill(0)
+            return mat
+        
+        max = np.amax(mat)
+        if max > maxColor:
+            mat.fill(0)
+            return mat
+
+        mat.fill(255)
+        return mat
+
+    @override
+    def onMousePress(self, pos, pressure: float, alt=False):
+        min = self.spinMinColor.value()
+        max = self.spinMaxColor.value()
+
+        minColor = round(min*255)
+        maxColor = round(max*255)
+
+        mat = self.maskItem.toNumpy()
+        mat = self.operate(mat, minColor, maxColor)
+        self.maskItem.fromNumpy(mat)
+
+        self.maskTool.setEdited()
+        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.CondColor, minColor=minColor, maxColor=maxColor)
+
+        colorRangeText = f"{min:.2f} - {max:.2f}" if max > min else f"{min:.2f}"
+        self.maskTool._toolbar.addHistory(f"Color Condition ({colorRangeText})", mat, macroItem)
+
+
+
+class RegionConditionMaskOperation(MaskOperation):
+    def __init__(self, maskTool):
+        super().__init__(maskTool)
+
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
+
+        row = 0
+        self.spinMinRegions = QtWidgets.QSpinBox()
+        self.spinMinRegions.setRange(0, 16384)
+        self.spinMinRegions.setValue(1)
+        layout.addWidget(QtWidgets.QLabel("Regions Min:"), row, 0)
+        layout.addWidget(self.spinMinRegions, row, 1)
+
+        row += 1
+        self.spinMaxRegions = QtWidgets.QSpinBox()
+        self.spinMaxRegions.setRange(0, 16384)
+        self.spinMaxRegions.setValue(0)
+        self.spinMaxRegions.setToolTip("The maximum is disabled when it's smaller than the minimum.")
+        layout.addWidget(QtWidgets.QLabel("Regions Max:"), row, 0)
+        layout.addWidget(self.spinMaxRegions, row, 1)
+
+        self.setLayout(layout)
+
+    @staticmethod
+    def operate(mat: np.ndarray, minRegions: int, maxRegions: int) -> np.ndarray:
+        numRegions, labels = cv.connectedComponents(mat, None, 8, cv.CV_16U)
+        numRegions -= 1
+
+        if maxRegions < minRegions:
+            maxRegions = numRegions
+
+        if numRegions >= minRegions and numRegions <= maxRegions:
+            mat.fill(255)
+        else:
+            mat.fill(0)
+
+        return mat
+
+    @override
+    def onMousePress(self, pos, pressure: float, alt=False):
+        minRegions = self.spinMinRegions.value()
+        maxRegions = self.spinMaxRegions.value()
+
+        mat = self.maskItem.toNumpy()
+        mat = self.operate(mat, minRegions, maxRegions)
+        self.maskItem.fromNumpy(mat)
+
+        self.maskTool.setEdited()
+        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.CondRegions, minRegions=minRegions, maxRegions=maxRegions)
+
+        regionRangeText = f"{minRegions} - {maxRegions}" if maxRegions > minRegions else str(minRegions)
+        self.maskTool._toolbar.addHistory(f"Region Condition ({regionRangeText})", mat, macroItem)
 
 
 
