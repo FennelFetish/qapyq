@@ -71,6 +71,9 @@ class MaskTool(ViewTool):
         self._toolbar.setLayers(layers, index)
         self._toolbar.setHistory(self.maskItem)
 
+        maskState = filelist.getData(currentFile, DataKeys.MaskState)
+        self._toolbar.setEdited(maskState == DataKeys.IconStates.Changed)
+
     def loadLayersFromFile(self):
         maskPath = self._toolbar.exportWidget.getAutoExportPath(self.tab.filelist.getCurrentFile(), forReading=True) # TODO: When overwrite disabled, load latest counter
         if not os.path.exists(maskPath):
