@@ -176,7 +176,9 @@ class BatchApply(QtWidgets.QWidget):
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 0)
         layout.setColumnStretch(2, 0)
-        layout.setColumnStretch(3, 1)
+        layout.setColumnStretch(3, 0)
+        layout.setColumnStretch(4, 1)
+        layout.setColumnMinimumWidth(3, 20)
 
         layout.addWidget(QtWidgets.QLabel("Storage key:"), 0, 0, Qt.AlignmentFlag.AlignTop)
 
@@ -190,10 +192,15 @@ class BatchApply(QtWidgets.QWidget):
         qtlib.setMonospace(self.txtBackupKey)
         layout.addWidget(self.txtBackupKey, 0, 2)
 
-        groupBox = QtWidgets.QGroupBox("Backup current value (txt/json → json)")
+        self.chkOverwriteBackup = QtWidgets.QCheckBox("Overwrite backup")
+        self.chkOverwriteBackup.toggled.connect(self._updateOverwriteBackup)
+        layout.addWidget(self.chkOverwriteBackup, 0, 4)
+
+        groupBox = QtWidgets.QGroupBox("Backup old value (txt/json → json)")
         groupBox.setCheckable(True)
         groupBox.setChecked(False)
         groupBox.toggled.connect(self._updateDeleteJson)
+        groupBox.toggled.connect(self._updateOverwriteBackup)
         groupBox.setLayout(layout)
         return groupBox
 
@@ -244,6 +251,12 @@ class BatchApply(QtWidgets.QWidget):
         style = f"color: {qtlib.COLOR_RED}" if deleteChecked else None
         self.chkDeleteJson.setStyleSheet(style)
 
+    @Slot()
+    def _updateOverwriteBackup(self):
+        red = self.backupSettings.isChecked() and self.chkOverwriteBackup.isChecked()
+        style = f"color: {qtlib.COLOR_RED}" if red else None
+        self.chkOverwriteBackup.setStyleSheet(style)
+
 
     def _updateParser(self):
         if self._parser:
@@ -267,7 +280,12 @@ class BatchApply(QtWidgets.QWidget):
 
         if self.backupSettings.isChecked():
             backupKey = f"{self.cboBackupType.currentText()}.{self.txtBackupKey.text().strip()}"
-            ops.append(f"Backup the current value from the destination into the '{backupKey}' key")
+            ops.append("Read the old content from the destination")
+
+            if self.chkOverwriteBackup.isChecked():
+                ops.append(qtlib.htmlRed(f"Write the old content to .json files [{backupKey}] and overwrite the content!"))
+            else:
+                ops.append(f"Write the old content to .json files [{backupKey}] and append an increasing counter if the key already exists")
 
         writeMode = self.cboWriteMode.currentData()
         writeModeText = WRITE_MODE_TEXT.get(writeMode, "").format(key=self.txtDestKey.text())
@@ -299,6 +317,7 @@ class BatchApply(QtWidgets.QWidget):
         if self.backupSettings.isChecked():
             self._task.backupType = self.cboBackupType.currentText()
             self._task.backupKey  = self.txtBackupKey.text().strip()
+            self._task.overwriteBackup = self.chkOverwriteBackup.isChecked()
 
         self._task.stripAround = self.chkStripAround.isChecked()
         self._task.stripMulti  = self.chkStripMulti.isChecked()
@@ -327,6 +346,7 @@ class BatchApplyTask(BatchTask):
 
         self.backupType  = "" # Empty if backup disabled
         self.backupKey   = "" # Empty if backup disabled
+        self.overwriteBackup = False
 
         self.writeMode   = WriteMode.SeparateSkipExisting
         self.destPath    = "" # For writing to single .txt file
@@ -397,10 +417,23 @@ class BatchApplyTask(BatchTask):
             return False
 
         if self.backupType == BACKUP_TYPE_CAPTION:
-            captionFile.addCaption(self.backupKey, oldCaption)
+            backupKey = self.getBackupKey(captionFile, CaptionFile.getCaption)
+            captionFile.addCaption(backupKey, oldCaption)
         else:
-            captionFile.addTags(self.backupKey, oldCaption)
+            backupKey = self.getBackupKey(captionFile, CaptionFile.getTags)
+            captionFile.addTags(backupKey, oldCaption)
         return True
+    
+    def getBackupKey(self, captionFile: CaptionFile, getter: Callable) -> str:
+        if self.overwriteBackup:
+            return self.backupKey
+
+        key = self.backupKey
+        counter = 2
+        while getter(captionFile, key):
+            key = f"{self.backupKey}_{counter}"
+            counter += 1
+        return key
 
     def deleteJsonFile(self, path: str) -> None:
         if path.endswith(".json") and os.path.isfile(path):
