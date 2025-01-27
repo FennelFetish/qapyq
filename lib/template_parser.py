@@ -1,4 +1,4 @@
-import re, os
+import re, os, random
 from typing import Tuple, List
 from PySide6 import QtWidgets, QtGui
 from .captionfile import CaptionFile
@@ -23,7 +23,7 @@ class TemplateVariableParser:
 
         self.missingVars = list()
 
-    
+
     def setup(self, imgPath: str, captionFile: CaptionFile | None = None):
         self.imgPath = imgPath
         self.captionFile = captionFile
@@ -67,7 +67,7 @@ class TemplateVariableParser:
 
             textBetweenVars = text[start:match.start()]
             lenBetweenVars = match.start() - start
-            
+
             positions.append([
                 match.start(), match.end(),
                 promptLen+lenBetweenVars, promptLen+lenBetweenVars+lenValue
@@ -117,7 +117,7 @@ class TemplateVariableParser:
             matchStart = match.start()+1 # Keep one whitespace character
             matchEnd = match.end()
             matchLen = matchEnd - matchStart
-            
+
             for pos in positions:
                 # Removed characters before start: Shift start and end
                 if (shiftStart := min(pos[2]-matchStart+totalShift, matchLen)) > 0:
@@ -126,7 +126,7 @@ class TemplateVariableParser:
                 # Removed characters between start and end: Shift only end
                 elif (shiftEnd := min(pos[3]-matchStart+totalShift, matchLen)) > 0:
                     pos[3] -= shiftEnd
-            
+
             totalShift += matchLen
             parts.append(text[start:matchStart])
             start = matchEnd
@@ -137,12 +137,15 @@ class TemplateVariableParser:
 
     def _getValue(self, var: str) -> str:
         varOrig = var
-        var = var.strip()
-        
+        var = var.lstrip()
+
         optional = True
         if var.startswith(self._keepVarPrefix):
-            var = var[len(self._keepVarPrefix):].strip()
+            var = var[len(self._keepVarPrefix):].lstrip()
             optional = False
+
+        var, *funcs = var.split("#")
+        var = var.strip()
 
         value = None
         if var.startswith(self._captionPrefix):
@@ -164,10 +167,13 @@ class TemplateVariableParser:
             value = self._getImgProperties(var)
 
         if value:
+            for func in funcs:
+                value = self._applyFunction(value, func) # Don't strip func (avoid changing arguments with spaces)
             return value
-        else:
-            self.missingVars.append(var)
-            return "" if optional else "{{" + varOrig + "}}"
+
+        self.missingVars.append(var)
+        return "" if optional else "{{" + varOrig + "}}"
+
 
     def _readTextFile(self) -> str | None:
         textPath = os.path.splitext(self.imgPath)[0] + ".txt"
@@ -175,6 +181,7 @@ class TemplateVariableParser:
             with open(textPath, 'r') as file:
                 return file.read()
         return None
+
 
     def _getImgProperties(self, var: str) -> str | None:
         match var:
@@ -188,21 +195,97 @@ class TemplateVariableParser:
             case "name.ext":
                 return os.path.basename(self.imgPath)
 
-            case "folder":
-                path = os.path.dirname(self.imgPath)
+        if var.startswith("folder"):
+            path = os.path.dirname(self.imgPath)
+            rest = var[len("folder"):]
+            if not rest:
                 return os.path.basename(path)
-        
-        if var.startswith("folder-"):
-            try:
-                up = int( var[len("folder-"):] )
-                path = os.path.dirname(self.imgPath)
-                for _ in range(up):
-                    path = os.path.dirname(path)
-                return os.path.basename(path)
-            except ValueError:
-                return None
+
+            if rest.startswith("-"):
+                try:
+                    up = int( rest[1:] )
+                    for _ in range(up):
+                        path = os.path.dirname(path)
+                    return os.path.basename(path)
+                except ValueError:
+                    return None
+
+            if rest.startswith(":"):
+                basePath = rest[1:]
+                path = os.path.relpath(path, basePath)
+                return os.path.normpath(path)
 
         return None
+
+
+    def _applyFunction(self, value: str, func: str) -> str:
+        func, *args = func.split(":")
+        func = func.strip()
+
+        match func:
+            case "lower":
+                return value.lower()
+            case "upper":
+                return value.upper()
+            case "strip":
+                return value.strip()
+            case "oneline":
+                return value.replace("\n", "").replace("\r", "")
+
+            case "replace":
+                if len(args) > 1 and args[0]:
+                    return value.replace(args[0], args[1])
+
+            case "shuffle":
+                sep = ", "
+                if len(args) > 0 and args[0]:
+                    sep = args[0]
+                return self._funcShuffle(value, 0, sep)
+
+            case "shufflekeep":
+                keep = 1
+                sep = ", "
+                if len(args) > 0:
+                    try:
+                        keep = int( args[0] )
+                    except ValueError:
+                        keep = 1
+                if len(args) > 1 and args[1]:
+                    sep = args[1]
+                return self._funcShuffle(value, keep, sep)
+
+            case "join":
+                if not args:
+                    return value
+
+                key = args[0].strip()
+                sep = ", "
+                if len(args) > 1:
+                    sep = args[1]
+
+                val2 = self._getValue(key)
+                return sep.join(val for v in (value, val2) if (val := v.strip()))
+
+        return value
+
+
+    def _funcShuffle(self, value: str, keep: int, sep: str) -> str:
+        sepStrip = sep.strip()
+        if not sepStrip:
+            sepStrip = sep
+        endsWithSepStrip = value.endswith(sepStrip)
+
+        elements = [ele for e in value.split(sepStrip) if (ele := e.strip())]
+        keepElements = elements[:keep]
+        elements = elements[keep:]
+
+        random.shuffle(elements)
+        keepElements.extend(elements)
+
+        value = sep.join(keepElements)
+        if endsWithSepStrip:
+            value += sepStrip
+        return value
 
 
 
@@ -216,7 +299,7 @@ class VariableHighlighter:
 
         targetCursor = target.textCursor()
         targetCursor.setPosition(0)
-        
+
         defaultFormat = self.formats.defaultFormat
         varIndex = 0
         for srcStart, srcEnd, targetStart, targetEnd in positions:
@@ -225,31 +308,31 @@ class VariableHighlighter:
 
             if disabled:
                 format = qtlib.toDisabledFormat(format)
-            
+
             # Source (Variables)
             qtlib.setBoldFormat(format)
-            sourceCursor.setPosition(srcStart, QtGui.QTextCursor.KeepAnchor)
+            sourceCursor.setPosition(srcStart, QtGui.QTextCursor.MoveMode.KeepAnchor)
             sourceCursor.setCharFormat(defaultFormat)
 
             sourceCursor.setPosition(srcStart)
-            sourceCursor.setPosition(srcEnd, QtGui.QTextCursor.KeepAnchor)
+            sourceCursor.setPosition(srcEnd, QtGui.QTextCursor.MoveMode.KeepAnchor)
             sourceCursor.setCharFormat(format)
             sourceCursor.setPosition(srcEnd)
 
             # Target (Replacement)
             qtlib.setBoldFormat(format, False)
-            targetCursor.setPosition(targetStart, QtGui.QTextCursor.KeepAnchor)
+            targetCursor.setPosition(targetStart, QtGui.QTextCursor.MoveMode.KeepAnchor)
             targetCursor.setCharFormat(defaultFormat)
 
             targetCursor.setPosition(targetStart)
-            targetCursor.setPosition(targetEnd, QtGui.QTextCursor.KeepAnchor)
+            targetCursor.setPosition(targetEnd, QtGui.QTextCursor.MoveMode.KeepAnchor)
             targetCursor.setCharFormat(format)
             targetCursor.setPosition(targetEnd)
-            
-        sourceCursor.movePosition(QtGui.QTextCursor.End, QtGui.QTextCursor.KeepAnchor)
+
+        sourceCursor.movePosition(QtGui.QTextCursor.MoveOperation.End, QtGui.QTextCursor.MoveMode.KeepAnchor)
         sourceCursor.setCharFormat(defaultFormat)
 
-        targetCursor.movePosition(QtGui.QTextCursor.End, QtGui.QTextCursor.KeepAnchor)
+        targetCursor.movePosition(QtGui.QTextCursor.MoveOperation.End, QtGui.QTextCursor.MoveMode.KeepAnchor)
         targetCursor.setCharFormat(defaultFormat)
 
 
