@@ -17,15 +17,14 @@ class ViewTool(Tool):
 
 
     def onSceneUpdate(self):
-        imgSize = self._imgview.image.pixmap().size()
-        self.tab.statusBar().setImageSize(imgSize.width(), imgSize.height())
+        self.tab.statusBar().setImageInfo(self._imgview.image.pixmap())
 
     def getDropRects(self):
         return [QRectF(0, 0, 1, 1)]
-    
+
     def onDrop(self, event, zoneIndex):
         paths = (url.toLocalFile() for url in event.mimeData().urls())
-        
+
         # SHIFT pressed -> Append
         if (event.modifiers() & Qt.ShiftModifier) == Qt.ShiftModifier:
             self._imgview.filelist.loadAppend(paths)

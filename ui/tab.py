@@ -1,6 +1,7 @@
 import os
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtGui import QPixmap
 from config import Config
 from lib.filelist import FileList
 from lib.qtlib import ColoredMessageStatusBar
@@ -83,7 +84,7 @@ class ImgTab(QtWidgets.QMainWindow):
             case "mask":
                 from tools.mask import MaskTool
                 return MaskTool(self)
-        
+
         print("Invalid tool:", toolName)
         return None
 
@@ -162,5 +163,7 @@ class TabStatusBar(ColoredMessageStatusBar):
     def setMouseCoords(self, x, y):
         self._lblMouseCoords.setText(f"X: {x}  Y: {y}")
 
-    def setImageSize(self, width, height):
-        self._lblImgSize.setText(f"W: {width}  H: {height}")
+    def setImageInfo(self, pixmap: QPixmap):
+        size = pixmap.size()
+        alpha = "  (Alpha)" if pixmap.hasAlphaChannel() else ""
+        self._lblImgSize.setText(f"W: {size.width()}  H: {size.height()}{alpha}")
