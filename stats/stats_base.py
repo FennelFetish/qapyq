@@ -1,4 +1,5 @@
 from typing import Iterable
+from collections import Counter
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QSortFilterProxyModel, QModelIndex, QItemSelection, QRegularExpression, QSignalBlocker
 from ui.tab import ImgTab
@@ -13,7 +14,7 @@ from lib.filelist import sortKey
 class StatsBaseProxyModel(QSortFilterProxyModel):
     def __init__(self):
         super().__init__()
-    
+
     def getFiles(self, sourceIndex: QModelIndex) -> Iterable[str]:
         raise NotImplementedError
 
@@ -41,10 +42,12 @@ class StatsLayout(QtWidgets.QVBoxLayout):
         col1Widget = QtWidgets.QWidget()
         col1Widget.setLayout(self.col1Layout)
 
+        self.groupFiles = self._buildFilesGroup(name)
+
         splitter = QtWidgets.QSplitter()
         splitter.addWidget(col1Widget)
         splitter.addWidget(self._buildTableGroup(name))
-        splitter.addWidget(self._buildFilesGroup(name))
+        splitter.addWidget(self.groupFiles)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 1)
@@ -70,41 +73,41 @@ class StatsLayout(QtWidgets.QVBoxLayout):
 
     def _buildFilesGroup(self, name: str):
         layout = QtWidgets.QGridLayout()
-        layout.setColumnMinimumWidth(2, 4)
-        layout.setColumnStretch(4, 1)
-        layout.setColumnMinimumWidth(6, 4)
 
         row = 0
-        self.radioFilesUnion = QtWidgets.QRadioButton(f"Union")
-        self.radioFilesUnion.setToolTip(f"Show files which have at least one of the selected {name}")
-        self.radioFilesUnion.setChecked(True)
-        self.radioFilesUnion.clicked.connect(self.updateSelection)
-        layout.addWidget(self.radioFilesUnion, row, 0)
+        layout.addWidget(QtWidgets.QLabel("List files with:"), row, 0)
 
-        self.radioFilesIntersect = QtWidgets.QRadioButton(f"Intersection")
-        self.radioFilesIntersect.setToolTip(f"Show files which have all selected {name}")
-        self.radioFilesIntersect.clicked.connect(self.updateSelection)
-        layout.addWidget(self.radioFilesIntersect, row, 1)
+        self.cboCombineMode = QtWidgets.QComboBox()
+        self.cboCombineMode.addItem("Any (Union)", CombineModeUnion)
+        self.cboCombineMode.setItemData(0, f"Show files which have at least one of the selected {name}", Qt.ItemDataRole.ToolTipRole)
+        self.cboCombineMode.addItem("One", CombineModeExclusive)
+        self.cboCombineMode.setItemData(1, f"Show files which have exactly one of the selected {name}", Qt.ItemDataRole.ToolTipRole)
+        self.cboCombineMode.addItem("Multiple", CombineModeMultiple)
+        self.cboCombineMode.setItemData(2, f"Show files which have more than one of the selected {name}", Qt.ItemDataRole.ToolTipRole)
+        self.cboCombineMode.addItem("All (Intersection)", CombineModeIntersection)
+        self.cboCombineMode.setItemData(3, f"Show files which have all selected {name}", Qt.ItemDataRole.ToolTipRole)
+
+        self.cboCombineMode.currentIndexChanged.connect(self.updateSelection)
+        layout.addWidget(self.cboCombineMode, row, 1)
 
         self.chkFilesNegate = QtWidgets.QCheckBox("Negate")
-        self.chkFilesNegate.setToolTip(f"Show files which lack the Union/Intersection of the selected {name}")
+        self.chkFilesNegate.setToolTip(f"Show only files that would be hidden with the selected {name} and listing mode")
         self.chkFilesNegate.checkStateChanged.connect(self.updateSelection)
-        layout.addWidget(self.chkFilesNegate, row, 3)
+        layout.addWidget(self.chkFilesNegate, row, 2)
 
-        self.lblNumFilesListed = QtWidgets.QLabel("0 Files")
-        layout.addWidget(self.lblNumFilesListed, row, 5)
+        layout.setColumnStretch(3, 1)
 
         btnNewTab = QtWidgets.QPushButton("Open Files in New Tab")
         btnNewTab.setMinimumWidth(160)
         btnNewTab.clicked.connect(self._loadFilesInNewTab)
-        layout.addWidget(btnNewTab, row, 7)
+        layout.addWidget(btnNewTab, row, 4)
 
         row += 1
         self.listFiles = QtWidgets.QListWidget()
         self.listFiles.setAlternatingRowColors(True)
         qtlib.setMonospace(self.listFiles)
         self.listFiles.selectionModel().selectionChanged.connect(self._onFileSelected)
-        layout.addWidget(self.listFiles, row, 0, 1, 8)
+        layout.addWidget(self.listFiles, row, 0, 1, 5)
 
         group = QtWidgets.QGroupBox("Files")
         group.setLayout(layout)
@@ -143,23 +146,15 @@ class StatsLayout(QtWidgets.QVBoxLayout):
 
     @Slot()
     def _onRowsSelected(self, newItem: QItemSelection, oldItem: QItemSelection):
-        fileSet = set()
-        union = self.radioFilesUnion.isChecked()
-        first = True
+        combineClass = self.cboCombineMode.currentData()
+        combiner = combineClass()
+
         selectedIndexes = self.table.selectionModel().selectedIndexes()
-        for index in selectedIndexes:
-            if index.column() != 0:
-                continue
-
+        for index in (idx for idx in selectedIndexes if idx.column() == 0):
             index = self.proxyModel.mapToSource(index)
-            rowFiles = self.proxyModel.getFiles(index)
+            combiner.addFiles( self.proxyModel.getFiles(index) )
 
-            if union or first:
-                fileSet.update(rowFiles)
-                first = False
-            else:
-                fileSet.intersection_update(rowFiles)
-
+        fileSet = combiner.getFiles()
         if self.chkFilesNegate.isChecked():
             fileSet = [file for file in self.tab.filelist.getFiles() if file not in fileSet]
 
@@ -173,10 +168,7 @@ class StatsLayout(QtWidgets.QVBoxLayout):
                 item.setData(self.ROLE_FILEPATH, file)
                 self.listFiles.addItem(item)
 
-        numFilesText = f"{len(files)} File"
-        if len(files) != 1:
-            numFilesText += "s"
-        self.lblNumFilesListed.setText(numFilesText)
+        self.groupFiles.setTitle(f"Files ({len(files)})")
 
 
     @Slot()
@@ -191,9 +183,12 @@ class StatsLayout(QtWidgets.QVBoxLayout):
         try:
             # Changing file normally clears the selection, so disable that.
             self._enableFileUpdate = False
+            # Also disable focus change to enable navigating through the file list with arrow keys.
+            self.tab.imgview.takeFocusOnFilechange = False
             self.tab.filelist.setCurrentFile(file)
         finally:
             self._enableFileUpdate = True
+            self.tab.imgview.takeFocusOnFilechange = True
 
     def clearFileSelection(self):
         if self._enableFileUpdate:
@@ -223,3 +218,53 @@ class StatsLayout(QtWidgets.QVBoxLayout):
             newTab = self.tab.mainWindow.addTab()
             newFilelist: FileList = newTab.filelist
             newFilelist.loadFilesFixed(files, currentFilelist, [DataKeys.ImageSize, DataKeys.Thumbnail])
+
+
+
+class CombineModeUnion:
+    def __init__(self):
+        self.fileSet: set[str] = set()
+
+    def addFiles(self, files: Iterable[str]):
+        self.fileSet.update(files)
+
+    def getFiles(self) -> set[str]:
+        return self.fileSet
+
+
+class CombineModeIntersection:
+    def __init__(self):
+        self.fileSet: set[str] = set()
+        self.first = True
+
+    def addFiles(self, files: Iterable[str]):
+        if self.first:
+            self.fileSet.update(files)
+            self.first = False
+        else:
+            self.fileSet.intersection_update(files)
+
+    def getFiles(self) -> set[str]:
+        return self.fileSet
+
+
+class CombineModeExclusive:
+    def __init__(self):
+        self.fileCounter: Counter[str] = Counter()
+
+    def addFiles(self, files: Iterable[str]):
+        self.fileCounter.update(files)
+
+    def getFiles(self) -> set[str]:
+        return set(f for f, count in self.fileCounter.items() if count == 1)
+
+
+class CombineModeMultiple:
+    def __init__(self):
+        self.fileCounter: Counter[str] = Counter()
+
+    def addFiles(self, files: Iterable[str]):
+        self.fileCounter.update(files)
+
+    def getFiles(self) -> set[str]:
+        return set(f for f, count in self.fileCounter.items() if count > 1)
