@@ -38,6 +38,9 @@ class Header(QtWidgets.QFrame):
 
 
 class GalleryGrid(QtWidgets.QWidget):
+    VIEW_MODE_GRID = "grid"
+    VIEW_MODE_LIST = "list"
+
     headersUpdated  = Signal(list)
     fileChanged     = Signal(object, int)
     reloaded        = Signal()
@@ -84,7 +87,7 @@ class GalleryGrid(QtWidgets.QWidget):
 
 
     def setViewMode(self, mode: str):
-        newItemClass = GalleryListItem if mode=="list" else GalleryGridItem
+        newItemClass = GalleryListItem if mode==self.VIEW_MODE_LIST else GalleryGridItem
         if newItemClass == self.itemClass:
             return
         self.itemClass = newItemClass
@@ -142,7 +145,7 @@ class GalleryGrid(QtWidgets.QWidget):
                 if col > 0:
                     row += 1
                     col = 0
-                
+
                 currentHeader = self.addHeader(dirname, row)
                 headers.append(currentHeader)
                 rows.add(row)
@@ -150,7 +153,7 @@ class GalleryGrid(QtWidgets.QWidget):
 
             if not (galleryItem := existingItems.pop(file, None)):
                 galleryItem = self.itemClass(self, file)
-            
+
             self.addImage(galleryItem, file, row, col)
             currentHeader.numImages += 1
             rows.add(row)
@@ -168,7 +171,7 @@ class GalleryGrid(QtWidgets.QWidget):
         for header in headers:
             header.updateImageLabel()
         self.headersUpdated.emit(headers)
-    
+
     def addImage(self, galleryItem: GalleryItem, file: str, row: int, col: int):
         galleryItem.row = row
         self.fileItems[file] = galleryItem
@@ -255,7 +258,7 @@ class GalleryGrid(QtWidgets.QWidget):
                 self._layout.addWidget(widget, row, 0, 1, cols)
                 rows.add(row)
                 row += 1
-        
+
         self.rows = len(rows)
         self._layout.update()
         self.headersUpdated.emit(headers)
@@ -269,11 +272,11 @@ class GalleryGrid(QtWidgets.QWidget):
         hi = max(self.rows-1, 0)
 
         while lo < hi:
-            row = lo + ((hi-lo) // 2)
+            row = (lo+hi) // 2
             rect = self._layout.cellRect(row, 0)
             if not rect.isValid():
                 return -1
-            
+
             if y > rowY(rect):
                 lo = row+1 # Continue in upper half
             else:
@@ -303,7 +306,7 @@ class GalleryGrid(QtWidgets.QWidget):
         if not self._ignoreFileChange:
             widget = self.fileItems[currentFile]
             self.setSelectedItem(widget)
-    
+
     def onFileListChanged(self, currentFile: str):
         # When files were appended, the selection is kept
         # and the gallery should scroll to the selection instead of the top

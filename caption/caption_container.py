@@ -79,12 +79,14 @@ class CaptionContainer(QtWidgets.QWidget):
         qtlib.setMonospace(self.txtCaption, 1.2)
         splitter.addWidget(self.txtCaption)
         splitter.setStretchFactor(2, 1)
-        
+
         mainLayout = QtWidgets.QVBoxLayout()
         mainLayout.setContentsMargins(0, 0, 0, 0)
         mainLayout.addWidget(splitter)
         mainLayout.addWidget(self._buildBottomRow())
         self.setLayout(mainLayout)
+
+        self._onDestLockChanged(self.btnDestLocked.isChecked())
 
     def _buildBottomRow(self):
         layout = QtWidgets.QGridLayout()
@@ -113,7 +115,7 @@ class CaptionContainer(QtWidgets.QWidget):
         layout.setColumnStretch(col, 1)
 
         col += 1
-        self.btnReset = QtWidgets.QPushButton("Reload From:")
+        self.btnReset = qtlib.SaveButton("Reload From:")
         self.btnReset.setFixedWidth(100)
         self.btnReset.clicked.connect(self.resetCaption)
         layout.addWidget(self.btnReset, 0, col)
@@ -122,13 +124,24 @@ class CaptionContainer(QtWidgets.QWidget):
         col += 1
         self.srcSelector = FileTypeSelector()
         self.srcSelector.type = FileTypeSelector.TYPE_TAGS
-        self.srcSelector.txtName.setFixedWidth(120)
+        self.srcSelector.setTextFieldFixedWidth(140)
+        self.srcSelector.fileTypeUpdated.connect(self._onSourceChanged)
         layout.addLayout(self.srcSelector, 0, col)
         layout.setColumnStretch(col, 0)
 
         col += 1
         layout.addWidget(qtlib.VerticalSeparator(), 0, col)
         layout.setColumnStretch(col, 0)
+
+        col += 1
+        self.btnDestLocked = QtWidgets.QPushButton("🔒")
+        self.btnDestLocked.setToolTip("Sync destination to source")
+        self.btnDestLocked.setCheckable(True)
+        self.btnDestLocked.setChecked(True)
+        qtlib.setMonospace(self.btnDestLocked, 1.2)
+        self.btnDestLocked.setFixedWidth(26)
+        self.btnDestLocked.toggled.connect(self._onDestLockChanged)
+        layout.addWidget(self.btnDestLocked, 0, col)
 
         col += 1
         self.btnSave = qtlib.SaveButton("Save To:")
@@ -140,7 +153,7 @@ class CaptionContainer(QtWidgets.QWidget):
         col += 1
         self.destSelector = FileTypeSelector()
         self.destSelector.type = FileTypeSelector.TYPE_TAGS
-        self.destSelector.txtName.setFixedWidth(120)
+        self.destSelector.setTextFieldFixedWidth(140)
         layout.addLayout(self.destSelector, 0, col)
         layout.setColumnStretch(col, 0)
 
@@ -176,6 +189,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.txtCaption.setPlainText(text)
         self.txtCaption.moveCursor(QtGui.QTextCursor.MoveOperation.End)
 
+    @Slot()
     def _onCaptionEdited(self):
         text = self.txtCaption.toPlainText()
         self._highlight(text)
@@ -185,6 +199,27 @@ class CaptionContainer(QtWidgets.QWidget):
         self.captionCache.put(text)
         self.captionCache.setState(DataKeys.IconStates.Changed)
         self.btnSave.setChanged(True)
+
+    @Slot()
+    def _onSourceChanged(self):
+        self.btnReset.setChanged(True)
+
+        if self.btnDestLocked.isChecked():
+            self._syncDestSelector()
+
+    @Slot()
+    def _onDestLockChanged(self, checked: bool):
+        if checked:
+            self._syncDestSelector()
+            self.btnDestLocked.setText("🔒")
+        else:
+            self.destSelector.setEnabled(True)
+            self.btnDestLocked.setText("🔓")
+
+    def _syncDestSelector(self):
+        self.destSelector.type = self.srcSelector.type
+        self.destSelector.name = self.srcSelector.name
+        self.destSelector.setEnabled(False)
 
 
     def _highlight(self, text: str):
@@ -233,7 +268,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self._highlight(text)
         self.bubbles.updateBubbles()
         self.ctx.groups.updateSelectedState(text)
-        
+
 
     @Slot()
     def appendToCaption(self, text):
@@ -327,10 +362,11 @@ class CaptionContainer(QtWidgets.QWidget):
         else:
             self.setCaption("")
             self.captionCache.setState(None)
-        
+
         # When setting the text, _onCaptionEdited() will make a cache entry and turn the save button red. So we revert that here.
         self.captionCache.remove()
         self.btnSave.setChanged(False)
+        self.btnReset.setChanged(False)
 
 
     @Slot()
@@ -344,9 +380,9 @@ class CaptionContainer(QtWidgets.QWidget):
         self.loadCaption()
         if self.isAutoApplyRules():
             self.applyRules()
-        
+
         self.ctx.generate.onFileChanged(currentFile)
-    
+
     def onFileListChanged(self, currentFile):
         self.onFileChanged(currentFile)
 
@@ -363,7 +399,7 @@ class CaptionContainer(QtWidgets.QWidget):
 class CaptionCache:
     def __init__(self, filelist):
         self.filelist = filelist
-    
+
     def get(self):
         file = self.filelist.getCurrentFile()
         return self.filelist.getData(file, DataKeys.Caption)
@@ -375,7 +411,7 @@ class CaptionCache:
     def remove(self):
         file = self.filelist.getCurrentFile()
         self.filelist.removeData(file, DataKeys.Caption)
-    
+
     def setState(self, state: DataKeys.IconStates | None):
         file = self.filelist.getCurrentFile()
         if state:

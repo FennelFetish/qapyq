@@ -1,8 +1,9 @@
 import json, os
 from typing import Dict
 from PySide6 import QtWidgets
-from PySide6.QtCore import Slot, Signal
+from PySide6.QtCore import Qt, Slot, Signal, QObject, QSignalBlocker
 import lib.qtlib as qtlib
+from config import Config
 
 
 class Keys:
@@ -45,7 +46,7 @@ class CaptionFile:
     def getTags(self, name: str):
         return self.tags.get(name, None)
 
-    
+
     def jsonExists(self) -> bool:
         return os.path.exists(self.jsonPath)
 
@@ -73,7 +74,7 @@ class CaptionFile:
                 return False
         else:
             data = dict()
-        
+
         data[Keys.VERSION] = CaptionFile.VERSION
 
         captions = data.get(Keys.CAPTIONS, {})
@@ -90,10 +91,10 @@ class CaptionFile:
         tags.update(self.tags)
         if tags := self._deleteEmpty(tags):
             data[Keys.TAGS] = tags
-        
+
         with open(self.jsonPath, 'w') as file:
             json.dump(data, file, indent=4)
-        
+
         return True
 
 
@@ -140,35 +141,30 @@ class FileTypeSelector(QtWidgets.QHBoxLayout):
         self.cboType.currentIndexChanged.connect(self._onTypeChanged)
         self.addWidget(self.cboType)
 
-        self.txtName = QtWidgets.QLineEdit("tags")
-        self.txtName.editingFinished.connect(self._onEdited)
-        qtlib.setMonospace(self.txtName)
-        self.addWidget(self.txtName)
+        self.cboKey = CaptionKeyComboBox(self.cboType.currentData())
+        self.cboKey.setMinimumWidth(140)
+        self.cboKey.currentTextChanged.connect(self._onEdited)
+        qtlib.setMonospace(self.cboKey)
+        self.addWidget(self.cboKey)
 
         self._onTypeChanged(self.cboType.currentIndex())
-    
+
     @Slot()
     def _onTypeChanged(self, index):
-        nameEnabled = self.cboType.itemData(index) != self.TYPE_TXT
-        self.txtName.setEnabled(nameEnabled)
+        keyType = self.cboType.itemData(index)
+        self.cboKey.setKeyType(keyType)
 
         self.fileTypeUpdated.emit()
 
     @Slot()
-    def _onEdited(self):
-        if not self.name:
-            if self.type == self.TYPE_TAGS:
-                self.txtName.setText("tags")
-            else:
-                self.txtName.setText("caption")
-        
+    def _onEdited(self, text: str):
         self.fileTypeUpdated.emit()
 
 
     @property
     def type(self) -> str:
         return self.cboType.currentData()
-    
+
     @type.setter
     def type(self, type: str):
         index = self.cboType.findData(type)
@@ -178,13 +174,26 @@ class FileTypeSelector(QtWidgets.QHBoxLayout):
 
     @property
     def name(self) -> str:
-        return self.txtName.text()
-    
+        return self.cboKey.currentText()
+
+    @name.setter
+    def name(self, name: str) -> None:
+        self.cboKey.setEditText(name)
+
+
+    def setTextFieldFixedWidth(self, width: int):
+        self.cboKey.setFixedWidth(width)
+
+    def setEnabled(self, enabled: bool) -> None:
+        super().setEnabled(enabled)
+        self.cboType.setEnabled(enabled)
+        self.cboKey.setEnabled(enabled)
+
 
     def loadCaption(self, imgPath: str) -> str | None:
         if self.type == self.TYPE_TXT:
             return self.loadCaptionTxt(imgPath)
-        
+
         captionFile = CaptionFile(imgPath)
         if not captionFile.loadFromJson():
             return None
@@ -193,7 +202,7 @@ class FileTypeSelector(QtWidgets.QHBoxLayout):
             return captionFile.getCaption(self.name)
         else:
             return captionFile.getTags(self.name)
-    
+
     def loadCaptionTxt(self, imgPath: str) -> str | None:
         path = os.path.splitext(imgPath)[0] + self.CAPTION_FILE_EXT
         if os.path.exists(path):
@@ -210,16 +219,16 @@ class FileTypeSelector(QtWidgets.QHBoxLayout):
         if self.type == FileTypeSelector.TYPE_TXT:
             self.saveCaptionTxt(imgPath, text)
             return True
-        
+
         captionFile = CaptionFile(imgPath)
         type = self.type
         name = self.name
-        
+
         if type == FileTypeSelector.TYPE_CAPTIONS:
             captionFile.addCaption(name, text)
         else:
             captionFile.addTags(name, text)
-        
+
         if captionFile.updateToJson():
             print(f"Saved caption to file: {captionFile.jsonPath} [{type}.{name}]")
             return True
@@ -232,3 +241,136 @@ class FileTypeSelector(QtWidgets.QHBoxLayout):
         with open(path, 'w') as file:
             file.write(text)
         print("Saved caption to file:", path)
+
+
+class CaptionKeyComboBox(qtlib.MenuComboBox):
+    def __init__(self, initialType: str):
+        super().__init__("Keys")
+        self.setEditable(True)
+
+        self.currentType = initialType
+        self.selectedKeys = {
+            FileTypeSelector.TYPE_TXT: "",
+            FileTypeSelector.TYPE_TAGS: Config.keysTagsDefault,
+            FileTypeSelector.TYPE_CAPTIONS: Config.keysCaptionDefault
+        }
+        self.setKeyType(initialType)
+
+        self.currentTextChanged.connect(self._onTextChanged)
+        KeySettingsWindow.signals.keysUpdated.connect(self.reloadKeys)
+
+    @Slot()
+    def reloadKeys(self):
+        match self.currentType:
+            case FileTypeSelector.TYPE_TXT:      keys = []
+            case FileTypeSelector.TYPE_TAGS:     keys = Config.keysTags
+            case FileTypeSelector.TYPE_CAPTIONS: keys = Config.keysCaption
+            case _:
+                raise ValueError("Invalid key type")
+
+        with QSignalBlocker(self):
+            currentText = self.currentText()
+            self.clear()
+            for key in keys:
+                self.addItem(key)
+
+            self.addSeparator()
+            actSetup = self.addMenuAction("Setup Keys...")
+            actSetup.triggered.connect(self._openKeySetting)
+
+            self.setEditText(currentText)
+
+    @Slot()
+    def _openKeySetting(self):
+        win = KeySettingsWindow(self)
+        if win.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            self.reloadKeys()
+
+    def setKeyType(self, keyType: str):
+        self.currentType = keyType
+        self.reloadKeys()
+        self.setEditText(self.selectedKeys[keyType])
+        self.setEnabled(keyType != FileTypeSelector.TYPE_TXT)
+
+    @Slot()
+    def _onTextChanged(self, text: str):
+        self.selectedKeys[self.currentType] = text
+
+
+
+class KeySettingsSignals(QObject):
+    keysUpdated = Signal()
+
+
+class KeySettingsWindow(QtWidgets.QDialog):
+    signals = KeySettingsSignals()
+
+    def __init__(self, parent: QtWidgets.QWidget) -> None:
+        super().__init__(parent)
+        self._build()
+
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)
+        self.setWindowTitle("Setup Favorite .json Keys")
+        self.resize(600, 400)
+
+    def _build(self):
+        groupTags, self.txtTagKeys, self.txtTagDefault = self._buildKeys("Tags", Config.keysTags, Config.keysTagsDefault)
+        groupCaptions, self.txtCaptionKeys, self.txtCaptionDefault = self._buildKeys("Captions", Config.keysCaption, Config.keysCaptionDefault)
+
+        layout = QtWidgets.QGridLayout(self)
+
+        row = 0
+        layout.setRowStretch(row, 1)
+        layout.addWidget(groupTags, row, 0)
+        layout.addWidget(groupCaptions, row, 1)
+
+        row += 1
+        btnCancel = QtWidgets.QPushButton("Cancel")
+        btnCancel.clicked.connect(self.reject)
+        layout.addWidget(btnCancel, row, 0)
+
+        btnApply = QtWidgets.QPushButton("Apply")
+        btnApply.clicked.connect(self._saveKeys)
+        btnApply.clicked.connect(self.accept)
+        layout.addWidget(btnApply, row, 1)
+
+        self.setLayout(layout)
+
+    def _buildKeys(self, title: str, keys: list[str], default: str):
+        layout = QtWidgets.QGridLayout()
+
+        txtKeys = QtWidgets.QPlainTextEdit()
+        txtKeys.setPlainText("\n".join(keys) + "\n")
+        qtlib.setMonospace(txtKeys)
+        qtlib.setShowWhitespace(txtKeys)
+        layout.addWidget(txtKeys, 0, 0, 1, 2)
+
+        layout.addWidget(QtWidgets.QLabel("Default:"), 1, 0)
+
+        txtDefault = QtWidgets.QLineEdit(default)
+        qtlib.setMonospace(txtDefault)
+        layout.addWidget(txtDefault, 1, 1)
+
+        group = QtWidgets.QGroupBox(f"{title} (one key per line)")
+        group.setLayout(layout)
+        return group, txtKeys, txtDefault
+
+    @Slot()
+    def _saveKeys(self):
+        defaultTag = self.txtTagDefault.text().strip()
+        Config.keysTagsDefault = defaultTag or "tags"
+        Config.keysTags = self._makeKeyList(self.txtTagKeys.toPlainText(), defaultTag, "tags")
+
+        defaultCaption = self.txtCaptionDefault.text().strip()
+        Config.keysCaptionDefault = defaultCaption or "caption"
+        Config.keysCaption = self._makeKeyList(self.txtCaptionKeys.toPlainText(), defaultCaption, "caption")
+
+        self.signals.keysUpdated.emit()
+
+    def _makeKeyList(self, text: str, default: str, defaultIfEmpty: str) -> list[str]:
+        lines = [line for l in text.splitlines() if (line := l.strip())]
+        if lines:
+            return lines
+        if default:
+            return [default]
+        return [defaultIfEmpty]

@@ -66,7 +66,7 @@ class DynamicLineEdit(QtWidgets.QLineEdit):
         super().__init__()
         self.textChanged.connect(self.updateWidth)
         self.extraWidth = 8
-    
+
     @Slot()
     def updateWidth(self):
         width = self.fontMetrics().boundingRect(self.text()).width() + self.extraWidth
@@ -141,7 +141,7 @@ class EditablePushButton(QtWidgets.QWidget):
     @property
     def text(self) -> str:
         return self.activeWidget().text()
-    
+
     @text.setter
     def text(self, text: str) -> None:
         self.activeWidget().setText(text)
@@ -164,7 +164,7 @@ class EditablePushButton(QtWidgets.QWidget):
             self.click()
         elif event.button() == Qt.RightButton:
             self.setEditMode()
-    
+
     def setEditMode(self):
         self.edit = QtWidgets.QLineEdit()
         self.edit.setText(self.button.text())
@@ -261,7 +261,7 @@ class FlowLayout(QtWidgets.QLayout):
         maxWidth = 0
         for item in self.items:
             maxWidth = max(maxWidth, item.sizeHint().width())
-        
+
         margins = self.contentsMargins()
         maxWidth += margins.left() + margins.right()
         minHeight = margins.top() + margins.bottom()
@@ -429,7 +429,7 @@ class ReorderWidget(QtWidgets.QWidget):
             widget.show()
             layout.activate()
             self.orderChanged.emit()
-        
+
         e.setDropAction(Qt.DropAction.CopyAction)
         e.accept()
 
@@ -522,7 +522,7 @@ class ColorCharFormats:
             charFormat = QtGui.QTextCharFormat()
             charFormat.setForeground(QtGui.QColor(color))
             self._formats.append(charFormat)
-        
+
         return self._formats[index]
 
     def addFormat(self, format: QtGui.QTextCharFormat) -> None:
@@ -613,7 +613,7 @@ class MenuComboBox(QtWidgets.QComboBox):
         act = self.menu.addAction(text)
         act.triggered.connect(lambda checked, i=index: self.setCurrentIndex(i))
 
-    def addMenuAction(self, text):
+    def addMenuAction(self, text) -> QtGui.QAction:
         return self.menu.addAction(text)
 
     def addSubmenu(self, text):
@@ -683,11 +683,11 @@ class TestWindow(QtWidgets.QMainWindow):
         widget.setLayout(layout)
 
         self.setCentralWidget(widget)
-    
+
     @Slot()
     def onClick(self, text):
         print("click:", text)
-    
+
     @Slot()
     def onTextChanged(self, text):
         print("text changed:", text)

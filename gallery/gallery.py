@@ -30,8 +30,8 @@ class Gallery(QtWidgets.QWidget):
         self.chkFollowSelection.setChecked(True)
 
         self.cboViewMode = QtWidgets.QComboBox()
-        self.cboViewMode.addItem("Grid View", "grid")
-        self.cboViewMode.addItem("List View", "list")
+        self.cboViewMode.addItem("Grid View", GalleryGrid.VIEW_MODE_GRID)
+        self.cboViewMode.addItem("List View", GalleryGrid.VIEW_MODE_LIST)
         self.cboViewMode.currentIndexChanged.connect(self.onViewModeChanged)
 
         self.statusBar = QtWidgets.QStatusBar()
@@ -68,9 +68,11 @@ class Gallery(QtWidgets.QWidget):
 
     def _build(self):
         self.captionSrc = FileTypeSelector()
-        btnReloadCaptions = QtWidgets.QPushButton("↻")
-        btnReloadCaptions.setFixedWidth(28)
-        btnReloadCaptions.clicked.connect(lambda: self.galleryGrid.reloadCaptions())
+        self.captionSrc.fileTypeUpdated.connect(self.onCaptionSourceChanged)
+
+        self.btnReloadCaptions = qtlib.SaveButton("↻")
+        self.btnReloadCaptions.setFixedWidth(28)
+        self.btnReloadCaptions.clicked.connect(self.reloadCaptions)
 
         self.cboFolders = QtWidgets.QComboBox()
         self.cboFolders.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored, QtWidgets.QSizePolicy.Policy.Preferred)
@@ -108,7 +110,7 @@ class Gallery(QtWidgets.QWidget):
         layout.addWidget(self.cboFolders, 0, 0)
         layout.addWidget(QtWidgets.QLabel("Captions:"), 0, 2)
         layout.addLayout(self.captionSrc, 0, 3)
-        layout.addWidget(btnReloadCaptions, 0, 4)
+        layout.addWidget(self.btnReloadCaptions, 0, 4)
         layout.addWidget(self.scrollArea, 1, 0, 1, 5)
         self.setLayout(layout)
 
@@ -118,6 +120,7 @@ class Gallery(QtWidgets.QWidget):
         mode = self.cboViewMode.itemData(index)
         self.galleryGrid.setViewMode(mode)
         self.scrollToSelection()
+        self.btnReloadCaptions.setChanged(False)
 
     @Slot()
     def onThumbnailSizeChanged(self, size: int):
@@ -128,6 +131,16 @@ class Gallery(QtWidgets.QWidget):
         self.lblThumbnailSize.setText(f"{size}")
         self.galleryGrid.setThumbnailSize(size)
         Config.galleryThumbnailSize = size
+
+    @Slot()
+    def onCaptionSourceChanged(self):
+        if self.cboViewMode.currentData() == GalleryGrid.VIEW_MODE_LIST:
+            self.btnReloadCaptions.setChanged(True)
+
+    @Slot()
+    def reloadCaptions(self):
+        self.galleryGrid.reloadCaptions()
+        self.btnReloadCaptions.setChanged(False)
 
 
     def updateStatusBar(self, numFolders):
@@ -168,7 +181,7 @@ class Gallery(QtWidgets.QWidget):
                 path = self.tab.filelist.removeCommonRoot(header.dir)
                 self.cboFolders.addItem(path, header.row)
                 self.rowToHeader.append(header.row)
-        
+
         self.updateComboboxFolder(self.scrollArea.verticalScrollBar().value())
         self.updateStatusBar(len(headers))
 
@@ -182,7 +195,7 @@ class Gallery(QtWidgets.QWidget):
         else:
             y = self.galleryGrid.getYforRow(row)
             self.scrollArea.verticalScrollBar().setValue(y)
-    
+
     @Slot()
     def updateComboboxFolder(self, y):
         row = self.galleryGrid.getRowForY(y, True)

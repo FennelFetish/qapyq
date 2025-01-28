@@ -43,6 +43,12 @@ class Config:
     maskSuffix              = "-masklabel"
     maskHistorySize         = 20
 
+    # JSON Keys
+    keysCaption             = ["caption"]
+    keysCaptionDefault      = "caption"
+    keysTags                = ["tags"]
+    keysTagsDefault         = "tags"
+
     # Prompts
     promptCaptionPresets    = dict()
     promptCaptionDefault    = {
@@ -134,11 +140,16 @@ class Config:
         cls.maskSuffix            = data.get("mask_suffix", cls.maskSuffix)
         cls.maskHistorySize       = int(data.get("mask_history_size", cls.maskHistorySize))
 
+        cls.keysCaption           = data.get("keys_caption", cls.keysCaption)
+        cls.keysCaptionDefault    = data.get("keys_caption_default", cls.keysCaptionDefault)
+        cls.keysTags              = data.get("keys_tags", cls.keysTags)
+        cls.keysTagsDefault       = data.get("keys_tags_default", cls.keysTagsDefault)
+
         cls.promptCaptionPresets  = data.get("prompt_caption_presets", cls.promptCaptionPresets)
         cls.promptLLMPresets      = data.get("prompt_llm_presets", cls.promptLLMPresets)
         cls.sysPromptFallbackTemplate = data.get("sys_prompt_fallback_template", cls.sysPromptFallbackTemplate)
         cls.templateApplyPresets  = data.get("template_apply_presets", cls.templateApplyPresets)
-        
+
         cls.inferCaptionPresets   = data.get("infer_caption_presets", cls.inferCaptionPresets)
         cls.inferLLMPresets       = data.get("infer_llm_presets", cls.inferLLMPresets)
         cls.inferTagPresets       = data.get("infer_tag_presets", cls.inferTagPresets)
@@ -176,6 +187,11 @@ class Config:
 
         data["mask_suffix"]                 = cls.maskSuffix
         data["mask_history_size"]           = cls.maskHistorySize
+
+        data["keys_caption"]                = cls.keysCaption
+        data["keys_caption_default"]        = cls.keysCaptionDefault
+        data["keys_tags"]                   = cls.keysTags
+        data["keys_tags_default"]           = cls.keysTagsDefault
 
         data["prompt_caption_presets"]      = cls.promptCaptionPresets
         data["prompt_llm_presets"]          = cls.promptLLMPresets
