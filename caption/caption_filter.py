@@ -49,7 +49,7 @@ class SortCaptionFilter(CaptionFilter):
             for caption in group:
                 self.captionOrder[caption] = i
                 i += 1
-        
+
         separator = separator.strip()
         prefixCaptions = [c.strip() for c in prefix.split(separator)]
         for i, c in enumerate(reversed(prefixCaptions)):
@@ -80,12 +80,13 @@ class MutuallyExclusiveFilter(CaptionFilter):
         for group in self.groups:
             exists = False
             # TODO: Keep fist occurence instead? (it has highest confidence score)
+            #       -> This would break auto-replacement when Auto Apply is enabled. -> Use reversed tags instead
             for i, cap in reversed(enumerated):
                 if cap in group:
                     if exists:
                         deleteIndices.add(i)
                     exists = True
-        
+
         for i in sorted(deleteIndices, reverse=True):
             del captions[i]
         return captions
@@ -165,7 +166,7 @@ class TagCombineFilter(CaptionFilter):
                 if tag := tag.rsplit(" ", 1)[:-1]:
                     tag = tag[0].strip()
                     combined = f"{tag} {combined}"
-            
+
             # Remove duplicate words, keeping the last.
             # This allows combining tags with 2 or more "last words".
             existingWords.clear()
@@ -209,7 +210,8 @@ class SubsetFilter(CaptionFilter):
     @staticmethod
     def _supersetExists(captionWords: list[set[str]], index: int) -> bool:
         for k in range(len(captionWords)):
-            if k != index and captionWords[k].issuperset(captionWords[index]):
+            # Don't remove exact duplicates. It would remove all duplicates.
+            if k != index and captionWords[k] != captionWords[index] and captionWords[k].issuperset(captionWords[index]):
                 return True
         return False
 
@@ -317,7 +319,7 @@ class CaptionRulesProcessor:
         if self.removeDup:
             # Remove subsets after banning, so no tags are wrongly merged and removed with banned tags.
             captions = self.subsetFilter.filterCaptions(captions)
-            captions = self.dupFilter.filterCaptions(captions) # TODO: DuplicateFilter is superfluous? SubsetFilter will already remove duplicates
+            captions = self.dupFilter.filterCaptions(captions) # SubsetFilter won't remove exact duplicates
 
         # Sort before combine filter so order inside group will define order of words inside combined tag
         if self.sortCaptions:
