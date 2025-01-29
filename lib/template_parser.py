@@ -21,7 +21,7 @@ class TemplateVariableParser:
         self._promptPrefix = "prompts."
         self._tagPrefix = "tags."
 
-        self.missingVars = list()
+        self.missingVars = set()
 
 
     def setup(self, imgPath: str, captionFile: CaptionFile | None = None):
@@ -171,7 +171,7 @@ class TemplateVariableParser:
                 value = self._applyFunction(value, func) # Don't strip func (avoid changing arguments with spaces)
             return value
 
-        self.missingVars.append(var)
+        self.missingVars.add(var)
         return "" if optional else "{{" + varOrig + "}}"
 
 
@@ -236,6 +236,12 @@ class TemplateVariableParser:
                 if len(args) > 1 and args[0]:
                     return value.replace(args[0], args[1])
 
+            case "reverse":
+                sep = ", "
+                if len(args) > 0 and args[0]:
+                    sep = args[0]
+                return self._funcReverse(value, sep)
+
             case "shuffle":
                 sep = ", "
                 if len(args) > 0 and args[0]:
@@ -268,6 +274,17 @@ class TemplateVariableParser:
 
         return value
 
+    def _funcReverse(self, value: str, sep: str) -> str:
+        sepStrip = sep.strip()
+        if not sepStrip:
+            sepStrip = sep
+        endsWithSepStrip = value.endswith(sepStrip)
+
+        elements = [ele for e in reversed(value.split(sepStrip)) if (ele := e.strip())]
+        value = sep.join(elements)
+        if endsWithSepStrip:
+            value += sepStrip
+        return value
 
     def _funcShuffle(self, value: str, keep: int, sep: str) -> str:
         sepStrip = sep.strip()

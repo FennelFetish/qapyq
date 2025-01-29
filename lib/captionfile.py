@@ -18,6 +18,11 @@ class CaptionFile:
 
 
     def __init__(self, file):
+        '''
+        Don't pass 'file' with extension already removed.
+        If the filename has multiple dots, another part of the filename will be removed to append ".json".
+        '''
+
         self.captions: Dict[str, str] = dict()
         self.prompts: Dict[str, str] = dict()
         self.tags: Dict[str, str] = dict()
@@ -131,17 +136,18 @@ class FileTypeSelector(QtWidgets.QHBoxLayout):
     fileTypeUpdated = Signal()
 
 
-    def __init__(self):
+    def __init__(self, showTxtType=True, defaultValue=""):
         super().__init__()
 
         self.cboType = QtWidgets.QComboBox()
-        self.cboType.addItem(".txt File", self.TYPE_TXT)
+        if showTxtType:
+            self.cboType.addItem(".txt File", self.TYPE_TXT)
         self.cboType.addItem(".json Tags:", self.TYPE_TAGS)
         self.cboType.addItem(".json Caption:", self.TYPE_CAPTIONS)
         self.cboType.currentIndexChanged.connect(self._onTypeChanged)
         self.addWidget(self.cboType)
 
-        self.cboKey = CaptionKeyComboBox(self.cboType.currentData())
+        self.cboKey = CaptionKeyComboBox(self.cboType.currentData(), defaultValue)
         self.cboKey.setMinimumWidth(140)
         self.cboKey.currentTextChanged.connect(self._onEdited)
         qtlib.setMonospace(self.cboKey)
@@ -170,6 +176,10 @@ class FileTypeSelector(QtWidgets.QHBoxLayout):
         index = self.cboType.findData(type)
         index = max(index, 0)
         self.cboType.setCurrentIndex(index)
+
+    def setFixedType(self, type: str):
+        self.type = type
+        self.cboType.hide()
 
 
     @property
@@ -244,15 +254,15 @@ class FileTypeSelector(QtWidgets.QHBoxLayout):
 
 
 class CaptionKeyComboBox(qtlib.MenuComboBox):
-    def __init__(self, initialType: str):
+    def __init__(self, initialType: str, defaultValue=""):
         super().__init__("Keys")
         self.setEditable(True)
 
         self.currentType = initialType
         self.selectedKeys = {
             FileTypeSelector.TYPE_TXT: "",
-            FileTypeSelector.TYPE_TAGS: Config.keysTagsDefault,
-            FileTypeSelector.TYPE_CAPTIONS: Config.keysCaptionDefault
+            FileTypeSelector.TYPE_TAGS: defaultValue or Config.keysTagsDefault,
+            FileTypeSelector.TYPE_CAPTIONS: defaultValue or Config.keysCaptionDefault
         }
         self.setKeyType(initialType)
 

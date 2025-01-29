@@ -8,7 +8,7 @@ from infer import Inference
 from ui.edit_table import EditableTable
 from ui.flow_layout import SortedStringFlowWidget
 from lib import qtlib
-from lib.captionfile import CaptionFile
+from lib.captionfile import CaptionFile, FileTypeSelector
 from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
 
 
@@ -161,39 +161,23 @@ class BatchRules(QtWidgets.QWidget):
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 0)
-        layout.setColumnStretch(2, 0)
-        layout.setColumnStretch(3, 1)
+        layout.setColumnStretch(2, 1)
 
         row = 0
         layout.addWidget(QtWidgets.QLabel("Load key:"), row, 0, Qt.AlignmentFlag.AlignTop)
 
-        self.cboSrcType = QtWidgets.QComboBox()
-        self.cboSrcType.addItem("tags")
-        self.cboSrcType.addItem("captions")
-        self.cboSrcType.currentIndexChanged.connect(self.updatePreview)
-        qtlib.setMonospace(self.cboSrcType)
-        layout.addWidget(self.cboSrcType, row, 1)
-
-        self.txtSourceKey = QtWidgets.QLineEdit("tags")
-        self.txtSourceKey.editingFinished.connect(self.updatePreview)
-        qtlib.setMonospace(self.txtSourceKey)
-        layout.addWidget(self.txtSourceKey, row, 2)
+        self.srcSelector = FileTypeSelector(showTxtType=False)
+        self.srcSelector.fileTypeUpdated.connect(self.updatePreview)
+        layout.addLayout(self.srcSelector, row, 1)
 
         row += 1
         layout.addWidget(QtWidgets.QLabel("Storage key:"), row, 0, Qt.AlignmentFlag.AlignTop)
 
-        self.cboTargetType = QtWidgets.QComboBox()
-        self.cboTargetType.addItem("tags")
-        self.cboTargetType.addItem("captions")
-        qtlib.setMonospace(self.cboTargetType)
-        layout.addWidget(self.cboTargetType, row, 1)
-
-        self.txtTargetKey = QtWidgets.QLineEdit("tags")
-        qtlib.setMonospace(self.txtTargetKey)
-        layout.addWidget(self.txtTargetKey, row, 2)
+        self.destSelector = FileTypeSelector(showTxtType=False, defaultValue="refined")
+        layout.addLayout(self.destSelector, row, 1)
 
         self.chkSkipExisting = QtWidgets.QCheckBox("Skip file if key exists")
-        layout.addWidget(self.chkSkipExisting, row, 3)
+        layout.addWidget(self.chkSkipExisting, row, 2)
 
         row += 1
         layout.setRowStretch(row, 1)
@@ -204,7 +188,7 @@ class BatchRules(QtWidgets.QWidget):
         qtlib.setTextEditHeight(self.txtPreview, 3, mode="min")
         qtlib.setShowWhitespace(self.txtPreview)
         layout.addWidget(QtWidgets.QLabel("Preview:"), row, 0, Qt.AlignmentFlag.AlignTop)
-        layout.addWidget(self.txtPreview, row, 1, 1, 3)
+        layout.addWidget(self.txtPreview, row, 1, 1, 2)
 
 
         groupBox = QtWidgets.QGroupBox("Batch Settings")
@@ -252,7 +236,7 @@ class BatchRules(QtWidgets.QWidget):
     def applyPreset(self, preset: CaptionPreset):
         try:
             self._updateEnabled = False
-            
+
             self.txtPrefix.setPlainText(preset.prefix)
             self.txtSuffix.setPlainText(preset.suffix)
             self.txtSeparator.setText(preset.separator)
@@ -289,7 +273,7 @@ class BatchRules(QtWidgets.QWidget):
             self.applyPreset(preset)
         else:
             self.statusBar.showColoredMessage("Caption window not open", False)
-    
+
     @Slot()
     def clearRules(self):
         dialog = QtWidgets.QMessageBox(self)
@@ -328,11 +312,11 @@ class BatchRules(QtWidgets.QWidget):
             return
 
         text = None
-        srcType = self.cboSrcType.currentText()
-        srcKey = self.txtSourceKey.text().strip()
-        if srcType == "tags":
+        srcType = self.srcSelector.type
+        srcKey = self.srcSelector.name.strip()
+        if srcType == FileTypeSelector.TYPE_TAGS:
             text = self.captionFile.getTags(srcKey)
-        elif srcType == "captions":
+        elif srcType == FileTypeSelector.TYPE_CAPTIONS:
             text = self.captionFile.getCaption(srcKey)
 
         if text:
@@ -340,7 +324,7 @@ class BatchRules(QtWidgets.QWidget):
             text = rulesProcessor.process(text)
         else:
             text = ""
-        
+
         self.txtPreview.setPlainText(text)
         self._highlight(text)
 
@@ -366,7 +350,7 @@ class BatchRules(QtWidgets.QWidget):
             groupFormat.setForeground( qtlib.getHighlightColor(group.color) )
             for cap in group.captions:
                 self._highlightFormats[cap] = groupFormat
-        
+
         bannedFormat = QtGui.QTextCharFormat()
         bannedFormat.setForeground(QtGui.QColor.fromHsvF(0, 0, 0.5))
         for cap in self.bannedCaptions:
@@ -374,13 +358,13 @@ class BatchRules(QtWidgets.QWidget):
 
 
     def _confirmStart(self) -> bool:
-        loadKey = f"{self.cboSrcType.currentText()}.{self.txtSourceKey.text().strip()}"
+        loadKey = f"{self.srcSelector.type}.{self.srcSelector.name.strip()}"
         ops = [
             f"Load values from .json files [{loadKey}]",
-            f"Transform the {self.cboSrcType.currentText().capitalize()} according to the selected rules"
+            f"Transform the {self.srcSelector.type.capitalize()} according to the selected rules"
         ]
 
-        storeKey = f"{self.cboTargetType.currentText()}.{self.txtTargetKey.text().strip()}"
+        storeKey = f"{self.destSelector.type}.{self.destSelector.name.strip()}"
         storeText = f"Write to .json files [{storeKey}]"
         if self.chkSkipExisting.isChecked():
             storeText += " if the key doesn't exist"
@@ -404,10 +388,10 @@ class BatchRules(QtWidgets.QWidget):
         self.btnStart.setText("Abort")
 
         self._task = BatchRulesTask(self.log, self.tab.filelist, self.setupProcessor())
-        self._task.srcType = self.cboSrcType.currentText()
-        self._task.srcKey  = self.txtSourceKey.text().strip()
-        self._task.targetType = self.cboTargetType.currentText()
-        self._task.targetKey  = self.txtTargetKey.text().strip()
+        self._task.srcType = self.srcSelector.type
+        self._task.srcKey  = self.srcSelector.name.strip()
+        self._task.targetType = self.destSelector.type
+        self._task.targetKey  = self.destSelector.name.strip()
         self._task.skipExisting = self.chkSkipExisting.isChecked()
 
         self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)

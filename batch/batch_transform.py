@@ -3,7 +3,7 @@ from PySide6.QtCore import QSignalBlocker, Qt, Slot
 from config import Config
 from infer import Inference, InferencePresetWidget, PromptWidget, PromptsHighlighter
 from lib import qtlib
-from lib.captionfile import CaptionFile
+from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
 from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
 
@@ -81,10 +81,10 @@ class BatchTransform(QtWidgets.QWidget):
         layout.addWidget(self.chkStripMulti, row, 2)
 
         row += 1
-        self.txtTargetName = QtWidgets.QLineEdit("refined")
-        qtlib.setMonospace(self.txtTargetName)
+        self.destSelector = FileTypeSelector(defaultValue="refined")
+        self.destSelector.setFixedType(FileTypeSelector.TYPE_CAPTIONS)
         layout.addWidget(QtWidgets.QLabel("Default storage key:"), row, 0)
-        layout.addWidget(self.txtTargetName, row, 1)
+        layout.addLayout(self.destSelector, row, 1)
 
         self.cboOverwriteMode = QtWidgets.QComboBox()
         self.cboOverwriteMode.addItem("Overwrite all keys", TRANSFORM_OVERWRITE_MODE_ALL)
@@ -134,7 +134,7 @@ class BatchTransform(QtWidgets.QWidget):
     def _confirmStart(self) -> bool:
         ops = [f"Use '{self.inferSettings.getSelectedPresetName()}' to transform Captions"]
 
-        targetName = self.txtTargetName.text().strip()
+        targetName = self.destSelector.name.strip()
         targetKey = f"captions.{targetName}"
         targetText = f"Write the Captions to .json files [{targetKey}]"
         if self.cboOverwriteMode.currentData() == TRANSFORM_OVERWRITE_MODE_MISSING:
@@ -164,10 +164,10 @@ class BatchTransform(QtWidgets.QWidget):
 
         self.btnStart.setText("Abort")
 
-        storeName = self.txtTargetName.text().strip()
+        storeName = self.destSelector.name.strip()
         rounds = self.spinRounds.value()
         prompts = self.promptWidget.getParsedPrompts(storeName, rounds)
-        
+
         self._task = BatchTransformTask(self.log, self.tab.filelist)
         self._task.prompts = prompts
         self._task.systemPrompt = self.promptWidget.systemPrompt.strip()
@@ -230,7 +230,7 @@ class BatchTransformTask(BatchTask):
         if self.overwriteMode == TRANSFORM_OVERWRITE_MODE_MISSING:
             for name in captionFile.captions.keys():
                 writeKeys.discard(name)
-        
+
         if not writeKeys:
             return None
 
@@ -257,11 +257,11 @@ class BatchTransformTask(BatchTask):
 
             captionFile.addCaption(name, caption)
             changed = True
-            
+
             if self.storePrompts:
                 prompt = next((conv[name] for conv in prompts if name in conv), None)
                 captionFile.addPrompt(name, prompt)
-        
+
         return changed
 
 
@@ -269,10 +269,10 @@ class BatchTransformTask(BatchTask):
         self.varParser.setup(imgFile, captionFile)
 
         prompts = list()
-        missingVars = list()
+        missingVars = set()
         for conv in self.prompts:
             prompts.append( {name: self.varParser.parse(prompt) for name, prompt in conv.items()} )
-            missingVars.extend(self.varParser.missingVars)
+            missingVars.update(self.varParser.missingVars)
 
         if missingVars:
             self.log(f"WARNING: {captionFile.jsonPath} is missing values for variables: {', '.join(missingVars)}")

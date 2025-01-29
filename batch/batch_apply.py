@@ -7,7 +7,7 @@ from PySide6.QtCore import QSignalBlocker, Qt, Slot
 from config import Config
 from infer import Inference, PromptWidget
 from lib import qtlib
-from lib.captionfile import CaptionFile
+from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
 from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
 
@@ -22,7 +22,17 @@ class WriteMode(Enum):
     TagsReplace             = auto()
     TagsSkipExisting        = auto()
 
-JSON_WRITE_MODES = (WriteMode.CaptionsReplace, WriteMode.CaptionsSkipExisting, WriteMode.TagsReplace, WriteMode.TagsSkipExisting)
+
+WRITE_MODE_TYPE = {
+    WriteMode.SeparateReplace:      FileTypeSelector.TYPE_TXT,
+    WriteMode.SeparateSkipExisting: FileTypeSelector.TYPE_TXT,
+    WriteMode.SingleReplace:        FileTypeSelector.TYPE_TXT,
+    WriteMode.SingleAppend:         FileTypeSelector.TYPE_TXT,
+    WriteMode.CaptionsReplace:      FileTypeSelector.TYPE_CAPTIONS,
+    WriteMode.CaptionsSkipExisting: FileTypeSelector.TYPE_CAPTIONS,
+    WriteMode.TagsReplace:          FileTypeSelector.TYPE_TAGS,
+    WriteMode.TagsSkipExisting:     FileTypeSelector.TYPE_TAGS,
+}
 
 WRITE_MODE_TEXT = {
     WriteMode.SeparateReplace:      "Write to .txt files and overwrite their content!",
@@ -35,9 +45,6 @@ WRITE_MODE_TEXT = {
     WriteMode.TagsSkipExisting:     "Write to .json files [tags.{key}] if the key doesn't exist",
 }
 
-
-BACKUP_TYPE_CAPTION = "caption"
-BACKUP_TYPE_TAGS    = "tags"
 
 
 class BatchApply(QtWidgets.QWidget):
@@ -136,8 +143,8 @@ class BatchApply(QtWidgets.QWidget):
         self.cboWriteMode.addItem("Separate .txt files (skip existing)", WriteMode.SeparateSkipExisting)
         self.cboWriteMode.addItem("Single .txt file (replace)", WriteMode.SingleReplace)
         self.cboWriteMode.addItem("Single .txt file (append)", WriteMode.SingleAppend)
-        self.cboWriteMode.addItem(".json Captions (replace)", WriteMode.CaptionsReplace)
-        self.cboWriteMode.addItem(".json Captions (skip existing)", WriteMode.CaptionsSkipExisting)
+        self.cboWriteMode.addItem(".json Caption (replace)", WriteMode.CaptionsReplace)
+        self.cboWriteMode.addItem(".json Caption (skip existing)", WriteMode.CaptionsSkipExisting)
         self.cboWriteMode.addItem(".json Tags (replace)", WriteMode.TagsReplace)
         self.cboWriteMode.addItem(".json Tags (skip existing)", WriteMode.TagsSkipExisting)
         self.cboWriteMode.currentIndexChanged.connect(self._onWriteModeChanged)
@@ -155,9 +162,9 @@ class BatchApply(QtWidgets.QWidget):
         self.lblDestKey = QtWidgets.QLabel("Storage key:")
         layout.addWidget(self.lblDestKey, row, 0)
 
-        self.txtDestKey = QtWidgets.QLineEdit("tags")
-        qtlib.setMonospace(self.txtDestKey)
-        layout.addWidget(self.txtDestKey, row, 1)
+        self.destSelector = FileTypeSelector()
+        self.destSelector.setFixedType(FileTypeSelector.TYPE_TXT)
+        layout.addLayout(self.destSelector, row, 1)
 
         layout.addWidget(QtWidgets.QLabel("Post Processing:"), row, 3)
 
@@ -176,25 +183,18 @@ class BatchApply(QtWidgets.QWidget):
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 0)
         layout.setColumnStretch(2, 0)
-        layout.setColumnStretch(3, 0)
-        layout.setColumnStretch(4, 1)
-        layout.setColumnMinimumWidth(3, 20)
+        layout.setColumnStretch(3, 1)
+        layout.setColumnMinimumWidth(2, 4)
 
         layout.addWidget(QtWidgets.QLabel("Storage key:"), 0, 0, Qt.AlignmentFlag.AlignTop)
 
-        self.cboBackupType = QtWidgets.QComboBox()
-        self.cboBackupType.addItem(BACKUP_TYPE_CAPTION)
-        self.cboBackupType.addItem(BACKUP_TYPE_TAGS)
-        qtlib.setMonospace(self.cboBackupType)
-        layout.addWidget(self.cboBackupType, 0, 1)
-
-        self.txtBackupKey = QtWidgets.QLineEdit("backup")
-        qtlib.setMonospace(self.txtBackupKey)
-        layout.addWidget(self.txtBackupKey, 0, 2)
+        self.backupDestSelector = FileTypeSelector(showTxtType=False, defaultValue="backup")
+        self.backupDestSelector.type = FileTypeSelector.TYPE_CAPTIONS
+        layout.addLayout(self.backupDestSelector, 0, 1)
 
         self.chkOverwriteBackup = QtWidgets.QCheckBox("Overwrite backup")
         self.chkOverwriteBackup.toggled.connect(self._updateOverwriteBackup)
-        layout.addWidget(self.chkOverwriteBackup, 0, 4)
+        layout.addWidget(self.chkOverwriteBackup, 0, 3)
 
         groupBox = QtWidgets.QGroupBox("Backup old value (txt/json → json)")
         groupBox.setCheckable(True)
@@ -218,15 +218,16 @@ class BatchApply(QtWidgets.QWidget):
         for widget in (self.btnChooseDestFile, self.txtDestFilePath):
             widget.setEnabled(singleTxt)
 
-        jsonKey = mode in JSON_WRITE_MODES
-        for widget in (self.lblDestKey, self.txtDestKey):
-            widget.setEnabled(jsonKey)
+        modeType = WRITE_MODE_TYPE[mode]
+        self.destSelector.setFixedType(modeType)
+        for widget in (self.lblDestKey, self.destSelector):
+            widget.setEnabled(modeType != FileTypeSelector.TYPE_TXT)
 
         backupPossible = not singleTxt
         self.backupSettings.setEnabled(backupPossible)
         if not backupPossible:
             self.backupSettings.setChecked(False)
-        
+
         self._updateDeleteJson()
 
     @Slot()
@@ -241,7 +242,7 @@ class BatchApply(QtWidgets.QWidget):
     @Slot()
     def _updateDeleteJson(self):
         writeMode = self.cboWriteMode.currentData()
-        deletePossible = writeMode not in JSON_WRITE_MODES
+        deletePossible = WRITE_MODE_TYPE[writeMode] == FileTypeSelector.TYPE_TXT
         deletePossible &= not self.backupSettings.isChecked()
 
         deleteChecked = deletePossible and self.chkDeleteJson.isChecked()
@@ -279,7 +280,7 @@ class BatchApply(QtWidgets.QWidget):
         ops = []
 
         if self.backupSettings.isChecked():
-            backupKey = f"{self.cboBackupType.currentText()}.{self.txtBackupKey.text().strip()}"
+            backupKey = f"{self.backupDestSelector.type}.{self.backupDestSelector.name.strip()}"
             ops.append("Read the old content from the destination")
 
             if self.chkOverwriteBackup.isChecked():
@@ -288,7 +289,7 @@ class BatchApply(QtWidgets.QWidget):
                 ops.append(f"Write the old content to .json files [{backupKey}] and append an increasing counter if the key already exists")
 
         writeMode = self.cboWriteMode.currentData()
-        writeModeText = WRITE_MODE_TEXT.get(writeMode, "").format(key=self.txtDestKey.text())
+        writeModeText = WRITE_MODE_TEXT.get(writeMode, "").format(key=self.destSelector.name.strip())
         if writeMode in (WriteMode.SeparateReplace, WriteMode.SingleReplace, WriteMode.CaptionsReplace, WriteMode.TagsReplace):
             writeModeText = qtlib.htmlRed(writeModeText)
         ops.append(writeModeText)
@@ -315,15 +316,15 @@ class BatchApply(QtWidgets.QWidget):
         self._task = BatchApplyTask(self.log, self.tab.filelist, template)
 
         if self.backupSettings.isChecked():
-            self._task.backupType = self.cboBackupType.currentText()
-            self._task.backupKey  = self.txtBackupKey.text().strip()
+            self._task.backupType = self.backupDestSelector.type
+            self._task.backupKey  = self.backupDestSelector.name.strip()
             self._task.overwriteBackup = self.chkOverwriteBackup.isChecked()
 
         self._task.stripAround = self.chkStripAround.isChecked()
         self._task.stripMulti  = self.chkStripMulti.isChecked()
         self._task.writeMode   = self.cboWriteMode.currentData()
         self._task.destPath    = self.txtDestFilePath.text()
-        self._task.destKey     = self.txtDestKey.text()
+        self._task.destKey     = self.destSelector.name.strip()
         self._task.deleteJson  = self.chkDeleteJson.isChecked()
 
         self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
@@ -361,7 +362,7 @@ class BatchApplyTask(BatchTask):
             raise ValueError("Backup key is empty")
         if self.deleteJson and self.backupType:
             raise ValueError("Cannot delete json files when backup is enabled")
-        if self.deleteJson and (self.writeMode in JSON_WRITE_MODES):
+        if self.deleteJson and (WRITE_MODE_TYPE[self.writeMode] != FileTypeSelector.TYPE_TXT):
             raise ValueError("Cannot delete json files when writing to json files")
 
         self.parser = TemplateVariableParser(None)
@@ -375,18 +376,18 @@ class BatchApplyTask(BatchTask):
                 self.dest = SingleTxtFileDest(self.writeMode, self.destPath)
             case _:
                 self.dest = JsonDest(self.writeMode, self.destKey)
-    
+
     def runCleanup(self):
         self.dest.cleanup()
 
 
     def runProcessFile(self, imgFile: str) -> str | None:
-        imgPathNoExt = os.path.splitext(imgFile)[0]
-
-        captionFile = CaptionFile(imgPathNoExt)
+        captionFile = CaptionFile(imgFile)
         if captionFile.jsonExists() and not captionFile.loadFromJson():
             self.log(f"WARNING: Couldn't read captions from {captionFile.jsonPath}")
             return None
+
+        imgPathNoExt = os.path.splitext(imgFile)[0]
 
         saveJson = False
         if self.backupType:
@@ -397,7 +398,7 @@ class BatchApplyTask(BatchTask):
 
         if self.deleteJson:
             self.deleteJsonFile(captionFile.jsonPath)
-        
+
         if saveJson:
             captionFile.saveToJson()
         return writtenFile
@@ -408,7 +409,7 @@ class BatchApplyTask(BatchTask):
 
         if self.parser.missingVars:
             self.log(f"WARNING: {captionFile.jsonPath} is missing values for variables: {', '.join(self.parser.missingVars)}")
-        
+
         return caption
 
     def backup(self, imgPathNoExt: str, captionFile: CaptionFile) -> bool:
@@ -416,14 +417,14 @@ class BatchApplyTask(BatchTask):
         if not oldCaption:
             return False
 
-        if self.backupType == BACKUP_TYPE_CAPTION:
+        if self.backupType == FileTypeSelector.TYPE_CAPTIONS:
             backupKey = self.getBackupKey(captionFile, CaptionFile.getCaption)
             captionFile.addCaption(backupKey, oldCaption)
-        else:
+        elif self.backupType == FileTypeSelector.TYPE_TAGS:
             backupKey = self.getBackupKey(captionFile, CaptionFile.getTags)
             captionFile.addTags(backupKey, oldCaption)
         return True
-    
+
     def getBackupKey(self, captionFile: CaptionFile, getter: Callable) -> str:
         if self.overwriteBackup:
             return self.backupKey

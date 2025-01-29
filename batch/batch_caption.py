@@ -1,9 +1,9 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QSignalBlocker
-from lib import qtlib
-from lib.captionfile import CaptionFile
 from config import Config
 from infer import Inference, InferencePresetWidget, TagPresetWidget, PromptWidget, PromptsHighlighter
+from lib import qtlib
+from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
 from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
 
@@ -86,10 +86,10 @@ class BatchCaption(QtWidgets.QWidget):
         layout.addWidget(self.chkStripMulti, row, 2)
 
         row += 1
-        self.txtTargetName = QtWidgets.QLineEdit("caption")
-        qtlib.setMonospace(self.txtTargetName)
+        self.destCaption = FileTypeSelector()
+        self.destCaption.setFixedType(FileTypeSelector.TYPE_CAPTIONS)
         layout.addWidget(QtWidgets.QLabel("Default storage key:"), row, 0)
-        layout.addWidget(self.txtTargetName, row, 1)
+        layout.addLayout(self.destCaption, row, 1)
 
         self.cboOverwriteMode = QtWidgets.QComboBox()
         self.cboOverwriteMode.addItem("Overwrite all keys", CAPTION_OVERWRITE_MODE_ALL)
@@ -125,10 +125,10 @@ class BatchCaption(QtWidgets.QWidget):
 
         layout.addWidget(self.tagSettings, 0, 0, 1, 2)
 
-        self.txtTagTargetName = QtWidgets.QLineEdit("tags")
-        qtlib.setMonospace(self.txtTagTargetName)
+        self.destTag = FileTypeSelector()
+        self.destTag.setFixedType(FileTypeSelector.TYPE_TAGS)
         layout.addWidget(QtWidgets.QLabel("Storage key:"), 1, 0)
-        layout.addWidget(self.txtTagTargetName, 1, 1)
+        layout.addLayout(self.destTag, 1, 1)
 
         self.chkTagSkipExisting = QtWidgets.QCheckBox("Skip file if key exists")
         layout.addWidget(self.chkTagSkipExisting, 1, 2)
@@ -164,7 +164,7 @@ class BatchCaption(QtWidgets.QWidget):
     def _confirmStart(self) -> bool:
         ops = []
 
-        targetName = self.txtTargetName.text().strip()
+        targetName = self.destCaption.name.strip()
         if self.captionGroup.isChecked():
             ops.append(f"Use '{self.inferSettings.getSelectedPresetName()}' to generate new Captions")
 
@@ -178,14 +178,14 @@ class BatchCaption(QtWidgets.QWidget):
 
         if self.chkStorePrompts.isChecked():
             ops.append(f"Store the prompt in [prompts.{targetName}]")
-        
+
         if self.spinRounds.value() > 1:
             ops.append(f"Do {self.spinRounds.value()} rounds of captioning")
 
         if self.tagGroup.isChecked():
             ops.append(f"Use '{self.tagSettings.getSelectedPresetName()}' to generate new Tags")
 
-            tagKey = f"tags.{self.txtTagTargetName.text().strip()}"
+            tagKey = f"tags.{self.destTag.name.strip()}"
             tagText = f"Write the Tags to .json files [{tagKey}]"
             if self.chkTagSkipExisting.isChecked():
                 tagText += " if the key doesn't exist"
@@ -211,7 +211,7 @@ class BatchCaption(QtWidgets.QWidget):
         self._task = BatchCaptionTask(self.log, self.tab.filelist)
 
         if self.captionGroup.isChecked():
-            storeName = self.txtTargetName.text().strip()
+            storeName = self.destCaption.name.strip()
             rounds = self.spinRounds.value()
             self._task.prompts = self.promptWidget.getParsedPrompts(storeName, rounds)
 
@@ -224,7 +224,7 @@ class BatchCaption(QtWidgets.QWidget):
 
         if self.tagGroup.isChecked():
             self._task.tagConfig = self.tagSettings.getInferenceConfig()
-            self._task.tagName = self.txtTagTargetName.text().strip()
+            self._task.tagName = self.destTag.name.strip()
             self._task.tagSkipExisting = self.chkTagSkipExisting.isChecked()
 
         self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
@@ -331,7 +331,7 @@ class BatchCaptionTask(BatchTask):
             if self.storePrompts:
                 prompt = next((conv[name] for conv in prompts if name in conv), None)
                 captionFile.addPrompt(name, prompt)
-        
+
         return changed
 
 
@@ -352,10 +352,10 @@ class BatchCaptionTask(BatchTask):
         self.varParser.setup(imgFile, captionFile)
 
         prompts = list()
-        missingVars = list()
+        missingVars = set()
         for conv in self.prompts:
             prompts.append( {name: self.varParser.parse(prompt) for name, prompt in conv.items()} )
-            missingVars.extend(self.varParser.missingVars)
+            missingVars.update(self.varParser.missingVars)
 
         if missingVars:
             self.log(f"WARNING: {captionFile.jsonPath} is missing values for variables: {', '.join(missingVars)}")
