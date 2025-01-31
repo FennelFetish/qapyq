@@ -10,8 +10,6 @@ from .stats_base import StatsLayout, StatsBaseProxyModel
 
 # TODO: CSV Export
 
-# TODO: Mutually exclusive file combination mode (files which have only one of the tags / files which have more than one of the selected tags <<)
-
 
 class TagStats(QtWidgets.QWidget):
     def __init__(self, tab: ImgTab):
@@ -35,10 +33,11 @@ class TagStats(QtWidgets.QWidget):
     def _buildSourceSelector(self):
         self.captionSrc = FileTypeSelector()
         self.captionSrc.type = FileTypeSelector.TYPE_TAGS
-        
+
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(QtWidgets.QLabel("Load From:"))
         layout.addLayout(self.captionSrc)
+        layout.addStretch()
         return layout
 
     def _buildStats(self):
@@ -175,7 +174,7 @@ class TagModel(QAbstractItemModel):
                 if not data:
                     tagData[tag] = data = TagData(tag)
                 data.addFile(file)
-        
+
         self.tags.extend(tagData.values())
         self.summary.finalize(len(self.tags))
         self.endResetModel()
@@ -261,7 +260,7 @@ class TagProxyModel(StatsBaseProxyModel):
             match column:
                 case 1: return dataRight.count < dataLeft.count
                 case 2: return len(dataRight.files) < len(dataLeft.files)
-        
+
         return super().lessThan(left, right)
 
 
@@ -299,9 +298,13 @@ class TagTableView(QtWidgets.QTableView):
             for group in captionWin.ctx.groups.groups:
                 act = self._groupMenu.addAction(group.name)
                 act.triggered.connect(lambda checked, group=group: self._addTagToGroup(group))
-        
+
+            self._groupMenu.addSeparator()
+            actNewGroup = self._groupMenu.addAction("New Group")
+            actNewGroup.triggered.connect(lambda checked, captionWin=captionWin: self._addTagToNewGroup(captionWin))
+
         if self._groupMenu.isEmpty():
-            actEmpty = self._groupMenu.addAction("No Groups")
+            actEmpty = self._groupMenu.addAction("Caption Window not open")
             actEmpty.setEnabled(False)
 
     def contextMenuEvent(self, event):
@@ -317,7 +320,7 @@ class TagTableView(QtWidgets.QTableView):
     def getCaptionWindow(self) -> CaptionContainer | None:
         if captionWin := self.tab.getWindowContent("caption"):
             return captionWin
-        
+
         QtWidgets.QMessageBox.warning(self, "Failed", "Caption Window is not open.")
         return None
 
@@ -339,3 +342,7 @@ class TagTableView(QtWidgets.QTableView):
         tag = self.model().data(self._index, TagModel.ROLE_TAG)
         if group._addCaptionDrop(tag):
             self.captionRulesChanged.emit()
+
+    def _addTagToNewGroup(self, captionWin: CaptionContainer):
+        group = captionWin.ctx.groups.addGroup()
+        self._addTagToGroup(group)
