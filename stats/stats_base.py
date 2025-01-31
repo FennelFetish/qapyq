@@ -79,19 +79,19 @@ class StatsLayout(QtWidgets.QVBoxLayout):
 
         self.cboCombineMode = QtWidgets.QComboBox()
         self.cboCombineMode.addItem("Any (Union)", CombineModeUnion)
-        self.cboCombineMode.setItemData(0, f"Show files which have at least one of the selected {name}", Qt.ItemDataRole.ToolTipRole)
+        self.cboCombineMode.setItemData(0, f"List images which have at least one of the selected {name}", Qt.ItemDataRole.ToolTipRole)
         self.cboCombineMode.addItem("One", CombineModeExclusive)
-        self.cboCombineMode.setItemData(1, f"Show files which have exactly one of the selected {name}", Qt.ItemDataRole.ToolTipRole)
+        self.cboCombineMode.setItemData(1, f"List images which have exactly one of the selected {name}", Qt.ItemDataRole.ToolTipRole)
         self.cboCombineMode.addItem("Multiple", CombineModeMultiple)
-        self.cboCombineMode.setItemData(2, f"Show files which have more than one of the selected {name}", Qt.ItemDataRole.ToolTipRole)
+        self.cboCombineMode.setItemData(2, f"List images which have more than one of the selected {name}", Qt.ItemDataRole.ToolTipRole)
         self.cboCombineMode.addItem("All (Intersection)", CombineModeIntersection)
-        self.cboCombineMode.setItemData(3, f"Show files which have all selected {name}", Qt.ItemDataRole.ToolTipRole)
+        self.cboCombineMode.setItemData(3, f"List images which have all selected {name}", Qt.ItemDataRole.ToolTipRole)
 
         self.cboCombineMode.currentIndexChanged.connect(self.updateSelection)
         layout.addWidget(self.cboCombineMode, row, 1)
 
         self.chkFilesNegate = QtWidgets.QCheckBox("Negate")
-        self.chkFilesNegate.setToolTip(f"Show only files that would be hidden with the selected {name} and listing mode")
+        self.chkFilesNegate.setToolTip(f"List only images that would be hidden with the selected {name} and listing mode")
         self.chkFilesNegate.checkStateChanged.connect(self.updateSelection)
         layout.addWidget(self.chkFilesNegate, row, 2)
 

@@ -159,7 +159,7 @@ class FileList:
         if index < 0 or index >= len(self.files):
             print(f"Warning: Index {index} out of bounds of FileList")
             return
-        
+
         self.currentFile = self.files[index]
         self.currentIndex = index
         self.notifyFileChanged()
@@ -187,7 +187,7 @@ class FileList:
         for i in range(currentIndex, len(self.files)):
             if self._switchFolderProcessFile(i, currentFolder):
                 return
-        
+
         for i in range(0, currentIndex):
             if self._switchFolderProcessFile(i, currentFolder):
                 return
@@ -199,7 +199,7 @@ class FileList:
         for i in range(self.currentIndex-1, -1, -1):
             if self._switchFolderProcessFile(i, currentFolder):
                 return
-        
+
         for i in range(len(self.files)-1, self.currentIndex, -1):
             if self._switchFolderProcessFile(i, currentFolder):
                 return
@@ -230,7 +230,7 @@ class FileList:
     def _walkPath(self, path: str, subfolders=False):
         for (root, dirs, files) in os.walk(path, topdown=True, followlinks=True):
             if not subfolders:
-                dirs[:] = []
+                dirs.clear()
             # os.path.join() mixes up the separators on Windows.
             self.files += [f"{root}/{f}" for f in files if fileFilter(f)]
 
@@ -259,7 +259,7 @@ class FileList:
 
     def addListener(self, listener):
         self.listeners.append(listener)
-    
+
     def removeListener(self, listener):
         self.listeners.remove(listener)
 
