@@ -124,6 +124,15 @@ class BatchRules(QtWidgets.QWidget):
         layout.addWidget(QtWidgets.QLabel("Replace:"), row, 0)
         layout.addWidget(QtWidgets.QLabel("Banned:"), row, 3)
 
+        self.txtBanAdd = QtWidgets.QLineEdit()
+        self.txtBanAdd.returnPressed.connect(self._addBanned)
+        qtlib.setMonospace(self.txtBanAdd)
+        layout.addWidget(self.txtBanAdd, row, 5)
+
+        btnBanAdd = QtWidgets.QPushButton("Add Banned")
+        btnBanAdd.clicked.connect(self._addBanned)
+        layout.addWidget(btnBanAdd, row, 6)
+
         row += 1
         self.tableReplace = EditableTable(2)
         self.tableReplace.contentChanged.connect(self.updatePreview)
@@ -210,6 +219,12 @@ class BatchRules(QtWidgets.QWidget):
     def _onBannedChanged(self):
         self._updateHighlightFormats()
         self.updatePreview()
+
+    @Slot()
+    def _addBanned(self):
+        if tag := self.txtBanAdd.text().strip():
+            self.banWidget.addItem(tag)
+            self.txtBanAdd.clear()
 
 
     @property
