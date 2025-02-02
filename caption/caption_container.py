@@ -67,6 +67,7 @@ class CaptionContainer(QtWidgets.QWidget):
 
         self.bubbles = CaptionBubbles(self.ctx.groups.getCaptionColors, showWeights=False, showRemove=True, editable=False)
         self.bubbles.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.MinimumExpanding)
+        self.bubbles.setFocusProxy(self)
         self.bubbles.setContentsMargins(4, 4, 4, 4)
         self.bubbles.remove.connect(self.removeCaption)
         self.bubbles.orderChanged.connect(lambda: self.setCaption( self.captionSeparator.join(self.bubbles.getCaptions()) ))

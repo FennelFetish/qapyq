@@ -44,6 +44,7 @@ class CaptionBubbles(qtlib.ReorderWidget):
         for i, caption in enumerate(self.text.split(self.separator)):
             caption = caption.strip()
             bubble = Bubble(i, self.remove, self.showWeights, self.showRemove, self.editable)
+            bubble.setFocusProxy(self)
             bubble.text = caption
             bubble.setColor(colors.get(caption, "#161616"))
             self.layout().addWidget(bubble)
@@ -51,10 +52,11 @@ class CaptionBubbles(qtlib.ReorderWidget):
 
     def resizeEvent(self, event):
         self.layout().update()  # Weird: Needed for proper resize.
-    
+
     def _onDrop(self, text):
         self.dropped.emit(text)
         return False
+
 
 
 # TODO: Change background color according to weight (blue=low, red=high?)
@@ -64,7 +66,7 @@ class Bubble(QtWidgets.QFrame):
         self._text = ""
         self.weight = 1.0
         self.setContentsMargins(4, 1, 4, 1)
-        
+
         if editable:
             self.textField = qtlib.DynamicLineEdit()
         else:
@@ -89,6 +91,7 @@ class Bubble(QtWidgets.QFrame):
 
         if showRemove:
             btnRemove = QtWidgets.QPushButton("⨯")
+            btnRemove.setFocusProxy(self)
             btnRemove.setStyleSheet(".QPushButton{color: #D54040; background-color: #161616; border: 1px solid #401616; border-radius: 4px}")
             btnRemove.setFixedWidth(18)
             btnRemove.setFixedHeight(18)
@@ -104,11 +107,12 @@ class Bubble(QtWidgets.QFrame):
     @property
     def text(self):
         return self._text
-    
+
     @text.setter
     def text(self, text):
         self._text = text
         self.textField.setText(text)
+
 
     def setColor(self, color):
         self.setStyleSheet(".Bubble{background-color: " + color + "; border: 1px solid #161616; border-radius: 8px}")
