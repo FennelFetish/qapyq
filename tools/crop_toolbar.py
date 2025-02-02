@@ -51,7 +51,7 @@ class CropToolBar(QtWidgets.QToolBar):
         btnQuad.clicked.connect(self.sizeQuad)
 
         self.cboSizePresets = QtWidgets.QComboBox()
-        self.cboSizePresets.currentTextChanged.connect(self.sizePreset)
+        self.cboSizePresets.currentTextChanged.connect(self.selectSizePreset)
         self.onSizePresetsUpdated(Config.cropSizePresets)
         self.cboSizePresets.setCurrentIndex(1) # Initialize to first preset
 
@@ -154,7 +154,7 @@ class CropToolBar(QtWidgets.QToolBar):
         layout.addRow(self.slideRot)
         layout.addRow("Deg:", self.spinRot)
         layout.addRow(btnLayout)
-        
+
         group = QtWidgets.QGroupBox("Rotation")
         group.setLayout(layout)
         return group
@@ -181,17 +181,26 @@ class CropToolBar(QtWidgets.QToolBar):
     def sizeQuad(self):
         self.spinH.setValue( self.spinW.value() )
 
-    def sizePreset(self, text: str):
+    @Slot()
+    def selectSizePreset(self, text: str):
         if not text:
             return
 
         w, h = text.split("x")
-        self.spinW.setValue(int(w))
-        self.spinH.setValue(int(h))
-        
+        w, h = int(w), int(h)
+
+        # Calc orientation (-1, 0, 1) by subtracting booleans
+        oldOrientation = (self.spinH.value() > self.spinW.value()) - (self.spinH.value() < self.spinW.value())
+        newOrientation = (h > w) - (h < w)
+        # Sum is 0 when orientations are different or both are square. In the 2nd case, swapping does nothing.
+        if oldOrientation + newOrientation == 0:
+            w, h = h, w
+
+        self.spinW.setValue(w)
+        self.spinH.setValue(h)
         self.updateSize()
         self.cboSizePresets.setCurrentIndex(0)
-    
+
     @Slot()
     def onSizePresetsUpdated(self, presets: list[str]):
         with QSignalBlocker(self.cboSizePresets):
@@ -217,7 +226,7 @@ class CropToolBar(QtWidgets.QToolBar):
     @rotation.setter
     def rotation(self, rot: float):
         self.slideRot.setValue(int(rot*10))
-    
+
 
     def setSelectionSize(self, w, h):
         self.lblW.setText(f"{w:.1f} px")

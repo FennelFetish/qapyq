@@ -49,9 +49,11 @@ class CropTool(ViewTool):
         self._cropHeight = 100.0
         self._cropAspectRatio = self._targetWidth / self._targetHeight
 
+        # Crop rectangle in view space
         self._cropRect = QGraphicsRectItem(-50, -50, 100, 100)
         self._cropRect.setPen(self.PEN_UPSCALE)
         self._cropRect.setVisible(False)
+        self._lastCenter = QPointF() # For nudging
 
         self._confirmRect = ConfirmRect(tab.imgview.scene())
         self._confirmRect.setVisible(False)
@@ -80,10 +82,59 @@ class CropTool(ViewTool):
         self._toolbar.setSelectionSize(self._cropHeight * self._cropAspectRatio, self._cropHeight)
 
 
+    # TODO: Buggy when nudging outside of image edges when the image is rotated ('_lastCenter' moves outside). -> use polygon for constraing pos to image
+    # TODO: Buggy when growing selection when image is rotated: It will also move the edge that should be kept.
+    # TODO: Buggy when growing outside of image edges: It will grow in the other direction. It should stop growing instead.
+    def nudgeSelectionRect(self, offsetX: float, offsetY: float, heightChange=0.0) -> None:
+        # When a big image is zoomed out and multiple image pixels are covered by one screen pixel,
+        # increase the step size to at least 1 screen pixel. Without this, the selection won't move.
+        pxScale = QRect(0, 0, 1, 1)
+        pxScale = self._imgview.mapToScene(pxScale)
+        pxScale = self._imgview.image.mapFromParent(pxScale).boundingRect()
+
+        pxScaleX = max(1.0, pxScale.width())
+        pxScaleY = max(1.0, pxScale.height())
+
+        imgSize = self._imgview.image.pixmap().size()
+
+        if heightChange != 0.0:
+            newHeight = self._cropHeight + (heightChange * pxScaleY)
+            if (not self._toolbar.allowUpscale) and newHeight < self._targetHeight:
+                return
+            if self._toolbar.constrainToImage and (newHeight > imgSize.height() or (newHeight * self._cropAspectRatio) > imgSize.width()):
+                return
+            self._cropHeight = newHeight
+
+        # Create direction vector in image space
+        pxStep = QPointF(offsetX * pxScaleX, offsetY * pxScaleY)
+        rot = QTransform().rotate(-self._imgview.rotation)
+        pxStep = rot.map(pxStep)
+
+        # Get current selection center in image space and offset it.
+        x, y = self.mapPosToImageInt(self._lastCenter)
+        x += pxStep.x()
+        y += pxStep.y()
+
+        if self._toolbar.constrainToImage:
+            cropH = self._cropHeight // 2
+            cropW = (self._cropHeight * self._cropAspectRatio) // 2
+
+            # TODO: With rotation we have to check the polygon's bbox here?
+            x = max(x, cropW)
+            x = min(x, imgSize.width()-cropW)
+            y = max(y, cropH)
+            y = min(y, imgSize.height()-cropH)
+
+        # Offset by half pixel to base calculation on pixel center.
+        pImg  = QPointF(x+0.5, y+0.5)
+        pView = self.mapPosFromImage(pImg).toPointF()
+        self.updateSelection(pView)
+
+
     def constrainCropSize(self, rotationMatrix, imgSize) -> tuple[float, float]:
         rectSel = QRectF(0, 0, self._cropAspectRatio, 1.0)
         rectSel = rotationMatrix.mapRect(rectSel)
-        
+
         sizeRatioH = imgSize.height() / rectSel.height()
         sizeRatioW = imgSize.width() / rectSel.width()
         cropH = min(self._cropHeight, min(sizeRatioH, sizeRatioW))
@@ -95,17 +146,17 @@ class CropTool(ViewTool):
     def constrainCropPos(self, poly, imgSize):
         rect = poly.boundingRect()
         moveX, moveY = 0, 0
-        
+
         if rect.x() < 0:
             moveX = -rect.x()
         if rect.y() < 0:
             moveY = -rect.y()
-        
+
         if rect.right() > imgSize.width():
             moveX += imgSize.width() - rect.right()
         if rect.bottom() > imgSize.height():
             moveY += imgSize.height() - rect.bottom()
-        
+
         poly.translate(moveX, moveY)
 
     def updateSelectionRect(self, mouseCoords: QPointF):
@@ -123,9 +174,9 @@ class CropTool(ViewTool):
 
         # Calculate selected area in image space
         mouse = self.mapPosToImage(mouseCoords)
-        rect = QRect(-cropW/2, -cropH/2, cropW, cropH)
+        rect = QRect(-np.floor(cropW/2), -np.floor(cropH/2), round(cropW), round(cropH))
         poly = rot.mapToPolygon(rect)
-        poly.translate(mouse.x(), mouse.y())
+        poly.translate(int(mouse.x()), int(mouse.y()))
 
         # Constrain selection position
         if self._toolbar.constrainToImage:
@@ -137,6 +188,9 @@ class CropTool(ViewTool):
         self._cropRect.setRect(poly.boundingRect())
 
     def updateSelection(self, mouseCoords: QPointF):
+        self._lastCenter.setX(mouseCoords.x())
+        self._lastCenter.setY(mouseCoords.y())
+
         self.updateSelectionRect(mouseCoords)
         self._mask.setHighlightRegion(self._imgview.viewport().rect(), self._cropRect.rect())
 
@@ -152,7 +206,7 @@ class CropTool(ViewTool):
         self._cropRect.setVisible(visible)
         self._mask.setVisible(visible)
         self._imgview.scene().update()
-    
+
     def resetSelection(self, mousePos: QPointF):
         self._waitForConfirmation = False
         self.updateSelection(mousePos)
@@ -172,7 +226,7 @@ class CropTool(ViewTool):
                 y = min(p.y(), imgSize.height())
                 y = max(y, 0)
                 poly[i] = QPointF(x, y)
-        
+
         return poly
 
     def exportImage(self, selectionRect: QRect) -> bool:
@@ -204,6 +258,8 @@ class CropTool(ViewTool):
         else:
             QThreadPool.globalInstance().start(task)
 
+        self._confirmRect.setRect(selectionRect)
+        self._confirmRect.startAnim()
         return True
 
     @Slot()
@@ -300,16 +356,14 @@ class CropTool(ViewTool):
                     rect = self._cropRect.rect().toRect()
                     rect.setRect(rect.x(), rect.y(), max(1, rect.width()), max(1, rect.height()))
                     if rect.contains(event.position().toPoint()):
-                        if self.exportImage(rect):
-                            self._confirmRect.setRect(rect)
-                            self._confirmRect.startAnim()
-
+                        self.exportImage(rect)
                     self.resetSelection(event.position())
                 else:
                     self._waitForConfirmation = True
                 return True
-            
+
             case self.BUTTON_SWAP:
+                self._waitForConfirmation = False
                 self._menu._onSwap()
                 return True
 
@@ -325,10 +379,10 @@ class CropTool(ViewTool):
         # CTRL pressed -> Use default controls (zoom)
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             return False
-        
+
         if self._waitForConfirmation:
             return True
-        
+
         change = round(self._imgview.image.pixmap().height() * Config.cropWheelStep)
         if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
             change = 1
@@ -338,6 +392,56 @@ class CropTool(ViewTool):
         self._cropHeight = round(max(self._cropHeight, 1))
         self.updateSelection(event.position())
         return True
+
+
+    def onKeyPress(self, event):
+        if not self._waitForConfirmation:
+            return super().onKeyPress(event)
+
+        # SHIFT: Bigger steps for nudge and resize
+        step = 10 if event.modifiers() & Qt.KeyboardModifier.ShiftModifier else 1
+
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            match event.key():
+                case Qt.Key.Key_E:
+                    rect = self._cropRect.rect().toRect()
+                    rect.setRect(rect.x(), rect.y(), max(1, rect.width()), max(1, rect.height()))
+                    self.exportImage(rect)
+                    return
+
+            # Ctrl+Arrow: Grow selection size
+            if self._onKeyPressNudge(event.key(), step, 2):
+                return
+
+        elif event.modifiers() & Qt.KeyboardModifier.AltModifier:
+            # Alt+Arrow: Shrink selection size
+            if self._onKeyPressNudge(event.key(), -step, 2):
+                return
+
+        else:
+            # Arrow Keys: Nudge selection position
+            if self._onKeyPressNudge(event.key(), step, 0):
+                return
+
+        return super().onKeyPress(event)
+
+    def _onKeyPressNudge(self, key: Qt.Key, change: int, heightChange: float) -> bool:
+        heightChange *= change
+        match key:
+            case Qt.Key.Key_Left:
+                self.nudgeSelectionRect(-change, 0, heightChange/self._cropAspectRatio)
+                return True
+            case Qt.Key.Key_Right:
+                self.nudgeSelectionRect(change, 0, heightChange/self._cropAspectRatio)
+                return True
+            case Qt.Key.Key_Up:
+                self.nudgeSelectionRect(0, -change, heightChange)
+                return True
+            case Qt.Key.Key_Down:
+                self.nudgeSelectionRect(0, change, heightChange)
+                return True
+
+        return False
 
 
 
@@ -394,7 +498,7 @@ class ExportTask(export.ImageExportTask):
         mat = super().inferUpscale(mat)
         h, w = mat.shape[:2]
 
-        # Adjust poly and rect 
+        # Adjust poly and rect
         wScale = w / wOrig
         hScale = h / hOrig
 
@@ -403,11 +507,11 @@ class ExportTask(export.ImageExportTask):
             x = round(p.x()) * wScale
             y = round(p.y()) * hScale
             self.poly[i] = QPointF(x, y)
-        
+
         x = int(self.rect.left() * wScale)
         y = int(self.rect.top() * hScale)
         self.rect.setCoords(x, y, x+w-1, y+h-1)
-        
+
         return mat
 
 
@@ -417,7 +521,7 @@ class MaskRect(QGraphicsRectItem):
         super().__init__(None)
         self.setFlag(QGraphicsItem.ItemClipsToShape, True)
         self._clipPath = QPainterPath()
-    
+
     def setHighlightRegion(self, viewportRect, selectionRect) -> None:
         self._clipPath.clear()
         self._clipPath.addRect(viewportRect)
@@ -440,7 +544,7 @@ class ConfirmRect(QGraphicsRectItem):
         self.brush = QBrush(self.color)
         self.setBrush(self.brush)
         self.setPen(QPen(QColor(0, 0, 0, 0)))
-        
+
         self.timer = QTimer()
         self.timer.setInterval(40)
         self.timer.timeout.connect(self.anim)
@@ -496,7 +600,7 @@ class CropContextMenu(QMenu):
         self.cropTool.resetSelection(self.getMousePos())
 
     def _onSizeSelected(self, text: str):
-        self.cropTool._toolbar.sizePreset(text)
+        self.cropTool._toolbar.selectSizePreset(text)
         self.cropTool.updateSelection(self.getMousePos())
 
     @Slot()

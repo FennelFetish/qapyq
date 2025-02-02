@@ -15,6 +15,10 @@ class ViewTool(Tool):
         imgpos = self.mapPosToImage(posF)
         return (floor(imgpos.x()), floor(imgpos.y()))
 
+    def mapPosFromImage(self, posF: QPointF):
+        scenePos = self._imgview.image.mapToParent(posF)
+        return self._imgview.mapFromScene(scenePos)
+
 
     def onSceneUpdate(self):
         self.tab.statusBar().setImageInfo(self._imgview.image.pixmap())
