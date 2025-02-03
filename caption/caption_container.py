@@ -48,7 +48,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.ctx = CaptionContext(tab, self.getSelectedCaption, self.isAutoApplyRules, self.setAutoApplyRules)
         self._build(self.ctx)
 
-        self.ctx.captionClicked.connect(self.appendToCaption)
+        self.ctx.captionClicked.connect(self.toggleCaption)
         self.ctx.captionGenerated.connect(self._onCaptionGenerated)
         self.ctx.separatorChanged.connect(self._onSeparatorChanged)
         self.ctx.controlUpdated.connect(self._onControlUpdated)
@@ -272,7 +272,7 @@ class CaptionContainer(QtWidgets.QWidget):
 
 
     @Slot()
-    def appendToCaption(self, text):
+    def appendToCaption(self, text: str):
         caption = self.txtCaption.toPlainText()
         if caption:
             caption += self.captionSeparator
@@ -281,6 +281,37 @@ class CaptionContainer(QtWidgets.QWidget):
 
         if self.isAutoApplyRules():
             self.applyRules()
+
+    @Slot()
+    def toggleCaption(self, caption: str):
+        caption = caption.strip()
+        captions = []
+        removed = False
+
+        text = self.txtCaption.toPlainText()
+        if text:
+            for current in text.split(self.captionSeparator.strip()):
+                current = current.strip()
+                if caption == current:
+                    removed = True
+                else:
+                    captions.append(current)
+
+        if not removed:
+            captions.append(caption)
+
+        self.setCaption( self.captionSeparator.join(captions) )
+        if self.isAutoApplyRules():
+            self.applyRules()
+
+    @Slot()
+    def removeCaption(self, index: int):
+        text = self.txtCaption.toPlainText()
+        splitSeparator = self.captionSeparator.strip()
+        captions = [c.strip() for c in text.split(splitSeparator)]
+        del captions[index]
+        self.setCaption( self.captionSeparator.join(captions) )
+
 
     @Slot()
     def _onCaptionGenerated(self, text, mode):
@@ -299,13 +330,6 @@ class CaptionContainer(QtWidgets.QWidget):
         if self.isAutoApplyRules():
             self.applyRules()
 
-    @Slot()
-    def removeCaption(self, index):
-        text = self.txtCaption.toPlainText()
-        splitSeparator = self.captionSeparator.strip()
-        captions = [c.strip() for c in text.split(splitSeparator)]
-        del captions[index]
-        self.setCaption( self.captionSeparator.join(captions) )
 
     @Slot()
     def applyRulesIfAuto(self):
