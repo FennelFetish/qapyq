@@ -217,7 +217,7 @@ class StatsLayout(QtWidgets.QVBoxLayout):
             currentFilelist = self.tab.filelist
             newTab = self.tab.mainWindow.addTab()
             newFilelist: FileList = newTab.filelist
-            newFilelist.loadFilesFixed(files, currentFilelist, [DataKeys.ImageSize, DataKeys.Thumbnail])
+            newFilelist.loadFilesFixed(files, currentFilelist)
 
 
 

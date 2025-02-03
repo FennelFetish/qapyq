@@ -2,7 +2,7 @@ import time
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QSignalBlocker, QTimer
 from bisect import bisect_right
-from .gallery_grid import GalleryGrid, Header
+from .gallery_grid import GalleryGrid, GalleryHeader
 import lib.qtlib as qtlib
 from lib.captionfile import FileTypeSelector
 from config import Config
@@ -173,7 +173,7 @@ class Gallery(QtWidgets.QWidget):
 
 
     @Slot()
-    def onHeadersUpdated(self, headers: list[Header]):
+    def onHeadersUpdated(self, headers: list[GalleryHeader]):
         self.rowToHeader.clear()
         with QSignalBlocker(self.cboFolders):
             self.cboFolders.clear()

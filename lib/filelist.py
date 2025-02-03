@@ -74,7 +74,7 @@ class FileList:
         self.notifyListChanged()
 
 
-    def loadFilesFixed(self, paths: Iterable[str], copyFromFileList=None, copyKeys: list[str]=[]):
+    def loadFilesFixed(self, paths: Iterable[str], copyFromFileList=None, copyKeys: list[str]=[DataKeys.ImageSize, DataKeys.Thumbnail]):
         self.files.clear()
         self.fileData.clear()
 
@@ -130,6 +130,38 @@ class FileList:
         self._postprocessList()
         self.currentFile = self.files[0] if len(self.files) > 0 else ""
         self.currentIndex = 0
+        self.notifyListChanged()
+
+
+    def removeFolder(self, folderPath: str):
+        currentFile = self.currentFile
+        self.currentIndex = -1
+        self.currentFile = ""
+
+        newFiles = []
+        for file in self.files:
+            # Keep file
+            if os.path.dirname(file) != folderPath:
+                newFiles.append(file)
+                if file == currentFile:
+                    self.currentIndex = len(newFiles) - 1
+                    self.currentFile  = file
+
+            # Remove file
+            else:
+                self.fileData.pop(file, None)
+                if file == currentFile:
+                    self.currentIndex = len(newFiles) - 1
+
+        if not self.currentFile:
+            if self.currentIndex >= 0:
+                self.currentFile = newFiles[self.currentIndex]
+            elif newFiles:
+                self.currentIndex = 0
+                self.currentFile  = newFiles[0]
+
+        self.files = newFiles
+        self._updateCommonRoot()
         self.notifyListChanged()
 
 
@@ -239,14 +271,16 @@ class FileList:
 
     def _postprocessList(self):
         self.files.sort(key=sortKey)
+        self._updateCommonRoot()
 
+
+    def _updateCommonRoot(self):
         try:
             self.commonRoot = os.path.commonpath(self.files).rstrip("/")
             if os.path.isfile(self.commonRoot):
                 self.commonRoot = os.path.dirname(self.commonRoot)
         except ValueError:
             self.commonRoot = ""
-
 
     def removeCommonRoot(self, path: str) -> str:
         if not (self.commonRoot and path.startswith(self.commonRoot)):

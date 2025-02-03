@@ -3,38 +3,9 @@ from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Signal, QRect
 from lib.captionfile import FileTypeSelector
 from lib.filelist import DataKeys
-from lib import qtlib
 from ui.tab import ImgTab
 from .gallery_item import GalleryItem, GalleryGridItem, GalleryListItem, ImageIcon
-
-
-class Header(QtWidgets.QFrame):
-    def __init__(self, dir: str, row: int):
-        super().__init__()
-        self.dir = dir
-        self.row = row
-        self.numImages = 0
-
-        layout = QtWidgets.QHBoxLayout()
-        layout.setContentsMargins(4, 4, 4, 4)
-
-        txtTitle = QtWidgets.QLineEdit(dir)
-        txtTitle.setReadOnly(True)
-        qtlib.setMonospace(txtTitle, 1.2, bold=True)
-        layout.addWidget(txtTitle)
-
-        self.lblImgCount = QtWidgets.QLabel()
-        layout.addWidget(self.lblImgCount)
-
-        self.setLayout(layout)
-        self.setStyleSheet(f"color: #fff; background-color: #161616")
-
-    def updateImageLabel(self):
-        text = f"{self.numImages} Image"
-        if self.numImages != 1:
-            text += "s"
-        self.lblImgCount.setText(text)
-
+from .gallery_header import GalleryHeader
 
 
 class GalleryGrid(QtWidgets.QWidget):
@@ -137,7 +108,7 @@ class GalleryGrid(QtWidgets.QWidget):
         headers = list()
         rows = set()
 
-        currentHeader: Header = None
+        currentHeader: GalleryHeader = None
         row, col = 0, 0
         for file in self.filelist.getFiles():
             dirname = os.path.dirname(file)
@@ -190,8 +161,8 @@ class GalleryGrid(QtWidgets.QWidget):
         else:
             galleryItem.setCompare(False)
 
-    def addHeader(self, dir: str, row: int) -> Header:
-        header = Header(dir, row)
+    def addHeader(self, dir: str, row: int) -> GalleryHeader:
+        header = GalleryHeader(self.tab, dir, row)
         self._layout.addWidget(header, row, 0, 1, self.columns)
         return header
 
@@ -249,7 +220,7 @@ class GalleryGrid(QtWidgets.QWidget):
                 if col >= cols:
                     row += 1
                     col = 0
-            elif isinstance(widget, Header):
+            elif isinstance(widget, GalleryHeader):
                 if col > 0:
                     row += 1
                     col = 0
@@ -288,7 +259,7 @@ class GalleryGrid(QtWidgets.QWidget):
     def getYforRow(self, row: int, skipDownwards=False):
         # Check for header above current row
         itemAbove = self._layout.itemAtPosition(row-1, 0)
-        if itemAbove and isinstance(itemAbove.widget(), Header):
+        if itemAbove and isinstance(itemAbove.widget(), GalleryHeader):
             row += 1 if skipDownwards else -1
 
         rect = self._layout.cellRect(row, 0)
