@@ -28,14 +28,14 @@ class ImgView(DropView):
 
         self.image = ImgItem()
         self.scene().addItem(self.image)
-        
+
 
     def onFileChanged(self, currentFile):
         if self.image.loadImage(currentFile):
             self.resetView()
             self.updateImageTransform()
             self.updateView()
-        
+
         if self.takeFocusOnFilechange:
             self.setFocus()
             self.activateWindow()
@@ -69,12 +69,12 @@ class ImgView(DropView):
     @property
     def tool(self):
         return self._tool
-    
+
     @tool.setter
     def tool(self, tool):
         if tool is self._tool:
             return
-        
+
         if self._tool is not None:
             self._tool.onDisabled(self)
         self._tool = tool
@@ -142,6 +142,7 @@ class ImgItem(QGraphicsPixmapItem):
     def loadImage(self, path) -> bool:
         if not path:
             print("Failed to load image: Path is empty")
+            self.setPixmap(QPixmap())
             return False
 
         pixmap = QPixmap(path)
