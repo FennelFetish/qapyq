@@ -1,6 +1,7 @@
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot
 from lib import qtlib, util
+from ui.flow_layout import FlowLayout, ReorderWidget
 from .caption_preset import CaptionPreset
 
 
@@ -18,6 +19,11 @@ class CaptionGroups(QtWidgets.QWidget):
         super().__init__()
         self.ctx = context
         self._nextGroupHue = util.rnd01()
+
+        self._cachedColors: dict[str, str] | None = None
+        self._cachedCharFormats: dict[str, QtGui.QTextCharFormat] | None = None
+        self._forceNextSelectionUpdate = True
+        context.controlUpdated.connect(self.clearCachedColors)
 
         self._build()
         self.addGroup()
@@ -100,27 +106,27 @@ class CaptionGroups(QtWidgets.QWidget):
 
         self.ctx.controlUpdated.emit()
 
-    # def moveGroup(self, group, move: int):
-    #     count = self.groupLayout.count()
-    #     index = self.groupLayout.indexOf(group)
-    #     index += move
-    #     if 0 <= index < count:
-    #         self.groupLayout.insertWidget(index, group)
-    #         self._emitUpdatedApplyRules()
 
+    def getCaptionColors(self) -> dict[str, str]:
+        if self._cachedColors:
+            return self._cachedColors
 
-    def getCaptionColors(self):
         colors = {
             caption: group.color
             for group in self.groups
             for caption in group.captions
         }
-        
+
         for banned in self.ctx.settings.bannedCaptions:
             colors[banned] = "#454545"
+
+        self._cachedColors = colors
         return colors
 
     def getCaptionCharFormats(self) -> dict[str, QtGui.QTextCharFormat]:
+        if self._cachedCharFormats:
+            return self._cachedCharFormats
+
         formats = {
             caption: group.charFormat
             for group in self.groups
@@ -131,16 +137,21 @@ class CaptionGroups(QtWidgets.QWidget):
         bannedFormat.setForeground(QtGui.QColor.fromHsvF(0, 0, 0.5))
         for banned in self.ctx.settings.bannedCaptions:
             formats[banned] = bannedFormat
-        
+
+        self._cachedCharFormats = formats
         return formats
 
+    @Slot()
+    def clearCachedColors(self):
+        self._cachedColors = None
+        self._cachedCharFormats = None
+        self._forceNextSelectionUpdate = True
 
-    def updateSelectedState(self, text):
-        separator = self.ctx.settings.separator.strip()
-        captions = { c.strip() for c in text.split(separator) }
+    def updateSelectedState(self, captions: set[str]):
         for group in self.groups:
-            group.updateSelectedState(captions)
-    
+            group.updateSelectedState(captions, self._forceNextSelectionUpdate)
+        self._forceNextSelectionUpdate = False
+
 
     @Slot()
     def _emitUpdatedApplyRules(self):
@@ -176,14 +187,14 @@ class CaptionControlGroup(QtWidgets.QWidget):
 
         self._buildHeaderWidget(name)
 
-        self.buttonLayout = qtlib.FlowLayout(spacing=1)
-        self.buttonWidget = qtlib.ReorderWidget(giveDrop=True)
+        self.buttonLayout = FlowLayout(spacing=1)
+        self.buttonWidget = ReorderWidget(giveDrop=True, takeDrop=True)
         self.buttonWidget.setLayout(self.buttonLayout)
         self.buttonWidget.setMinimumHeight(14)
-        self.buttonWidget.orderChanged.connect(self.groups.ctx.needsRulesApplied)
+        self.buttonWidget.dragStartMinDistance = 4
         self.buttonWidget.dataCallback = lambda widget: widget.text
-        self.buttonWidget.dropCallback = self._addCaptionDrop
-        self.buttonWidget.updateCallback = self.groups._emitUpdatedApplyRules
+        self.buttonWidget.orderChanged.connect(self.groups._emitUpdatedApplyRules)
+        self.buttonWidget.receivedDrop.connect(self._addCaptionDrop)
 
         separatorLine = QtWidgets.QFrame()
         separatorLine.setFrameStyle(QtWidgets.QFrame.Shape.HLine | QtWidgets.QFrame.Shadow.Sunken)
@@ -236,21 +247,18 @@ class CaptionControlGroup(QtWidgets.QWidget):
 
 
     # TODO: When 'combine tags' is enabled, match: *prefix words* word
-    def updateSelectedState(self, captions: set):
+    def updateSelectedState(self, captions: set, force: bool):
         color = self.color
         for button in self.buttons:
-            text = button.text.strip()
-            if text in captions:
-                button.setStyleSheet("color: #fff; background-color: " + color + "; border: 3px solid " + color + "; border-radius: 8px")
-            else:
-                button.setStyleSheet("color: #fff; background-color: #161616; border: 3px solid #161616; border-radius: 8px")
+            exists = button.text.strip() in captions
+            button.updateSelectionState(exists, color, force)
 
 
     @property
     def buttons(self):
         for i in range(self.buttonLayout.count()):
             widget = self.buttonLayout.itemAt(i).widget()
-            if widget and isinstance(widget, qtlib.EditablePushButton):
+            if widget and isinstance(widget, GroupButton):
                 yield widget
 
 
@@ -287,39 +295,39 @@ class CaptionControlGroup(QtWidgets.QWidget):
     @property
     def combineTags(self) -> bool:
         return self.chkCombine.isChecked()
-    
+
     @combineTags.setter
     def combineTags(self, checked: bool):
         self.chkCombine.setChecked(checked)
 
 
     @property
-    def captions(self) -> list:
+    def captions(self) -> list[str]:
         return [button.text for button in self.buttons]
-    
+
     def addCaption(self, text):
         # Check if caption already exists in group
         for button in self.buttons:
             if text == button.text:
                 return False
 
-        button = qtlib.EditablePushButton(text, lambda w: qtlib.setMonospace(w, 1.05))
+        button = GroupButton(text)
         button.button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         button.clicked.connect(self.groups.ctx.captionClicked)
         button.textEmpty.connect(self._removeCaption)
         button.textChanged.connect(lambda: self.groups._emitUpdatedApplyRules())
         self.buttonLayout.addWidget(button)
         return True
-    
+
     @Slot()
     def _addCaptionClick(self):
         text = self.groups.ctx.getSelectedCaption()
         self._addCaptionDrop(text)
 
-    def _addCaptionDrop(self, text):
+    @Slot()
+    def _addCaptionDrop(self, text: str):
         if self.addCaption(text):
             self.groups._emitUpdatedApplyRules()
-        return True # Take drop
 
     @Slot()
     def _removeCaption(self, button):
@@ -329,6 +337,28 @@ class CaptionControlGroup(QtWidgets.QWidget):
 
     def resizeEvent(self, event):
         self.buttonLayout.update()  # Weird: Needed for proper resize.
+
+
+
+class GroupButton(qtlib.EditablePushButton):
+    def __init__(self, text):
+        super().__init__(text, self.stylerFunc, None)
+        self.selected = False
+        #self.updateSelectionState(False, "", True)
+
+    @staticmethod
+    def stylerFunc(button):
+        qtlib.setMonospace(button, 1.05)
+
+    def updateSelectionState(self, selected: bool, color: str, force=False):
+        if (selected == self.selected) and not force:
+            return
+        self.selected = selected
+
+        if selected:
+            self.setStyleSheet("color: #fff; background-color: " + color + "; border: 3px solid " + color + "; border-radius: 8px")
+        else:
+            self.setStyleSheet("color: #fff; background-color: #161616; border: 3px solid #161616; border-radius: 8px")
 
 
 
@@ -355,7 +385,7 @@ class GroupColor(QtWidgets.QFrame):
     @property
     def color(self) -> str:
         return self._color
-    
+
     @color.setter
     def color(self, color: str):
         if not util.isValidColor(color):
@@ -368,7 +398,7 @@ class GroupColor(QtWidgets.QFrame):
 
 
 
-class GroupReorderWidget(qtlib.ReorderWidget):
+class GroupReorderWidget(ReorderWidget):
     def __init__(self):
         super().__init__(False)
         self.showCursorPicture = False

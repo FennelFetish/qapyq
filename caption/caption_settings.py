@@ -74,7 +74,7 @@ class CaptionSettings(QtWidgets.QWidget):
         self.chkSortCaptions = QtWidgets.QCheckBox("Sort Captions")
         self.chkSortCaptions.setChecked(True)
         layout.addWidget(self.chkSortCaptions, row, 2, Qt.AlignmentFlag.AlignTop)
-        
+
         row += 1
         layout.setRowMinimumHeight(row, 4)
 
@@ -107,7 +107,7 @@ class CaptionSettings(QtWidgets.QWidget):
 
         row += 1
         self.banWidget = SortedStringFlowWidget()
-        self.banWidget.changed.connect(lambda: self.ctx.controlUpdated.emit())
+        self.banWidget.changed.connect(self.ctx.controlUpdated.emit)
         layout.addWidget(QtWidgets.QLabel("Banned:"), row, 4, Qt.AlignmentFlag.AlignTop)
         layout.addWidget(qtlib.BaseColorScrollArea(self.banWidget), row, 5, 2, 1)
 
@@ -141,7 +141,7 @@ class CaptionSettings(QtWidgets.QWidget):
     @property
     def isRemoveDuplicates(self) -> bool:
         return self.chkRemoveDup.isChecked()
-    
+
     @property
     def isSortCaptions(self) -> bool:
         return self.chkSortCaptions.isChecked()
@@ -175,7 +175,7 @@ class CaptionSettings(QtWidgets.QWidget):
         caption = self.ctx.getSelectedCaption()
         self.addBannedCaption(caption)
 
-    
+
     def getPreset(self):
         preset = CaptionPreset()
         preset.prefix = self.txtPrefix.toPlainText()
@@ -277,5 +277,7 @@ class CaptionSettings(QtWidgets.QWidget):
         with QSignalBlocker(self.banWidget):
             self.bannedCaptions = preset.banned
 
-        self.ctx.groups.loadFromPreset(preset)
+        with QSignalBlocker(self.ctx):
+            self.ctx.groups.loadFromPreset(preset)
+
         self.ctx.controlUpdated.emit()

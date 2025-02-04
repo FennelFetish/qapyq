@@ -1,15 +1,19 @@
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, Slot
 import lib.qtlib as qtlib
+from ui.flow_layout import FlowLayout, ReorderWidget
 
 # TODO: Nested bubbles for expressions like: (blue (starry:0.8) sky:1.2)
 
-class CaptionBubbles(qtlib.ReorderWidget):
+class CaptionBubbles(ReorderWidget):
     remove = Signal(int)
     dropped = Signal(str)
 
     def __init__(self, captionColors, showWeights=True, showRemove=False, editable=True):
         super().__init__()
+        self.dataCallback = lambda widget: widget.text
+        self.receivedDrop.connect(self._onDrop)
+
         self.text = ""
         self.separator = ','
         self._getColors = captionColors
@@ -17,45 +21,55 @@ class CaptionBubbles(qtlib.ReorderWidget):
         self.showRemove = showRemove
         self.editable = editable
 
-        self.dataCallback = lambda widget: widget.text
-        self.dropCallback = self._onDrop
-
-        layout = qtlib.FlowLayout(spacing=5)
+        layout = FlowLayout(spacing=5)
         self.setLayout(layout)
-
         self.updateBubbles()
+
 
     def setText(self, text):
         self.text = text
         self.updateBubbles()
 
     def getCaptions(self) -> list[str]:
-        captions: list[str] = []
-        layout = self.layout()
+        return [bubble.text for bubble in self.getBubbles()]
+
+    def getBubbles(self):
+        layout: QtWidgets.QLayout = self.layout()
         for i in range(layout.count()):
             widget = layout.itemAt(i).widget()
-            if widget and isinstance(widget, Bubble): # TODO: Why is there other stuff in there?
-                captions.append(widget.text)
-        return captions
+            if widget and isinstance(widget, Bubble): # Why is there other stuff in there? -> It's the ReorderWidget's drag target
+                yield widget
 
     def updateBubbles(self):
-        self.layout().clear()
+        oldBubbles: list[Bubble] = [bubble for bubble in self.getBubbles()]
+
         colors = self._getColors()
+        i = -1
         for i, caption in enumerate(self.text.split(self.separator)):
             caption = caption.strip()
-            bubble = Bubble(i, self.remove, self.showWeights, self.showRemove, self.editable)
-            bubble.setFocusProxy(self)
+
+            if i < len(oldBubbles):
+                bubble = oldBubbles[i]
+                bubble.index = i
+            else:
+                bubble = Bubble(i, self.remove, self.showWeights, self.showRemove, self.editable)
+                bubble.setFocusProxy(self)
+                self.layout().addWidget(bubble)
+
             bubble.text = caption
             bubble.setColor(colors.get(caption, "#161616"))
-            self.layout().addWidget(bubble)
             bubble.forceUpdateWidth()
+
+        for i in range(i+1, len(oldBubbles)):
+            oldBubbles[i].deleteLater()
+
 
     def resizeEvent(self, event):
         self.layout().update()  # Weird: Needed for proper resize.
 
-    def _onDrop(self, text):
+    @Slot()
+    def _onDrop(self, text: str):
         self.dropped.emit(text)
-        return False
 
 
 
@@ -63,6 +77,7 @@ class CaptionBubbles(qtlib.ReorderWidget):
 class Bubble(QtWidgets.QFrame):
     def __init__(self, index, removeSignal, showWeights=True, showRemove=False, editable=True):
         super().__init__()
+        self.index = index
         self._text = ""
         self.weight = 1.0
         self.setContentsMargins(4, 1, 4, 1)
@@ -95,7 +110,7 @@ class Bubble(QtWidgets.QFrame):
             btnRemove.setStyleSheet(".QPushButton{color: #D54040; background-color: #161616; border: 1px solid #401616; border-radius: 4px}")
             btnRemove.setFixedWidth(18)
             btnRemove.setFixedHeight(18)
-            btnRemove.clicked.connect(lambda: removeSignal.emit(index))
+            btnRemove.clicked.connect(lambda: removeSignal.emit(self.index))
             layout.addWidget(btnRemove)
 
         self.setLayout(layout)
@@ -103,6 +118,7 @@ class Bubble(QtWidgets.QFrame):
         self.setColor("#161616")
         self.setFrameShape(QtWidgets.QFrame.Shape.Box)
         self.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
+
 
     @property
     def text(self):

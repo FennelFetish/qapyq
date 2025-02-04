@@ -1,6 +1,6 @@
 import os
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Signal, Slot, QSignalBlocker
+from PySide6.QtCore import Qt, Signal, Slot, QSignalBlocker, QTimer
 from lib import qtlib
 from lib.filelist import DataKeys
 from lib.captionfile import FileTypeSelector
@@ -19,19 +19,23 @@ class CaptionContext(QtWidgets.QTabWidget):
     captionGenerated    = Signal(str, str)
 
 
-    def __init__(self, tab, getSelectedCaption, isAutoApplyRules, setAutoApplyRules):
+    def __init__(self, container, tab):
         super().__init__()
         self.tab = tab
-        self.getSelectedCaption = getSelectedCaption
-        self.isAutoApplyRules = isAutoApplyRules
-        self.setAutoApplyRules = setAutoApplyRules
+        self.getSelectedCaption = container.getSelectedCaption
+        self.isAutoApplyRules = container.isAutoApplyRules
+        self.setAutoApplyRules = container.setAutoApplyRules
 
         self.settings = CaptionSettings(self)
         self.groups   = CaptionGroups(self)
         self.generate = CaptionGenerate(self)
 
+        #from .caption_focus import CaptionFocus
+        #self.focus = CaptionFocus(container, self)
+
         self.addTab(self.settings, "Rules")
         self.addTab(self.groups, "Groups")
+        #self.addTab(self.focus, "Focus")
         #self.addTab(QtWidgets.QWidget(), "Variables (json)")
         #self.addTab(QtWidgets.QWidget(), "Folder Overrides") # Let variables from json override settings?
         self.addTab(self.generate, "Generate")
@@ -45,7 +49,7 @@ class CaptionContainer(QtWidgets.QWidget):
 
         self.captionSeparator = ', '
 
-        self.ctx = CaptionContext(tab, self.getSelectedCaption, self.isAutoApplyRules, self.setAutoApplyRules)
+        self.ctx = CaptionContext(self, tab)
         self._build(self.ctx)
 
         self.ctx.captionClicked.connect(self.toggleCaption)
@@ -67,17 +71,17 @@ class CaptionContainer(QtWidgets.QWidget):
 
         self.bubbles = CaptionBubbles(self.ctx.groups.getCaptionColors, showWeights=False, showRemove=True, editable=False)
         self.bubbles.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.MinimumExpanding)
-        self.bubbles.setFocusProxy(self)
         self.bubbles.setContentsMargins(4, 4, 4, 4)
+        self.bubbles.setFocusProxy(self)
         self.bubbles.remove.connect(self.removeCaption)
         self.bubbles.orderChanged.connect(lambda: self.setCaption( self.captionSeparator.join(self.bubbles.getCaptions()) ))
         self.bubbles.dropped.connect(self.appendToCaption)
         splitter.addWidget(self.bubbles)
         splitter.setStretchFactor(1, 1)
 
-        self.txtCaption = QtWidgets.QPlainTextEdit()
-        self.txtCaption.textChanged.connect(self._onCaptionEdited)
+        self.txtCaption = DropTextEdit()
         qtlib.setMonospace(self.txtCaption, 1.2)
+        self.txtCaption.textChanged.connect(self._onCaptionEdited)
         splitter.addWidget(self.txtCaption)
         splitter.setStretchFactor(2, 1)
 
@@ -186,6 +190,9 @@ class CaptionContainer(QtWidgets.QWidget):
         return menu
 
 
+    def getCaption(self) -> str:
+        return self.txtCaption.toPlainText()
+
     def setCaption(self, text):
         self.txtCaption.setPlainText(text)
         self.txtCaption.moveCursor(QtGui.QTextCursor.MoveOperation.End)
@@ -195,7 +202,7 @@ class CaptionContainer(QtWidgets.QWidget):
         text = self.txtCaption.toPlainText()
         self._highlight(text)
         self.bubbles.setText(text)
-        self.ctx.groups.updateSelectedState(text)
+        self.updateSelectionState(text)
 
         self.captionCache.put(text)
         self.captionCache.setState(DataKeys.IconStates.Changed)
@@ -268,7 +275,13 @@ class CaptionContainer(QtWidgets.QWidget):
         text = self.txtCaption.toPlainText()
         self._highlight(text)
         self.bubbles.updateBubbles()
-        self.ctx.groups.updateSelectedState(text)
+        self.updateSelectionState(text)
+
+    def updateSelectionState(self, captionText: str):
+        separator = self.captionSeparator.strip()
+        captionSet = { cap for c in captionText.split(separator) if (cap := c.strip()) }
+        self.ctx.groups.updateSelectedState(captionSet)
+        #self.ctx.focus.updateSelectionState(captionSet)
 
 
     @Slot()
@@ -417,6 +430,8 @@ class CaptionContainer(QtWidgets.QWidget):
             self.saveCaption()
             event.accept()
             return
+
+        event.ignore()
         return super().keyPressEvent(event)
 
 
@@ -443,3 +458,20 @@ class CaptionCache:
             self.filelist.setData(file, DataKeys.CaptionState, state)
         else:
             self.filelist.removeData(file, DataKeys.CaptionState)
+
+
+
+class DropTextEdit(QtWidgets.QPlainTextEdit):
+    def __init__(self):
+        super().__init__()
+
+    def dropEvent(self, event: QtGui.QDropEvent):
+        with QSignalBlocker(self):
+            super().dropEvent(event)
+
+        # Don't remove buttons from CaptionControlGroup
+        event.setDropAction(Qt.DropAction.CopyAction)
+
+        # Postpone updates when dropping so they don't interfere with ongoing drag operations in ReorderWidget.
+        # But don't postpone normal updates to prevent flickering.
+        QTimer.singleShot(0, self.textChanged.emit)

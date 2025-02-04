@@ -6,7 +6,7 @@ from caption import CaptionPreset, CaptionRulesProcessor
 from config import Config
 from infer import Inference
 from ui.edit_table import EditableTable
-from ui.flow_layout import SortedStringFlowWidget
+from ui.flow_layout import FlowLayout, SortedStringFlowWidget
 from lib import qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
@@ -434,7 +434,7 @@ class BatchRulesGroup(QtWidgets.QWidget):
         qtlib.setMonospace(lblTitle, 1.0, True)
         layout.addWidget(lblTitle, 0, Qt.AlignmentFlag.AlignTop)
 
-        flowLayout = qtlib.FlowLayout(spacing=1)
+        flowLayout = FlowLayout(spacing=1)
 
         self.chkExclusive = QtWidgets.QCheckBox("Mutually Exclusive")
         self.chkExclusive.setChecked(exclusive)
