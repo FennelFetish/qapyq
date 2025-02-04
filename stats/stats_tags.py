@@ -5,6 +5,7 @@ from lib.captionfile import FileTypeSelector
 from ui.tab import ImgTab
 from caption.caption_container import CaptionContainer
 from caption.caption_groups import CaptionControlGroup
+from caption.caption_preset import CaptionPreset
 from .stats_base import StatsLayout, StatsBaseProxyModel
 
 
@@ -25,7 +26,7 @@ class TagStats(QtWidgets.QWidget):
         self.table.setModel(self.proxyModel)
         self.table.captionRulesChanged.connect(self.reloadColors)
 
-        self._layout = StatsLayout(tab, "Tags", self.proxyModel, self.table, 1)
+        self._layout = TagStatsLayout(tab, "Tags", self.proxyModel, self.table, 1)
         self._layout.insertLayout(0, self._buildSourceSelector())
         self._layout.setStatsWidget(self._buildStats())
         self.setLayout(self._layout)
@@ -317,23 +318,16 @@ class TagTableView(QtWidgets.QTableView):
             self._index = None
 
 
-    def getCaptionWindow(self) -> CaptionContainer | None:
-        if captionWin := self.tab.getWindowContent("caption"):
-            return captionWin
-
-        QtWidgets.QMessageBox.warning(self, "Failed", "Caption Window is not open.")
-        return None
-
     @Slot()
     def _addTag(self):
-        if captionWin := self.getCaptionWindow():
+        if captionWin := getCaptionWindow(self.tab, self):
             tag = self.model().data(self._index, TagModel.ROLE_TAG)
             captionWin.appendToCaption(tag)
             self.captionRulesChanged.emit()
 
     @Slot()
     def _banTag(self):
-        if captionWin := self.getCaptionWindow():
+        if captionWin := getCaptionWindow(self.tab, self):
             tag = self.model().data(self._index, TagModel.ROLE_TAG)
             if captionWin.ctx.settings.addBannedCaption(tag):
                 self.captionRulesChanged.emit()
@@ -346,3 +340,53 @@ class TagTableView(QtWidgets.QTableView):
     def _addTagToNewGroup(self, captionWin: CaptionContainer):
         group = captionWin.ctx.groups.addGroup()
         self._addTagToGroup(group)
+
+
+
+class TagStatsLayout(StatsLayout):
+    def __init__(self, tab: ImgTab, name: str, proxyModel: StatsBaseProxyModel, tableView: QtWidgets.QTableView, row=0):
+        super().__init__(tab, name, proxyModel, tableView, row)
+
+    def _buildFilesMenu(self, parent) -> QtWidgets.QMenu:
+        menu = super()._buildFilesMenu(parent)
+        menu.addSeparator()
+
+        actFocus = menu.addAction("Focus in New Tab")
+        actFocus.triggered.connect(self._openNewTabWithFocus)
+
+        return menu
+
+    @Slot()
+    def _openNewTabWithFocus(self):
+        # TODO: Don't load default rules preset in new tab
+        tab: ImgTab | None = self._loadFilesInNewTab()
+        if not tab:
+            return
+
+        statsWin = tab.getWindowContent("stats")
+        captionWin = getCaptionWindow(tab, statsWin)
+        if not captionWin:
+            return
+
+        selectedTags = []
+        for srcIndex in self.getSelectedSourceIndexes():
+            tag = self.proxyModel.sourceModel().data(srcIndex, TagModel.ROLE_TAG)
+            selectedTags.append(tag)
+
+        captionPreset = CaptionPreset()
+        captionPreset.removeDuplicates = False
+        captionPreset.sortCaptions = False
+        captionPreset.addGroup("Focus", "#901313", False, False, selectedTags)
+        captionWin.ctx.settings.applyPreset(captionPreset)
+
+        captionWin.ctx.focus.setFocusTags(selectedTags)
+        captionWin.ctx.setCurrentWidget(captionWin.ctx.focus)
+
+
+
+def getCaptionWindow(tab: ImgTab, parent: QtWidgets.QWidget) -> CaptionContainer | None:
+    if captionWin := tab.getWindowContent("caption"):
+        return captionWin
+
+    QtWidgets.QMessageBox.warning(parent, "Failed", "Caption Window is not open.")
+    return None

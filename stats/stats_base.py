@@ -1,4 +1,4 @@
-from typing import Iterable
+from typing import Iterable, Generator
 from collections import Counter
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QSortFilterProxyModel, QModelIndex, QItemSelection, QRegularExpression, QSignalBlocker
@@ -97,10 +97,10 @@ class StatsLayout(QtWidgets.QVBoxLayout):
 
         layout.setColumnStretch(3, 1)
 
-        btnNewTab = QtWidgets.QPushButton("Open Files in New Tab")
-        btnNewTab.setMinimumWidth(160)
-        btnNewTab.clicked.connect(self._loadFilesInNewTab)
-        layout.addWidget(btnNewTab, row, 4)
+        self.btnWithFiles = QtWidgets.QPushButton("With Files...")
+        self.btnWithFiles.setMinimumWidth(100)
+        self.btnWithFiles.setMenu(self._buildFilesMenu(self.btnWithFiles))
+        layout.addWidget(self.btnWithFiles, row, 4)
 
         row += 1
         self.listFiles = QtWidgets.QListWidget()
@@ -112,6 +112,17 @@ class StatsLayout(QtWidgets.QVBoxLayout):
         group = QtWidgets.QGroupBox("Files")
         group.setLayout(layout)
         return group
+
+    def _buildFilesMenu(self, parent) -> QtWidgets.QMenu:
+        menu = QtWidgets.QMenu("Files", parent)
+
+        actOpenInNewTab = menu.addAction("Open in New Tab")
+        actOpenInNewTab.triggered.connect(self._loadFilesInNewTab)
+
+        actRemove = menu.addAction("Unload")
+        actRemove.triggered.connect(self._unloadFiles)
+
+        return menu
 
     def _buildFilterGroup(self, name: str):
         layout = QtWidgets.QVBoxLayout()
@@ -144,15 +155,18 @@ class StatsLayout(QtWidgets.QVBoxLayout):
     def updateSelection(self):
         self._onRowsSelected(None, None)
 
+    def getSelectedSourceIndexes(self):
+        selectedIndexes = self.table.selectionModel().selectedIndexes()
+        for index in (idx for idx in selectedIndexes if idx.column() == 0):
+            yield self.proxyModel.mapToSource(index)
+
     @Slot()
     def _onRowsSelected(self, newItem: QItemSelection, oldItem: QItemSelection):
         combineClass = self.cboCombineMode.currentData()
         combiner = combineClass()
 
-        selectedIndexes = self.table.selectionModel().selectedIndexes()
-        for index in (idx for idx in selectedIndexes if idx.column() == 0):
-            index = self.proxyModel.mapToSource(index)
-            combiner.addFiles( self.proxyModel.getFiles(index) )
+        for srcIndex in self.getSelectedSourceIndexes():
+            combiner.addFiles( self.proxyModel.getFiles(srcIndex) )
 
         fileSet = combiner.getFiles()
         if self.chkFilesNegate.isChecked():
@@ -210,14 +224,41 @@ class StatsLayout(QtWidgets.QVBoxLayout):
             self.table.selectionModel().clear()
             self.proxyModel.setFilterRegularExpression(regex)
 
+
+    def getListedFiles(self) -> Generator[str, None, None] | None:
+        if self.listFiles.count() == 0:
+            return None
+        return (self.listFiles.item(row).data(self.ROLE_FILEPATH) for row in range(self.listFiles.count()))
+
     @Slot()
-    def _loadFilesInNewTab(self):
-        files = [self.listFiles.item(row).data(self.ROLE_FILEPATH) for row in range(self.listFiles.count())]
-        if files:
-            currentFilelist = self.tab.filelist
-            newTab = self.tab.mainWindow.addTab()
-            newFilelist: FileList = newTab.filelist
-            newFilelist.loadFilesFixed(files, currentFilelist)
+    def _loadFilesInNewTab(self) -> ImgTab | None:
+        filesGen = self.getListedFiles()
+        if filesGen is None:
+            return None
+
+        currentFilelist = self.tab.filelist
+        newTab = self.tab.mainWindow.addTab()
+        newFilelist: FileList = newTab.filelist
+        newFilelist.loadFilesFixed(filesGen, currentFilelist)
+        return newTab
+
+    @Slot()
+    def _unloadFiles(self):
+        filesGen = self.getListedFiles()
+        if filesGen is None:
+            return
+
+        confirmText = f"Unloading the files will discard all unsaved modifications to captions and masks. Do you really want to unload the listed files?"
+        dialog = QtWidgets.QMessageBox(self.btnWithFiles)
+        dialog.setIcon(QtWidgets.QMessageBox.Icon.Question)
+        dialog.setWindowTitle("Confirm Unloading Files")
+        dialog.setText(confirmText)
+        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel)
+
+        if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Ok:
+            filesSet = set(filesGen)
+            self.tab.filelist.filterFiles(lambda file: file not in filesSet)
+            # TODO: Reload data and restore selection
 
 
 

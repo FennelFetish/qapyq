@@ -30,12 +30,12 @@ class CaptionContext(QtWidgets.QTabWidget):
         self.groups   = CaptionGroups(self)
         self.generate = CaptionGenerate(self)
 
-        #from .caption_focus import CaptionFocus
-        #self.focus = CaptionFocus(container, self)
+        from .caption_focus import CaptionFocus
+        self.focus = CaptionFocus(container, self)
 
         self.addTab(self.settings, "Rules")
         self.addTab(self.groups, "Groups")
-        #self.addTab(self.focus, "Focus")
+        self.addTab(self.focus, "Focus")
         #self.addTab(QtWidgets.QWidget(), "Variables (json)")
         #self.addTab(QtWidgets.QWidget(), "Folder Overrides") # Let variables from json override settings?
         self.addTab(self.generate, "Generate")
@@ -281,7 +281,7 @@ class CaptionContainer(QtWidgets.QWidget):
         separator = self.captionSeparator.strip()
         captionSet = { cap for c in captionText.split(separator) if (cap := c.strip()) }
         self.ctx.groups.updateSelectedState(captionSet)
-        #self.ctx.focus.updateSelectionState(captionSet)
+        self.ctx.focus.updateSelectionState(captionSet)
 
 
     @Slot()

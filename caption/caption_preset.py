@@ -19,7 +19,7 @@ class CaptionPreset:
         self.searchReplace: list[tuple[str, str]] = []
         self.banned: list[str] = []
 
-    def addGroup(self, name: str, color: str, mutuallyExclusive: bool, combineTags: bool, captions):
+    def addGroup(self, name: str, color: str, mutuallyExclusive: bool, combineTags: bool, captions: list[str]):
         group = CaptionPresetGroup()
         group.name = name
         group.color = color
@@ -53,7 +53,7 @@ class CaptionPreset:
     def loadFrom(self, path: str):
         with open(path, 'r') as file:
             data = json.load(file)
-        
+
         self.prefix             = data.get("prefix", "")
         self.suffix             = data.get("suffix", "")
         self.separator          = data.get("separator", ", ")
@@ -84,7 +84,7 @@ class CaptionPresetGroup:
         self.mutuallyExclusive: bool = False
         self.combineTags: bool = False
         self.captions: list[str] = []
-    
+
     def toDict(self):
         return {
             "name": self.name,
