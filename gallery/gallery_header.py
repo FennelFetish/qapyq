@@ -42,7 +42,7 @@ class GalleryHeader(QtWidgets.QFrame):
 
     @Slot()
     def removeFiles(self):
-        self.tab.filelist.removeFolder(self.dir)
+        self.tab.filelist.filterFiles(lambda file: os.path.dirname(file) != self.dir)
 
 
 

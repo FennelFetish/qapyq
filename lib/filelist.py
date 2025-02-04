@@ -1,4 +1,4 @@
-from typing import Iterable, Any
+from typing import Iterable, Any, Callable
 import os, enum
 from PySide6.QtGui import QImageReader
 from config import Config
@@ -133,7 +133,7 @@ class FileList:
         self.notifyListChanged()
 
 
-    def removeFolder(self, folderPath: str):
+    def filterFiles(self, predKeep: Callable[[str], bool]):
         currentFile = self.currentFile
         self.currentIndex = -1
         self.currentFile = ""
@@ -141,7 +141,7 @@ class FileList:
         newFiles = []
         for file in self.files:
             # Keep file
-            if os.path.dirname(file) != folderPath:
+            if predKeep(file):
                 newFiles.append(file)
                 if file == currentFile:
                     self.currentIndex = len(newFiles) - 1
