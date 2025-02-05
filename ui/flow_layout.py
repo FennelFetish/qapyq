@@ -1,6 +1,7 @@
 from typing import Iterable, Callable
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Signal, QSize, QRect, QMimeData, QTimer
+import numpy as np
 import lib.qtlib as qtlib
 
 
@@ -105,6 +106,8 @@ class FlowLayout(QtWidgets.QLayout):
 
 # All places that use dropEvent() must postpone the action using QTimer.singleShot
 class ReorderWidget(QtWidgets.QWidget):
+    COLOR_FACTORS = [1.6, 1.9, 2.0, 1.0] # BGRA
+
     orderChanged = Signal()
     receivedDrop = Signal(str)
 
@@ -124,23 +127,35 @@ class ReorderWidget(QtWidgets.QWidget):
         self.showCursorPicture = True
 
 
-    def _createDragTarget(self, pixmap, index: int):
-        pixmap = self._adjustBrightness(pixmap, 2, 1.9, 1.6)
+    def _createDragTarget(self, pixmap: QtGui.QPixmap, index: int):
+        pixmap = self._adjustColor(pixmap)
         self._dragTarget = QtWidgets.QLabel()
         self._dragTarget.setPixmap(pixmap)
         self.layout().addWidget(self._dragTarget)
         self.layout().insertWidget(index, self._dragTarget)
 
-    def _adjustBrightness(self, pixmap, r, g, b):
+    def _adjustColor(self, pixmap: QtGui.QPixmap):
         image = pixmap.toImage()
-        for y in range(image.height()):
-            for x in range(image.width()):
-                color = QtGui.QColor(image.pixel(x, y))
-                color.setRed(min(255, int(color.red() * r)))
-                color.setGreen(min(255, int(color.green() * g)))
-                color.setBlue(min(255, int(color.blue() * b)))
-                image.setPixel(x, y, color.rgb())
-        return QtGui.QPixmap.fromImage(image)
+        pixelRatio = image.devicePixelRatioF()
+
+        mat = qtlib.qimageToNumpy(image).astype(np.float32)
+        mat *= self.COLOR_FACTORS
+
+        # Add border
+        # col = QtWidgets.QApplication.palette().color(QtGui.QPalette.ColorRole.Highlight)
+        # borderColor = [float(col.blue()), float(col.green()), float(col.red()), 255.0]
+        # h, w = mat.shape[:2]
+        # mat[0, :, ...]   = borderColor # Top
+        # mat[h-1, :, ...] = borderColor # Bottom
+        # mat[:, 0, ...]   = borderColor # Left
+        # mat[:, w-1, ...] = borderColor # Right
+
+        mat.clip(0.0, 255.0, mat)
+        mat = mat.astype(np.uint8)
+
+        image = qtlib.numpyToQImage(mat)
+        image.setDevicePixelRatio(pixelRatio)
+        return pixmap.fromImageInPlace(image)
 
     def _removeDragTarget(self):
         self.layout().removeWidget(self._dragTarget)

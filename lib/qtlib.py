@@ -51,6 +51,20 @@ def numpyToQImageMask(mat: np.ndarray) -> QtGui.QImage:
 
     return QtGui.QImage(mat, width, height, QtGui.QImage.Format.Format_Grayscale8)
 
+def numpyToQImage(mat: np.ndarray) -> QtGui.QImage:
+    # QImage needs alignment to 32bit/4bytes. Add padding.
+    height, width, channels = mat.shape
+    lineLen = width * channels
+    bytesPerLine = ((lineLen+3) // 4) * 4
+    if lineLen != bytesPerLine:
+        padded = np.zeros((height, bytesPerLine//channels, channels), dtype=np.uint8)
+        padded[:, :width, :] = mat
+        mat = padded
+
+    format = QtGui.QImage.Format.Format_ARGB32 if channels == 4 else QtGui.QImage.Format.Format_RGB32
+    return QtGui.QImage(mat, width, height, format)
+
+
 def qimageToNumpyMask(image: QtGui.QImage) -> np.ndarray:
     buffer = np.frombuffer(image.constBits(), dtype=np.uint8)
     buffer.shape = (image.height(), image.bytesPerLine())
