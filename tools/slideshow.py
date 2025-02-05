@@ -2,6 +2,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QTimer
 import random
 from config import Config
+from lib.qtlib import GreenButton
 from ui.imgview import ImgItem
 from .view import ViewTool
 
@@ -86,7 +87,7 @@ class SlideshowTool(ViewTool):
         numFiles = self.tab.filelist.getNumFiles()
         if numFiles <= 0:
             return 0
-        
+
         region = self._history[-10:] if tail else self._history[:10]
         attempts = 3
         while attempts > 0 and (index := random.randint(0, numFiles-1)) in region:
@@ -133,7 +134,7 @@ class SlideshowTool(ViewTool):
     def onDisabled(self, imgview):
         if self._playTimer.isActive():
             self._toolbar.togglePlay()
-        
+
         self.resetHistory()
         self.tab.statusBar().show()
         self.tab.filelist.removeListener(self)
@@ -215,8 +216,7 @@ class SlideshowToolbar(QtWidgets.QToolBar):
         self.setMaximumWidth(180)
 
     def buildControls(self):
-        self.btnPlay = QtWidgets.QPushButton("▶")
-        self.btnPlay.setStyleSheet("border:2px outset grey; border-radius: 8px")
+        self.btnPlay = GreenButton("▶")
         self.btnPlay.setFixedHeight(40)
         self.btnPlay.clicked.connect(self.togglePlay)
 
@@ -274,15 +274,15 @@ class SlideshowToolbar(QtWidgets.QToolBar):
         if timer.isActive():
             timer.stop()
             self.btnPlay.setText("▶")
-            self.btnPlay.setStyleSheet("border:2px outset grey; border-radius: 8px")
+            self.btnPlay.setChanged(False)
         else:
             timer.start()
             self.btnPlay.setText("❚❚")
-            self.btnPlay.setStyleSheet("border:2px outset green; border-radius: 8px")
+            self.btnPlay.setChanged(True)
 
     def startHideTimeout(self):
         self._hideTimer.start(self._slideshowTool._hideTimeout)
-    
+
     def enterEvent(self, event):
         self._hideTimer.stop()
 

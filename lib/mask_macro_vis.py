@@ -1,6 +1,7 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
 from .mask_macro import MaskingMacro, MacroOp, MacroOpItem
+from lib.qtlib import COLOR_BUBBLE_BLACK
 
 
 class MacroVisualization(QtWidgets.QScrollArea):
@@ -36,7 +37,7 @@ class MacroVisualization(QtWidgets.QScrollArea):
 
         macro = MaskingMacro()
         macro.loadFrom(path)
-        
+
         row = 0
         for col in range(4):
             self.gridLayout.addWidget(CellLabel(f"Layer {col}", bold=True), row, col)
@@ -89,7 +90,7 @@ class MacroVisualization(QtWidgets.QScrollArea):
                     if srcLayer < layer:
                         color1, color2 = color2, color1
                     row = self._addRow(op, row, layer, maxLayer, colors, color1, color2)
-                
+
                 case _:
                     row = self._addRow(op, row, layer, maxLayer, colors)
 
@@ -112,7 +113,7 @@ class MacroVisualization(QtWidgets.QScrollArea):
         for i in range(maxCol+1):
             if i != col:
                 self.gridLayout.addWidget(CellBg(colors[i]), row, i)
-        
+
         return row + 1
 
     def _addSpacing(self, row: int, maxCol: int, colors: list[str]):
@@ -121,7 +122,7 @@ class MacroVisualization(QtWidgets.QScrollArea):
         else:
             for i in range(maxCol+1):
                 self.gridLayout.addWidget(CellBg(colors[i], self.SPACING), row, i)
-        
+
         return row + 1
 
     def _fillBackground(self, row: int, startRow: int, layer: int, maxLayer: int, colors: list[str]):
@@ -139,7 +140,7 @@ class MacroVisualization(QtWidgets.QScrollArea):
 
 
 class CellLabel(QtWidgets.QLabel):
-    def __init__(self, title, color1="#161616", color2="", bold=False, args: dict={}):
+    def __init__(self, title, color1=COLOR_BUBBLE_BLACK, color2="", bold=False, args: dict={}):
         super().__init__( self._buildTitle(title, args) )
 
         if bold:
@@ -148,13 +149,13 @@ class CellLabel(QtWidgets.QLabel):
             fontWeight, height = "400", 26
 
         if color2:
-            background = "background: qlineargradient(x1:0.1, y1:0, x2:0.9, y2:0, stop:0 " + color1 + ", stop:1 " + color2 + ")"
+            background = f"background: qlineargradient(x1:0.1, y1:0, x2:0.9, y2:0, stop:0 {color1}, stop:1 {color2})"
         else:
-            background = "background-color: " + color1
+            background = f"background-color: {color1}"
 
-        self.setStyleSheet("QLabel{font-weight:" + fontWeight + "; color: #fff; " + background + "; border: 1px solid #161616; border-radius: 8px}")
+        self.setStyleSheet(f"QLabel{{font-weight:{fontWeight}; color: #fff; {background}; border: 1px solid {COLOR_BUBBLE_BLACK}; border-radius: 8px}}")
         self.setFixedHeight(height)
-    
+
     @staticmethod
     def _buildTitle(title: str, args: dict) -> str:
         params = []
@@ -165,17 +166,17 @@ class CellLabel(QtWidgets.QLabel):
                 params.append(f"{k}={v:.2f}")
             else:
                 params.append(f"{k}={v}")
-        
+
         if params:
             title += ": " + ", ".join(params)
         return title
-    
+
     def setInput(self, color: str):
         title = f"{self.text()} - Input"
         self.setText(title)
 
-        background = "background-color: " + color
-        self.setStyleSheet("QLabel{font-weight: 900; color: #fff; " + background + "; border: 1px solid #161616; border-radius: 8px}")
+        background = f"background-color: {color}"
+        self.setStyleSheet(f"QLabel{{font-weight: 900; color: #fff; {background}; border: 1px solid {COLOR_BUBBLE_BLACK}; border-radius: 8px}}")
 
 
 
@@ -188,7 +189,7 @@ class CellBg(QtWidgets.QLabel):
         # Reduce opacity
         if color:
             color = f"#60{color[1:]}"
-            self.setStyleSheet("QWidget{background-color:" + color + "}")
+            self.setStyleSheet(f"QWidget{{background-color:{color}}}")
 
 
 

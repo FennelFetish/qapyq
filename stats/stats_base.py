@@ -4,7 +4,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QSortFilterProxyModel, QModelIndex, QItemSelection, QRegularExpression, QSignalBlocker
 from ui.tab import ImgTab
 import lib.qtlib as qtlib
-from lib.filelist import FileList, DataKeys
+from lib.filelist import FileList
 from lib.filelist import sortKey
 
 
@@ -213,7 +213,7 @@ class StatsLayout(QtWidgets.QVBoxLayout):
     def _onFilterChanged(self, text: str):
         regex = QRegularExpression(text, QRegularExpression.PatternOption.CaseInsensitiveOption)
         if not regex.isValid():
-            self.txtFilter.setStyleSheet("color: red")
+            self.txtFilter.setStyleSheet(f"color: {qtlib.COLOR_RED}")
             return
 
         self.txtFilter.setStyleSheet(None)

@@ -22,7 +22,6 @@ class CaptionGroups(QtWidgets.QWidget):
 
         self._cachedColors: dict[str, str] | None = None
         self._cachedCharFormats: dict[str, QtGui.QTextCharFormat] | None = None
-        self._forceNextSelectionUpdate = True
         context.controlUpdated.connect(self.clearCachedColors)
 
         self._build()
@@ -118,7 +117,7 @@ class CaptionGroups(QtWidgets.QWidget):
         }
 
         for banned in self.ctx.settings.bannedCaptions:
-            colors[banned] = "#454545"
+            colors[banned] = qtlib.COLOR_BUBBLE_BAN
 
         self._cachedColors = colors
         return colors
@@ -145,12 +144,10 @@ class CaptionGroups(QtWidgets.QWidget):
     def clearCachedColors(self):
         self._cachedColors = None
         self._cachedCharFormats = None
-        self._forceNextSelectionUpdate = True
 
     def updateSelectedState(self, captions: set[str]):
         for group in self.groups:
-            group.updateSelectedState(captions, self._forceNextSelectionUpdate)
-        self._forceNextSelectionUpdate = False
+            group.updateSelectedState(captions)
 
 
     @Slot()
@@ -247,11 +244,11 @@ class CaptionControlGroup(QtWidgets.QWidget):
 
 
     # TODO: When 'combine tags' is enabled, match: *prefix words* word
-    def updateSelectedState(self, captions: set, force: bool):
+    def updateSelectedState(self, captions: set):
         color = self.color
         for button in self.buttons:
             exists = button.text.strip() in captions
-            button.updateSelectionState(exists, color, force)
+            button.setColor(color if exists else qtlib.COLOR_BUBBLE_BLACK)
 
 
     @property
@@ -342,23 +339,17 @@ class CaptionControlGroup(QtWidgets.QWidget):
 
 class GroupButton(qtlib.EditablePushButton):
     def __init__(self, text):
-        super().__init__(text, self.stylerFunc, None)
-        self.selected = False
-        #self.updateSelectionState(False, "", True)
+        super().__init__(text, self.stylerFunc, extraWidth=3)
+        self.color = ""
 
     @staticmethod
     def stylerFunc(button):
         qtlib.setMonospace(button, 1.05)
 
-    def updateSelectionState(self, selected: bool, color: str, force=False):
-        if (selected == self.selected) and not force:
-            return
-        self.selected = selected
-
-        if selected:
-            self.setStyleSheet("color: #fff; background-color: " + color + "; border: 3px solid " + color + "; border-radius: 8px")
-        else:
-            self.setStyleSheet("color: #fff; background-color: #161616; border: 3px solid #161616; border-radius: 8px")
+    def setColor(self, color: str):
+        if color != self.color:
+            self.color = color
+            self.setStyleSheet(qtlib.bubbleStylePad(color))
 
 
 
@@ -392,7 +383,7 @@ class GroupColor(QtWidgets.QFrame):
             return
 
         self._color = color
-        self.setStyleSheet(".GroupColor{background-color: " + color + "}")
+        self.setStyleSheet(f".GroupColor{{background-color: {color}}}")
         self.group._updateCharFormat(color)
         self.group.groups.ctx.controlUpdated.emit()
 

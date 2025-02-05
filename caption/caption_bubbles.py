@@ -57,7 +57,7 @@ class CaptionBubbles(ReorderWidget):
                 self.layout().addWidget(bubble)
 
             bubble.text = caption
-            bubble.setColor(colors.get(caption, "#161616"))
+            bubble.setColor(colors.get(caption, qtlib.COLOR_BUBBLE_BLACK))
             bubble.forceUpdateWidth()
 
         for i in range(i+1, len(oldBubbles)):
@@ -77,10 +77,11 @@ class CaptionBubbles(ReorderWidget):
 class Bubble(QtWidgets.QFrame):
     def __init__(self, index, removeSignal, showWeights=True, showRemove=False, editable=True):
         super().__init__()
+
         self.index = index
         self._text = ""
+        self.color = ""
         self.weight = 1.0
-        self.setContentsMargins(4, 1, 4, 1)
 
         if editable:
             self.textField = qtlib.DynamicLineEdit()
@@ -89,6 +90,7 @@ class Bubble(QtWidgets.QFrame):
             self.textField.setContentsMargins(0, 0, 4, 0)
         qtlib.setMonospace(self.textField)
 
+        self.setContentsMargins(4, 1, 4, 1)
         layout = QtWidgets.QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -105,17 +107,14 @@ class Bubble(QtWidgets.QFrame):
             self.spinWeight = None
 
         if showRemove:
-            btnRemove = QtWidgets.QPushButton("⨯")
+            btnRemove = qtlib.BubbleRemoveButton()
             btnRemove.setFocusProxy(self)
-            btnRemove.setStyleSheet(".QPushButton{color: #D54040; background-color: #161616; border: 1px solid #401616; border-radius: 4px}")
-            btnRemove.setFixedWidth(18)
-            btnRemove.setFixedHeight(18)
             btnRemove.clicked.connect(lambda: removeSignal.emit(self.index))
             layout.addWidget(btnRemove)
 
         self.setLayout(layout)
 
-        self.setColor("#161616")
+        self.setColor(qtlib.COLOR_BUBBLE_BLACK)
         self.setFrameShape(QtWidgets.QFrame.Shape.Box)
         self.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
 
@@ -130,9 +129,13 @@ class Bubble(QtWidgets.QFrame):
         self.textField.setText(text)
 
 
-    def setColor(self, color):
-        self.setStyleSheet(".Bubble{background-color: " + color + "; border: 1px solid #161616; border-radius: 8px}")
-        self.textField.setStyleSheet("color: #fff; background-color: " + color + "; border: 0px")
+    def setColor(self, color: str):
+        if color == self.color:
+            return
+        self.color = color
+
+        self.setStyleSheet(qtlib.bubbleClass("Bubble", color))
+        self.textField.setStyleSheet(qtlib.bubbleStyleAux(color))
 
         if self.spinWeight:
             #self.spinWeight.setStyleSheet(".QDoubleSpinBox{background-color: " + color + "; border: 0; padding-right: 25px}")

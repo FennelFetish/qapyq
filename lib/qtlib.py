@@ -4,7 +4,11 @@ import numpy as np
 import lib.util as util
 
 
-COLOR_RED = "#FF1616"
+COLOR_RED   = "#FF1616" #"#FF3030"
+COLOR_GREEN = "#30FF30"
+
+COLOR_BUBBLE_BLACK = "#161616"
+COLOR_BUBBLE_BAN   = "#454545"
 
 
 def setTextEditHeight(textEdit, numRows, mode=None):
@@ -118,10 +122,10 @@ class EditablePushButton(QtWidgets.QWidget):
     textChanged = Signal(str)
     textEmpty   = Signal(object)
 
-    def __init__(self, text, stylerFunc=None, parent=None):
+    def __init__(self, text, stylerFunc=None, parent=None, extraWidth=0):
         super().__init__(parent)
         self.stylerFunc = stylerFunc
-        self.extraWidth = 12
+        self.extraWidth = 12 + extraWidth
 
         self.button = QtWidgets.QPushButton(text)
         self.button.clicked.connect(self.click)
@@ -224,7 +228,7 @@ class ColoredMessageStatusBar(QtWidgets.QStatusBar):
 
     def showColoredMessage(self, text, success=True, timeout=4000):
         if success:
-            self.updateStyleSheet("#00ff00")
+            self.updateStyleSheet(COLOR_GREEN)
         else:
             self.updateStyleSheet(COLOR_RED)
         super().showMessage(text, timeout)
@@ -336,6 +340,29 @@ def getHighlightColor(colorHex: str) -> QtGui.QColor:
 
 def htmlRed(text: str) -> str:
     return f"<font color='{COLOR_RED}'>{text}</font>"
+
+
+def bubbleStyle(color: str, borderColor=COLOR_BUBBLE_BLACK) -> str:
+    return f"background-color: {color}; border: 1px solid {borderColor}; border-radius: 8px"
+
+def bubbleStylePad(color: str, padding=2, borderColor=COLOR_BUBBLE_BLACK) -> str:
+    return f"background-color: {color}; border: 1px solid {borderColor}; border-radius: 8px; padding: {padding}px"
+
+def bubbleStyleAux(color: str) -> str:
+    return f"color: #fff; background-color: {color}; border: 0px"
+
+def bubbleClass(className: str, color: str, borderColor=COLOR_BUBBLE_BLACK) -> str:
+    return f".{className}{{background-color: {color}; border: 1px solid {borderColor}; border-radius: 8px}}"
+
+
+class BubbleRemoveButton(QtWidgets.QPushButton):
+    STYLE = f".BubbleRemoveButton{{color: #D54040; background-color: {COLOR_BUBBLE_BLACK}; border: 1px solid #401616; border-radius: 4px}}"
+
+    def __init__(self):
+        super().__init__("⨯")
+        self.setFixedWidth(18)
+        self.setFixedHeight(18)
+        self.setStyleSheet(self.STYLE)
 
 
 

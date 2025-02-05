@@ -5,6 +5,7 @@ import numpy as np
 from config import Config
 from .view import ViewTool
 import ui.export_settings as export
+from lib.qtlib import COLOR_RED, COLOR_GREEN
 from lib.filelist import DataKeys
 
 
@@ -146,7 +147,7 @@ class ScaleToolBar(QtWidgets.QToolBar):
         btnOpenLast = QtWidgets.QPushButton("Open Last File")
         btnOpenLast.clicked.connect(scaleTool.openLastExportedFile)
         layout.addWidget(btnOpenLast)
-        
+
         widget = QtWidgets.QWidget()
         widget.setLayout(layout)
         self.addWidget(widget)
@@ -222,7 +223,7 @@ class ScaleToolBar(QtWidgets.QToolBar):
         layout.setContentsMargins(1, 1, 1, 1)
         layout.addRow("Deg:", self.spinRot)
         layout.addRow(btnLayout)
-        
+
         group = QtWidgets.QGroupBox("Rotation")
         group.setLayout(layout)
         return group
@@ -238,7 +239,7 @@ class ScaleToolBar(QtWidgets.QToolBar):
         modeKey = self.cboScaleMode.itemData(index)
         if not modeKey:
             return
-        
+
         self.selectedScaleMode = self.scaleModes[modeKey]
         self.selectedScaleMode.sizeChanged.connect(self.updateExport)
         self.scaleModeLayout.addWidget(self.selectedScaleMode)
@@ -260,7 +261,7 @@ class ScaleToolBar(QtWidgets.QToolBar):
         self.scaleTool._imgview.rotation = rot
         self.scaleTool._imgview.updateImageTransform()
         self.updateExport()
-    
+
     @Slot()
     def onRotationEdited(self):
         rot = self.spinRot.value()
@@ -272,7 +273,7 @@ class ScaleToolBar(QtWidgets.QToolBar):
     def targetSize(self) -> tuple[int, int]:
         w, h = self.selectedScaleMode.targetSize
         w, h = max(w, 1), max(h, 1)
-        
+
         if self.rotation == 90 or self.rotation == 270:
             return (h, w)
         return (w, h)
@@ -299,7 +300,7 @@ class ScaledExportTask(export.ImageExportTask):
     def processImage(self, mat: np.ndarray) -> np.ndarray:
         if self.rotation == 0:
             return self.resize(mat)
-        
+
         # Offset by half pixel to maintain pixel borders
         h, w = mat.shape[:2]
         ptsSrc = [
@@ -324,7 +325,7 @@ class ScaledExportTask(export.ImageExportTask):
                 return [[w, h], [z, h], [z, z]]
             case 270:
                 return [[z, h], [z, z], [w, z]]
-        
+
         return [[z, z], [w, z], [w, h]]
 
 
@@ -367,12 +368,12 @@ class ScaleMode(QtWidgets.QWidget):
         if imgSize := self.sizeFunc():
             scale = (w*h) / (imgSize.w * imgSize.h)
             scale = np.sqrt(scale)
-        
+
         if scale > 1.0:
-            self.lblScale.setStyleSheet("QLabel { color: #ff3030; }")
+            self.lblScale.setStyleSheet(f"QLabel{{color:{COLOR_RED}}}")
             self.lblScale.setText(f"▲  {scale:.3f}")
         else:
-            self.lblScale.setStyleSheet("QLabel { color: #30ff30; }")
+            self.lblScale.setStyleSheet(f"QLabel{{color:{COLOR_GREEN}}}")
             self.lblScale.setText(f"▼  {scale:.3f}")
 
         self.sizeChanged.emit(w, h)
@@ -523,7 +524,7 @@ class FixedSideScaleMode(ScaleMode):
                 else:
                     w = imgWidth * (sideLength / imgHeight)
                     return (round(w), sideLength)
-        
+
         else: # fixed smaller side
             def func(imgWidth: int, imgHeight: int):
                 if imgWidth < imgHeight:
@@ -532,7 +533,7 @@ class FixedSideScaleMode(ScaleMode):
                 else:
                     w = imgWidth * (sideLength / imgHeight)
                     return (round(w), sideLength)
-        
+
         return func
 
     @Slot()
@@ -684,7 +685,7 @@ class QuantizedScaleMode(ScaleMode):
         self.lblWidth = QtWidgets.QLabel()
         layout.addWidget(QtWidgets.QLabel("W:"), 2, 0)
         layout.addWidget(self.lblWidth, 2, 1, 1, 2)
-        
+
         self.lblHeight = QtWidgets.QLabel()
         layout.addWidget(QtWidgets.QLabel("H:"), 3, 0)
         layout.addWidget(self.lblHeight, 3, 1, 1, 2)
@@ -706,7 +707,7 @@ class QuantizedScaleMode(ScaleMode):
 
             wUp, wDn = int(np.ceil(wq)*quant), int(np.floor(wq)*quant)
             hUp, hDn = int(np.ceil(hq)*quant), int(np.floor(hq)*quant)
-            
+
             # (width, height, aspect ratio)
             points = [
                 (wDn, hDn, wDn/hDn),
@@ -725,9 +726,9 @@ class QuantizedScaleMode(ScaleMode):
                 selectedPoint = next((p for p in points if p[2] >= aspect), selectedPoint)
             elif mode == QuantizedScaleMode.TALLER:
                 selectedPoint = next((p for p in points if p[2] <= aspect), selectedPoint)
-            
+
             return selectedPoint[:2]
-        
+
         return func
 
     @Slot()

@@ -1,7 +1,7 @@
 from typing import Iterable, Callable
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Signal, QSize, QRect, QMimeData, QTimer
-from lib.qtlib import EditablePushButton, setMonospace
+import lib.qtlib as qtlib
 
 
 class FlowLayout(QtWidgets.QLayout):
@@ -287,29 +287,26 @@ class StringFlowBubble(QtWidgets.QFrame):
         super().__init__()
         self.setContentsMargins(0, 0, 0, 0)
 
-        self.button = EditablePushButton(text, self._buttonStyleFunc)
+        self.button = qtlib.EditablePushButton(text, self._buttonStyleFunc)
 
         layout = QtWidgets.QHBoxLayout()
         layout.setContentsMargins(1, 0, 2, 0)
         layout.setSpacing(1)
         layout.addWidget(self.button)
 
-        btnRemove = QtWidgets.QPushButton("⨯")
-        btnRemove.setStyleSheet(".QPushButton{color: #D54040; background-color: #161616; border: 1px solid #401616; border-radius: 4px}")
-        btnRemove.setFixedWidth(18)
-        btnRemove.setFixedHeight(18)
+        btnRemove = qtlib.BubbleRemoveButton()
         btnRemove.clicked.connect(lambda: self.removeClicked.emit(self))
         layout.addWidget(btnRemove)
 
         self.setLayout(layout)
 
-        self.setColor("#161616")
+        self.setColor(qtlib.COLOR_BUBBLE_BLACK)
         self.setFrameShape(QtWidgets.QFrame.Shape.Box)
         self.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
 
     @staticmethod
-    def _buttonStyleFunc(button: EditablePushButton):
-        setMonospace(button, 0.9)
+    def _buttonStyleFunc(button: qtlib.EditablePushButton):
+        qtlib.setMonospace(button, 0.9)
 
     @property
     def text(self):
@@ -320,8 +317,8 @@ class StringFlowBubble(QtWidgets.QFrame):
         self.button.text = text
 
     def setColor(self, color):
-        self.setStyleSheet(".StringFlowBubble{background-color: " + color + "; border: 1px solid #161616; border-radius: 8px}")
-        self.button.setStyleSheet("color: #fff; background-color: " + color + "; border: 0px")
+        self.setStyleSheet(qtlib.bubbleClass("StringFlowBubble", color))
+        self.button.setStyleSheet(qtlib.bubbleStyleAux(color))
 
 
 

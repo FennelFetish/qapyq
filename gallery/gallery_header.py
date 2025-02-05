@@ -25,7 +25,7 @@ class GalleryHeader(QtWidgets.QFrame):
         layout.addWidget(self.lblImgCount)
 
         self.setLayout(layout)
-        self.setStyleSheet(f"color: #fff; background-color: #161616")
+        self.setStyleSheet(f"color: #fff; background-color: {qtlib.COLOR_BUBBLE_BLACK}")
 
     def updateImageLabel(self):
         text = f"{self.numImages} Image"

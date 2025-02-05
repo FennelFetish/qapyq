@@ -449,7 +449,7 @@ class BatchRulesGroup(QtWidgets.QWidget):
         for cap in captions:
             label = QtWidgets.QLabel(cap)
             qtlib.setMonospace(label)
-            label.setStyleSheet("color: #fff; background-color: " + color + "; border: 3px solid " + color + "; border-radius: 8px")
+            label.setStyleSheet(qtlib.bubbleStylePad(color))
             flowLayout.addWidget(label)
 
         self.flowWidget = QtWidgets.QWidget()
