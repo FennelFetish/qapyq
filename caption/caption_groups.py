@@ -17,12 +17,13 @@ class CaptionGroups(QtWidgets.QWidget):
 
     def __init__(self, context):
         super().__init__()
-        self.ctx = context
-        self._nextGroupHue = util.rnd01()
 
-        self._cachedColors: dict[str, str] | None = None
-        self._cachedCharFormats: dict[str, QtGui.QTextCharFormat] | None = None
-        context.controlUpdated.connect(self.clearCachedColors)
+        from .caption_container import CaptionContext
+        self.ctx: CaptionContext = context
+
+        self._nextGroupHue = util.rnd01()
+        self.colorSet = CaptionColorSet(self)
+        context.controlUpdated.connect(self.colorSet.clearCache)
 
         self._build()
         self.addGroup()
@@ -107,43 +108,11 @@ class CaptionGroups(QtWidgets.QWidget):
 
 
     def getCaptionColors(self) -> dict[str, str]:
-        if self._cachedColors:
-            return self._cachedColors
-
-        colors = {
-            caption: group.color
-            for group in self.groups
-            for caption in group.captions
-        }
-
-        for banned in self.ctx.settings.bannedCaptions:
-            colors[banned] = qtlib.COLOR_BUBBLE_BAN
-
-        self._cachedColors = colors
-        return colors
+        return self.colorSet.colors
 
     def getCaptionCharFormats(self) -> dict[str, QtGui.QTextCharFormat]:
-        if self._cachedCharFormats:
-            return self._cachedCharFormats
+        return self.colorSet.charFormats
 
-        formats = {
-            caption: group.charFormat
-            for group in self.groups
-            for caption in group.captions
-        }
-
-        bannedFormat = QtGui.QTextCharFormat()
-        bannedFormat.setForeground(QtGui.QColor.fromHsvF(0, 0, 0.5))
-        for banned in self.ctx.settings.bannedCaptions:
-            formats[banned] = bannedFormat
-
-        self._cachedCharFormats = formats
-        return formats
-
-    @Slot()
-    def clearCachedColors(self):
-        self._cachedColors = None
-        self._cachedCharFormats = None
 
     def updateSelectedState(self, captions: set[str]):
         for group in self.groups:
@@ -179,7 +148,6 @@ class CaptionControlGroup(QtWidgets.QWidget):
     def __init__(self, groups: CaptionGroups, name: str):
         super().__init__()
         self.groups = groups
-        self.charFormat = QtGui.QTextCharFormat()
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Fixed)
 
         self._buildHeaderWidget(name)
@@ -275,9 +243,9 @@ class CaptionControlGroup(QtWidgets.QWidget):
     def color(self, color):
         self.colorWidget.color = color
 
-
-    def _updateCharFormat(self, color):
-        self.charFormat.setForeground( qtlib.getHighlightColor(color) )
+    @property
+    def charFormat(self) -> QtGui.QTextCharFormat:
+        return self.colorWidget.charFormat
 
 
     @property
@@ -358,6 +326,7 @@ class GroupColor(QtWidgets.QFrame):
         super().__init__()
         self.group = group
         self._color = "#000"
+        self.charFormat = QtGui.QTextCharFormat()
 
         self.setToolTip("Choose Color")
         self.setMinimumWidth(30)
@@ -384,7 +353,7 @@ class GroupColor(QtWidgets.QFrame):
 
         self._color = color
         self.setStyleSheet(f".GroupColor{{background-color: {color}}}")
-        self.group._updateCharFormat(color)
+        self.charFormat.setForeground( qtlib.getHighlightColor(color) )
         self.group.groups.ctx.controlUpdated.emit()
 
 
@@ -448,3 +417,89 @@ class Trash(QtWidgets.QLabel):
             style += "; background: #801616"
 
         self.setStyleSheet("QLabel{" + style + "}")
+
+
+
+class CaptionColorSet:
+    COLOR_FOCUS_DEFAULT = "#901313"
+    COLOR_FOCUS_BAN     = "#686868"
+
+    def __init__(self, groups: CaptionGroups):
+        self.groups = groups
+        self._nextGroupHue = util.rnd01()
+
+        self._cachedColors: dict[str, str] | None = None
+        self._cachedCharFormats: dict[str, QtGui.QTextCharFormat] | None = None
+
+        self.bannedFormat = QtGui.QTextCharFormat()
+        self.bannedFormat.setForeground(QtGui.QColor.fromHsvF(0, 0, 0.5))
+
+        self.focusFormat = QtGui.QTextCharFormat()
+        self.focusFormat.setForeground(qtlib.getHighlightColor(self.COLOR_FOCUS_DEFAULT))
+
+        self._h, self._s, self._v = util.get_hsv(qtlib.COLOR_BUBBLE_BLACK)
+
+
+    @property
+    def colors(self) -> dict[str, str]:
+        if not self._cachedColors:
+            self.update()
+        return self._cachedColors
+
+    @property
+    def charFormats(self) -> dict[str, QtGui.QTextCharFormat]:
+        if not self._cachedCharFormats:
+            self.update()
+        return self._cachedCharFormats
+
+
+    def update(self):
+        colors: dict[str, str] = dict()
+        formats: dict[str, QtGui.QTextCharFormat] = dict()
+
+        # First insert all focus tags. This is the default color if focus tags don't belong to groups.
+        focusSet = self.groups.ctx.focus.getFocusSet()
+        for focusTag in focusSet:
+            colors[focusTag] = self.COLOR_FOCUS_DEFAULT
+            formats[focusTag] = self.focusFormat
+
+        for group in self.groups.groups:
+            mutedColor, mutedFormat = self._getMuted(group.color) if focusSet else (group.color, group.charFormat)
+
+            for caption in group.captions:
+                if caption in focusSet:
+                    colors[caption]  = group.color
+                    formats[caption] = group.charFormat
+                else:
+                    colors[caption]  = mutedColor
+                    formats[caption] = mutedFormat
+
+        bannedColor, bannedFormat = self._getMuted(qtlib.COLOR_BUBBLE_BAN) if focusSet else (qtlib.COLOR_BUBBLE_BAN, self.bannedFormat)
+        bannedFocusColor, bannedFocusFormat = self._getMuted(self.COLOR_FOCUS_BAN, 1, 1) if focusSet else (qtlib.COLOR_BUBBLE_BAN, self.bannedFormat)
+        for banned in self.groups.ctx.settings.bannedCaptions:
+            if banned in focusSet:
+                colors[banned]  = bannedFocusColor
+                formats[banned] = bannedFocusFormat
+            else:
+                colors[banned]  = bannedColor
+                formats[banned] = bannedFormat
+
+        self._cachedColors = colors
+        self._cachedCharFormats = formats
+
+    @Slot()
+    def clearCache(self):
+        self._cachedColors = None
+        self._cachedCharFormats = None
+
+
+    def _getMuted(self, color: str, mixS=0.22, mixV=0.3):
+        h, s, v = util.get_hsv(color)
+        s = self._s + (s - self._s) * mixS
+        v = self._v + (v - self._v) * mixV
+        mutedColor = util.hsv_to_rgb(h, s, v)
+
+        mutedFormat = QtGui.QTextCharFormat()
+        mutedFormat.setForeground(qtlib.getHighlightColor(mutedColor))
+
+        return mutedColor, mutedFormat

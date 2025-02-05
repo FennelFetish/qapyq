@@ -179,7 +179,8 @@ class GalleryGrid(QtWidgets.QWidget):
         if updateFileList:
             try:
                 self._ignoreFileChange = True
-                self.filelist.setCurrentFile(item.file)
+                with self.tab.takeFocus() as filelist:
+                    filelist.setCurrentFile(item.file)
             finally:
                 self._ignoreFileChange = False
 

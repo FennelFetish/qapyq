@@ -173,6 +173,10 @@ class FileList:
         self._lazyLoadFolder()
         return self.files
 
+    def isLastFile(self) -> bool:
+        self._lazyLoadFolder()
+        return self.currentIndex == len(self.files) - 1  # True when no files loaded
+
     def getCurrentFile(self):
         return self.currentFile
 

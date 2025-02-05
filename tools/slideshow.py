@@ -54,34 +54,36 @@ class SlideshowTool(ViewTool):
 
     @Slot()
     def next(self):
-        if not self._shuffle:
-            self.tab.filelist.setNextFile()
-            return
+        with self.tab.takeFocus() as filelist:
+            if not self._shuffle:
+                filelist.setNextFile()
+                return
 
-        self.tab.filelist._lazyLoadFolder()
-        self._historyIndex += 1
-        if self._historyIndex < len(self._history):
-            self.tab.filelist.setCurrentIndex(self._history[self._historyIndex])
-        elif self.tab.filelist.getNumFiles() > 0:
-            index = self.getRandomIndex()
-            self.tab.filelist.setCurrentIndex(index)
-            self._history.append(index)
+            filelist._lazyLoadFolder()
+            self._historyIndex += 1
+            if self._historyIndex < len(self._history):
+                filelist.setCurrentIndex(self._history[self._historyIndex])
+            elif filelist.getNumFiles() > 0:
+                index = self.getRandomIndex()
+                filelist.setCurrentIndex(index)
+                self._history.append(index)
 
 
     def prev(self):
-        if not self._shuffle:
-            self.tab.filelist.setPrevFile()
-            return
+        with self.tab.takeFocus() as filelist:
+            if not self._shuffle:
+                filelist.setPrevFile()
+                return
 
-        self.tab.filelist._lazyLoadFolder()
-        self._historyIndex -= 1
-        if self._historyIndex >= 0:
-            self.tab.filelist.setCurrentIndex(self._history[self._historyIndex])
-        elif self.tab.filelist.getNumFiles() > 0:
-            self._historyIndex = 0
-            index = self.getRandomIndex(False)
-            self.tab.filelist.setCurrentIndex(index)
-            self._history.insert(0, index)
+            filelist._lazyLoadFolder()
+            self._historyIndex -= 1
+            if self._historyIndex >= 0:
+                filelist.setCurrentIndex(self._history[self._historyIndex])
+            elif filelist.getNumFiles() > 0:
+                self._historyIndex = 0
+                index = self.getRandomIndex(False)
+                filelist.setCurrentIndex(index)
+                self._history.insert(0, index)
 
     def getRandomIndex(self, tail=True) -> int:
         numFiles = self.tab.filelist.getNumFiles()
@@ -157,7 +159,7 @@ class SlideshowTool(ViewTool):
         self.tab.imgview.setCursor(self._cursor)
 
     def onMouseWheel(self, event) -> bool:
-        if (event.modifiers() & Qt.ControlModifier) == Qt.ControlModifier:
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             return False
 
         angleDelta = event.angleDelta().y()

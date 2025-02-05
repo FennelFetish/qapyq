@@ -24,7 +24,7 @@ class ImgView(DropView):
         self.filelist = filelist
         filelist.addListener(self)
 
-        self.takeFocusOnFilechange = True
+        self.takeFocusOnFilechange = False
 
         self.image = ImgItem()
         self.scene().addItem(self.image)

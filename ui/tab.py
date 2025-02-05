@@ -47,6 +47,10 @@ class ImgTab(QtWidgets.QMainWindow):
         self.onFileChanged(currentFile)
 
 
+    def takeFocus(self):
+        return TakeFocus(self.imgview)
+
+
     def setTool(self, toolName: str):
         if toolName not in self.tools:
             self.tools[toolName] = self.createTool(toolName)
@@ -167,3 +171,17 @@ class TabStatusBar(ColoredMessageStatusBar):
         size = pixmap.size()
         alpha = "  (Alpha)" if pixmap.hasAlphaChannel() else ""
         self._lblImgSize.setText(f"W: {size.width()}  H: {size.height()}{alpha}")
+
+
+
+class TakeFocus:
+    def __init__(self, imgview: ImgView):
+        self.imgview = imgview
+
+    def __enter__(self) -> FileList:
+        self.imgview.takeFocusOnFilechange = True
+        return self.imgview.filelist
+
+    def __exit__(self, excType, excVal, excTraceback):
+        self.imgview.takeFocusOnFilechange = False
+        return False

@@ -30,31 +30,33 @@ class ViewTool(Tool):
         paths = (url.toLocalFile() for url in event.mimeData().urls())
 
         # SHIFT pressed -> Append
-        if (event.modifiers() & Qt.ShiftModifier) == Qt.ShiftModifier:
-            self._imgview.filelist.loadAppend(paths)
+        if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+            self.tab.filelist.loadAppend(paths)
         else:
-            self._imgview.filelist.loadAll(paths)
+            self.tab.filelist.loadAll(paths)
 
     def onMousePress(self, event) -> bool:
+        filelist = self.tab.filelist
         match event.button():
-            case Qt.BackButton:
-                self._imgview.filelist.setPrevFile()
+            case Qt.MouseButton.BackButton:
+                filelist.setPrevFile()
                 return True
-            case Qt.ForwardButton:
-                self._imgview.filelist.setNextFile()
+            case Qt.MouseButton.ForwardButton:
+                filelist.setNextFile()
                 return True
         return False
 
     def onKeyPress(self, event):
+        filelist = self.tab.filelist
         match event.key():
-            case Qt.Key_Left:
-                self._imgview.filelist.setPrevFile()
-            case Qt.Key_Right:
-                self._imgview.filelist.setNextFile()
-            case Qt.Key_Up:
-                self._imgview.filelist.setNextFolder()
-            case Qt.Key_Down:
-                self._imgview.filelist.setPrevFolder()
+            case Qt.Key.Key_Left:
+                filelist.setPrevFile()
+            case Qt.Key.Key_Right:
+                filelist.setNextFile()
+            case Qt.Key.Key_Up:
+                filelist.setNextFolder()
+            case Qt.Key.Key_Down:
+                filelist.setPrevFolder()
 
     def onMouseMove(self, event):
         x, y = self.mapPosToImageInt(event.position())

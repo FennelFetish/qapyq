@@ -387,6 +387,26 @@ class GreenButton(ColoredButton):
         super().__init__(text, "#0A440A", "#EEFFEE")
 
 
+class ToggleButton(QtWidgets.QPushButton):
+    def __init__(self, text: str):
+        super().__init__(text)
+        self.setCheckable(True)
+
+        self._originalPalette = self.palette()
+        highlight     = self._originalPalette.color(QtGui.QPalette.ColorGroup.Normal, QtGui.QPalette.ColorRole.Highlight)
+        highlightText = self._originalPalette.color(QtGui.QPalette.ColorGroup.Normal, QtGui.QPalette.ColorRole.HighlightedText)
+
+        self._checkedPalette = self.palette()
+        self._checkedPalette.setColor(QtGui.QPalette.ColorRole.Button, highlight)
+        self._checkedPalette.setColor(QtGui.QPalette.ColorRole.ButtonText, highlightText)
+
+        self.toggled.connect(self._onToggled)
+
+    @Slot()
+    def _onToggled(self, checked: bool):
+        self.setPalette(self._checkedPalette if checked else self._originalPalette)
+
+
 
 class MenuComboBox(QtWidgets.QComboBox):
     def __init__(self, title: str = None):

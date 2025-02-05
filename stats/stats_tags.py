@@ -26,7 +26,7 @@ class TagStats(QtWidgets.QWidget):
         self.table.setModel(self.proxyModel)
         self.table.captionRulesChanged.connect(self.reloadColors)
 
-        self._layout = TagStatsLayout(tab, "Tags", self.proxyModel, self.table, 1)
+        self._layout = TagStatsLayout(self, tab, self.proxyModel, self.table, 1)
         self._layout.insertLayout(0, self._buildSourceSelector())
         self._layout.setStatsWidget(self._buildStats())
         self.setLayout(self._layout)
@@ -284,6 +284,10 @@ class TagTableView(QtWidgets.QTableView):
 
         self._groupMenu = QtWidgets.QMenu("Add to Group")
         menu.addMenu(self._groupMenu)
+
+        actFocus = menu.addAction("Add to Focus")
+        actFocus.triggered.connect(self._focusTag)
+
         menu.addSeparator()
 
         actBan = menu.addAction("Ban")
@@ -326,6 +330,13 @@ class TagTableView(QtWidgets.QTableView):
             self.captionRulesChanged.emit()
 
     @Slot()
+    def _focusTag(self):
+        if captionWin := getCaptionWindow(self.tab, self):
+            tag = self.model().data(self._index, TagModel.ROLE_TAG)
+            captionWin.ctx.focus.appendFocusTag(tag)
+            self.captionRulesChanged.emit()
+
+    @Slot()
     def _banTag(self):
         if captionWin := getCaptionWindow(self.tab, self):
             tag = self.model().data(self._index, TagModel.ROLE_TAG)
@@ -344,8 +355,9 @@ class TagTableView(QtWidgets.QTableView):
 
 
 class TagStatsLayout(StatsLayout):
-    def __init__(self, tab: ImgTab, name: str, proxyModel: StatsBaseProxyModel, tableView: QtWidgets.QTableView, row=0):
-        super().__init__(tab, name, proxyModel, tableView, row)
+    def __init__(self, tagStats: TagStats, tab: ImgTab, proxyModel: StatsBaseProxyModel, tableView: QtWidgets.QTableView, row=0):
+        super().__init__(tab, "Tags", proxyModel, tableView, row)
+        self.tagStats = tagStats
 
     def _buildFilesMenu(self, parent) -> QtWidgets.QMenu:
         menu = super()._buildFilesMenu(parent)
@@ -358,29 +370,33 @@ class TagStatsLayout(StatsLayout):
 
     @Slot()
     def _openNewTabWithFocus(self):
-        # TODO: Don't load default rules preset in new tab
-        tab: ImgTab | None = self._loadFilesInNewTab()
-        if not tab:
+        oldTab = self.tab
+        oldCaptionWin = getCaptionWindow(oldTab, self.tagStats)
+        if not oldCaptionWin:
             return
 
-        statsWin = tab.getWindowContent("stats")
-        captionWin = getCaptionWindow(tab, statsWin)
-        if not captionWin:
+        newTab: ImgTab | None = self._loadFilesInNewTab()
+        if not newTab:
             return
+
+        newCaptionWin: CaptionContainer | None = newTab.getWindowContent("caption")
+        if not newCaptionWin:
+            return
+
+        captionPreset = oldCaptionWin.ctx.settings.getPreset()
+        newCaptionWin.ctx.settings.applyPreset(captionPreset)
 
         selectedTags = []
         for srcIndex in self.getSelectedSourceIndexes():
             tag = self.proxyModel.sourceModel().data(srcIndex, TagModel.ROLE_TAG)
             selectedTags.append(tag)
 
-        captionPreset = CaptionPreset()
-        captionPreset.removeDuplicates = False
-        captionPreset.sortCaptions = False
-        captionPreset.addGroup("Focus", "#901313", False, False, selectedTags)
-        captionWin.ctx.settings.applyPreset(captionPreset)
+        newCaptionWin.ctx.focus.setFocusTags(selectedTags)
+        newCaptionWin.ctx.setCurrentWidget(newCaptionWin.ctx.focus)
 
-        captionWin.ctx.focus.setFocusTags(selectedTags)
-        captionWin.ctx.setCurrentWidget(captionWin.ctx.focus)
+        newCaptionWin.srcSelector.type = self.tagStats.captionSrc.type
+        newCaptionWin.srcSelector.name = self.tagStats.captionSrc.name
+        newCaptionWin.resetCaption()
 
 
 

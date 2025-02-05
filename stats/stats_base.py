@@ -197,12 +197,9 @@ class StatsLayout(QtWidgets.QVBoxLayout):
         try:
             # Changing file normally clears the selection, so disable that.
             self._enableFileUpdate = False
-            # Also disable focus change to enable navigating through the file list with arrow keys.
-            self.tab.imgview.takeFocusOnFilechange = False
             self.tab.filelist.setCurrentFile(file)
         finally:
             self._enableFileUpdate = True
-            self.tab.imgview.takeFocusOnFilechange = True
 
     def clearFileSelection(self):
         if self._enableFileUpdate:

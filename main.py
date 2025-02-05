@@ -11,7 +11,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, app):
         super().__init__()
         self.app = app
-        
+
         self.setAttribute(Qt.WA_QuitOnClose)
         self.setWindowIcon(QtGui.QPixmap(Config.windowIcon))
         self.updateTitle(None)
@@ -62,7 +62,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self._fullscreenTab:
             fullscreen = True
             self.toggleFullscreen()
-        
+
         index = self.tabWidget.currentIndex()
         index = (index + 1) % self.tabWidget.count()
         self.tabWidget.setCurrentIndex(index)
@@ -81,7 +81,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # TODO: Proper cleanup, something's hanging there
         tab = self.tabWidget.widget(index)
         tab.onTabClosed()
-        
+
         self.tabWidget.removeTab(index)
         if self.tabWidget.count() == 0:
             self.addTab()
@@ -95,8 +95,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.toolbar.setTool(tab.toolName if tab else None)
         self.updateTitle(self.tabWidget.tabText(index))
-    
-    
+
+
     @Slot()
     def setTool(self, toolName: str):
         if self._fullscreenTab:
@@ -112,7 +112,7 @@ class MainWindow(QtWidgets.QMainWindow):
             title = f"{filename} - {title}"
         self.setWindowTitle(title)
 
-    
+
     @Slot()
     def toggleFullscreen(self):
         if self._fullscreenTab:
@@ -144,14 +144,14 @@ class MainWindow(QtWidgets.QMainWindow):
         if win := self.auxWindows.get(winName):
             win.close()
             return
-        
+
         winClass = self.getWindowClass(winName)
         win = aux_window.AuxiliaryWindow(self, winClass, winName.capitalize(), winName)
         win.closed.connect(self.onAuxWindowClosed)
         win.show()
         win.setTab(self.currentTab)
         self.auxWindows[winName] = win
-        
+
         self.toolbar.setWindowToggleChecked(winName, True)
 
     @Slot()
@@ -166,7 +166,7 @@ class MainWindow(QtWidgets.QMainWindow):
         aux_window.saveWindowPos(self, "main")
         if self._fullscreenTab:
             self._fullscreenTab.close()
-        
+
         openWindows = []
         for win in list(self.auxWindows.values()):
             openWindows.append(win.configKey)
@@ -234,7 +234,7 @@ class MainMenu(QtWidgets.QMenu):
         actCloseTab = QtGui.QAction("Close Tab", self)
         actCloseTab.setShortcutContext(Qt.ApplicationShortcut)
         actCloseTab.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_W))
-        actCloseTab.triggered.connect(mainWindow.closeCurrentTab)
+        actCloseTab.triggered.connect(self.closeTabWithConfirmation)
         self.addAction(actCloseTab)
 
         self.addSeparator()
@@ -287,7 +287,7 @@ class MainMenu(QtWidgets.QMenu):
     def openDir(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Open Folder")
         self.open(path)
-    
+
     def open(self, path: str | None):
         if not path:
             return
@@ -321,15 +321,22 @@ class MainMenu(QtWidgets.QMenu):
 
     def changeImage(self, forward: bool):
         tab = self.mainWindow.currentTab
+        if forward:
+            tab.filelist.setNextFile()
+        else:
+            tab.filelist.setPrevFile()
 
-        try:
-            tab.imgview.takeFocusOnFilechange = False
-            if forward:
-                tab.filelist.setNextFile()
-            else:
-                tab.filelist.setPrevFile()
-        finally:
-            tab.imgview.takeFocusOnFilechange = True
+
+    @Slot()
+    def closeTabWithConfirmation(self):
+        dialog = QtWidgets.QMessageBox(self.mainWindow)
+        dialog.setIcon(QtWidgets.QMessageBox.Icon.Question)
+        dialog.setWindowTitle("Confirm Close Tab")
+        dialog.setText(f"Do you really want to close the current tab?")
+        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+
+        if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes:
+            self.mainWindow.closeCurrentTab()
 
     @Slot()
     def quitWithConfirmation(self):

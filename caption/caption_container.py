@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt, Signal, Slot, QSignalBlocker, QTimer
 from lib import qtlib
 from lib.filelist import DataKeys
 from lib.captionfile import FileTypeSelector
+from ui.tab import ImgTab
 from .caption_bubbles import CaptionBubbles
 from .caption_filter import CaptionRulesProcessor
 from .caption_generate import CaptionGenerate
@@ -19,7 +20,7 @@ class CaptionContext(QtWidgets.QTabWidget):
     captionGenerated    = Signal(str, str)
 
 
-    def __init__(self, container, tab):
+    def __init__(self, container, tab: ImgTab):
         super().__init__()
         self.tab = tab
         self.getSelectedCaption = container.getSelectedCaption
@@ -139,9 +140,8 @@ class CaptionContainer(QtWidgets.QWidget):
         layout.setColumnStretch(col, 0)
 
         col += 1
-        self.btnDestLocked = QtWidgets.QPushButton("🔒")
+        self.btnDestLocked = qtlib.ToggleButton("🔒")
         self.btnDestLocked.setToolTip("Sync destination to source")
-        self.btnDestLocked.setCheckable(True)
         self.btnDestLocked.setChecked(True)
         qtlib.setMonospace(self.btnDestLocked, 1.2)
         self.btnDestLocked.setFixedWidth(26)
@@ -161,6 +161,13 @@ class CaptionContainer(QtWidgets.QWidget):
         self.destSelector.setTextFieldFixedWidth(140)
         layout.addLayout(self.destSelector, 0, col)
         layout.setColumnStretch(col, 0)
+
+        col += 1
+        self.chkSkipOnSave = qtlib.ToggleButton("⏭️")
+        self.chkSkipOnSave.setToolTip("Skip to next image after saving (no looping)")
+        self.chkSkipOnSave.setChecked(False)
+        self.chkSkipOnSave.setFixedWidth(26)
+        layout.addWidget(self.chkSkipOnSave, 0, col)
 
         widget = QtWidgets.QWidget()
         widget.setLayout(layout)
@@ -372,6 +379,12 @@ class CaptionContainer(QtWidgets.QWidget):
 
     @Slot()
     def saveCaption(self):
+        # Skip to next file when saving succeds and skip-on-save is enabled. Don't loop.
+        filelist = self.ctx.tab.filelist
+        if self.saveCaptionNoSkip() and self.chkSkipOnSave.isChecked() and not filelist.isLastFile():
+            filelist.setNextFile()
+
+    def saveCaptionNoSkip(self) -> bool:
         text = self.txtCaption.toPlainText()
         currentFile = self.ctx.tab.filelist.getCurrentFile()
 
@@ -379,6 +392,10 @@ class CaptionContainer(QtWidgets.QWidget):
             self.captionCache.remove()
             self.captionCache.setState(DataKeys.IconStates.Saved)
             self.btnSave.setChanged(False)
+            return True
+
+        return False
+
 
     def loadCaption(self):
         # Use cached caption if it exists in dictionary

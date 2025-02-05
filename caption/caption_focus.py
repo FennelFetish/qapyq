@@ -1,5 +1,5 @@
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Slot, Signal, QObject, QEvent
+from PySide6.QtCore import Qt, Slot, Signal, QObject, QEvent, QTimer
 import lib.qtlib as qtlib
 from ui.flow_layout import FlowLayout
 from ui.tab import ImgTab
@@ -26,9 +26,20 @@ from .caption_container import CaptionContainer, CaptionContext
 # - Auto save to file and reset cache
 
 
+HELP = [
+    "[1-9]: Select tag",
+    "[0]: Unselect all tags",
+    "[Enter]: Save and skip to next image",
+    "[Arrow Left/Right]: Navigate to previous/next image",
+    "[Esc]: Disable shortcuts"
+]
+
+
 class CaptionFocus(QtWidgets.QWidget):
     def __init__(self, container: CaptionContainer, context: CaptionContext):
         super().__init__()
+        self.setAcceptDrops(True)
+
         self.container = container
         self.ctx = context
         self.keyHandler = KeyEventFilter(self)
@@ -37,7 +48,6 @@ class CaptionFocus(QtWidgets.QWidget):
         self.bubbles: list[FocusBubble] = []
 
         self._build()
-        self._updateAutoFeedPossible()
 
         context.separatorChanged.connect(self._onSeparatorChanged)
         context.controlUpdated.connect(self.updateBubbles)
@@ -46,29 +56,29 @@ class CaptionFocus(QtWidgets.QWidget):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setHorizontalSpacing(12)
-        layout.setColumnStretch(3, 1)
+        layout.setColumnStretch(2, 1)
 
         row = 0
+        layout.addWidget(QtWidgets.QLabel("Focus on:"), row, 0)
+
         self.txtFocusTags = QtWidgets.QLineEdit()
         qtlib.setMonospace(self.txtFocusTags)
+        self.txtFocusTags.textChanged.connect(lambda: self.ctx.controlUpdated.emit())
         self.txtFocusTags.textChanged.connect(self.updateBubbles)
-        layout.addWidget(QtWidgets.QLabel("Focus on:"), row, 0)
-        layout.addWidget(self.txtFocusTags, row, 1, 1, 3)
+        layout.addWidget(self.txtFocusTags, row, 1, 1, 2)
+
+        btnClear = QtWidgets.QPushButton("Clear")
+        btnClear.clicked.connect(lambda: self.txtFocusTags.setText(""))
+        layout.addWidget(btnClear, row, 3)
 
         row += 1
         self.chkMutuallyExclusive = QtWidgets.QCheckBox("Mutually Exclusive")
         self.chkMutuallyExclusive.setChecked(False)
-        self.chkMutuallyExclusive.toggled.connect(self._updateAutoFeedPossible)
         layout.addWidget(self.chkMutuallyExclusive, row, 1)
 
-        self.chkAutoSave = QtWidgets.QCheckBox("Auto Save")
+        self.chkAutoSave = QtWidgets.QCheckBox("Auto Save (and skip)")
         self.chkAutoSave.setChecked(False)
-        self.chkAutoSave.toggled.connect(self._updateAutoFeedPossible)
         layout.addWidget(self.chkAutoSave, row, 2)
-
-        self.chkAutoFeed = QtWidgets.QCheckBox("Auto Feed")
-        self.chkAutoFeed.setChecked(False)
-        layout.addWidget(self.chkAutoFeed, row, 3)
 
         row += 1
         layout.setRowMinimumHeight(row, 12)
@@ -84,6 +94,10 @@ class CaptionFocus(QtWidgets.QWidget):
         row += 1
         layout.setRowMinimumHeight(row, 12)
 
+        lblHelp = QtWidgets.QLabel("        ".join(HELP))
+        lblHelp.setEnabled(False)
+        layout.addWidget(lblHelp, row, 0, 1, 4, Qt.AlignmentFlag.AlignCenter)
+
         row += 1
         self.btnFocusEnable = FocusEnabledButton("Enable Keyboard Shortcuts")
         self.btnFocusEnable.installEventFilter(self.keyHandler)
@@ -92,17 +106,20 @@ class CaptionFocus(QtWidgets.QWidget):
         self.setLayout(layout)
 
 
+    def getFocusSet(self) -> set[str]:
+        return {tag for t in self.txtFocusTags.text().split(self.separator.strip()) if (tag := t.strip())}
+
     def setFocusTags(self, tags: list[str]):
         text = self.separator.join(tags)
         self.txtFocusTags.setText(text)
 
+    def appendFocusTag(self, newTag: str):
+        focusTags = [tag for t in self.txtFocusTags.text().split(self.separator.strip()) if (tag := t.strip())]
+        if newTag not in focusTags:
+            focusTags.append(newTag)
+            text = self.separator.join(focusTags)
+            self.txtFocusTags.setText(text)
 
-    @Slot()
-    def _updateAutoFeedPossible(self):
-        autoFeedPossible = self.chkMutuallyExclusive.isChecked() and self.chkAutoSave.isChecked()
-        self.chkAutoFeed.setEnabled(autoFeedPossible)
-        if self.chkAutoFeed.isChecked() and not autoFeedPossible:
-            self.chkAutoFeed.setChecked(False)
 
     @Slot()
     def _onSeparatorChanged(self, separator: str):
@@ -112,10 +129,8 @@ class CaptionFocus(QtWidgets.QWidget):
 
     def updateSelectionState(self, captions: set[str]):
         for bubble in self.bubbles:
-            if bubble.text in captions:
-                bubble.setColor(bubble.groupColor)
-            else:
-                bubble.setColor("#161616")
+            exists = bubble.text in captions
+            bubble.setColor(bubble.groupColor if exists else qtlib.COLOR_BUBBLE_BLACK)
 
     def _updateSelectionState(self):
         captions = self.container.getCaption().split(self.separator.strip())
@@ -140,7 +155,7 @@ class CaptionFocus(QtWidgets.QWidget):
                 continue
 
             shortcut = i+1 if i<9 else -1
-            groupColor = colors.get(tag, "#161616")
+            groupColor = colors.get(tag, qtlib.COLOR_BUBBLE_BLACK)
 
             bubble = FocusBubble(tag, shortcut, groupColor)
             bubble.bubbleClicked.connect(self._onBubbleClicked)
@@ -150,9 +165,9 @@ class CaptionFocus(QtWidgets.QWidget):
         sep = qtlib.VerticalSeparator()
         sep.setMinimumHeight(26)
         self.bubbleLayout.addWidget(sep)
-        bubble = FocusBubble("Remove All", 0, "#454545")
-        bubble.setColor("#454545")
-        bubble.bubbleClicked.connect(self.removeAllFocusTags)
+        bubble = FocusBubble("Unselect All", 0, qtlib.COLOR_BUBBLE_BAN)
+        bubble.setColor(qtlib.COLOR_BUBBLE_BAN)
+        bubble.bubbleClicked.connect(self.unselectAllTags)
         self.bubbleLayout.addWidget(bubble)
 
         self._updateSelectionState()
@@ -164,13 +179,13 @@ class CaptionFocus(QtWidgets.QWidget):
 
     def onNumberPressed(self, index: int):
         if index == 0 and self.bubbles:
-            self.removeAllFocusTags()
+            self.unselectAllTags()
         elif index-1 < len(self.bubbles):
             tag = self.bubbles[index - 1].text
             self.selectTag(tag, self.chkMutuallyExclusive.isChecked())
 
     @Slot()
-    def removeAllFocusTags(self):
+    def unselectAllTags(self):
         self.selectTag(None, True)
 
     def selectTag(self, tag: str | None, exclusive: bool):
@@ -194,30 +209,25 @@ class CaptionFocus(QtWidgets.QWidget):
         newText = self.separator.join(captions)
         if newText != text:
             self.container.setCaption(newText)
+            self.ctx.needsRulesApplied.emit()
 
         # Always save, even when text is unchanged.
         # (text might actually be changed and loaded from cache)
         if self.chkAutoSave.isChecked():
             self.container.saveCaption()
-            if self.chkAutoFeed.isChecked():
-                self.nextFile()
 
-    def nextFile(self):
-        tab: ImgTab = self.ctx.tab
-        try:
-            tab.imgview.takeFocusOnFilechange = False
-            tab.filelist.setNextFile()
-        finally:
-            tab.imgview.takeFocusOnFilechange = True
 
-    def prevFile(self):
-        tab: ImgTab = self.ctx.tab
-        try:
-            tab.imgview.takeFocusOnFilechange = False
-            tab.filelist.setPrevFile()
-        finally:
-            tab.imgview.takeFocusOnFilechange = True
+    def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
+        if event.mimeData().hasText():
+            event.accept()
 
+    def dropEvent(self, event: QtGui.QDropEvent):
+        text = event.mimeData().text()
+        if text:
+            QTimer.singleShot(0, lambda text=text: self.appendFocusTag(text))
+
+        event.setDropAction(Qt.DropAction.CopyAction)
+        event.accept()
 
 
 class FocusBubble(QtWidgets.QFrame):
@@ -244,7 +254,7 @@ class FocusBubble(QtWidgets.QFrame):
 
         self.setLayout(layout)
 
-        self.setColor("#161616")
+        self.setColor(qtlib.COLOR_BUBBLE_BLACK)
         self.setFrameShape(QtWidgets.QFrame.Shape.Box)
         self.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
 
@@ -254,8 +264,7 @@ class FocusBubble(QtWidgets.QFrame):
         return self.lblText.text()
 
     def setColor(self, color: str):
-        self.setStyleSheet(".FocusBubble{background-color: " + color + "; border: 1px solid #161616; border-radius: 8px}")
-        self.lblText.setStyleSheet("color: #fff; background-color: " + color + "; border: 0px")
+        self.setStyleSheet(qtlib.bubbleClass("FocusBubble", color))
 
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
@@ -292,20 +301,22 @@ class KeyEventFilter(QObject):
         if event.type() != QEvent.Type.KeyPress or not self.focus.btnFocusEnable.isChecked():
             return False
 
+        filelist = self.focus.ctx.tab.filelist
         key: int = event.key()
         match key:
             case Qt.Key.Key_Escape:
                 self.focus.btnFocusEnable.setChecked(False)
                 return True
             case Qt.Key.Key_Return:
-                self.focus.container.saveCaption()
-                self.focus.nextFile()
+                # Don't loop
+                if self.focus.container.saveCaptionNoSkip() and not filelist.isLastFile():
+                    filelist.setNextFile()
                 return True
             case Qt.Key.Key_Left:
-                self.focus.prevFile()
+                filelist.setPrevFile()
                 return True
             case Qt.Key.Key_Right:
-                self.focus.nextFile()
+                filelist.setNextFile()
                 return True
             case Qt.Key.Key_Up | Qt.Key.Key_Down:
                 return True
