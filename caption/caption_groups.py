@@ -82,8 +82,7 @@ class CaptionGroups(QtWidgets.QWidget):
         group.color = util.hsv_to_rgb(self._nextGroupHue, 0.5, 0.25)
         self._nextGroupHue += self.HUE_OFFSET
 
-        index = self.groupLayout.count()
-        self.groupLayout.insertWidget(index, group)
+        self.groupLayout.addWidget(group)
         self.ctx.controlUpdated.emit()
         return group
 
@@ -93,6 +92,7 @@ class CaptionGroups(QtWidgets.QWidget):
         dialog.setWindowTitle("Confirm group removal")
         dialog.setText(f"Remove group: {group.name}")
         dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+        dialog.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
 
         if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes:
             self.groupLayout.removeWidget(group)
@@ -100,9 +100,10 @@ class CaptionGroups(QtWidgets.QWidget):
             self._emitUpdatedApplyRules()
 
     def removeAllGroups(self):
-        for widget in list(self.groups):
-            self.groupLayout.removeWidget(widget)
-            widget.deleteLater()
+        for i in reversed(range(self.groupLayout.count())):
+            item = self.groupLayout.takeAt(i)
+            if widget := item.widget():
+                widget.deleteLater()
 
         self.ctx.controlUpdated.emit()
 

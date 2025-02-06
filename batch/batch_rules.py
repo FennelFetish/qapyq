@@ -150,6 +150,7 @@ class BatchRules(QtWidgets.QWidget):
 
     def _buildGroups(self):
         self.groupLayout = QtWidgets.QVBoxLayout()
+        self.groupLayout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.groupLayout.setSpacing(8)
 
         widget = QtWidgets.QWidget()
@@ -236,15 +237,12 @@ class BatchRules(QtWidgets.QWidget):
 
     def addGroup(self, title: str, color: str, exclusive: bool, combine: bool, captions: list[str]):
         group = BatchRulesGroup(title, color, exclusive, combine, captions, self.updatePreview)
-        index = self.groupLayout.count()
-        self.groupLayout.insertWidget(index, group)
-
+        self.groupLayout.addWidget(group, 0, Qt.AlignmentFlag.AlignTop)
 
     def removeAllGroups(self):
         for i in reversed(range(self.groupLayout.count())):
-            widget = self.groupLayout.itemAt(i).widget()
-            if widget:
-                self.groupLayout.removeWidget(widget)
+            item = self.groupLayout.takeAt(i)
+            if widget := item.widget():
                 widget.deleteLater()
 
 
@@ -296,6 +294,7 @@ class BatchRules(QtWidgets.QWidget):
         dialog.setWindowTitle("Confirm Reset")
         dialog.setText(f"Clear all rules and groups?")
         dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+        dialog.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
 
         if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes:
             self.applyPreset(CaptionPreset())

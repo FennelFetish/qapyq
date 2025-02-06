@@ -1,3 +1,4 @@
+import os.path
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QSignalBlocker
 from .inference_settings import InferenceSettingsWidget
@@ -33,7 +34,7 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
         self.llmSettings     = LLMModelSettings("inferLLMPresets", BackendsLLM)
         self.scaleSettings   = ScaleModelSettings("inferScalePresets", BackendsUpscale)
         self.maskSettings    = MaskModelSettings("inferMaskPresets", BackendsMask)
-        
+
         self.tabWidget = QtWidgets.QTabWidget()
         self.tabWidget.addTab(self.captionSettings, "Caption")
         self.tabWidget.addTab(self.tagSettings, "Tags")
@@ -56,7 +57,7 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
 
         if not justOpened:
             return
-        
+
         match configAttr:
             case "inferCaptionPresets": index, widget = 0, win.captionSettings
             case "inferTagPresets":     index, widget = 1, win.tagSettings
@@ -154,11 +155,11 @@ class BaseSettingsWidget(QtWidgets.QWidget):
     @property
     def backend(self) -> str:
         return self.cboBackend.currentData().name
-    
+
     @property
     def backendType(self) -> str:
         return self.cboBackend.currentData().type
-    
+
     @property
     def backendPathMode(self) -> str:
         return self.cboBackend.currentData().pathMode
@@ -170,7 +171,7 @@ class BaseSettingsWidget(QtWidgets.QWidget):
         presets: dict = getattr(Config, self.configAttr)
         for name in sorted(presets.keys()):
             self.cboPreset.addItem(name)
-        
+
         if selectName:
             index = self.cboPreset.findText(selectName)
         elif self.cboPreset.count() > 0:
@@ -178,7 +179,7 @@ class BaseSettingsWidget(QtWidgets.QWidget):
         else:
             self.fromDict({})
             index = -1
-        
+
         self.cboPreset.setCurrentIndex(index)
 
     @Slot()
@@ -235,8 +236,9 @@ class BaseSettingsWidget(QtWidgets.QWidget):
             path, filter = QtWidgets.QFileDialog.getOpenFileName(self, "Choose model file", path)
         else:
             path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose model directory", path)
-        
+
         if path:
+            path = os.path.abspath(path)
             target.setText(path)
 
 
@@ -259,7 +261,7 @@ class BaseSettingsWidget(QtWidgets.QWidget):
 class LLMModelSettings(BaseSettingsWidget):
     def __init__(self, configAttr: str, backends: dict[str, BackendDef]):
         super().__init__(configAttr, backends)
-        
+
     def build(self, layout: QtWidgets.QGridLayout, row: int):
         self.lblQuant = QtWidgets.QLabel("Quantization:")
         layout.addWidget(self.lblQuant, row, 0)
@@ -313,7 +315,7 @@ class LLMModelSettings(BaseSettingsWidget):
         self.inferSettings.setSupportsPenalty(enabled)
         for w in widgets:
             w.setEnabled(enabled)
-        
+
         for w in (self.lblQuant, self.cboQuant):
             w.setEnabled(not enabled)
 
@@ -328,7 +330,7 @@ class LLMModelSettings(BaseSettingsWidget):
         if gpuLayers < 0:
             gpuLayers = 100
         self.spinGpuLayers.setValue(gpuLayers)
-        
+
         self.spinThreadCount.setValue(settings.get("num_threads", 11))
         self.spinBatchSize.setValue(settings.get("batch_size", 512))
 
@@ -347,7 +349,7 @@ class LLMModelSettings(BaseSettingsWidget):
             settings["batch_size"]  = self.spinBatchSize.value()
         else:
             settings["quantization"] = self.cboQuant.currentData()
-        
+
         settings[Config.INFER_PRESET_SAMPLECFG_KEY] = self.inferSettings.toDict()
         return settings
 
@@ -366,7 +368,7 @@ class CaptionModelSettings(LLMModelSettings):
         self.btnChooseProjector = QtWidgets.QPushButton("Choose...")
         self.btnChooseProjector.clicked.connect(lambda: self._choosePath(self.txtProjectorPath, self.txtPath))
         layout.addWidget(self.btnChooseProjector, row, 6)
-        
+
         row += 1
         super().build(layout, row)
 
@@ -408,7 +410,7 @@ class CaptionModelSettings(LLMModelSettings):
             settings["proj_path"] = self.txtProjectorPath.text()
         else:
             settings["vis_gpu_layers"] = self.spinVisGpuLayers.value()
-        
+
         return settings
 
 
@@ -597,7 +599,7 @@ class ScaleModelSettings(BaseSettingsWidget):
         minVal = self.scaleLevels[index-1][0].value() if index > 0 else 1.0
         if value < minVal:
             self.scaleLevels[index][0].setValue(minVal)
-        
+
         maxVal = self.scaleLevels[index+1][0].value() if index < len(self.scaleLevels)-1 else 1024
         if value > maxVal:
             self.scaleLevels[index][0].setValue(maxVal)

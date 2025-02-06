@@ -250,9 +250,10 @@ class StatsLayout(QtWidgets.QVBoxLayout):
         dialog.setIcon(QtWidgets.QMessageBox.Icon.Question)
         dialog.setWindowTitle("Confirm Unloading Files")
         dialog.setText(confirmText)
-        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel)
+        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+        dialog.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
 
-        if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Ok:
+        if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes:
             filesSet = set(filesGen)
             self.tab.filelist.filterFiles(lambda file: file not in filesSet)
             # TODO: Reload data and restore selection

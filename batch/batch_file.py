@@ -1,4 +1,5 @@
 import os, shutil
+from datetime import datetime
 from enum import Enum
 from typing import Callable
 from PySide6 import QtWidgets
@@ -108,6 +109,7 @@ class BatchFile(QtWidgets.QWidget):
         path = self.txtTargetPath.text()
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose target directory", path)
         if path:
+            path = os.path.abspath(path)
             self.txtTargetPath.setText(path)
 
     @Slot()
@@ -121,6 +123,7 @@ class BatchFile(QtWidgets.QWidget):
 
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose base directory", path)
         if path:
+            path = os.path.abspath(path)
             self.txtBasePath.setText(path)
 
     @Slot()
@@ -229,7 +232,7 @@ class BatchFile(QtWidgets.QWidget):
             self._task.includeMasks      = True
             self._task.overwriteMasks    = self.maskSettings.maskPathSettings.overwriteFiles
             self._task.maskPathTemplate  = self.maskSettings.maskPathSettings.pathTemplate
-        
+
         if self.captionSettings.isChecked():
             self._task.includeJson       = self.captionSettings.chkIncludeJson.isChecked()
             self._task.includeTxt        = self.captionSettings.chkIncludeTxt.isChecked()
@@ -338,11 +341,13 @@ class FileCaptionSettings(FileSettings):
     def _chooseArchiveFile(self):
         path = self.txtArchivePath.text()
         if not path:
-            path = Config.pathExport + "/captions.zip"
-        
+            filename = datetime.now().strftime("captions_%Y-%m-%d.zip")
+            path = os.path.join(Config.pathExport, filename)
+
         filter = "Archive Files (*.zip)"
         path, filter = QtWidgets.QFileDialog.getSaveFileName(self, "Choose archive file", path, filter)
         if path:
+            path = os.path.abspath(path)
             self.txtArchivePath.setText(path)
 
 
@@ -374,7 +379,7 @@ class FileMaskSettings(QtWidgets.QGroupBox):
         self.maskPathParser.setup(currentFile, None)
         #self.maskPathParser.setImageDimension(self.tab.imgview.image.pixmap())
         self.maskPathSettings.updatePreview()
-    
+
     def _onToggled(self, state: bool):
         self.maskPathSettings.setEnabled(state)
 
@@ -395,7 +400,7 @@ class BatchFileTask(BatchTask):
         self.includeMasks      = False
         self.overwriteMasks    = False
         self.maskPathTemplate  = ""
-        
+
         self.includeJson       = False
         self.includeTxt        = False
         self.overwriteCaptions = False
@@ -470,7 +475,7 @@ class BatchFileTask(BatchTask):
         destPath = os.path.join(targetFolder, targetFileName)
         if (not overwrite) and os.path.exists(destPath):
             return None
-        
+
         if not os.path.exists(targetFolder):
             self.log(f"Creating folder: {targetFolder}")
             os.makedirs(targetFolder)
@@ -491,9 +496,9 @@ class BatchFileTask(BatchTask):
         for maskSrcPath in (f"{maskSrcPathNoExt}{ext}" for ext in MASK_EXTENSIONS):
             if os.path.exists(maskSrcPath):
                 return self.processFile(maskSrcPath, targetFolder, os.path.basename(maskSrcPath), self.overwriteMasks)
-        
+
         return None
-    
+
     def processCaption(self, srcPath: str, targetFolder: str, targetFileName: str, overwrite: bool) -> str | None:
         if os.path.exists(srcPath):
             return self.captionDest(srcPath, targetFolder, targetFileName, overwrite)
@@ -552,5 +557,5 @@ class BatchFileTask(BatchTask):
         if not os.path.exists(archiveFolder):
             self.log(f"Creating folder for archive: {archiveFolder}")
             os.makedirs(archiveFolder)
-        
+
         return archivePath

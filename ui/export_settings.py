@@ -95,7 +95,7 @@ class ExportWidget(QtWidgets.QWidget):
 
         self._build(formats)
         self._onSaveModeChanged(self.cboSaveMode.currentIndex())
-        
+
     def _build(self, formats: list[str]):
         collapsible = superqt.QCollapsible("Export Settings")
         collapsible.layout().setContentsMargins(2, 2, 2, 0)
@@ -126,7 +126,7 @@ class ExportWidget(QtWidgets.QWidget):
             lblScaling.linkActivated.connect(self.cboScalePreset.showModelSettings)
             layout.addWidget(lblScaling, 0, 0)
             layout.addWidget(self.cboScalePreset, 0, 1)
-        
+
         self.cboFormat = QtWidgets.QComboBox()
         self.cboFormat.addItems(formats if formats else FORMATS.keys())
         self.cboFormat.currentTextChanged.connect(self._onExtensionChanged)
@@ -149,7 +149,7 @@ class ExportWidget(QtWidgets.QWidget):
         self.cboSaveMode.currentIndexChanged.connect(self._onSaveModeChanged)
         layout.addWidget(QtWidgets.QLabel("Path:"), 0, 0)
         layout.addWidget(self.cboSaveMode, 0, 1)
-        
+
         self.btnOpenSettings = QtWidgets.QPushButton("Edit Path...")
         self.btnOpenSettings.clicked.connect(self.openExportSettings)
         layout.addWidget(self.btnOpenSettings, 1, 0, 1, 2)
@@ -191,7 +191,7 @@ class ExportWidget(QtWidgets.QWidget):
             stylesheet = f"color: {qtlib.COLOR_RED}"
         self.txtPathSample.setStyleSheet(stylesheet)
 
-        examplePath = "/\n\n".join(os.path.split(examplePath))
+        examplePath = f"{os.sep}\n\n".join(os.path.split(examplePath))
         self.txtPathSample.setPlainText(examplePath)
 
 
@@ -229,11 +229,12 @@ class ExportWidget(QtWidgets.QWidget):
         path = os.path.basename(path)
         path = os.path.join(self._defaultPath, path)
 
-        fileFilter = f"All Files (*.*)"
+        fileFilter = f"All Files (*)"
         path, selectedFilter = QtWidgets.QFileDialog.getSaveFileName(self, "Save Image", path, fileFilter)
         if not path:
             return ""
-        
+
+        path = os.path.abspath(path)
         _, ext = os.path.splitext(path)
         if not ext:
             # Do not simply append an extension: That would bypass overwrite confirmation.
@@ -242,7 +243,7 @@ class ExportWidget(QtWidgets.QWidget):
 
         self._defaultPath = os.path.dirname(path)
         return path
-    
+
     def getAutoExportPath(self, imgFile, forReading=False) -> str:
         self.parser.setup(imgFile)
         overwriteFiles = self.overwriteFiles or forReading
@@ -298,7 +299,7 @@ Examples:
             qtlib.setMonospace(txtInfo)
             layout.addWidget(txtInfo, row, 0, 1, 4)
             row += 1
-        
+
         self.txtPathTemplate = QtWidgets.QPlainTextEdit()
         self.txtPathTemplate.textChanged.connect(self.updatePreview)
         qtlib.setMonospace(self.txtPathTemplate)
@@ -351,7 +352,7 @@ Examples:
     def pathTemplate(self) -> str:
         template = self.txtPathTemplate.toPlainText()
         return template.translate(INVALID_CHARS)
-    
+
     @pathTemplate.setter
     def pathTemplate(self, template: str):
         self.txtPathTemplate.setPlainText(template)
@@ -378,7 +379,7 @@ Examples:
     @property
     def skipExistingFiles(self) -> bool:
         return self.chkSkipExisting.isChecked()
-    
+
     @skipExistingFiles.setter
     def skipExistingFiles(self, skip: bool):
         self.chkSkipExisting.setChecked(skip)
@@ -425,6 +426,7 @@ Examples:
         opts = QtWidgets.QFileDialog.Option.ShowDirsOnly
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose save folder", head, opts)
         if path:
+            path = os.path.normpath(path)
             self.txtPathTemplate.setPlainText(os.path.join(path, tail))
 
 
@@ -446,7 +448,7 @@ class PathSettingsWindow(QtWidgets.QDialog):
 
         self._build(self.pathSettings)
 
-        self.setWindowModality(Qt.WindowModality.WindowModal)
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.setWindowTitle("Setup Export Path")
         self.resize(800, 500)
 
@@ -501,7 +503,7 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
                 counter += 1
 
         return path
-    
+
     def parsePathWithPositions(self, pathTemplate: str) -> tuple[str, list[list[int]]]:
         firstVarIdx = pathTemplate.find("{{")
         # Templates starting with {{path}} or {{path.ext}} will only become absolute paths after variable replacement.
@@ -537,7 +539,7 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
     def _getImgProperties(self, var: str) -> str | None:
         if value := super()._getImgProperties(var):
             return value
-        
+
         match var:
             case "w": return str(self.width)
             case "h": return str(self.height)
@@ -562,11 +564,11 @@ class ClickableTextEdit(QtWidgets.QPlainTextEdit):
     def mousePressEvent(self, e) -> None:
         super().mousePressEvent(e)
         self._pressPos = e.position()
-        
+
         cursor = self.textCursor()
         cursor.clearSelection()
         self.setTextCursor(cursor)
-        
+
     @override
     def mouseReleaseEvent(self, e) -> None:
         super().mouseReleaseEvent(e)
@@ -579,7 +581,7 @@ class ClickableTextEdit(QtWidgets.QPlainTextEdit):
         dist2 = dx*dx + dy*dy
         if dist2 < 16 and e.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit()
-        
+
         self._pressPos = None
 
 
@@ -589,14 +591,14 @@ class ScaleConfig:
         self.interpUp   = INTERP_MODES[interpUp]
         self.interpDown = INTERP_MODES[interpDown]
         self.modelPath  = modelPath
-    
+
     @property
     def useUpscaleModel(self) -> bool:
         return self.modelPath is not None
-    
+
     def getInterpolationMode(self, upscale: bool) -> int:
         return self.interpUp if upscale else self.interpDown
-    
+
     def toDict(self) -> dict:
         config = {
             ScaleModelSettings.KEY_BACKEND:     ScaleModelSettings.DEFAULT_BACKEND,
@@ -758,7 +760,7 @@ class ImageExportTask(QRunnable):
     def warpAffine(self, mat: np.ndarray, ptsSrc: list[list[float]], ptsDest: list[list[float]]) -> np.ndarray:
         srcWidth  = self.distance(ptsSrc[1], ptsSrc[0])
         srcHeight = self.distance(ptsSrc[2], ptsSrc[1])
-        
+
         # https://docs.opencv.org/3.4/da/d6e/tutorial_py_geometric_transformations.html
         matrix = cv.getAffineTransform(np.float32(ptsSrc), np.float32(ptsDest))
         dsize  = (self.targetWidth, self.targetHeight)

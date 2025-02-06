@@ -154,6 +154,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.toolbar.setWindowToggleChecked(winName, True)
 
+    def showAuxWindow(self, winName: str, tab: ImgTab | None = None):
+        win = self.auxWindows.get(winName)
+        if not win:
+            self.toggleAuxWindow(winName)
+
+        if tab:
+            return tab.getWindowContent(winName)
+        return self.currentTab.getWindowContent(winName)
+
     @Slot()
     def onAuxWindowClosed(self, win: aux_window.AuxiliaryWindow) -> None:
         winName = win.configKey
@@ -334,6 +343,7 @@ class MainMenu(QtWidgets.QMenu):
         dialog.setWindowTitle("Confirm Close Tab")
         dialog.setText(f"Do you really want to close the current tab?")
         dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+        dialog.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
 
         if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes:
             self.mainWindow.closeCurrentTab()
@@ -345,6 +355,7 @@ class MainMenu(QtWidgets.QMenu):
         dialog.setWindowTitle("Confirm Quit")
         dialog.setText(f"Do you really want to quit the application?")
         dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+        dialog.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
 
         if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes:
             self.mainWindow.close()
@@ -428,7 +439,6 @@ class MainToolBar(QtWidgets.QToolBar):
 def loadInitialImage(win: MainWindow):
     loadPath = sys.argv[1] if len(sys.argv) > 1 else Config.pathDebugLoad
     if loadPath:
-        loadPath = loadPath.replace("\\", "/")
         tab: ImgTab = win.tabWidget.currentWidget()
         tab.filelist.load(loadPath)
 

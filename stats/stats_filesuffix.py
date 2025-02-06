@@ -131,11 +131,12 @@ class SuffixModel(QAbstractItemModel):
         for folder in folders:
             for (root, subdirs, files) in os.walk(folder, topdown=True):
                 subdirs.clear() # Do not descend into subdirs
-                files.sort()
 
-                root = filelist.removeCommonRoot(root)
-                root = "" if root == "." else root + "/"
-                files = [f"{root}{f}" for f in files]
+                root = os.path.normpath(root)
+                root = filelist.removeCommonRoot(root, allowEmpty=True)
+
+                files.sort()
+                files = [os.path.join(root, f) for f in files]
                 yield files
 
     def _getFileGroup(self, files: list[str], index: int, minSearchIndex: int) -> tuple[int, list[str]]:
@@ -212,7 +213,7 @@ class SuffixModel(QAbstractItemModel):
             if not data:
                 suffixes[suffix] = data = SuffixData(suffix)
 
-            data.addFile(f"{root}/{imgFile}")
+            data.addFile(os.path.join(root, imgFile))
 
 
     def clear(self):

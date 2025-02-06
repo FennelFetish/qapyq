@@ -260,8 +260,10 @@ class BatchUtil:
         dialog.setWindowTitle(f"Confirm Batch {name}")
         dialog.setTextFormat(Qt.TextFormat.RichText)
         dialog.setText(text)
-        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel)
-        return dialog.exec() == QtWidgets.QMessageBox.StandardButton.Ok
+        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+        dialog.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
+
+        return dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes
 
     @staticmethod
     def confirmAbort(parent: QtWidgets.QWidget | None = None) -> bool:
@@ -269,5 +271,7 @@ class BatchUtil:
         dialog.setIcon(QtWidgets.QMessageBox.Icon.Warning)
         dialog.setWindowTitle("Confirm Abort")
         dialog.setText(f"Do you really want to abort batch processing?")
-        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel)
-        return dialog.exec() == QtWidgets.QMessageBox.StandardButton.Ok
+        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+        dialog.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
+
+        return dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes

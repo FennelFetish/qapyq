@@ -196,7 +196,8 @@ class CaptionSettings(QtWidgets.QWidget):
     @Slot()
     def savePreset(self):
         fileFilter = "JSON (*.json)"
-        path, selectedFilter = QtWidgets.QFileDialog.getSaveFileName(self, "Save preset", self._defaultPresetPath, fileFilter)
+        path = os.path.join(self._defaultPresetPath, "caption-rules.json")
+        path, selectedFilter = QtWidgets.QFileDialog.getSaveFileName(self, "Save preset", path, fileFilter)
         if path:
             self._defaultPresetPath = os.path.dirname(path)
             preset = self.getPreset()
@@ -208,6 +209,7 @@ class CaptionSettings(QtWidgets.QWidget):
         dialog.setIcon(QtWidgets.QMessageBox.Icon.Question)
         dialog.setWindowTitle("Confirm Overwrite Defaults")
         dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+        dialog.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
 
         presetPath = os.path.abspath(Config.pathDefaultCaptionRules)
         dialog.setText(f"Overwrite the default rules and groups?\n\nThis will overwrite the file:\n{presetPath}")
@@ -235,6 +237,7 @@ class CaptionSettings(QtWidgets.QWidget):
         dialog.setWindowTitle("Confirm Reset")
         dialog.setText(f"Reset all rules and groups to the default values?")
         dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+        dialog.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
 
         if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes:
             if not self._loadDefaultPreset():
@@ -256,6 +259,7 @@ class CaptionSettings(QtWidgets.QWidget):
         dialog.setWindowTitle("Confirm Reset")
         dialog.setText(f"Clear all rules and groups?")
         dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+        dialog.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
 
         if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes:
             self.applyPreset(CaptionPreset())

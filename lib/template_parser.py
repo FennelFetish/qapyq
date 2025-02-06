@@ -178,8 +178,12 @@ class TemplateVariableParser:
     def _readTextFile(self) -> str | None:
         textPath = os.path.splitext(self.imgPath)[0] + ".txt"
         if os.path.exists(textPath):
-            with open(textPath, 'r') as file:
-                return file.read()
+            try:
+                with open(textPath, 'r') as file:
+                    return file.read()
+            except OSError:
+                print(f"WARNING: Couldn't read file for {{text}} variable: {textPath}")
+
         return None
 
 
@@ -196,24 +200,24 @@ class TemplateVariableParser:
                 return os.path.basename(self.imgPath)
 
         if var.startswith("folder"):
-            path = os.path.dirname(self.imgPath)
-            rest = var[len("folder"):]
-            if not rest:
-                return os.path.basename(path)
+            try:
+                path = os.path.dirname(self.imgPath)
+                rest = var[len("folder"):]
+                if not rest:
+                    return os.path.basename(path)
 
-            if rest.startswith("-"):
-                try:
+                if rest.startswith("-"):
                     up = int( rest[1:] )
                     for _ in range(up):
                         path = os.path.dirname(path)
                     return os.path.basename(path)
-                except ValueError:
-                    return None
 
-            if rest.startswith(":"):
-                basePath = rest[1:]
-                path = os.path.relpath(path, basePath)
-                return os.path.normpath(path)
+                if rest.startswith(":"):
+                    basePath = rest[1:]
+                    path = os.path.relpath(path, basePath)
+                    return os.path.normpath(path)
+            except ValueError:
+                return None
 
         return None
 

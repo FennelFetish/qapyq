@@ -46,17 +46,17 @@ class MacroOpItem:
         self.op = op
         self.args = args
         self.enabled = True
-    
+
     def toDict(self):
         data = {self.OP_KEY: self.op.name}
         data.update(self.args)
         return data
-    
+
     @classmethod
     def fromDict(cls, data: dict):
         opName = data.pop(cls.OP_KEY)
         return MacroOpItem(MacroOp[opName], data)
-    
+
     def __str__(self) -> str:
         return f"{self.op.name}: {self.args}"
 
@@ -108,7 +108,7 @@ class MaskingMacro:
         item = MacroOpItem(op, kwargs)
         self.operations.append(item)
         return item
-        
+
     def clear(self):
         self.operations = list()
 
@@ -156,7 +156,8 @@ class MaskingMacro:
     def loadMacros():
         basePath = os.path.abspath(Config.pathMaskMacros)
         for root, dirs, files in os.walk(basePath):
-            for path in (f"{root}/{f}" for f in files if f.endswith(".json")):
+            root = os.path.normpath(root)
+            for path in (os.path.join(root, f) for f in files if f.endswith(".json")):
                 name, ext = os.path.splitext( os.path.relpath(path, basePath) )
                 yield (name, path)
 
@@ -303,7 +304,7 @@ class MaskingMacro:
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Lighten)
         else: # erase
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
-        
+
         if strokeSmooth:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 

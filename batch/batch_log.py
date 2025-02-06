@@ -49,9 +49,9 @@ class BatchLog(QtWidgets.QWidget):
         self.txtLog.appendPlainText(timestamp + line)
         if scrollDown:
             logScrollBar.setValue(logScrollBar.maximum())
-        
+
         print(line)
-    
+
     def emitLog(self, line: str):
         self.log.emit(line)
 
@@ -62,8 +62,9 @@ class BatchLog(QtWidgets.QWidget):
 
         filename = datetime.now().strftime("batch_%Y-%m-%d_%H%M%S.log")
         path = os.path.join(self._savePath, filename)
-        
+
         path, filter = QtWidgets.QFileDialog.getSaveFileName(self, "Choose target file", path, filter)
         if path:
+            path = os.path.abspath(path)
             with open(path, 'w') as file:
                 file.writelines(self.txtLog.toPlainText())

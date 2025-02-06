@@ -4,14 +4,16 @@ from PySide6.QtGui import QImageReader
 from config import Config
 
 
+def sortKey(path: str):
+    path, filename = os.path.split(path)
+    return path, filename.lower()
+
 try:
     import natsort as ns
-    sortKey = ns.natsort_keygen(alg=ns.INT | ns.PATH | ns.IGNORECASE)
+    sortKey = ns.natsort_keygen(key=sortKey, alg=ns.ns.INT | ns.ns.PATH | ns.ns.GROUPLETTERS)
 except:
     print("natsort not installed. Numbered files might appear in wrong order.")
     print("Run the setup script to install the missing natsort package.")
-    def sortKey(path: str):
-        return os.path.split(path)
 
 
 class DataKeys:
@@ -65,7 +67,7 @@ class FileList:
             if os.path.isdir(path):
                 self._walkPath(path, True)
             elif fileFilter(path):
-                self.files.append(path)
+                self.files.append(os.path.abspath(path))
 
         self._postprocessList()
         numFiles = len(self.files)
@@ -87,6 +89,7 @@ class FileList:
                 pass
 
         for path in paths:
+            path = os.path.abspath(path)
             if os.path.isfile(path) and fileFilter(path):
                 self.files.append(path)
                 copyData(path)
@@ -103,7 +106,7 @@ class FileList:
             if os.path.isdir(path):
                 self._walkPath(path, True)
             elif fileFilter(path):
-                self.files.append(path)
+                self.files.append(os.path.abspath(path))
 
         self._removeDuplicates()
         self._postprocessList()
@@ -118,7 +121,7 @@ class FileList:
     def loadFile(self, file: str):
         self.files = []
         self.fileData = dict()
-        self.currentFile = file
+        self.currentFile = os.path.abspath(file)
         self.currentIndex = -1
         self.commonRoot = ""
         self.notifyListChanged()
@@ -264,11 +267,12 @@ class FileList:
                 self.currentIndex = -1
 
     def _walkPath(self, path: str, subfolders=False):
+        path = os.path.abspath(path)
         for (root, dirs, files) in os.walk(path, topdown=True, followlinks=True):
             if not subfolders:
                 dirs.clear()
-            # os.path.join() mixes up the separators on Windows.
-            self.files += [f"{root}/{f}" for f in files if fileFilter(f)]
+            root = os.path.normpath(root)
+            self.files += [os.path.join(root, f) for f in files if fileFilter(f)]
 
     def _removeDuplicates(self):
         self.files = list(set(self.files))
@@ -280,18 +284,18 @@ class FileList:
 
     def _updateCommonRoot(self):
         try:
-            self.commonRoot = os.path.commonpath(self.files).rstrip("/")
+            self.commonRoot = os.path.commonpath(self.files).rstrip("/\\")
             if os.path.isfile(self.commonRoot):
                 self.commonRoot = os.path.dirname(self.commonRoot)
         except ValueError:
             self.commonRoot = ""
 
-    def removeCommonRoot(self, path: str) -> str:
+    def removeCommonRoot(self, path: str, allowEmpty=False) -> str:
         if not (self.commonRoot and path.startswith(self.commonRoot)):
             return path
 
-        if path := path[len(self.commonRoot):]:
-            return path.lstrip("/")
+        if (path := path[len(self.commonRoot):]) or allowEmpty:
+            return path.lstrip("/\\")
         return "."
 
 

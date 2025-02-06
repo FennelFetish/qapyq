@@ -54,7 +54,7 @@ class CaptionGenerate(QtWidgets.QWidget):
         qtlib.setShowWhitespace(self.txtPromptPreview)
         layout.addWidget(self.txtPromptPreview, row, 1, 1, 5)
         layout.setRowStretch(row, 2)
-        
+
         row += 1
         self.inferSettings = InferencePresetWidget()
         layout.addWidget(self.inferSettings, row, 0, 1, 6)
@@ -115,7 +115,7 @@ class CaptionGenerate(QtWidgets.QWidget):
     def generate(self):
         file = self.ctx.tab.imgview.image.filepath
         if not file:
-            QtWidgets.QMessageBox.warning(self, "No Image Loaded", "Please load an image into the Main Window first.")
+            QtWidgets.QMessageBox.information(self, "No Image Loaded", "Please load an image into the Main Window first.")
             return
 
         self.btnGenerate.setEnabled(False)
@@ -139,7 +139,7 @@ class CaptionGenerate(QtWidgets.QWidget):
 
         if "tags" in content:
             task.tagConfig = self.tagSettings.getInferenceConfig()
-        
+
         Inference().queueTask(task)
 
     @Slot()
@@ -220,6 +220,6 @@ class InferenceTask(QRunnable):
     def runTags(self, inferProc: InferenceProcess) -> str:
         self.signals.progress.emit("Loading tag model ...")
         inferProc.setupTag(self.tagConfig)
-        
+
         self.signals.progress.emit("Generating tags ...")
         return inferProc.tag(self.imgPath)

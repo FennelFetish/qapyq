@@ -237,6 +237,7 @@ class BatchApply(QtWidgets.QWidget):
 
         path, filter = QtWidgets.QFileDialog.getSaveFileName(self, "Choose target file", path, filter)
         if path:
+            path = os.path.abspath(path)
             self.txtDestFilePath.setText(path)
 
     @Slot()
