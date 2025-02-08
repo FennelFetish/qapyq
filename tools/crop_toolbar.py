@@ -96,7 +96,7 @@ class CropToolBar(QtWidgets.QToolBar):
         self.chkConstrainToImage.setChecked(True)
 
         self.chkAllowUpscale = QtWidgets.QCheckBox("Allow Upscale")
-        self.chkAllowUpscale.setChecked(True)
+        self.chkAllowUpscale.setChecked(False)
 
         layout = QtWidgets.QGridLayout()
         layout.setContentsMargins(1, 1, 1, 1)
