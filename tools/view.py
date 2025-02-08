@@ -54,9 +54,9 @@ class ViewTool(Tool):
             case Qt.Key.Key_Right:
                 filelist.setNextFile()
             case Qt.Key.Key_Up:
-                filelist.setNextFolder()
-            case Qt.Key.Key_Down:
                 filelist.setPrevFolder()
+            case Qt.Key.Key_Down:
+                filelist.setNextFolder()
 
     def onMouseMove(self, event):
         x, y = self.mapPosToImageInt(event.position())
