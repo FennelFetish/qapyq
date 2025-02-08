@@ -215,12 +215,28 @@ class TemplateVariableParser:
                 if rest.startswith(":"):
                     basePath = rest[1:]
                     path = os.path.relpath(path, basePath)
+                    # Don't allow moving up.
+                    if f"..{os.sep}" in path:
+                        return os.path.dirname(self.imgPath).lstrip("/\\")
                     return os.path.normpath(path)
             except ValueError:
                 return None
 
         return None
 
+
+    @staticmethod
+    def _getFuncArg(args: list[str], index: int, default):
+        if len(args) > index and args[index]:
+            return args[index]
+        return default
+
+    @classmethod
+    def _getFuncArgInt(cls, args: list[str], index: int, default: int):
+        try:
+            return int( cls._getFuncArg(args, index, default) )
+        except ValueError:
+            return default
 
     def _applyFunction(self, value: str, func: str) -> str:
         func, *args = func.split(":")
@@ -238,30 +254,29 @@ class TemplateVariableParser:
 
             case "replace":
                 if len(args) > 1 and args[0]:
-                    return value.replace(args[0], args[1])
+                    count = self._getFuncArgInt(args, 2, -1)
+                    return value.replace(args[0], args[1], count)
+
+            # TODO: Second layer of highlighting for loaded variables? (underline)
+            case "replacevar":
+                if len(args) > 1 and args[0]:
+                    val2 = self._getValue(args[1])
+                    count = self._getFuncArgInt(args, 2, -1)
+                    return value.replace(args[0], val2, count)
+
+            # TODO: replacerand  (replace with one of randomly selected)
 
             case "reverse":
-                sep = ", "
-                if len(args) > 0 and args[0]:
-                    sep = args[0]
+                sep = self._getFuncArg(args, 0, ", ")
                 return self._funcReverse(value, sep)
 
             case "shuffle":
-                sep = ", "
-                if len(args) > 0 and args[0]:
-                    sep = args[0]
+                sep = self._getFuncArg(args, 0, ", ")
                 return self._funcShuffle(value, 0, sep)
 
             case "shufflekeep":
-                keep = 1
-                sep = ", "
-                if len(args) > 0:
-                    try:
-                        keep = int( args[0] )
-                    except ValueError:
-                        keep = 1
-                if len(args) > 1 and args[1]:
-                    sep = args[1]
+                keep = self._getFuncArgInt(args, 0, 1)
+                sep = self._getFuncArg(args, 1, ", ")
                 return self._funcShuffle(value, keep, sep)
 
             case "join":
@@ -269,10 +284,7 @@ class TemplateVariableParser:
                     return value
 
                 key = args[0].strip()
-                sep = ", "
-                if len(args) > 1:
-                    sep = args[1]
-
+                sep = self._getFuncArg(args, 1, ", ")
                 val2 = self._getValue(key)
                 return sep.join(val for v in (value, val2) if (val := v.strip()))
 
