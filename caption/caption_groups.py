@@ -194,6 +194,11 @@ class CaptionControlGroup(QtWidgets.QWidget):
         self.chkExclusive = QtWidgets.QCheckBox("Mutually Exclusive")
         self.chkCombine = QtWidgets.QCheckBox("Combine Tags")
 
+        # Emit signal to update preview, but don't apply rules, as these settings can remove tags.
+        emitControlUpdated = lambda: self.groups.ctx.controlUpdated.emit()
+        self.chkExclusive.toggled.connect(emitControlUpdated)
+        self.chkCombine.toggled.connect(emitControlUpdated)
+
         btnRemoveGroup = QtWidgets.QPushButton("Remove Group")
         btnRemoveGroup.clicked.connect(lambda: self.groups.removeGroup(self))
 
@@ -464,6 +469,7 @@ class CaptionColorSet:
             colors[focusTag] = self.COLOR_FOCUS_DEFAULT
             formats[focusTag] = self.focusFormat
 
+        # Insert group colors
         for group in self.groups.groups:
             mutedColor, mutedFormat = self._getMuted(group.color) if focusSet else (group.color, group.charFormat)
 
@@ -475,6 +481,7 @@ class CaptionColorSet:
                     colors[caption]  = mutedColor
                     formats[caption] = mutedFormat
 
+        # Insert banned coler. This will overwrite group colors.
         bannedColor, bannedFormat = self._getMuted(qtlib.COLOR_BUBBLE_BAN) if focusSet else (qtlib.COLOR_BUBBLE_BAN, self.bannedFormat)
         bannedFocusColor, bannedFocusFormat = self._getMuted(self.COLOR_FOCUS_BAN, 1, 1) if focusSet else (qtlib.COLOR_BUBBLE_BAN, self.bannedFormat)
         for banned in self.groups.ctx.settings.bannedCaptions:

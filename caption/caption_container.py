@@ -47,6 +47,7 @@ class CaptionContainer(QtWidgets.QWidget):
     def __init__(self, tab):
         super().__init__()
         self.captionCache = CaptionCache(tab.filelist)
+        self._cachedRulesProcessor: CaptionRulesProcessor | None = None
 
         self.captionSeparator = ', '
 
@@ -65,11 +66,24 @@ class CaptionContainer(QtWidgets.QWidget):
         self.ctx.settings._loadDefaultPreset()
 
     def _build(self, ctx):
+        row = 0
         splitter = QtWidgets.QSplitter(Qt.Orientation.Vertical)
         splitter.setHandleWidth(12)
         splitter.addWidget(ctx)
-        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(row, 1)
+        self._splitter = splitter
 
+        row += 1
+        self.txtRulesPreview = QtWidgets.QPlainTextEdit()
+        self.txtRulesPreview.setReadOnly(True)
+        qtlib.setMonospace(self.txtRulesPreview)
+        qtlib.setShowWhitespace(self.txtRulesPreview)
+        qtlib.setTextEditHeight(self.txtRulesPreview, 2, "min")
+        self.txtRulesPreview.hide()
+        splitter.addWidget(self.txtRulesPreview)
+        splitter.setStretchFactor(row, 1)
+
+        row += 1
         self.bubbles = CaptionBubbles(self.ctx.groups.getCaptionColors, showWeights=False, showRemove=True, editable=False)
         self.bubbles.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.MinimumExpanding)
         self.bubbles.setContentsMargins(4, 4, 4, 4)
@@ -78,13 +92,14 @@ class CaptionContainer(QtWidgets.QWidget):
         self.bubbles.orderChanged.connect(lambda: self.setCaption( self.captionSeparator.join(self.bubbles.getCaptions()) ))
         self.bubbles.dropped.connect(self.appendToCaption)
         splitter.addWidget(self.bubbles)
-        splitter.setStretchFactor(1, 1)
+        splitter.setStretchFactor(row, 1)
 
+        row += 1
         self.txtCaption = DropTextEdit()
         qtlib.setMonospace(self.txtCaption, 1.2)
         self.txtCaption.textChanged.connect(self._onCaptionEdited)
         splitter.addWidget(self.txtCaption)
-        splitter.setStretchFactor(2, 1)
+        splitter.setStretchFactor(row, 1)
 
         mainLayout = QtWidgets.QVBoxLayout()
         mainLayout.setContentsMargins(0, 0, 0, 0)
@@ -194,6 +209,12 @@ class CaptionContainer(QtWidgets.QWidget):
         actLoad = menu.addAction("Load from File...")
         actLoad.triggered.connect(self.ctx.settings.loadPreset)
 
+        menu.addSeparator()
+
+        actPreview = menu.addAction("Show refined preview")
+        actPreview.setCheckable(True)
+        actPreview.toggled.connect(self._onPreviewToggled)
+
         return menu
 
 
@@ -207,9 +228,10 @@ class CaptionContainer(QtWidgets.QWidget):
     @Slot()
     def _onCaptionEdited(self):
         text = self.txtCaption.toPlainText()
-        self._highlight(text)
+        self._highlight(text, self.txtCaption)
         self.bubbles.setText(text)
         self.updateSelectionState(text)
+        self._updatePreview(text)
 
         self.captionCache.put(text)
         self.captionCache.setState(DataKeys.IconStates.Changed)
@@ -237,10 +259,33 @@ class CaptionContainer(QtWidgets.QWidget):
         self.destSelector.setEnabled(False)
 
 
-    def _highlight(self, text: str):
+    @Slot()
+    def _onPreviewToggled(self, enabled: bool):
+        self.txtRulesPreview.setVisible(enabled)
+        if enabled:
+            self._updatePreview(self.getCaption())
+
+            splitterSizes = self._splitter.sizes()
+            idx = self._splitter.indexOf(self.txtRulesPreview)
+            splitterSizes[idx] = self.txtRulesPreview.minimumHeight()
+            self._splitter.setSizes(splitterSizes)
+
+    def _updatePreview(self, text: str, invalidateRules=False):
+        if not self.txtRulesPreview.isVisible():
+            return
+
+        if invalidateRules or self._cachedRulesProcessor is None:
+            self._cachedRulesProcessor = self.createRulesProcessor()
+
+        textNew = self._cachedRulesProcessor.process(text)
+        self.txtRulesPreview.setPlainText(textNew)
+        self._highlight(textNew, self.txtRulesPreview)
+
+
+    def _highlight(self, text: str, txtWidget: QtWidgets.QPlainTextEdit):
         formats = self.ctx.groups.getCaptionCharFormats()
-        with QSignalBlocker(self.txtCaption):
-            cursor = self.txtCaption.textCursor()
+        with QSignalBlocker(txtWidget):
+            cursor = txtWidget.textCursor()
             cursor.setPosition(0)
             cursor.movePosition(QtGui.QTextCursor.MoveOperation.End, QtGui.QTextCursor.MoveMode.KeepAnchor)
             cursor.setCharFormat(QtGui.QTextCharFormat())
@@ -280,9 +325,10 @@ class CaptionContainer(QtWidgets.QWidget):
     @Slot()
     def _onControlUpdated(self):
         text = self.txtCaption.toPlainText()
-        self._highlight(text)
+        self._highlight(text, self.txtCaption)
         self.bubbles.updateBubbles()
         self.updateSelectionState(text)
+        self._updatePreview(text, invalidateRules=True)
 
     def updateSelectionState(self, captionText: str):
         separator = self.captionSeparator.strip()
@@ -358,6 +404,15 @@ class CaptionContainer(QtWidgets.QWidget):
 
     @Slot()
     def applyRules(self):
+        rulesProcessor = self.createRulesProcessor()
+        text = self.txtCaption.toPlainText()
+        textNew = rulesProcessor.process(text)
+
+        # Only set when text has changed to prevent save button turning red
+        if textNew != text:
+            self.setCaption(textNew)
+
+    def createRulesProcessor(self):
         removeDup = self.ctx.settings.isRemoveDuplicates
         sortCaptions = self.ctx.settings.isSortCaptions
 
@@ -368,13 +423,7 @@ class CaptionContainer(QtWidgets.QWidget):
         rulesProcessor.setCaptionGroups( group.captions for group in self.ctx.groups.groups )
         rulesProcessor.setMutuallyExclusiveCaptionGroups( group.captions for group in self.ctx.groups.groups if group.mutuallyExclusive )
         rulesProcessor.setCombinationCaptionGroups( group.captions for group in self.ctx.groups.groups if group.combineTags )
-
-        text = self.txtCaption.toPlainText()
-        textNew = rulesProcessor.process(text)
-
-        # Only set when text has changed to prevent save button turning red
-        if textNew != text:
-            self.setCaption(textNew)
+        return rulesProcessor
 
 
     @Slot()
