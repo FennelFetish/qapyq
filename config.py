@@ -3,6 +3,9 @@ class Config:
     windowTitle             = "qapyq"
     windowIcon              = "res/qapyq.png"
 
+    # Font
+    fontMonospace           = "res/font/DejaVuSansMono.ttf"
+
     # Paths
     pathConfig              = "./qapyq_config.json"
     pathDefaultCaptionRules = "./user/default-caption-rules.json"
@@ -122,6 +125,8 @@ class Config:
         else:
             data = dict()
 
+        cls.fontMonospace         = data.get("font_monospace", cls.fontMonospace)
+
         cls.pathExport            = data.get("path_export", cls.pathExport)
         cls.pathDebugLoad         = data.get("path_debug_load", cls.pathDebugLoad)
         cls.exportPresets         = data.get("export_presets", cls.exportPresets)
@@ -169,6 +174,8 @@ class Config:
         import json
         data = dict()
         data["version"]                     = cls.version
+
+        data["font_monospace"]              = cls.fontMonospace
 
         data["path_export"]                 = cls.pathExport
         data["path_debug_load"]             = cls.pathDebugLoad

@@ -2,6 +2,8 @@ from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal
 import numpy as np
 import lib.util as util
+from config import Config
+
 
 
 COLOR_RED   = "#FF1616" #"#FF3030"
@@ -9,6 +11,36 @@ COLOR_GREEN = "#30FF30"
 
 COLOR_BUBBLE_BLACK = "#161616"
 COLOR_BUBBLE_BAN   = "#454545"
+
+
+
+_fontMonospace: QtGui.QFont | None = None
+
+def loadFont(path: str, fallback: QtGui.QFontDatabase.SystemFont) -> QtGui.QFont:
+    font = QtGui.QFontDatabase.systemFont(fallback)
+    if not path:
+        return font
+
+    fontId = QtGui.QFontDatabase.addApplicationFont(path)
+    if fontId < 0:
+        print(f"Failed to load font from {path}")
+        return font
+
+    fontFamily = QtGui.QFontDatabase.applicationFontFamilies(fontId)[0]
+    font.setFamily(fontFamily)
+    return font
+
+def setMonospace(textWidget, fontSizeFactor=1.0, bold=False):
+    global _fontMonospace
+    if not _fontMonospace:
+        _fontMonospace = loadFont(Config.fontMonospace, QtGui.QFontDatabase.SystemFont.FixedFont)
+
+    font = QtGui.QFont(_fontMonospace)
+    font.setBold(bold)
+    if fontSizeFactor != 1.0:
+        font.setPointSizeF(font.pointSizeF() * fontSizeFactor)
+    textWidget.setFont(font)
+
 
 
 def setTextEditHeight(textEdit, numRows, mode=None):
@@ -24,13 +56,6 @@ def setTextEditHeight(textEdit, numRows, mode=None):
         textEdit.setMinimumHeight(height)
     else:
         textEdit.setFixedHeight(height)
-
-def setMonospace(textWidget, fontSizeFactor=1.0, bold=False):
-    font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
-    font.setBold(bold)
-    if fontSizeFactor != 1.0:
-        font.setPointSizeF(font.pointSizeF() * fontSizeFactor)
-    textWidget.setFont(font)
 
 def setShowWhitespace(textEdit):
     doc = textEdit.document()
