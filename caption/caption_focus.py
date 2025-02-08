@@ -2,7 +2,6 @@ from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QEvent, QTimer
 import lib.qtlib as qtlib
 from ui.flow_layout import FlowLayout
-from ui.tab import ImgTab
 from .caption_container import CaptionContainer, CaptionContext
 
 # - As tab in Caption Window

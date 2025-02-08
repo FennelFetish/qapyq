@@ -36,8 +36,8 @@ class CaptionBubbles(ReorderWidget):
     def getBubbles(self):
         layout: QtWidgets.QLayout = self.layout()
         for i in range(layout.count()):
-            widget = layout.itemAt(i).widget()
-            if widget and isinstance(widget, Bubble): # Why is there other stuff in there? -> It's the ReorderWidget's drag target
+            item = layout.itemAt(i)
+            if (widget := item.widget()) and isinstance(widget, Bubble): # Why is there other stuff in there? -> It's the ReorderWidget's drag target
                 yield widget
 
     def updateBubbles(self):

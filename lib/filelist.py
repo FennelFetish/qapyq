@@ -326,18 +326,20 @@ class FileList:
 
     def getData(self, file: str, key: str) -> Any | None:
         fileDict = self.fileData.get(file)
-        if isinstance(fileDict, dict):
-            return fileDict.get(key)
-        return None
+        if fileDict is None:
+            return None
+        return fileDict.get(key)
 
-    def removeData(self, file: str, key: str, notify=True):
+    def removeData(self, file: str, key: str, notify=True) -> None:
         fileDict = self.fileData.get(file)
         if fileDict is None:
             return
-        if key not in fileDict:
+
+        try:
+            del fileDict[key]
+        except KeyError:
             return
 
-        del fileDict[key]
         if notify:
             self.notifyDataChanged(file, key)
 
