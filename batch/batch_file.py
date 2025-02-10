@@ -15,6 +15,8 @@ import ui.export_settings as export
 
 # TODO: Multiple IO threads?
 
+# TODO: Add checkbox to mask sections: "Rename to match image filename" (only enabled when "Include images" is disabled)
+
 
 class Mode(Enum):
     Copy    = "copy"
@@ -146,7 +148,7 @@ class BatchFile(QtWidgets.QWidget):
             case Mode.Move: modeText = "Move the files to"
             case Mode.Symlink: modeText = "Create symlinks to the files in"
             case _: raise ValueError("Invalid mode")
-        ops.append(f"{modeText} '{self.txtTargetPath.text()}'")
+        ops.append(f"{modeText} '{os.path.abspath(self.txtTargetPath.text())}'")
 
         if self.chkFlatFolders.isChecked():
             ops.append("Discard the folder hierarchy and write all files directly into the target folder")
@@ -155,7 +157,7 @@ class BatchFile(QtWidgets.QWidget):
             if not basePath:
                 self.tab.filelist._lazyLoadFolder()
                 basePath = self.tab.filelist.commonRoot
-            ops.append(f"Keep the folder hierarchy relative to '{basePath}'")
+            ops.append(f"Keep the folder hierarchy relative to '{os.path.abspath(basePath)}'")
 
         if self.imageSettings.isChecked():
             if self.imageSettings.overwriteFiles:
@@ -220,8 +222,8 @@ class BatchFile(QtWidgets.QWidget):
 
         self._task = BatchFileTask(self.log, self.tab.filelist)
         self._task.mode         = self.cboMode.currentData()
-        self._task.targetFolder = self.txtTargetPath.text()
-        self._task.basePath     = basePath
+        self._task.targetFolder = os.path.abspath(self.txtTargetPath.text())
+        self._task.basePath     = os.path.abspath(basePath)
         self._task.flatFolders  = self.chkFlatFolders.isChecked()
 
         if self.imageSettings.isChecked():
@@ -520,15 +522,19 @@ class BatchFileTask(BatchTask):
     def createArchiveDest(self, archivePath: str):
         import zipfile, tempfile
         fd, tempArchivePath = tempfile.mkstemp(suffix=".zip")
-        self.log(f"Creating temporary archive: {tempArchivePath}")
+        self.log(f"Creating temporary ZIP archive: {tempArchivePath}")
         tempFile = os.fdopen(fd, 'wb')
         archive = zipfile.ZipFile(tempFile, 'w')
+        numFilesAdded = 0
 
         def archiveFile(srcPath: str, targetFolder: str, targetFileName: str, overwrite: bool) -> str:
             if self.flatFolders:
                 arcPath = os.path.basename(srcPath)
             else:
                 arcPath = os.path.relpath(srcPath, self.basePath)
+
+            nonlocal numFilesAdded
+            numFilesAdded += 1
 
             archive.write(srcPath, arcname=arcPath)
             return archivePath
@@ -537,11 +543,15 @@ class BatchFileTask(BatchTask):
             archive.close()
             tempFile.close()
 
-            correctedArchivePath = self.prepareArchiveDestination(archivePath)
-            self.log(f"Moving temporary archive to: {correctedArchivePath}")
+            if numFilesAdded > 0:
+                correctedArchivePath = self.prepareArchiveDestination(archivePath)
+                self.log(f"Moving temporary ZIP archive to: {correctedArchivePath}")
 
-            # This will overwrite the destination
-            shutil.move(tempArchivePath, correctedArchivePath)
+                # This will overwrite the destination
+                shutil.move(tempArchivePath, correctedArchivePath)
+            else:
+                self.log(f"Resulting ZIP archive is empty, deleting: {tempArchivePath}")
+                os.remove(tempArchivePath)
 
         return archiveFile, archiveFinalize
 
