@@ -73,6 +73,7 @@ class SizeBucketData:
     def __init__(self, size: tuple[int, int]):
         self.width  = size[0]
         self.height = size[1]
+        self.aspectRatio = self.width / self.height
 
         self.pixels = self.width * self.height / 1000000
         self.count  = 0
@@ -112,7 +113,7 @@ class SizeBucketSummary:
         self.maxPixels = max(self.maxPixels, pixels)
 
         self.numFiles += 1
-    
+
     def finalize(self, numBuckets: int):
         self.numBuckets = numBuckets
         if self.numFiles == 0:
@@ -168,7 +169,7 @@ class SizeBucketModel(QAbstractItemModel):
         return len(self.buckets)
 
     def columnCount(self, parent=QModelIndex()):
-        return 5
+        return 6
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         bucketData = self.buckets[index.row()]
@@ -178,9 +179,10 @@ class SizeBucketModel(QAbstractItemModel):
                 match index.column():
                     case 0: return bucketData.width
                     case 1: return bucketData.height
-                    case 2: return f"{bucketData.pixels:.2f}"
-                    case 3: return bucketData.count
-                    case 4:
+                    case 2: return f"{bucketData.aspectRatio:.3f}"
+                    case 3: return f"{bucketData.pixels:.2f}"
+                    case 4: return bucketData.count
+                    case 5:
                         presence = 0
                         if self.summary.numFiles > 0:
                             presence = len(bucketData.files) / self.summary.numFiles
@@ -198,9 +200,10 @@ class SizeBucketModel(QAbstractItemModel):
         match section:
             case 0: return "Width"
             case 1: return "Height"
-            case 2: return "MP"
-            case 3: return "Count"
-            case 4: return "Percentage"
+            case 2: return "Aspect"
+            case 3: return "Mpx"
+            case 4: return "Count"
+            case 5: return "Percentage"
         return None
 
     def index(self, row, column, parent=QModelIndex()):
@@ -218,17 +221,18 @@ class SizeBucketProxyModel(StatsBaseProxyModel):
     def getFiles(self, sourceIndex: QModelIndex) -> set[str]:
         data: SizeBucketData = self.sourceModel().data(sourceIndex, SizeBucketModel.ROLE_DATA)
         return data.files
-    
+
     def lessThan(self, left: QModelIndex, right: QModelIndex) -> bool:
         column = left.column()
         if column == right.column():
             dataLeft: SizeBucketData  = self.sourceModel().data(left, SizeBucketModel.ROLE_DATA)
             dataRight: SizeBucketData = self.sourceModel().data(right, SizeBucketModel.ROLE_DATA)
             match column:
-                case 0 | 1 | 3: return super().lessThan(right, left) # Reversed
-                case 2: return dataRight.pixels < dataLeft.pixels
-                case 4: return dataRight.count < dataLeft.count
-        
+                case 0 | 1 | 4: return super().lessThan(right, left) # Reversed
+                case 2: return dataRight.aspectRatio < dataLeft.aspectRatio
+                case 3: return dataRight.pixels < dataLeft.pixels
+                case 5: return dataRight.count < dataLeft.count
+
         return super().lessThan(left, right)
 
     def filterAcceptsRow(self, sourceRow: int, sourceParent: QModelIndex) -> bool:

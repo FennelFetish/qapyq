@@ -370,8 +370,11 @@ class TagStatsLayout(StatsLayout):
 
     @Slot()
     def _openNewTabWithFocus(self):
+        if not self.hasListedFiles():
+            return
+
         oldTab = self.tab
-        oldCaptionWin = getCaptionWindow(oldTab, self.tagStats)
+        oldCaptionWin = getCaptionWindow(oldTab, self.tagStats, show=True)
         if not oldCaptionWin:
             return
 
@@ -383,13 +386,13 @@ class TagStatsLayout(StatsLayout):
         if not newCaptionWin:
             return
 
-        captionPreset = oldCaptionWin.ctx.settings.getPreset()
-        newCaptionWin.ctx.settings.applyPreset(captionPreset)
-
         selectedTags = []
         for srcIndex in self.getSelectedSourceIndexes():
             tag = self.proxyModel.sourceModel().data(srcIndex, TagModel.ROLE_TAG)
             selectedTags.append(tag)
+
+        captionPreset = oldCaptionWin.ctx.settings.getPreset()
+        newCaptionWin.ctx.settings.applyPreset(captionPreset)
 
         newCaptionWin.ctx.focus.setFocusTags(selectedTags)
         newCaptionWin.ctx.setCurrentWidget(newCaptionWin.ctx.focus)
@@ -400,9 +403,13 @@ class TagStatsLayout(StatsLayout):
 
 
 
-def getCaptionWindow(tab: ImgTab, parent: QtWidgets.QWidget) -> CaptionContainer | None:
-    if captionWin := tab.getWindowContent("caption"):
+def getCaptionWindow(tab: ImgTab, parent: QtWidgets.QWidget, show=False) -> CaptionContainer | None:
+    if not show and (captionWin := tab.getWindowContent("caption")):
         return captionWin
 
-    QtWidgets.QMessageBox.warning(parent, "Failed", "Caption Window is not open.")
+    # If CaptionWindow didn't exist, show it
+    if captionWin := tab.mainWindow.showAuxWindow("caption", tab):
+        return captionWin
+
+    QtWidgets.QMessageBox.information(parent, "Failed", "Caption Window is not open.")
     return None

@@ -4,8 +4,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QSortFilterProxyModel, QModelIndex, QItemSelection, QRegularExpression, QSignalBlocker
 from ui.tab import ImgTab
 import lib.qtlib as qtlib
-from lib.filelist import FileList
-from lib.filelist import sortKey
+from lib.filelist import FileList, sortKey
 
 
 # TODO: Context menu "copy cell content" for all tabs
@@ -226,6 +225,9 @@ class StatsLayout(QtWidgets.QVBoxLayout):
         if self.listFiles.count() == 0:
             return None
         return (self.listFiles.item(row).data(self.ROLE_FILEPATH) for row in range(self.listFiles.count()))
+
+    def hasListedFiles(self) -> bool:
+        return self.listFiles.count() > 0
 
     @Slot()
     def _loadFilesInNewTab(self) -> ImgTab | None:
