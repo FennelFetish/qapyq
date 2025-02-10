@@ -1,5 +1,5 @@
 import os
-from typing import ForwardRef
+from typing import Callable
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Slot
 from caption import CaptionPreset, CaptionRulesProcessor
@@ -10,9 +10,6 @@ from ui.flow_layout import FlowLayout, SortedStringFlowWidget
 from lib import qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
-
-
-BatchRulesGroup = ForwardRef("BatchRulesGroup")
 
 
 class BatchRules(QtWidgets.QWidget):
@@ -68,12 +65,12 @@ class BatchRules(QtWidgets.QWidget):
         layout.addWidget(self.txtSeparator, row, 1)
 
         self.chkRemoveDup = QtWidgets.QCheckBox("Remove Duplicates/Subsets")
-        self.chkRemoveDup.setChecked(True)
+        self.chkRemoveDup.setChecked(False)
         self.chkRemoveDup.checkStateChanged.connect(self.updatePreview)
         layout.addWidget(self.chkRemoveDup, row, 2)
 
         self.chkSortCaptions = QtWidgets.QCheckBox("Sort Captions")
-        self.chkSortCaptions.setChecked(True)
+        self.chkSortCaptions.setChecked(False)
         self.chkSortCaptions.checkStateChanged.connect(self.updatePreview)
         layout.addWidget(self.chkSortCaptions, row, 3)
 
@@ -484,9 +481,29 @@ class BatchRulesTask(BatchTask):
 
         self.skipExisting = False
 
+        self._captionGetter: Callable[[CaptionFile, str], str | None]  = None
+        self._captionSetter: Callable[[CaptionFile, str, str], None]   = None
+        self._keyExists:     Callable[[CaptionFile], bool]             = None
+
 
     def runPrepare(self):
-        pass
+        match self.srcType:
+            case FileTypeSelector.TYPE_TAGS:
+                self._captionGetter = CaptionFile.getTags
+            case FileTypeSelector.TYPE_CAPTIONS:
+                self._captionGetter = CaptionFile.getCaption
+            case _:
+                raise ValueError("Invalid caption load type")
+
+        match self.targetType:
+            case FileTypeSelector.TYPE_TAGS:
+                self._captionSetter = CaptionFile.addTags
+                self._keyExists = self._hasTagsKey
+            case FileTypeSelector.TYPE_CAPTIONS:
+                self._captionSetter = CaptionFile.addCaption
+                self._keyExists = self._hasCaptionsKey
+            case _:
+                raise ValueError("Invalid caption storage type")
 
 
     def runProcessFile(self, imgFile: str) -> str | None:
@@ -495,34 +512,26 @@ class BatchRulesTask(BatchTask):
             self.log(f"WARNING: Failed to load captions from {captionFile.jsonPath}")
             return None
 
-        if self.skipExisting and self.targetKeyExists(captionFile):
+        if self.skipExisting and self._keyExists(captionFile):
             return None
 
-        if self.srcType == "tags":
-            text = captionFile.getTags(self.srcKey)
-        else:
-            text = captionFile.getCaption(self.srcKey)
-
+        text = self._captionGetter(captionFile, self.srcKey)
         if not text:
-            self.log(f"WARNING: {captionFile.jsonPath} is missing value for {self.srcType}.{self.srcKey}")
+            self.log(f"WARNING: {captionFile.jsonPath} is missing value for {self.srcType}.{self.srcKey}, skipping")
             return None
 
         text = self.rulesProcessor.process(text)
         if not text:
-            self.log(f"WARNING: Caption is empty for {imgFile}, ignoring")
+            self.log(f"WARNING: Caption is empty for {imgFile}, skipping")
             return None
 
-        if self.targetType == "tags":
-            captionFile.addTags(self.targetKey, text)
-        else:
-            captionFile.addCaption(self.targetKey, text)
-
+        self._captionSetter(captionFile, self.targetKey, text)
         captionFile.saveToJson()
         return captionFile.jsonPath
 
 
-    def targetKeyExists(self, captionFile: CaptionFile) -> bool:
-        if self.targetType == "tags":
-            return self.targetKey in captionFile.tags
-        else:
-            return self.targetKey in captionFile.captions
+    def _hasTagsKey(self, captionFile: CaptionFile) -> bool:
+        return self.targetKey in captionFile.tags
+
+    def _hasCaptionsKey(self, captionFile: CaptionFile) -> bool:
+        return self.targetKey in captionFile.captions
