@@ -6,7 +6,7 @@ from PySide6.QtGui import QImage, QPainter, QTabletEvent, QPointingDevice
 from PySide6 import QtWidgets
 import cv2 as cv
 import numpy as np
-from lib.filelist import DataKeys
+from lib.filelist import FileList, DataKeys
 import ui.export_settings as export
 from config import Config
 from .view import ViewTool
@@ -58,7 +58,7 @@ class MaskTool(ViewTool):
         if layers := filelist.getData(currentFile, DataKeys.MaskLayers):
             index = filelist.getData(currentFile, DataKeys.MaskIndex)
             self.maskItem = layers[index]
-        elif layers := self.loadLayersFromFile():
+        elif layers := self.loadLayersFromFile(filelist):
             self.maskItem = layers[0]
         else:
             self.maskItem = self.createMask()
@@ -74,10 +74,14 @@ class MaskTool(ViewTool):
         maskState = filelist.getData(currentFile, DataKeys.MaskState)
         self._toolbar.setEdited(maskState == DataKeys.IconStates.Changed)
 
-    def loadLayersFromFile(self):
-        maskPath = self._toolbar.exportWidget.getAutoExportPath(self.tab.filelist.getCurrentFile(), forReading=True) # TODO: When overwrite disabled, load latest counter
+    def loadLayersFromFile(self, filelist: FileList):
+        currentFile = filelist.getCurrentFile()
+        maskPath = self._toolbar.exportWidget.getAutoExportPath(currentFile, forReading=True) # TODO: When overwrite disabled, load latest counter
         if not os.path.exists(maskPath):
+            filelist.removeData(currentFile, DataKeys.MaskState)
             return None
+
+        filelist.setData(currentFile, DataKeys.MaskState, DataKeys.IconStates.Exists)
 
         maskMat = cv.imread(maskPath, cv.IMREAD_UNCHANGED)
         if maskMat.ndim == 2:
@@ -94,6 +98,18 @@ class MaskTool(ViewTool):
             maskItem.updateTransform(self._imgview.image)
             layers.append(maskItem)
         return layers
+
+    def resetLayers(self):
+        filelist = self.tab.filelist
+        if not (currentFile := filelist.getCurrentFile()):
+            return
+
+        filelist.removeData(currentFile, DataKeys.MaskLayers)
+        filelist.removeData(currentFile, DataKeys.MaskIndex)
+        filelist.removeData(currentFile, DataKeys.MaskState)
+
+        self.onFileChanged(currentFile)
+
 
     def storeLayers(self):
         filelist = self.tab.filelist
@@ -125,7 +141,7 @@ class MaskTool(ViewTool):
         filelist = self.tab.filelist
         if not (currentFile := filelist.getCurrentFile()):
             return
-        
+
         if not (0 <= index < len(self.layers)):
             return
 
@@ -283,7 +299,7 @@ class MaskTool(ViewTool):
 
         if self.maskItem:
             imgview.scene().removeItem(self.maskItem)
-        
+
         self.maskItem = None
         self.layers = None
 
@@ -294,9 +310,9 @@ class MaskTool(ViewTool):
 
         if self.maskItem:
             self.maskItem.updateTransform(self._imgview.image)
-        
+
         self._toolbar.updateExport()
-            
+
     @override
     def onResize(self, event):
         super().onResize(event)
@@ -346,7 +362,7 @@ class MaskTool(ViewTool):
         # CTRL pressed -> Use default controls (zoom)
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             return super().onMousePress(event)
-        
+
         wheelSteps = event.angleDelta().y() / 120.0 # 8*15° standard
         if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
             wheelSteps *= 10
@@ -441,7 +457,7 @@ class MaskItem(QtWidgets.QGraphicsRectItem):
     @property
     def mask(self) -> QImage:
         return self.image
-    
+
     @property
     def size(self) -> tuple[int, int]:
         return (self.image.width(), self.image.height())
@@ -507,7 +523,7 @@ class MaskItem(QtWidgets.QGraphicsRectItem):
             if entry.compressed:
                 mask = cv.imdecode(mask, cv.IMREAD_UNCHANGED)
             self.fromNumpy(mask)
-    
+
     def clearHistoryMacroItems(self):
         for entry in self.history:
             entry.macroItem = None
@@ -553,11 +569,11 @@ class MaskExportTask(QRunnable):
 class MaskHistoryTask(QRunnable):
     class HistoryTaskSignals(QObject):
         done = Signal(object, int)
-    
+
     def __init__(self, mask: np.ndarray, index: int):
         super().__init__()
         self.signals = self.HistoryTaskSignals()
-        
+
         self.mask = mask
         self.index = index
 

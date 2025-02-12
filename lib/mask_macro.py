@@ -20,6 +20,7 @@ class MacroOp(Enum):
     #RenameLayer     = auto()    # index, name TODO
 
     Brush           = auto()    # strokes...
+    Rectangle       = auto()    # color, x0, y0, x1, y1 (float 0..1)
     FloodFill       = auto()    # color, lowerDiff, upperDiff, x, y
     Clear           = auto()    # color (int)
     Invert          = auto()
@@ -29,8 +30,9 @@ class MacroOp(Enum):
     GaussBlur       = auto()    # mode, radius
     BlendLayers     = auto()    # mode, srcLayer
 
-    CondColor       = auto()    # minColor, maxColor
-    CondRegions     = auto()    # minRegions, maxRegions
+    CondColor       = auto()    # minColor, maxColor (float)
+    CondArea        = auto()    # minArea, maxArea (float)
+    CondRegions     = auto()    # minRegions, maxRegions (int)
 
     Macro           = auto()    # name
     Detect          = auto()    # preset, color, threshold
@@ -89,6 +91,7 @@ class MaskingMacro:
         self.recording = False
 
         self.opFunc = {
+            MacroOp.Rectangle:  mask_ops.DrawRectangleMaskOperation.operate,
             MacroOp.Clear:      mask_ops.ClearMaskOperation.operate,
             MacroOp.Invert:     mask_ops.InvertMaskOperation.operate,
             MacroOp.Threshold:  mask_ops.ThresholdMaskOperation.operate,
@@ -97,6 +100,7 @@ class MaskingMacro:
             MacroOp.GaussBlur:  mask_ops.BlurMaskOperation.operate,
 
             MacroOp.CondColor:   mask_ops.ColorConditionMaskOperation.operate,
+            MacroOp.CondArea:    mask_ops.AreaConditionMaskOperation.operate,
             MacroOp.CondRegions: mask_ops.RegionConditionMaskOperation.operate
         }
 

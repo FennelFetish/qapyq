@@ -29,6 +29,10 @@ class MaskToolBar(QtWidgets.QToolBar):
         self.exportWidget = export.ExportWidget("mask", maskTool.tab.filelist, showInterpolation=False, formats=["PNG","WEBP"])
         layout.addWidget(self.exportWidget)
 
+        btnReload = SaveButton("Reload")
+        btnReload.clicked.connect(self._reloadMask)
+        layout.addWidget(btnReload)
+
         self.btnExport = SaveButton("Export")
         self.btnExport.clicked.connect(self.maskTool.exportMask)
         layout.addWidget(self.btnExport)
@@ -37,12 +41,12 @@ class MaskToolBar(QtWidgets.QToolBar):
         self._recordBlinkTimer.setInterval(500)
         self._recordBlinkTimer.timeout.connect(self._blinkRecordMacro)
 
-        # TODO: Also load from image's alpha channel 
+        # TODO: Also load from image's alpha channel
         #       Only if file is PNG/WEBP
         # btnApplyAlpha = QtWidgets.QPushButton("Set as Alpha Channel")
         # btnApplyAlpha.clicked.connect(self.maskTool.applyAlpha)
         # layout.addWidget(btnApplyAlpha)
-        
+
         widget = QtWidgets.QWidget()
         widget.setLayout(layout)
         self.addWidget(widget)
@@ -111,7 +115,7 @@ class MaskToolBar(QtWidgets.QToolBar):
         self.opLayout.addWidget(self.cboOperation)
         self._reloadOps()
         ModelSettingsWindow.signals.presetListUpdated.connect(self._reloadOps)
-        
+
         group = QtWidgets.QGroupBox("Operations")
         group.setLayout(self.opLayout)
         return group
@@ -121,6 +125,7 @@ class MaskToolBar(QtWidgets.QToolBar):
         opClasses = {
             "brush":        mask_ops.DrawMaskOperation,
             "brush_magic":  mask_ops.MagicDrawMaskOperation,
+            "rect":         mask_ops.DrawRectangleMaskOperation,
             "fill":         mask_ops.FillMaskOperation,
             "clear":        mask_ops.ClearMaskOperation,
             "invert":       mask_ops.InvertMaskOperation,
@@ -130,6 +135,7 @@ class MaskToolBar(QtWidgets.QToolBar):
             "blur_gauss":   mask_ops.BlurMaskOperation,
             "blend_layers": mask_ops.BlendLayersMaskOperation,
 
+            "cond_area":    mask_ops.AreaConditionMaskOperation,
             "cond_color":   mask_ops.ColorConditionMaskOperation,
             "cond_regions": mask_ops.RegionConditionMaskOperation
         }
@@ -138,7 +144,7 @@ class MaskToolBar(QtWidgets.QToolBar):
         newOps = dict()
         for key, cls in opClasses.items():
             newOps[key] = self.ops.pop(key, None) or cls(self.maskTool)
-        
+
         for op in self.ops.values():
             op.deleteLater()
         self.ops = newOps
@@ -150,7 +156,7 @@ class MaskToolBar(QtWidgets.QToolBar):
             # Add basic operations
             self.cboOperation.addItem("Brush", "brush")
             #self.cboOperation.addItem("Magic Brush", "brush_magic") # Flood fill from cursor position, keep inside brush circle (or GrabCut init with mask)
-            #self.cboOperation.addItem("Rectangle", "rect")
+            self.cboOperation.addItem("Rectangle", "rect")
             self.cboOperation.addItem("Flood Fill", "fill")
             self.cboOperation.addItem("Clear", "clear")
             self.cboOperation.addItem("Invert", "invert")
@@ -179,17 +185,18 @@ class MaskToolBar(QtWidgets.QToolBar):
             # Add conditions
             condMenu = self.cboOperation.addSubmenu("Conditions")
             self.cboOperation.addSubmenuItem(condMenu, "Color Range", "Condition: ", "cond_color")
+            self.cboOperation.addSubmenuItem(condMenu, "Filled Area", "Condition: ", "cond_area")
             self.cboOperation.addSubmenuItem(condMenu, "Region Count", "Condition: ", "cond_regions")
 
             # Add macro operations
             macroMenu = self.cboOperation.addSubmenu("Macros")
             for name, path in MaskingMacro.loadMacros():
                 self._buildMacroOp(macroMenu, name, path)
-            
+
             macroMenu.addSeparator()
             actReloadMacros = macroMenu.addAction("Reload Macros")
             actReloadMacros.triggered.connect(self._reloadOps)
-            
+
             # Restore selection
             index = max(0, self.cboOperation.findData(selectedKey))
             self.cboOperation.setCurrentIndex(index)
@@ -218,7 +225,7 @@ class MaskToolBar(QtWidgets.QToolBar):
         key = f"macro {name}"
         self.ops[key] = mask_ops.MacroMaskOperation(self.maskTool, name, path)
         self.cboOperation.addSubmenuItem(macroMenu, name, "Macro: ", key)
-    
+
     @Slot()
     def _openModelSettings(self):
         ModelSettingsWindow.openInstance(self, "inferMaskPresets")
@@ -265,7 +272,7 @@ class MaskToolBar(QtWidgets.QToolBar):
             for mask in layers:
                 self.cboLayer.addItem(mask.name, mask)
             self.cboLayer.setCurrentIndex(selectedIndex)
-        
+
         numLayers = len(layers)
         self.btnAddLayer.setEnabled(numLayers < 4)
         self.layerGroup.setTitle(f"Layers ({numLayers})")
@@ -277,7 +284,7 @@ class MaskToolBar(QtWidgets.QToolBar):
         index = self.cboLayer.currentIndex()
         self.cboLayer.setItemText(index, name)
         self.cboLayer.itemData(index).name = name
-        
+
         self.ops["blend_layers"].setLayers(self.maskTool.layers)
 
 
@@ -296,12 +303,12 @@ class MaskToolBar(QtWidgets.QToolBar):
                 self.selectedOp.onDisabled(imgview)
             self.opLayout.removeWidget(self.selectedOp)
             self.selectedOp.hide()
-        
+
         if not (opKey := self.cboOperation.itemData(index)):
             return
         if not (op := self.ops.get(opKey)):
             return
-        
+
         self.selectedOp = op
         self.opLayout.addWidget(self.selectedOp)
         self.selectedOp.show()
@@ -320,7 +327,7 @@ class MaskToolBar(QtWidgets.QToolBar):
             for entry in maskItem.history:
                 self.listHistory.addItem(entry.title)
             self.listHistory.setCurrentRow(maskItem.historyIndex)
-    
+
     def setEdited(self, changed: bool):
         self.btnExport.setChanged(changed)
 
@@ -330,7 +337,7 @@ class MaskToolBar(QtWidgets.QToolBar):
             self.exportWidget.setExportSize(maskItem.mask.width(), maskItem.mask.height())
         else:
             self.exportWidget.setExportSize(0, 0)
-        
+
         self.exportWidget.updateSample()
 
 
@@ -393,3 +400,17 @@ class MaskToolBar(QtWidgets.QToolBar):
         else:
             text = "🔴" + text[1:]
         self.btnStartStopMacro.setText(text)
+
+
+    @Slot()
+    def _reloadMask(self):
+        confirmText = f"Reloading the mask will discard all unsaved changes on all layers and clear the history for this file.\n\nDo you really want to reload the mask?"
+        dialog = QtWidgets.QMessageBox(self)
+        dialog.setIcon(QtWidgets.QMessageBox.Icon.Question)
+        dialog.setWindowTitle("Confirm reloading mask")
+        dialog.setText(confirmText)
+        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+        dialog.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
+
+        if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes:
+            self.maskTool.resetLayers()

@@ -95,7 +95,7 @@ class DrawMaskOperation(MaskOperation):
         self._strokePoints: list[tuple[QPointF, float]] = []
 
         self._painter = QPainter()
-        
+
         self._pen = QPen()
         self._pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         self._pen.setWidth(10)
@@ -227,7 +227,7 @@ class DrawMaskOperation(MaskOperation):
         for point, pressure in self._strokePoints:
             x, y = point.x()/w, point.y()/h
             points.append((x, y, pressure))
-        
+
         color  = 0 if erase else self.spinBrushColor.value()
         size   = self.spinBrushSize.value()
         smooth = self.chkBrushAntiAlias.isChecked()
@@ -354,7 +354,7 @@ class MagicDrawMaskOperation(MaskOperation):
         layout.addWidget(self.spinLowerDiff, row, 1)
 
         self.setLayout(layout)
-    
+
     def floodfill(self, pos):
         x, y = self.mapPosToImageInt(pos)
         r = 10
@@ -362,7 +362,7 @@ class MagicDrawMaskOperation(MaskOperation):
         color = self.spinFillColor.value() * 255.0
         upDiff = self.spinUpperDiff.value() * 255.0
         loDiff = self.spinLowerDiff.value() * 255.0
-        
+
         # TODO: Convert image to array in onEnabled
         pixmap = self.maskTool._imgview.image.pixmap()
         cutX, cutY = x-r, y-r
@@ -385,7 +385,7 @@ class MagicDrawMaskOperation(MaskOperation):
 
         self.maskTool.setEdited()
         self.maskTool._toolbar.addHistory("Magic Brush (Flood Fill)", mat)
-    
+
     def grabcut(self, pos):
         x, y = self.mapPosToImageInt(pos)
         r = 10
@@ -428,7 +428,7 @@ class MagicDrawMaskOperation(MaskOperation):
     @override
     def onMousePress(self, pos, pressure: float, alt=False):
         self._drawing = True
-    
+
     def onMouseRelease(self, alt: bool):
         self._drawing = False
 
@@ -439,6 +439,153 @@ class MagicDrawMaskOperation(MaskOperation):
     # @override
     # def onMouseMove(self, pos, pressure: float):
     #     self.onMousePress(pos, pressure)
+
+
+class DrawRectangleMaskOperation(MaskOperation):
+    DRAW_NONE  = 0
+    DRAW_FILL  = 1
+    DRAW_ERASE = 2
+
+    def __init__(self, maskTool):
+        super().__init__(maskTool, Qt.CursorShape.CrossCursor)
+
+        self._drawing = self.DRAW_NONE
+        self._startPoint: QPointF = None
+
+        rectPen = QPen(QColor(0, 255, 255, 255))
+        rectPen.setStyle(Qt.PenStyle.SolidLine)
+
+        rectBrush = QBrush(QColor(80, 180, 180, 30))
+        rectBrush.setStyle(Qt.BrushStyle.Dense2Pattern)
+
+        self._rect = QtWidgets.QGraphicsRectItem(-50, -50, 100, 100)
+        self._rect.setPen(rectPen)
+        self._rect.setBrush(rectBrush)
+        self._rect.setVisible(False)
+
+        self._build()
+
+    def _build(self):
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
+
+        row = 0
+        self.spinColor = QtWidgets.QDoubleSpinBox()
+        self.spinColor.setRange(0.0, 1.0)
+        self.spinColor.setSingleStep(0.1)
+        self.spinColor.setValue(1.0)
+        layout.addWidget(QtWidgets.QLabel("Color:"), row, 0)
+        layout.addWidget(self.spinColor, row, 1)
+
+        self.setLayout(layout)
+
+    @override
+    def onEnabled(self, imgview):
+        super().onEnabled(imgview)
+        imgview._guiScene.addItem(self._rect)
+
+    @override
+    def onDisabled(self, imgview):
+        imgview._guiScene.removeItem(self._rect)
+        self.stopDraw(imgview)
+        super().onDisabled(imgview)
+
+    @override
+    def onFileChanged(self, file: str):
+        self.stopDraw()
+
+    def updateRect(self, pos):
+        rect = QRectF()
+        rect.setCoords(self._startPoint.x(), self._startPoint.y(), pos.x(), pos.y())
+        self._rect.setRect(rect)
+
+        self.imgview.scene().update()
+
+    def stopDraw(self, imgview: ImgView|None=None):
+        self._drawing = self.DRAW_NONE
+        self._rect.setVisible(False)
+
+        if imgview:
+            imgview.scene().update()
+
+    def applyDraw(self):
+        color = 0.0 if self._drawing == self.DRAW_ERASE else self.spinColor.value()
+        colorFill = round(color * 255)
+
+        self.stopDraw(self.imgview)
+
+        rect = self._rect.rect()
+        startPos = self.mapPosToImage(rect.topLeft())
+        endPos   = self.mapPosToImage(rect.bottomRight())
+
+        x0, y0 = startPos.x(), startPos.y()
+        x1, y1 = endPos.x(), endPos.y()
+
+        # Sort
+        if x0 > x1:
+            x0, x1 = x1, x0
+        if y0 > y1:
+            y0, y1 = y1, y0
+
+        # Map position to range [0..1]
+        imgSize = self.imgview.image.pixmap().size()
+        x0 = max(np.floor(x0) / imgSize.width(),  0.0)
+        x1 = min(np.ceil (x1) / imgSize.width(),  1.0)
+        y0 = max(np.floor(y0) / imgSize.height(), 0.0)
+        y1 = min(np.ceil (y1) / imgSize.height(), 1.0)
+
+        mat = self.maskItem.toNumpy()
+        mat = self.operate(mat, colorFill, x0, y0, x1, y1)
+        self.maskItem.fromNumpy(mat)
+
+        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.Rectangle, color=colorFill, x0=x0, y0=y0, x1=x1, y1=y1)
+
+        self.maskTool.setEdited()
+        self.maskTool._toolbar.addHistory(f"Rectangle ({color:.2f})", mat, macroItem)
+
+    @staticmethod
+    def operate(mat: np.ndarray, color: int, x0: float, y0: float, x1: float, y1: float) -> np.ndarray:
+        if x0 > x1:
+            x0, x1 = x1, x0
+        if y0 > y1:
+            y0, y1 = y1, y0
+
+        h, w = mat.shape
+        x0 = round(x0 * w)
+        x1 = round(x1 * w)
+        y0 = round(y0 * h)
+        y1 = round(y1 * h)
+
+        mat[y0:y1, x0:x1] = color
+        return mat
+
+    @override
+    def onMousePress(self, pos, pressure: float, alt=False):
+        if self._drawing:
+            return
+
+        self._drawing = self.DRAW_ERASE if alt else self.DRAW_FILL
+        self._startPoint = pos
+
+        self._rect.setVisible(True)
+        self.updateRect(pos)
+
+    @override
+    def onMouseMove(self, pos, pressure: float):
+        if self._drawing:
+            self.updateRect(pos)
+
+    @override
+    def onMouseRelease(self, alt: bool):
+        if not self._drawing:
+            return
+
+        # Only stop drawing if same button is released
+        erase = self._drawing==self.DRAW_ERASE
+        if alt == erase:
+            self.applyDraw()
 
 
 class FillMaskOperation(MaskOperation):
@@ -710,7 +857,7 @@ class MorphologyMaskOperation(MaskOperation):
             case "open":
                 mat = cv.erode(mat, kernel, borderType=border, borderValue=bv)
                 mat = cv.dilate(mat, kernel, borderType=border, borderValue=bv)
-        
+
         return mat
 
     @override
@@ -719,7 +866,7 @@ class MorphologyMaskOperation(MaskOperation):
         mode = self.cboMode.currentData()
         borderType, borderVal = self.cboBorderMode.currentData()
         radius = self.spinRadius.value()
-        
+
         mat = self.maskItem.toNumpy()
         mat = self.operate(mat, mode, radius, borderType, borderVal)
         self.maskItem.fromNumpy(mat)
@@ -775,7 +922,7 @@ class BlurMaskOperation(MaskOperation):
             blurBorder = cv.BORDER_REPLICATE
         else:
             blurBorder = border
-        
+
         morphBorder = border
         bv = (borderVal,)
 
@@ -794,7 +941,7 @@ class BlurMaskOperation(MaskOperation):
             else:
                 mat = cv.erode(mat, morphKernel, borderType=morphBorder, borderValue=bv)
             mat = cv.GaussianBlur(mat, blurKernel, sigmaX=0, sigmaY=0, borderType=blurBorder)
-        
+
         return mat
 
     @override
@@ -847,7 +994,7 @@ class BlendLayersMaskOperation(MaskOperation):
         self.cboSrcLayer.clear()
         for i, layer in enumerate(layers):
             self.cboSrcLayer.addItem(layer.name, int(i))
-        
+
         index = self.cboSrcLayer.findText(selectedName)
         if index < 0:
             index = min(selectedIndex, self.cboSrcLayer.count()-1)
@@ -885,7 +1032,7 @@ class BlendLayersMaskOperation(MaskOperation):
 
         srcMatIndex = self.cboSrcLayer.currentData()
         srcMat = self.maskTool.layers[srcMatIndex].toNumpy()
-        
+
         destMat = self.maskItem.toNumpy()
         destMat = self.operate(srcMat, destMat, mode)
         self.maskItem.fromNumpy(destMat)
@@ -955,6 +1102,62 @@ class ColorConditionMaskOperation(MaskOperation):
         colorRangeText = f"{min:.2f} - {max:.2f}" if max > min else f"{min:.2f}"
         self.maskTool._toolbar.addHistory(f"Color Condition ({colorRangeText})", mat, macroItem)
 
+
+class AreaConditionMaskOperation(MaskOperation):
+    def __init__(self, maskTool):
+        super().__init__(maskTool)
+
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
+
+        row = 0
+        self.spinMinArea = QtWidgets.QDoubleSpinBox()
+        self.spinMinArea.setRange(0.0, 1.0)
+        self.spinMinArea.setSingleStep(0.05)
+        self.spinMinArea.setValue(0.0)
+        layout.addWidget(QtWidgets.QLabel("Area Min %:"), row, 0)
+        layout.addWidget(self.spinMinArea, row, 1)
+
+        row += 1
+        self.spinMaxArea = QtWidgets.QDoubleSpinBox()
+        self.spinMaxArea.setRange(0.0, 1.0)
+        self.spinMaxArea.setSingleStep(0.05)
+        self.spinMaxArea.setValue(1.0)
+        self.spinMaxArea.setToolTip("The maximum is disabled when it's smaller than the minimum.")
+        layout.addWidget(QtWidgets.QLabel("Area Max %:"), row, 0)
+        layout.addWidget(self.spinMaxArea, row, 1)
+
+        self.setLayout(layout)
+
+    @staticmethod
+    def operate(mat: np.ndarray, minArea: float, maxArea: float) -> np.ndarray:
+        h, w = mat.shape
+        count = np.count_nonzero(mat)
+        filledArea = count / (w * h)
+
+        if maxArea < minArea:
+            maxArea = 1.1
+
+        fillColor = 255 if (minArea <= filledArea <= maxArea) else 0
+        mat.fill(fillColor)
+        return mat
+
+    @override
+    def onMousePress(self, pos, pressure: float, alt=False):
+        minArea = self.spinMinArea.value()
+        maxArea = self.spinMaxArea.value()
+
+        mat = self.maskItem.toNumpy()
+        mat = self.operate(mat, minArea, maxArea)
+        self.maskItem.fromNumpy(mat)
+
+        self.maskTool.setEdited()
+        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.CondArea, minArea=minArea, maxArea=maxArea)
+
+        areaRangeText = f"{minArea:.2f} - {maxArea:.2f}" if maxArea > minArea else f"{minArea:.2f}"
+        self.maskTool._toolbar.addHistory(f"Area Condition ({areaRangeText})", mat, macroItem)
 
 
 class RegionConditionMaskOperation(MaskOperation):
@@ -1043,7 +1246,7 @@ class MacroMaskOperation(MaskOperation):
         imgPath = self.maskTool._imgview.image.filepath
         if not imgPath:
             return
-        
+
         # Don't record macros into macros
         if self.maskTool.macro.recording:
             self.maskTool.tab.statusBar().showColoredMessage("Cannot run macros while recording macros", False)
@@ -1094,7 +1297,7 @@ class MacroMaskOperation(MaskOperation):
         elif layerDiff < 0:
             for i in range(-layerDiff):
                 del layerItems[-1]
-        
+
         filelist = self.maskTool.tab.filelist
         filelist.setData(imgPath, DataKeys.MaskLayers, layerItems)
         filelist.setData(imgPath, DataKeys.MaskState, DataKeys.IconStates.Changed)
@@ -1106,7 +1309,7 @@ class MacroMaskOperation(MaskOperation):
         # Reload layers
         if filelist.getCurrentFile() == imgPath:
             self.maskTool.onFileChanged(imgPath)
-        
+
         self.maskTool.tab.statusBar().showColoredMessage(f"Finished macro: {macroName}", True)
 
     @Slot()
@@ -1390,7 +1593,7 @@ class MaskTask(QRunnable):
         loaded = Signal()
         done = Signal(object, str, float, object)
         fail = Signal(str)
-    
+
     def __init__(self, mode: str, maskItem, config: dict, classes: list[str], imgPath: str, color: float):
         super().__init__()
         self.signals  = self.Signals()
@@ -1415,7 +1618,7 @@ class MaskTask(QRunnable):
                 result = inferProc.maskBoxes(self.config, self.classes, self.imgPath)
             else:
                 result = inferProc.mask(self.config, self.classes, self.imgPath)
-            
+
             self.signals.done.emit(self.maskItem, self.imgPath, self.color, result)
         except Exception as ex:
             import traceback
