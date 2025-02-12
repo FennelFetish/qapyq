@@ -1,8 +1,8 @@
+import math, locale
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, QPointF, QPoint
 from .view import ViewTool
 import lib.qtlib as qtlib
-import math
 
 # Right click (?) sets origin point
 # Mouse move updates ruler that shows distance in pixels (manhattan distance?)
@@ -14,7 +14,7 @@ class MeasureTool(ViewTool):
         self._startPoint = QPointF()
         self._endPoint = QPointF()
         self._frozen = True
-        
+
         color = QtGui.QColor(0, 255, 255, 200)
         linePen = QtGui.QPen(color)
         linePen.setCapStyle(Qt.RoundCap)
@@ -92,7 +92,22 @@ class MeasureTool(ViewTool):
         dx = int(abs(dx))
         dy = int(abs(dy))
         manhattan = dx+dy
-        self.tab.statusBar().showMessage(f"From [X: {startX} Y: {startY}]   To [X: {endX} Y: {endY}]   Δ [X: {dx} Y: {dy}]   Distance: {dist:.2f} px   Manhattan: {manhattan} px   Rectangle [W: {dx+1} H: {dy+1}]")
+
+        imgSize = self._imgview.image.pixmap().size()
+        imgPixels = imgSize.width() * imgSize.height()
+        area = (dx+1) * (dy+1)
+        areaPercent = 100 * area / imgPixels
+
+        message = "From [X: %d Y: %d]   To [X: %d Y: %d]   Δ [X: %d Y: %d]   Distance: %.2f px   Manhattan: %d px   Rectangle [W: %d H: %d  A: %d px² %.1f%%]"
+        message = locale.format_string(message, (
+            startX, startY,
+            endX, endY,
+            dx, dy,
+            dist, manhattan,
+            dx+1, dy+1,
+            area, areaPercent
+        ), grouping=True)
+        self.tab.statusBar().showMessage(message)
 
     def updateEndPoint(self, cursorPos: QPointF):
         if not self._frozen:
@@ -133,7 +148,7 @@ class MeasureTool(ViewTool):
         imgview._guiScene.addItem(self._text)
         imgview._guiScene.addItem(self._crosshairH)
         imgview._guiScene.addItem(self._crosshairV)
-        
+
 
     def onDisabled(self, imgview):
         super().onDisabled(imgview)
