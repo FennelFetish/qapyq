@@ -259,6 +259,7 @@ class PathSettings(QtWidgets.QWidget):
     {{name.ext}}  Image filename with extension
     {{folder}}    Folder of image
     {{folder-1}}  Parent folder 1 (or 2, 3...)
+    {{folder:/}}  Folder hierarchy from given path to image
     {{w}}         Width
     {{h}}         Height
     {{region}}    Crop region number

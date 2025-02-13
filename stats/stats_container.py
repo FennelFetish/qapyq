@@ -4,6 +4,7 @@ from .stats_tags import TagStats
 from .stats_json import JsonStats
 from .stats_imgsize import ImageSizeStats
 from .stats_filesuffix import FileSuffixStats
+from .stats_folders import FolderStats
 
 
 # Count of unique tags
@@ -35,13 +36,15 @@ class StatsContainer(QtWidgets.QTabWidget):
             "tags":       TagStats(tab),
             "json":       JsonStats(tab),
             "imgsize":    ImageSizeStats(tab),
-            "filesuffix": FileSuffixStats(tab)
+            "filesuffix": FileSuffixStats(tab),
+            "folders":    FolderStats(tab)
         }
 
         self.addTab(self.statWidgets["tags"], "Tag Count")
         self.addTab(self.statWidgets["json"], "JSON Keys")
         self.addTab(self.statWidgets["imgsize"], "Image Size")
         self.addTab(self.statWidgets["filesuffix"], "File Suffix")
+        self.addTab(self.statWidgets["folders"], "Folders")
 
         tab.filelist.addListener(self)
 

@@ -22,15 +22,21 @@ class StatsBaseProxyModel(QSortFilterProxyModel):
 class StatsLayout(QtWidgets.QVBoxLayout):
     ROLE_FILEPATH = Qt.ItemDataRole.UserRole
 
-    def __init__(self, tab: ImgTab, name: str, proxyModel: StatsBaseProxyModel, tableView: QtWidgets.QTableView, row=0):
+    def __init__(self, tab: ImgTab, name: str, proxyModel: StatsBaseProxyModel, view: QtWidgets.QTableView | QtWidgets.QTreeView, row=0):
         super().__init__()
         self.tab = tab
         self.proxyModel = proxyModel
-        self.table = tableView
+        self.view = view
 
         self._enableFileUpdate = True
 
         self._build(name)
+
+        if isinstance(view, QtWidgets.QTableView):
+            view.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft)
+            view.verticalHeader().setVisible(False)
+            view.resizeColumnsToContents()
+
 
     def _build(self, name: str):
         self.col1Layout = QtWidgets.QVBoxLayout()
@@ -55,16 +61,13 @@ class StatsLayout(QtWidgets.QVBoxLayout):
     def _buildTableGroup(self, name: str):
         layout = QtWidgets.QVBoxLayout()
 
-        self.table.setAlternatingRowColors(True)
-        self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setSortingEnabled(True)
-        self.table.setSelectionBehavior(QtWidgets.QTableView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QtWidgets.QTableView.SelectionMode.ExtendedSelection)
-        self.table.resizeColumnsToContents()
-        self.table.selectionModel().selectionChanged.connect(self._onRowsSelected)
+        self.view.setAlternatingRowColors(True)
+        self.view.setSortingEnabled(True)
+        self.view.setSelectionBehavior(QtWidgets.QTableView.SelectionBehavior.SelectRows)
+        self.view.setSelectionMode(QtWidgets.QTableView.SelectionMode.ExtendedSelection)
+        self.view.selectionModel().selectionChanged.connect(self._onRowsSelected)
         self.proxyModel.modelReset.connect(self.clearSelection)
-        layout.addWidget(self.table)
+        layout.addWidget(self.view)
 
         group = QtWidgets.QGroupBox(name)
         group.setLayout(layout)
@@ -145,7 +148,7 @@ class StatsLayout(QtWidgets.QVBoxLayout):
 
     @Slot()
     def clearSelection(self):
-        selectionModel = self.table.selectionModel()
+        selectionModel = self.view.selectionModel()
         selectionModel.clear()
         selection = QItemSelection()
         selectionModel.selectionChanged.emit(selection, selection)
@@ -155,7 +158,7 @@ class StatsLayout(QtWidgets.QVBoxLayout):
         self._onRowsSelected(None, None)
 
     def getSelectedSourceIndexes(self):
-        selectedIndexes = self.table.selectionModel().selectedIndexes()
+        selectedIndexes = self.view.selectionModel().selectedIndexes()
         for index in (idx for idx in selectedIndexes if idx.column() == 0):
             yield self.proxyModel.mapToSource(index)
 
@@ -216,8 +219,8 @@ class StatsLayout(QtWidgets.QVBoxLayout):
 
         # When filter only shows 1 row, it doesn't display files. Clear selection as a workaround.
         # Disable signals as they mess things up and select new files during update.
-        with QSignalBlocker(self.table.selectionModel()):
-            self.table.selectionModel().clear()
+        with QSignalBlocker(self.view.selectionModel()):
+            self.view.selectionModel().clear()
             self.proxyModel.setFilterRegularExpression(regex)
 
 
