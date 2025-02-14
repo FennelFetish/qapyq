@@ -5,11 +5,7 @@ from lib.captionfile import FileTypeSelector
 from ui.tab import ImgTab
 from caption.caption_container import CaptionContainer
 from caption.caption_groups import CaptionControlGroup
-from caption.caption_preset import CaptionPreset
-from .stats_base import StatsLayout, StatsBaseProxyModel
-
-
-# TODO: CSV Export
+from .stats_base import StatsLayout, StatsBaseProxyModel, ExportCsv
 
 
 class TagStats(QtWidgets.QWidget):
@@ -86,7 +82,7 @@ class TagStats(QtWidgets.QWidget):
 
     @Slot()
     def reloadColors(self):
-        captionWin = self.tab.getWindowContent("caption")
+        captionWin: CaptionContainer | None = self.tab.getWindowContent("caption")
         if not captionWin:
             return
 
@@ -200,6 +196,8 @@ class TagModel(QAbstractItemModel):
     # QAbstractItemModel Interface
 
     def rowCount(self, parent=QModelIndex()):
+        if parent.isValid():
+            return 0
         return len(self.tags)
 
     def columnCount(self, parent=QModelIndex()):
@@ -223,6 +221,12 @@ class TagModel(QAbstractItemModel):
             case Qt.ItemDataRole.ForegroundRole: return tagData.color
             case self.ROLE_TAG:  return tagData.tag
             case self.ROLE_DATA: return tagData
+
+            case ExportCsv.ROLE_CSV:
+                match index.column():
+                    case 0: return tagData.tag
+                    case 1: return tagData.count
+                    case 2: return len(tagData.files) / self.summary.numFiles if self.summary.numFiles else 0.0
 
         return None
 

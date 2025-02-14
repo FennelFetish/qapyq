@@ -3,7 +3,7 @@ import json, os
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
 from ui.tab import ImgTab
-from .stats_base import StatsLayout, StatsBaseProxyModel
+from .stats_base import StatsLayout, StatsBaseProxyModel, ExportCsv
 
 
 class JsonStats(QtWidgets.QWidget):
@@ -138,7 +138,7 @@ class JsonModel(QAbstractItemModel):
                 if not data:
                     keyData[key] = data = JsonKeyData(key)
                 data.addFile(file)
-        
+
         self.keys.extend(keyData.values())
         self.summary.finalize(len(self.keys))
         self.endResetModel()
@@ -152,7 +152,7 @@ class JsonModel(QAbstractItemModel):
 
         with open(path, 'r') as file:
             data = json.load(file)
-        
+
         keys: list[str] = list()
         if isinstance(data, dict):
             cls.walkJsonData(keys, "", data)
@@ -178,6 +178,8 @@ class JsonModel(QAbstractItemModel):
     # QAbstractItemModel Interface
 
     def rowCount(self, parent=QModelIndex()):
+        if parent.isValid():
+            return 0
         return len(self.keys)
 
     def columnCount(self, parent=QModelIndex()):
@@ -200,6 +202,12 @@ class JsonModel(QAbstractItemModel):
             case Qt.ItemDataRole.FontRole: return self.font
             case self.ROLE_KEY:  return keyData.key
             case self.ROLE_DATA: return keyData
+
+            case ExportCsv.ROLE_CSV:
+                match index.column():
+                    case 0: return keyData.key
+                    case 1: return keyData.count
+                    case 2: return len(keyData.files) / self.summary.numFiles if self.summary.numFiles else 0.0
 
         return None
 
@@ -238,5 +246,5 @@ class JsonProxyModel(StatsBaseProxyModel):
             match column:
                 case 1: return dataRight.count < dataLeft.count
                 case 2: return len(dataRight.files) < len(dataLeft.files)
-        
+
         return super().lessThan(left, right)

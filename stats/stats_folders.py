@@ -5,7 +5,7 @@ from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
 from lib.filelist import FileList, sortKey
 from ui.tab import ImgTab
-from .stats_base import StatsLayout, StatsBaseProxyModel
+from .stats_base import StatsLayout, StatsBaseProxyModel, ExportCsv
 
 
 # TODO: export folders as concepts in onetrainer config
@@ -94,15 +94,16 @@ class FolderData:
         self.subfolders: list[FolderData] = list()
         self.indexInParent = -1
 
+        # Based on count of files including subfolders
         self.numFilesTotal   = 0
         self.percentOfParent = 1.0
         self.percentOfTotal  = 1.0
-        self.repeats = 1.0
+        self.repeats         = 1.0
 
-        # When folder has files and subfolders
+        # Based only on count of files directly inside folder
         self.selfPercentOfParent = 1.0
         self.selfPercentOfTotal  = 1.0
-        self.selfRepeats = 1.0
+        self.selfRepeats         = 1.0
 
     def addFile(self, file: str):
         self.files.add(file)
@@ -114,10 +115,10 @@ class FolderData:
     def getSubfolder(self, row: int) -> FolderData:
         return self.subfolders[row]
 
-    def updateNumTotalFiles(self, totalFiles: int, avgFiles: float) -> int:
+    def updateTree(self, totalFiles: int, avgFiles: float) -> int:
         self.numFilesTotal = len(self.files)
         for i, subfolder in enumerate(self.subfolders):
-            self.numFilesTotal += subfolder.updateNumTotalFiles(totalFiles, avgFiles)
+            self.numFilesTotal += subfolder.updateTree(totalFiles, avgFiles)
             subfolder.indexInParent = i
 
         if self.numFilesTotal <= 0:
@@ -180,10 +181,10 @@ class FolderModel(QAbstractItemModel):
         self.summary = FolderSummary()
 
     def reload(self, filelist: FileList):
-        self.beginResetModel()
-
-        self.summary.reset()
         files = filelist.getFiles() # Lazy load folder
+
+        self.beginResetModel()
+        self.summary.reset()
 
         rootName = os.path.basename(filelist.commonRoot) if filelist.commonRoot else "/"
         self.rootFolder = FolderData(filelist.commonRoot, rootName)
@@ -202,7 +203,7 @@ class FolderModel(QAbstractItemModel):
             self.summary.addFolder(folder)
         self.summary.finalize()
 
-        self.rootFolder.updateNumTotalFiles(self.summary.numFiles, self.summary.avgFolderSize)
+        self.rootFolder.updateTree(self.summary.numFiles, self.summary.avgFolderSize)
         self.endResetModel()
 
     def _getFolderData(self, folders: dict[str, FolderData], folderPath: str) -> FolderData:
@@ -331,6 +332,14 @@ class FolderModel(QAbstractItemModel):
 
             case Qt.ItemDataRole.FontRole: return self.font
             case self.ROLE_DATA: return folder
+
+            case ExportCsv.ROLE_CSV:
+                match index.column():
+                    case 0: return folder.path
+                    case 1: return folder.numFilesTotal
+                    case 2: return folder.percentOfParent
+                    case 3: return folder.percentOfTotal
+                    case 4: return folder.repeats
 
         return None
 

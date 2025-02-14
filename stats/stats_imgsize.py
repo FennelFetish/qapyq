@@ -3,7 +3,7 @@ from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
 from PySide6.QtGui import QImageReader
 from ui.tab import ImgTab
-from .stats_base import StatsLayout, StatsBaseProxyModel
+from .stats_base import StatsLayout, StatsBaseProxyModel, ExportCsv
 
 
 class ImageSizeStats(QtWidgets.QWidget):
@@ -166,6 +166,8 @@ class SizeBucketModel(QAbstractItemModel):
     # QAbstractItemModel Interface
 
     def rowCount(self, parent=QModelIndex()):
+        if parent.isValid():
+            return 0
         return len(self.buckets)
 
     def columnCount(self, parent=QModelIndex()):
@@ -190,6 +192,15 @@ class SizeBucketModel(QAbstractItemModel):
 
             case Qt.ItemDataRole.FontRole: return self.font
             case self.ROLE_DATA: return bucketData
+
+            case ExportCsv.ROLE_CSV:
+                match index.column():
+                    case 0: return bucketData.width
+                    case 1: return bucketData.height
+                    case 2: return bucketData.aspectRatio
+                    case 3: return bucketData.pixels
+                    case 4: return bucketData.count
+                    case 5: return len(bucketData.files) / self.summary.numFiles if self.summary.numFiles else 0.0
 
         return None
 

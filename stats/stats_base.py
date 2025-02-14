@@ -1,3 +1,4 @@
+import os
 from typing import Iterable, Generator
 from collections import Counter
 from PySide6 import QtWidgets
@@ -5,6 +6,7 @@ from PySide6.QtCore import Qt, Slot, QSortFilterProxyModel, QModelIndex, QItemSe
 from ui.tab import ImgTab
 import lib.qtlib as qtlib
 from lib.filelist import FileList, sortKey
+from config import Config
 
 
 # TODO: Context menu "copy cell content" for all tabs
@@ -25,6 +27,7 @@ class StatsLayout(QtWidgets.QVBoxLayout):
     def __init__(self, tab: ImgTab, name: str, proxyModel: StatsBaseProxyModel, view: QtWidgets.QTableView | QtWidgets.QTreeView, row=0):
         super().__init__()
         self.tab = tab
+        self.name = name
         self.proxyModel = proxyModel
         self.view = view
 
@@ -43,6 +46,7 @@ class StatsLayout(QtWidgets.QVBoxLayout):
         self.col1Layout.setContentsMargins(0, 0, 0, 0)
         self.col1Layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.col1Layout.addWidget(self._buildFilterGroup(name))
+        self.col1Layout.addWidget(self._buildExportGroup())
 
         col1Widget = QtWidgets.QWidget()
         col1Widget.setLayout(self.col1Layout)
@@ -142,6 +146,18 @@ class StatsLayout(QtWidgets.QVBoxLayout):
         group.setLayout(layout)
         return group
 
+    def _buildExportGroup(self):
+        layout = QtWidgets.QVBoxLayout()
+
+        btnExportCsv = QtWidgets.QPushButton("Export CSV...")
+        btnExportCsv.clicked.connect(self._exportCsv)
+        layout.addWidget(btnExportCsv)
+
+        group = QtWidgets.QGroupBox(f"Export Data")
+        group.setLayout(layout)
+        return group
+
+
     def setStatsWidget(self, widget: QtWidgets.QWidget):
         self.col1Layout.insertWidget(0, widget)
 
@@ -222,6 +238,16 @@ class StatsLayout(QtWidgets.QVBoxLayout):
         with QSignalBlocker(self.view.selectionModel()):
             self.view.selectionModel().clear()
             self.proxyModel.setFilterRegularExpression(regex)
+
+
+    @Slot()
+    def _exportCsv(self):
+        name = self.name.replace(" ", "").lower()
+        topDir = os.path.basename(self.tab.filelist.commonRoot)
+        topDir = topDir.replace(" ", "").replace(":", "").lower()
+        if topDir:
+            name = f"{topDir}-{name}"
+        ExportCsv.export(name, self.proxyModel, self.view)
 
 
     def getListedFiles(self) -> Generator[str, None, None] | None:
@@ -312,3 +338,47 @@ class CombineModeMultiple:
 
     def getFiles(self) -> set[str]:
         return set(f for f, count in self.fileCounter.items() if count > 1)
+
+
+
+class ExportCsv:
+    ROLE_CSV = Qt.ItemDataRole.UserRole + 1000
+
+    @classmethod
+    def export(cls, filename: str, model: StatsBaseProxyModel, parentWidget: QtWidgets.QWidget):
+        filter = "CSV Files (*.csv)"
+        path = os.path.join(Config.pathExport, f"{filename}.csv")
+        path, filter = QtWidgets.QFileDialog.getSaveFileName(parentWidget, "Choose destination file", path, filter)
+        if not path:
+            return
+
+        path = os.path.abspath(path)
+        print(f"Writing CSV data to: {path}")
+        cls.writeData(path, model)
+
+
+    @classmethod
+    def writeData(cls, path: str, model: StatsBaseProxyModel):
+        import csv
+        with open(path, 'w', newline='') as csvFile:
+            writer = csv.writer(csvFile)
+            writer.writerow((
+                model.headerData(col, Qt.Orientation.Horizontal)
+                for col in range(model.columnCount())
+            ))
+
+            cls.writeRow(writer, model, QModelIndex())
+
+
+    @classmethod
+    def writeRow(cls, writer, model: StatsBaseProxyModel, parent: QModelIndex):
+        for row in range(model.rowCount(parent)):
+            writer.writerow((
+                model.data(model.index(row, col, parent), cls.ROLE_CSV)
+                for col in range(model.columnCount(parent))
+            ))
+
+            # Recurse
+            child = model.index(row, 0, parent)
+            if model.hasChildren(child):
+                cls.writeRow(writer, model, child)

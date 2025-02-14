@@ -4,7 +4,7 @@ from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
 from ui.tab import ImgTab
 from lib.filelist import FileList
-from .stats_base import StatsLayout, StatsBaseProxyModel
+from .stats_base import StatsLayout, StatsBaseProxyModel, ExportCsv
 
 
 class FileSuffixStats(QtWidgets.QWidget):
@@ -227,6 +227,8 @@ class SuffixModel(QAbstractItemModel):
     # QAbstractItemModel Interface
 
     def rowCount(self, parent=QModelIndex()):
+        if parent.isValid():
+            return 0
         return len(self.suffixes)
 
     def columnCount(self, parent=QModelIndex()):
@@ -248,6 +250,12 @@ class SuffixModel(QAbstractItemModel):
 
             case Qt.ItemDataRole.FontRole: return self.font
             case self.ROLE_DATA: return data
+
+            case ExportCsv.ROLE_CSV:
+                match index.column():
+                    case 0: return data.suffix
+                    case 1: return data.count
+                    case 2: return len(data.files) / self.summary.numFiles if self.summary.numFiles else 0.0
 
         return None
 
