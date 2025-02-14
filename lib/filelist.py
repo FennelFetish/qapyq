@@ -1,5 +1,6 @@
 from typing import Iterable, Any, Callable
 import os, enum
+from bisect import bisect_left
 from PySide6.QtGui import QImageReader
 from config import Config
 
@@ -108,8 +109,7 @@ class FileList:
             elif fileFilter(path):
                 self.files.append(os.path.abspath(path))
 
-        self._removeDuplicates()
-        self._postprocessList()
+        self._postprocessList(removeDuplicates=True)
         self.notifyListChanged()
 
     def load(self, path: str):
@@ -185,7 +185,7 @@ class FileList:
 
     def setCurrentFile(self, file: str):
         try:
-            index = self.files.index(file)
+            index = self.indexOf(file)
         except ValueError:
             print(f"Warning: File {file} not in FileList")
             index = -1
@@ -202,6 +202,13 @@ class FileList:
         self.currentFile = self.files[index]
         self.currentIndex = index
         self.notifyFileChanged()
+
+    def indexOf(self, file: str) -> int:
+        index = bisect_left(self.files, sortKey(file), key=sortKey)
+        if self.files[index] == file:
+            return index
+        raise ValueError("File not in FileList")
+
 
     def setNextFile(self):
         self._lazyLoadFolder()
@@ -257,11 +264,10 @@ class FileList:
         if self.currentIndex < 0 and self.currentFile:
             path = os.path.dirname(self.currentFile)
             self._walkPath(path, False)
-            self._removeDuplicates()
-            self._postprocessList()
+            self._postprocessList(removeDuplicates=True)
 
             try:
-                self.currentIndex = self.files.index(self.currentFile)
+                self.currentIndex = self.indexOf(self.currentFile)
             except ValueError:
                 print(f"Warning: File {self.currentFile} not in FileList")
                 self.currentIndex = -1
@@ -272,15 +278,16 @@ class FileList:
             if not subfolders:
                 dirs.clear()
             root = os.path.normpath(root)
-            self.files += [os.path.join(root, f) for f in files if fileFilter(f)]
+            self.files.extend(os.path.join(root, f) for f in files if fileFilter(f))
 
-    def _removeDuplicates(self):
-        self.files = list(set(self.files))
 
-    def _postprocessList(self):
-        self.files.sort(key=sortKey)
+    def _postprocessList(self, removeDuplicates=False):
+        if removeDuplicates:
+            self.files = sorted(set(self.files), key=sortKey)
+        else:
+            self.files.sort(key=sortKey)
+
         self._updateCommonRoot()
-
 
     def _updateCommonRoot(self):
         try:
