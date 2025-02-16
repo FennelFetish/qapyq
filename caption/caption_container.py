@@ -10,6 +10,7 @@ from .caption_filter import CaptionRulesProcessor
 from .caption_generate import CaptionGenerate
 from .caption_groups import CaptionGroups
 from .caption_settings import CaptionSettings
+from .caption_list import CaptionList
 
 
 class CaptionContext(QtWidgets.QTabWidget):
@@ -40,6 +41,7 @@ class CaptionContext(QtWidgets.QTabWidget):
         #self.addTab(QtWidgets.QWidget(), "Variables (json)")
         #self.addTab(QtWidgets.QWidget(), "Folder Overrides") # Let variables from json override settings?
         self.addTab(self.generate, "Generate")
+        self.addTab(CaptionList(self), "List")
 
 
 
