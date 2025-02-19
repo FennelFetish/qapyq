@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 from typing_extensions import override
 from PySide6 import QtGui, QtWidgets
@@ -5,6 +6,9 @@ from PySide6.QtCore import QSize, Qt, Slot
 from lib.filelist import DataKeys
 from lib import qtlib
 from .thumbnail_cache import ThumbnailCache
+
+# Imported at the bottom because of circular dependency
+# from .gallery_grid import GalleryGrid
 
 
 class ImageIcon:
@@ -25,13 +29,12 @@ class GalleryItem(QtWidgets.QWidget):
 
     BORDER_SIZE = 6
 
-    def __init__(self, galleryGrid, file: str):
+    def __init__(self, galleryGrid: GalleryGrid, file: str):
         super().__init__()
-        from .gallery_grid import GalleryGrid
-        self.gallery: GalleryGrid = galleryGrid
+        self.gallery = galleryGrid
         self.file = file
         self.row = -1
-        
+
         self.filename = os.path.basename(file)
         self.selectionStyle: int = 0
         self.icons = {}
@@ -48,12 +51,12 @@ class GalleryItem(QtWidgets.QWidget):
         else:
             self._pixmap = None
             self._height = self.gallery.thumbnailSize
-        
+
         if imgSize := filelist.getData(file, DataKeys.ImageSize):
             self.setImageSize(imgSize[0], imgSize[1])
         else:
             self.setImageSize(0, 0)
-        
+
         self.onThumbnailSizeUpdated()
 
 
@@ -68,7 +71,7 @@ class GalleryItem(QtWidgets.QWidget):
             del self.icons[icon]
         else:
             self.icons[icon] = state
-        
+
         self.update()
 
     def setImageSize(self, w: int, h: int):
@@ -89,7 +92,7 @@ class GalleryItem(QtWidgets.QWidget):
     @property
     def pixmap(self):
         return self._pixmap
-    
+
     @pixmap.setter
     def pixmap(self, pixmap):
         self._pixmap = pixmap
@@ -120,7 +123,7 @@ class GalleryItem(QtWidgets.QWidget):
         else:
             self.selectionStyle &= ~self.SelectionCompare
         self.update()
-    
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.gallery.setSelectedItem(self, True)
@@ -140,7 +143,7 @@ class GalleryItem(QtWidgets.QWidget):
             pen.setStyle(Qt.PenStyle.DotLine)
         painter.setPen(pen)
         painter.drawRect(x, y, w, h)
-    
+
     def paintIcons(self, painter: QtGui.QPainter, x, y):
         painter.save()
 
@@ -153,7 +156,7 @@ class GalleryItem(QtWidgets.QWidget):
             painter.drawRoundedRect(x, y, sizeX, sizeY, 3, 3)
             painter.drawPixmap(x, y, sizeX, sizeY, self.gallery.icons[iconKey])
             x += sizeX + 8
-        
+
         painter.restore()
 
 
@@ -170,7 +173,7 @@ class GalleryGridItem(GalleryItem):
     @override
     def paintEvent(self, event):
         palette = QtWidgets.QApplication.palette()
-        
+
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
@@ -196,11 +199,11 @@ class GalleryGridItem(GalleryItem):
 
         # Draw icons
         self.paintIcons(painter, x+4, y+4)
-        
+
         # Draw border
         if self.selectionStyle:
             self.paintBorder(painter, palette, x, y, w, h)
-        
+
         # Draw filename
         textColor = palette.color(QtGui.QPalette.ColorRole.Text)
         pen = QtGui.QPen(textColor)
@@ -289,7 +292,7 @@ class GalleryListItem(GalleryItem):
         caption = self.gallery.captionSrc.loadCaption(self.file)
         if caption is None:
             caption = ""
-        
+
         self.txtCaption.setPlainText(caption)
         self._captionLoaded = True
 
@@ -339,7 +342,7 @@ class GalleryListItem(GalleryItem):
             self.loadCaption()
 
         palette = QtWidgets.QApplication.palette()
-        
+
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
@@ -363,11 +366,15 @@ class GalleryListItem(GalleryItem):
 
         # Draw icons
         self.paintIcons(painter, x+4, y+4)
-        
+
         # Draw border
         if self.selectionStyle:
             self.paintBorder(painter, palette, x, y, w, h)
-        
+
         self._height = y + imgH + self.BORDER_SIZE
         self._height = max(self._height, 100)
         self.setMinimumHeight(self._height)
+
+
+
+from .gallery_grid import GalleryGrid

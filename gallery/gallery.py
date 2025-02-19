@@ -96,6 +96,7 @@ class Gallery(QtWidgets.QWidget):
         self.galleryGrid.reloaded.connect(self.scrollTop)
         self.galleryGrid.reloaded.connect(self.queueGridUpdate)
         self.galleryGrid.thumbnailLoaded.connect(self.queueGridUpdate)
+        self.galleryGrid.loadingProgress.connect(self.onLoadProgress)
         self.galleryGrid.fileChanged.connect(self.ensureVisible)
         self.scrollArea.setWidget(self.galleryGrid)
 
@@ -143,9 +144,18 @@ class Gallery(QtWidgets.QWidget):
         self.btnReloadCaptions.setChanged(False)
 
 
+    @Slot()
+    def onLoadProgress(self):
+        self.updateStatusBar(self.cboFolders.count())
+
     def updateStatusBar(self, numFolders):
+        loadText = ""
+        loadPercent = self.galleryGrid.getLoadPercent()
+        if loadPercent < 1.0:
+            loadText = f"  (Loading Gallery: {100*loadPercent:.1f} %)"
+
         numFiles = self.galleryGrid.filelist.getNumFiles()
-        self.statusBar.showMessage(f"{numFiles} Images in {numFolders} Folders")
+        self.statusBar.showMessage(f"{numFiles} Images in {numFolders} Folders{loadText}")
 
 
     def resizeEvent(self, event):

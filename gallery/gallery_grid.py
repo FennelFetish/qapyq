@@ -1,11 +1,14 @@
+from __future__ import annotations
 import os
 from PySide6 import QtGui, QtWidgets
-from PySide6.QtCore import Qt, Signal, QRect
+from PySide6.QtCore import Qt, Signal, Slot, QRect, QObject, QTimer
 from lib.captionfile import FileTypeSelector
 from lib.filelist import DataKeys
 from ui.tab import ImgTab
-from .gallery_item import GalleryItem, GalleryGridItem, GalleryListItem, ImageIcon
 from .gallery_header import GalleryHeader
+
+# Imported at the bottom because of circular dependency
+# from .gallery_item import GalleryItem, GalleryGridItem, GalleryListItem, ImageIcon
 
 
 class GalleryGrid(QtWidgets.QWidget):
@@ -16,6 +19,8 @@ class GalleryGrid(QtWidgets.QWidget):
     fileChanged     = Signal(object, int)
     reloaded        = Signal()
     thumbnailLoaded = Signal()
+    loadingProgress = Signal()
+
 
     def __init__(self, tab: ImgTab, captionSource: FileTypeSelector):
         super().__init__()
@@ -48,6 +53,8 @@ class GalleryGrid(QtWidgets.QWidget):
         self._selectedCompare: GalleryItem | None = None
         self._ignoreFileChange = False
 
+        self._loadTask: GalleryLoadTask | None = None
+
         # TODO: This layout has a maximum height of 524287. Why??
         self._layout = QtWidgets.QGridLayout()
         self._layout.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetNoConstraint)
@@ -63,8 +70,7 @@ class GalleryGrid(QtWidgets.QWidget):
             return
         self.itemClass = newItemClass
 
-        for widget in self.freeLayout().values():
-            widget.deleteLater()
+        self.clearLayout()
 
         self._layout.setSpacing(newItemClass.getSpacing())
         self.columns = self.calcColumnCount()
@@ -87,84 +93,27 @@ class GalleryGrid(QtWidgets.QWidget):
             item.loadCaption()
 
 
-    def freeLayout(self) -> dict:
-        galleryItems = dict()
+    def clearLayout(self) -> None:
         for i in reversed(range(self._layout.count())):
             item = self._layout.takeAt(i)
-            if widget := item.widget():
-                if isinstance(widget, GalleryItem):
-                    galleryItems[widget.file] = widget
-                else:
-                    widget.deleteLater()
+            if item and (widget := item.widget()):
+                widget.deleteLater()
 
-        return galleryItems
 
     def reloadImages(self):
         self.fileItems = dict()
         self._selectedItem = None
         self._selectedCompare = None
 
-        existingItems: dict = self.freeLayout()
-        headers = list()
-        rows = set()
+        self.clearLayout()
 
-        currentHeader: GalleryHeader = None
-        row, col = 0, 0
-        for file in self.filelist.getFiles():
-            dirname = os.path.dirname(file)
-            if not currentHeader or currentHeader.dir != dirname:
-                if col > 0:
-                    row += 1
-                    col = 0
+        self._loadTask = GalleryLoadTask(self)
+        self._loadTask.loadBatch()
 
-                currentHeader = self.addHeader(dirname, row)
-                headers.append(currentHeader)
-                rows.add(row)
-                row += 1
-
-            if not (galleryItem := existingItems.pop(file, None)):
-                galleryItem = self.itemClass(self, file)
-
-            self.addImage(galleryItem, file, row, col)
-            currentHeader.numImages += 1
-            rows.add(row)
-
-            col += 1
-            if col >= self.columns:
-                col = 0
-                row += 1
-
-        self.rows = len(rows)
-
-        for widget in existingItems.values():
-            widget.deleteLater()
-
-        for header in headers:
-            header.updateImageLabel()
-        self.headersUpdated.emit(headers)
-
-    def addImage(self, galleryItem: GalleryItem, file: str, row: int, col: int):
-        galleryItem.row = row
-        self.fileItems[file] = galleryItem
-
-        self._layout.addWidget(galleryItem, row, col, Qt.AlignmentFlag.AlignTop)
-
-        if self.filelist.getCurrentFile() == file:
-            self._selectedItem = galleryItem
-            galleryItem.selected = True
-        else:
-            galleryItem.selected = False
-
-        if (compareTool := self.tab.getTool("compare")) and compareTool.compareFile == file:
-            self._selectedCompare = galleryItem
-            galleryItem.setCompare(True)
-        else:
-            galleryItem.setCompare(False)
-
-    def addHeader(self, dir: str, row: int) -> GalleryHeader:
-        header = GalleryHeader(self.tab, dir, row)
-        self._layout.addWidget(header, row, 0, 1, self.columns)
-        return header
+    def getLoadPercent(self) -> float:
+        if self._loadTask:
+            return len(self.fileItems) / len(self.filelist.files)
+        return 1.0
 
 
     def setSelectedItem(self, item: GalleryItem, updateFileList=False):
@@ -199,6 +148,10 @@ class GalleryGrid(QtWidgets.QWidget):
         return max(cols, 1)
 
     def adjustGrid(self):
+        if self._loadTask:
+            self._loadTask.needsAdjust = True
+            return
+
         cols = self.calcColumnCount()
         if cols == self.columns:
             return
@@ -209,18 +162,21 @@ class GalleryGrid(QtWidgets.QWidget):
             items.append(self._layout.takeAt(i))
 
         headers = list()
-        rows = set()
+        emptyLastRow = False
 
         row, col = 0, 0
         for widget in (item.widget() for item in reversed(items)):
             if isinstance(widget, GalleryItem):
                 widget.row = row
                 self._layout.addWidget(widget, row, col, Qt.AlignmentFlag.AlignTop)
-                rows.add(row)
+                emptyLastRow = False
+
                 col += 1
                 if col >= cols:
                     row += 1
                     col = 0
+                    emptyLastRow = True
+
             elif isinstance(widget, GalleryHeader):
                 if col > 0:
                     row += 1
@@ -228,10 +184,12 @@ class GalleryGrid(QtWidgets.QWidget):
                 widget.row = row
                 headers.append(widget)
                 self._layout.addWidget(widget, row, 0, 1, cols)
-                rows.add(row)
                 row += 1
 
-        self.rows = len(rows)
+        self.rows = row
+        if not emptyLastRow:
+            self.rows += 1
+
         self._layout.update()
         self.headersUpdated.emit(headers)
 
@@ -304,3 +262,132 @@ class GalleryGrid(QtWidgets.QWidget):
             case DataKeys.CaptionState | DataKeys.CropState | DataKeys.MaskState:
                 iconState = self.filelist.getData(file, key)
                 widget.setIcon(key, iconState)
+
+
+
+class GalleryLoadTask(QObject):
+    INTERVAL_SHORT = 10
+    INTERVAL_LONG  = 1500
+
+    def __init__(self, galleryGrid: GalleryGrid):
+        super().__init__()
+        self.galleryGrid = galleryGrid
+        self.layout      = galleryGrid._layout
+        self.numColumns  = galleryGrid.columns
+        self.itemClass   = galleryGrid.itemClass
+
+        self.run = 0
+        self.needsAdjust = False
+        self.aborted = False
+
+        self.files = galleryGrid.filelist.getFiles()
+        self.index = 0
+        self.batchSize = 50
+
+        self.headers: list[GalleryHeader] = list()
+        self.currentHeader: GalleryHeader = None
+        self.row = 0
+        self.col = 0
+        self.emptyLastRow = False
+
+        self.compareTool = galleryGrid.tab.getTool("compare")
+
+        self.timer = QTimer()
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self.loadBatch)
+
+        # Let first iteration adjust the layout and load the first thumbnails
+        initialInterval = self.INTERVAL_LONG if len(self.files) > 1000 else self.INTERVAL_SHORT
+        self.timer.setInterval(initialInterval)
+
+
+    @Slot()
+    def loadBatch(self) -> None:
+        self.run += 1
+        if self.aborted:
+            return
+
+        lastNumHeaders = len(self.headers)
+
+        end = min(self.index + self.batchSize, len(self.files))
+        for self.index in range(self.index, end):
+            file = self.files[self.index]
+
+            dirname = os.path.dirname(file)
+            if not self.currentHeader or self.currentHeader.dir != dirname:
+                if self.col > 0:
+                    self.col = 0
+                    self.row += 1
+
+                self.currentHeader = self.addHeader(dirname, self.row)
+                self.headers.append(self.currentHeader)
+                self.row += 1
+
+            self.addImage(file, self.row, self.col)
+            self.currentHeader.numImages += 1
+            self.emptyLastRow = False
+
+            self.col += 1
+            if self.col >= self.numColumns:
+                self.col = 0
+                self.row += 1
+                self.emptyLastRow = True
+
+        numRows = self.row
+        if not self.emptyLastRow:
+            numRows += 1
+        self.galleryGrid.rows = numRows
+
+        # Update headers and their image counter
+        for header in self.headers[max(0, lastNumHeaders-1):]:
+            header.updateImageLabel()
+
+        if len(self.headers) != lastNumHeaders:
+            self.galleryGrid.headersUpdated.emit(self.headers)
+        else:
+            self.galleryGrid.loadingProgress.emit()
+
+        # Queue next batch
+        self.index += 1
+        if self.index < len(self.files):
+            if self.run == 2:
+                self.timer.setInterval(self.INTERVAL_SHORT)
+            self.timer.start()
+        else:
+            self.finalize()
+
+
+    def finalize(self):
+        self.galleryGrid._loadTask = None
+
+        if self.needsAdjust:
+            self.galleryGrid.adjustGrid()
+
+
+    def addImage(self, file: str, row: int, col: int):
+        galleryItem = self.itemClass(self.galleryGrid, file)
+        galleryItem.row = row
+        self.galleryGrid.fileItems[file] = galleryItem
+
+        self.layout.addWidget(galleryItem, row, col, Qt.AlignmentFlag.AlignTop)
+
+        if self.galleryGrid.filelist.getCurrentFile() == file:
+            self.galleryGrid._selectedItem = galleryItem
+            galleryItem.selected = True
+        else:
+            galleryItem.selected = False
+
+        if self.compareTool and self.compareTool.compareFile == file:
+            self.galleryGrid._selectedCompare = galleryItem
+            galleryItem.setCompare(True)
+        else:
+            galleryItem.setCompare(False)
+
+    def addHeader(self, dir: str, row: int) -> GalleryHeader:
+        header = GalleryHeader(self.galleryGrid.tab, dir, row)
+        self.layout.addWidget(header, row, 0, 1, self.numColumns)
+        return header
+
+
+
+from .gallery_item import GalleryItem, GalleryGridItem, GalleryListItem, ImageIcon
