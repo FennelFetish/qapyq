@@ -382,16 +382,16 @@ def htmlRed(text: str) -> str:
 
 
 def bubbleStyle(color: str, borderColor=COLOR_BUBBLE_BLACK) -> str:
-    return f"background-color: {color}; border: 1px solid {borderColor}; border-radius: 8px"
+    return f"color: #fff; background-color: {color}; border: 1px solid {borderColor}; border-radius: 8px"
 
 def bubbleStylePad(color: str, padding=2, borderColor=COLOR_BUBBLE_BLACK) -> str:
-    return f"background-color: {color}; border: 1px solid {borderColor}; border-radius: 8px; padding: {padding}px"
+    return f"color: #fff; background-color: {color}; border: 1px solid {borderColor}; border-radius: 8px; padding: {padding}px"
 
 def bubbleStyleAux(color: str) -> str:
     return f"color: #fff; background-color: {color}; border: 0px"
 
 def bubbleClass(className: str, color: str, borderColor=COLOR_BUBBLE_BLACK) -> str:
-    return f".{className}{{background-color: {color}; border: 1px solid {borderColor}; border-radius: 8px}}"
+    return f".{className}{{color: #fff; background-color: {color}; border: 1px solid {borderColor}; border-radius: 8px}}"
 
 
 class BubbleRemoveButton(QtWidgets.QPushButton):
