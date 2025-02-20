@@ -87,6 +87,12 @@ def load_image(image_file, input_size=448, max_num=12):
 
 
 
+
+# V2.5 with quantization fails with:
+#   File "/mnt/firlefanz/dev-Tools/qapyq/.venv/lib/python3.10/site-packages/accelerate/utils/operations.py", line 155, in send_to_device
+#     return tensor.to(device, non_blocking=non_blocking)
+# NotImplementedError: Cannot copy out of meta tensor; no data!
+
 class InternVL2Backend(InferenceBackend):
     def __init__(self, config: dict):
         super().__init__(config)
@@ -132,7 +138,7 @@ class InternVL2Backend(InferenceBackend):
 
         self.model.system_message = systemPrompt.strip() if systemPrompt else ""
         set_seed(self.randomSeed())
-        
+
         with torch.inference_mode():
             for conversation in prompts:
                 history = None
@@ -151,7 +157,8 @@ class InternVL2Backend(InferenceBackend):
             "vision_config.num_hidden_layers"
         )
 
-        # 1b, 4b, 40b, 76b
+        # v2.0: 1b, 4b, 40b, 76b
+        # v2.5: 38b
         devmap.setCudaLayer("language_model.model.embed_tokens")
         devmap.setCudaLayer("language_model.lm_head")
 
@@ -171,6 +178,9 @@ class InternVL2Backend(InferenceBackend):
                 pass
             case 59: # 40b
                 pass
+            case 63: # v2.5 38b
+                if visGpuLayers == 0:
+                    visGpuLayers = 1
             case 79: # 76b
                 pass
 
@@ -184,7 +194,7 @@ class InternVL2Backend(InferenceBackend):
             devmap.setCudaLayer("vision_model")
             devmap.setCudaLayer("vision_model.embeddings")
             devmap.setVisLayers("vision_model.encoder.layers", visGpuLayers)
-        
+
         devmap.setCudaLayer("mlp1")
         return devmap
 

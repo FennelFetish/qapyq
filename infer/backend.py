@@ -1,3 +1,4 @@
+from typing import Any
 import base64, random
 from PySide6.QtGui import QImage
 from PySide6.QtCore import QBuffer
@@ -5,10 +6,10 @@ from config import Config
 
 
 class InferenceBackend:
-    def __init__(self, config: dict):
+    def __init__(self, config: dict[str, Any]):
         self.stop: list[str] = []
 
-        self.config = {
+        self.config: dict[str, Any]= {
             "max_tokens": 1000,
             "temperature": 0.15,
             "top_p": 0.95,

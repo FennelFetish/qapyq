@@ -45,9 +45,9 @@ def handleMessage(protocol) -> bool:
         case "setup_tag":
             tagBackend.getBackend(msg.get("config", {}))
             protocol.writeMessage({"cmd": cmd})
-        
+
         case "setup_masking" | "setup_upscale":
-            backendLoader.getBackend(msg.get("config", {}))
+            backendLoader.getBackend(msg.get("config", {}), setup=True)
             protocol.writeMessage({"cmd": cmd})
 
 
@@ -60,7 +60,7 @@ def handleMessage(protocol) -> bool:
                 "img": img,
                 "captions": captions
             })
-        
+
         # TODO: Cache image
         case "tag":
             img = msg["img"]
@@ -117,7 +117,7 @@ def handleMessage(protocol) -> bool:
                 "h": h,
                 "img": imgUpscaled
             })
-        
+
         case "img_upscale":
             imgData = msg["img_data"]
             w, h = msg["w"], msg["h"]
@@ -151,7 +151,7 @@ def main() -> int:
     sys.stdout = sys.stderr
 
     print("Inference process started")
-    
+
     running = True
     while running:
         try:
@@ -162,7 +162,7 @@ def main() -> int:
             exType, exMessage, exTraceback = sys.exc_info()
             print(traceback.format_exc())
             handleError(protocol, str(exType), str(exMessage))
-    
+
     print("Inference process ending")
     return 0
 
