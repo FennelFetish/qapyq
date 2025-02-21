@@ -9,6 +9,9 @@ from PIL import Image
 spandrel_extra_arches.install()
 
 
+# TODO: Use tiling for large images?
+
+
 class UpscaleBackend:
     def __init__(self, config: dict):
         self.model = ModelLoader().load_from_file(config.get("model_path"))
@@ -16,6 +19,11 @@ class UpscaleBackend:
         self.model.cuda().eval()
 
         self.toTensor = transforms.ToTensor()
+
+
+    def setConfig(self, config: dict):
+        pass
+
 
     @torch.inference_mode()
     def _upscaleImage(self, tensor: torch.Tensor) -> np.ndarray:

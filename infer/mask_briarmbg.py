@@ -12,7 +12,7 @@ class BriaRmbgMask:
             config.get("model_path"),
             trust_remote_code=True
         )
-        
+
         #print(torch.get_float32_matmul_precision()) # highest
         #torch.set_float32_matmul_precision(['high', 'highest'][0])
         self.model.to('cuda').eval()
@@ -23,6 +23,10 @@ class BriaRmbgMask:
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ])
+
+
+    def setConfig(self, config: dict):
+        pass
 
 
     @torch.inference_mode()
@@ -61,7 +65,7 @@ class BriaRmbgMask:
         newHeight = round(newHeight / 32) * 32
         if newHeight == height and newWidth == width:
             return image
-        
+
         interp = Image.Resampling.LANCZOS if (newWidth>width or newHeight>height) else Image.Resampling.BOX
         return image.resize((newWidth, newHeight), resample=interp)
 

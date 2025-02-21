@@ -17,6 +17,10 @@ class YoloMask:
         }
 
 
+    def setConfig(self, config: dict):
+        pass
+
+
     def getClassNames(self) -> list[str]:
         return list(self.model.names.values())
 
@@ -24,7 +28,7 @@ class YoloMask:
     def detectBoxes(self, imgPath: str, classes: list[str]):
         image = Image.open(imgPath)
         image = self.scaleImage(image)
-        
+
         results = []
 
         detections = self.model(image, **self.inferenceArgs)
@@ -50,5 +54,5 @@ class YoloMask:
         newHeight = round(height / 32) * 32
         if newHeight == height and newWidth == width:
             return image
-        
+
         return image.resize((newWidth, newHeight))

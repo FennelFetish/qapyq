@@ -16,6 +16,10 @@ class InspyrenetMask:
         )
 
 
+    def setConfig(self, config: dict):
+        pass
+
+
     def mask(self, imgPath: str, classes: list[str]) -> bytes:
         image = cv.imread(imgPath, cv.IMREAD_UNCHANGED)
 
