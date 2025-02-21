@@ -1,6 +1,6 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
-from lib.captionfile import CaptionFile
+from lib.captionfile import CaptionFile, FileTypeSelector
 import lib.qtlib as qtlib
 
 
@@ -38,22 +38,25 @@ class CaptionList(QtWidgets.QWidget):
 
     def reloadCaptions(self):
         self._clearLayout()
-
         currentFile = self.ctx.tab.filelist.getCurrentFile()
+
         captionFile = CaptionFile(currentFile)
-        if not captionFile.loadFromJson():
-            return
+        if captionFile.loadFromJson():
+            sortedTags = sorted(((k, v) for k, v in captionFile.tags.items()), key=lambda item: item[0])
+            for key, tags in sortedTags:
+                entry = CaptionEntry(self, f"tags.{key}")
+                entry.caption = tags
+                self._layout.addWidget(entry)
 
-        sortedTags = sorted(((k, v) for k, v in captionFile.tags.items()), key=lambda item: item[0])
-        for key, tags in sortedTags:
-            entry = CaptionEntry(self, f"tags.{key}")
-            entry.caption = tags
-            self._layout.addWidget(entry)
+            sortedCaptions = sorted(((k, v) for k, v in captionFile.captions.items()), key=lambda item: item[0])
+            for key, cap in sortedCaptions:
+                entry = CaptionEntry(self, f"captions.{key}")
+                entry.caption = cap
+                self._layout.addWidget(entry)
 
-        sortedCaptions = sorted(((k, v) for k, v in captionFile.captions.items()), key=lambda item: item[0])
-        for key, cap in sortedCaptions:
-            entry = CaptionEntry(self, f"captions.{key}")
-            entry.caption = cap
+        if text := FileTypeSelector.loadCaptionTxt(currentFile):
+            entry = CaptionEntry(self, "text")
+            entry.caption = text
             self._layout.addWidget(entry)
 
 

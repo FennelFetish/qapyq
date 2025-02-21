@@ -213,8 +213,9 @@ class FileTypeSelector(QtWidgets.QHBoxLayout):
         else:
             return captionFile.getTags(self.name)
 
-    def loadCaptionTxt(self, imgPath: str) -> str | None:
-        path = os.path.splitext(imgPath)[0] + self.CAPTION_FILE_EXT
+    @classmethod
+    def loadCaptionTxt(cls, imgPath: str) -> str | None:
+        path = os.path.splitext(imgPath)[0] + cls.CAPTION_FILE_EXT
         if os.path.exists(path):
             with open(path, 'r') as file:
                 return file.read()
