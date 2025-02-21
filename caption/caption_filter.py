@@ -1,5 +1,6 @@
-from typing import Generator, List
+from typing import Iterable
 import re
+from .caption_preset import MutualExclusivity
 
 
 class CaptionFilter:
@@ -41,7 +42,7 @@ class SortCaptionFilter(CaptionFilter):
         super().__init__()
         self.captionOrder = dict()
 
-    def setup(self, captionGroups: Generator[List[str], None, None], prefix, suffix, separator) -> None:
+    def setup(self, captionGroups: Iterable[list[str]], prefix, suffix, separator) -> None:
         self.captionOrder.clear()
 
         i = 0
@@ -65,23 +66,30 @@ class SortCaptionFilter(CaptionFilter):
 
 
 
+# Removes tags depending on their position inside caption text
 class MutuallyExclusiveFilter(CaptionFilter):
-    def __init__(self):
-        self.groups: list[set] = list()
+    def __init__(self, exclusivity: MutualExclusivity):
+        self.groups: list[set[str]] = list()
 
-    def setup(self, captionGroups: Generator[List[str], None, None]) -> None:
+        match exclusivity:
+            case MutualExclusivity.KeepLast:
+                self.enumerate = self.enumerateCaptionsReversed
+            case MutualExclusivity.KeepFirst:
+                self.enumerate = self.enumerateCaptions
+            case _:
+                raise ValueError("Invalid exclusivity mode")
+
+    def setup(self, captionGroups: Iterable[list[str]]) -> None:
         self.groups.clear()
         self.groups.extend(set(caps) for caps in captionGroups)
 
     def filterCaptions(self, captions: list[str]) -> list[str]:
-        enumerated = list(enumerate(captions))
+        enumerated = self.enumerate(captions)
         deleteIndices = set()
 
         for group in self.groups:
             exists = False
-            # TODO: Keep fist occurence instead? (it has highest confidence score)
-            #       -> This would break auto-replacement when Auto Apply is enabled. -> Use reversed tags instead
-            for i, cap in reversed(enumerated):
+            for i, cap in enumerated:
                 if cap in group:
                     if exists:
                         deleteIndices.add(i)
@@ -91,10 +99,58 @@ class MutuallyExclusiveFilter(CaptionFilter):
             del captions[i]
         return captions
 
+    @staticmethod
+    def enumerateCaptionsReversed(captions: list[str]) -> list[tuple[int, str]]:
+        return list(reversed( list(enumerate(captions)) ))
+
+    @staticmethod
+    def enumerateCaptions(captions: list[str]) -> list[tuple[int, str]]:
+        return list(enumerate(captions))
+
+
+
+# Removes tags depending on their position in group
+class PriorityFilter():
+    def __init__(self):
+        self.groups: list[dict[str, int]] = list()
+
+    def setup(self, captionGroups: Iterable[list[str]]) -> None:
+        self.groups.clear()
+        for group in captionGroups:
+            self.groups.append({ cap: prio for prio, cap in enumerate(group) })
+
+    def filterCaptions(self, captions: list[str]) -> list[str]:
+        enumerated = list(enumerate(captions))
+        allDeleteIndices: set[int] = set()
+        deleteIndices: set[int] = set()
+
+        for group in self.groups:
+            deleteIndices.clear()
+            keepIndex = -1
+            maxPrio = -1
+
+            for i, cap in enumerated:
+                prio = group.get(cap)
+                if prio is None:
+                    continue
+
+                deleteIndices.add(i)
+                if prio > maxPrio:
+                    maxPrio = prio
+                    keepIndex = i
+
+            deleteIndices.discard(keepIndex)
+            allDeleteIndices.update(deleteIndices)
+
+        for i in sorted(allDeleteIndices, reverse=True):
+            del captions[i]
+        return captions
+
 
 
 # TODO: Wildcard that matches all colors?
 # TODO: Or make a more general combination filter not associated with groups, with regex patterns?s
+# TODO: Maximum number of combined tags. Split into multiple if threshold reached.
 class TagCombineFilter(CaptionFilter):
     # short hair, brown hair    -> short brown hair   short, brown -> group 0
     # messy hair, curly hair    -> messy curly hair   messy, curly -> group 1
@@ -103,7 +159,7 @@ class TagCombineFilter(CaptionFilter):
         self.groupMap: dict[str, int] = dict() # key: tag as-is / value: group index
         self._nextGroupIndex = 1
 
-    def setup(self, captionGroups: Generator[List[str], None, None]) -> None:
+    def setup(self, captionGroups: Iterable[list[str]]) -> None:
         self.groupMap.clear()
         self._nextGroupIndex = 1
         for caps in captionGroups:
@@ -266,7 +322,9 @@ class CaptionRulesProcessor:
         self.sortCaptions = True
 
         self.replaceFilter = SearchReplaceFilter()
-        self.exclusiveFilter = MutuallyExclusiveFilter()
+        self.exclusiveFilterLast = MutuallyExclusiveFilter(MutualExclusivity.KeepLast)
+        self.exclusiveFilterFirst = MutuallyExclusiveFilter(MutualExclusivity.KeepFirst)
+        self.exclusiveFilterPriority = PriorityFilter()
         self.dupFilter = DuplicateCaptionFilter()
         self.banFilter = BannedCaptionFilter()
         self.sortFilter = SortCaptionFilter()
@@ -290,14 +348,18 @@ class CaptionRulesProcessor:
     def setBannedCaptions(self, bannedCaptions: list[str]) -> None:
         self.banFilter.setup(bannedCaptions)
 
-    def setCaptionGroups(self, allCaptionGroups: Generator[List[str], None, None]) -> None:
-        self.sortFilter.setup(allCaptionGroups, self.prefix, self.suffix, self.separator)
+    def setCaptionGroups(self, captionGroups: Iterable[ tuple[list[str], MutualExclusivity, bool] ]) -> None:
+        'Takes iterable with tuples of `captions: list[str]`, `MutualExclusivity`, `combine: bool`'
+        captionGroups = list(captionGroups)
 
-    def setMutuallyExclusiveCaptionGroups(self, exclusiveCaptionGroups: Generator[List[str], None, None]) -> None:
-        self.exclusiveFilter.setup(exclusiveCaptionGroups)
+        allGroups = (group[0] for group in captionGroups)
+        self.sortFilter.setup(allGroups, self.prefix, self.suffix, self.separator)
 
-    def setCombinationCaptionGroups(self, combineCaptionGroups: Generator[List[str], None, None]) -> None:
-        self.combineFilter.setup(combineCaptionGroups)
+        self.exclusiveFilterLast.setup(tags for tags, ex, _ in captionGroups if ex==MutualExclusivity.KeepLast)
+        self.exclusiveFilterFirst.setup(tags for tags, ex, _ in captionGroups if ex==MutualExclusivity.KeepFirst)
+        self.exclusiveFilterPriority.setup(tags for tags, ex, _ in captionGroups if ex==MutualExclusivity.Priority)
+
+        self.combineFilter.setup(tags for tags, _, combine in captionGroups if combine)
 
 
     def process(self, text: str) -> str:
@@ -308,11 +370,11 @@ class CaptionRulesProcessor:
 
         # Sort before applying exclusive filter so the caption order defines priority (last one is kept)
         # --> No. NOTE: Sorting before the exclusive filter breaks replacement of tags when Auto Apply Rules and Mutually Exclusive are enabled.
-        # if self.sortCaptions:
-        #     captions = self.sortFilter.filterCaptions(captions)
 
         # Filter mutually exclusive captions before removing duplicates: This will keep the last inserted caption
-        captions = self.exclusiveFilter.filterCaptions(captions)
+        captions = self.exclusiveFilterLast.filterCaptions(captions)
+        captions = self.exclusiveFilterFirst.filterCaptions(captions)
+        captions = self.exclusiveFilterPriority.filterCaptions(captions)
 
         captions = self.banFilter.filterCaptions(captions)
 

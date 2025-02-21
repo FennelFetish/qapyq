@@ -1,4 +1,12 @@
 import json
+from enum import Enum
+
+
+class MutualExclusivity(Enum):
+    Disabled  = "disabled"
+    KeepLast  = "last"
+    KeepFirst = "first"
+    Priority  = "priority"
 
 
 class CaptionPreset:
@@ -19,11 +27,11 @@ class CaptionPreset:
         self.searchReplace: list[tuple[str, str]] = []
         self.banned: list[str] = []
 
-    def addGroup(self, name: str, color: str, mutuallyExclusive: bool, combineTags: bool, captions: list[str]):
+    def addGroup(self, name: str, color: str, exclusivity: MutualExclusivity, combineTags: bool, captions: list[str]):
         group = CaptionPresetGroup()
         group.name = name
         group.color = color
-        group.mutuallyExclusive = mutuallyExclusive
+        group.exclusivity = exclusivity
         group.combineTags = combineTags
         group.captions.extend(captions)
         self.groups.append(group)
@@ -52,7 +60,7 @@ class CaptionPreset:
 
     def loadFrom(self, path: str):
         with open(path, 'r') as file:
-            data = json.load(file)
+            data: dict = json.load(file)
 
         self.prefix             = data.get("prefix", "")
         self.suffix             = data.get("suffix", "")
@@ -70,10 +78,25 @@ class CaptionPreset:
                 self.addGroup(
                     group.get("name", "Group"),
                     group.get("color", "#000"),
-                    group.get("mutually_exclusive", False),
+                    self.loadExclusivity(group),
                     group.get("combine_tags", False),
                     group.get("captions", [])
                 )
+
+    @staticmethod
+    def loadExclusivity(group: dict) -> MutualExclusivity:
+        exclusivity: str = group.get("exclusivity", MutualExclusivity.Disabled.value)
+
+        # Try loading mutual exclusivity in old format
+        if group.get("mutually_exclusive", False):
+            exclusivity = MutualExclusivity.KeepLast.value
+
+        try:
+            return MutualExclusivity(exclusivity)
+        except ValueError as ex:
+            groupName = group.get("name", "Group")
+            print(f"Error while loading captioning rules for group '{groupName}': {ex}")
+            return MutualExclusivity.Disabled
 
 
 
@@ -81,7 +104,7 @@ class CaptionPresetGroup:
     def __init__(self):
         self.name: str = "Group"
         self.color: str = "#000"
-        self.mutuallyExclusive: bool = False
+        self.exclusivity: MutualExclusivity = MutualExclusivity.Disabled
         self.combineTags: bool = False
         self.captions: list[str] = []
 
@@ -89,7 +112,7 @@ class CaptionPresetGroup:
         return {
             "name": self.name,
             "color": self.color,
-            "mutually_exclusive": self.mutuallyExclusive,
+            "exclusivity": self.exclusivity.value,
             "combine_tags": self.combineTags,
             "captions": list(self.captions)
         }

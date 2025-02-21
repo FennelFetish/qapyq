@@ -422,9 +422,7 @@ class CaptionContainer(QtWidgets.QWidget):
         rulesProcessor.setup(self.ctx.settings.prefix, self.ctx.settings.suffix, self.captionSeparator, removeDup, sortCaptions)
         rulesProcessor.setSearchReplacePairs(self.ctx.settings.searchReplacePairs)
         rulesProcessor.setBannedCaptions(self.ctx.settings.bannedCaptions)
-        rulesProcessor.setCaptionGroups( group.captions for group in self.ctx.groups.groups )
-        rulesProcessor.setMutuallyExclusiveCaptionGroups( group.captions for group in self.ctx.groups.groups if group.mutuallyExclusive )
-        rulesProcessor.setCombinationCaptionGroups( group.captions for group in self.ctx.groups.groups if group.combineTags )
+        rulesProcessor.setCaptionGroups( (group.captions, group.exclusivity, group.combineTags) for group in self.ctx.groups.groups )
         return rulesProcessor
 
 

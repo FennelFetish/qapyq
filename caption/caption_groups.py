@@ -2,7 +2,7 @@ from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot
 from lib import qtlib, util
 from ui.flow_layout import FlowLayout, ReorderWidget
-from .caption_preset import CaptionPreset
+from .caption_preset import CaptionPreset, MutualExclusivity
 
 
 # TODO?: Per group matching method:
@@ -128,7 +128,7 @@ class CaptionGroups(QtWidgets.QWidget):
 
     def saveToPreset(self, preset: CaptionPreset):
         for group in self.groups:
-            preset.addGroup(group.name, group.color, group.mutuallyExclusive, group.combineTags, group.captions)
+            preset.addGroup(group.name, group.color, group.exclusivity, group.combineTags, group.captions)
 
     def loadFromPreset(self, preset: CaptionPreset):
         self.removeAllGroups()
@@ -136,7 +136,7 @@ class CaptionGroups(QtWidgets.QWidget):
             groupWidget: CaptionControlGroup = self.addGroup()
             groupWidget.name = group.name
             groupWidget.color = group.color
-            groupWidget.mutuallyExclusive = group.mutuallyExclusive
+            groupWidget.exclusivity = group.exclusivity
             groupWidget.combineTags = group.combineTags
             for caption in group.captions:
                 groupWidget.addCaption(caption)
@@ -145,6 +145,8 @@ class CaptionGroups(QtWidgets.QWidget):
 
 
 
+# TODO: Add preview for combine-tags (right to the combine checkbox, a disabled QLineEdit so it will not affect minimum window width).
+#       Only show it when hovering over the group.
 class CaptionControlGroup(QtWidgets.QWidget):
     def __init__(self, groups: CaptionGroups, name: str):
         super().__init__()
@@ -187,17 +189,22 @@ class CaptionControlGroup(QtWidgets.QWidget):
         self.txtName.setMaximumWidth(300)
         qtlib.setMonospace(self.txtName, 1.2, bold=True)
 
-        btnAddCaption = QtWidgets.QPushButton("Add Caption")
-        btnAddCaption.clicked.connect(self._addCaptionClick)
-        btnAddCaption.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.cboExclusive = QtWidgets.QComboBox()
+        self.cboExclusive.addItem("Disabled", MutualExclusivity.Disabled)
+        self.cboExclusive.addItem("Keep Last", MutualExclusivity.KeepLast)
+        self.cboExclusive.addItem("Keep First", MutualExclusivity.KeepFirst)
+        self.cboExclusive.addItem("Priority", MutualExclusivity.Priority)
 
-        self.chkExclusive = QtWidgets.QCheckBox("Mutually Exclusive")
         self.chkCombine = QtWidgets.QCheckBox("Combine Tags")
 
         # Emit signal to update preview, but don't apply rules, as these settings can remove tags.
         emitControlUpdated = lambda: self.groups.ctx.controlUpdated.emit()
-        self.chkExclusive.toggled.connect(emitControlUpdated)
+        self.cboExclusive.currentIndexChanged.connect(emitControlUpdated)
         self.chkCombine.toggled.connect(emitControlUpdated)
+
+        btnAddCaption = QtWidgets.QPushButton("Add Tag")
+        btnAddCaption.clicked.connect(self._addCaptionClick)
+        btnAddCaption.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
         btnRemoveGroup = QtWidgets.QPushButton("Remove Group")
         btnRemoveGroup.clicked.connect(lambda: self.groups.removeGroup(self))
@@ -206,11 +213,14 @@ class CaptionControlGroup(QtWidgets.QWidget):
         self.headerLayout.setContentsMargins(0, 0, 0, 0)
         self.headerLayout.addWidget(self.colorWidget)
         self.headerLayout.addWidget(self.txtName)
-        self.headerLayout.addWidget(btnAddCaption)
-        self.headerLayout.addWidget(self.chkExclusive)
+        self.headerLayout.addSpacing(8)
+        self.headerLayout.addWidget(QtWidgets.QLabel("Mutually Exclusive:"))
+        self.headerLayout.addWidget(self.cboExclusive)
         self.headerLayout.addWidget(self.chkCombine)
+
         self.headerLayout.addStretch()
 
+        self.headerLayout.addWidget(btnAddCaption)
         self.headerLayout.addWidget(btnRemoveGroup)
         self.headerWidget = QtWidgets.QWidget()
         self.headerWidget.setContentsMargins(0, 0, 0, 0)
@@ -255,12 +265,13 @@ class CaptionControlGroup(QtWidgets.QWidget):
 
 
     @property
-    def mutuallyExclusive(self) -> bool:
-        return self.chkExclusive.isChecked()
+    def exclusivity(self) -> MutualExclusivity:
+        return self.cboExclusive.currentData()
 
-    @mutuallyExclusive.setter
-    def mutuallyExclusive(self, checked: bool):
-        self.chkExclusive.setChecked(checked)
+    @exclusivity.setter
+    def exclusivity(self, exclusivity: MutualExclusivity):
+        index = self.cboExclusive.findData(exclusivity)
+        self.cboExclusive.setCurrentIndex(index)
 
 
     @property

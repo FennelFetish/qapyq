@@ -1,8 +1,8 @@
 import os
 from typing import Callable
 from PySide6 import QtGui, QtWidgets
-from PySide6.QtCore import Qt, Slot
-from caption import CaptionPreset, CaptionRulesProcessor
+from PySide6.QtCore import Qt, Slot, QTimer
+from caption import CaptionPreset, MutualExclusivity, CaptionRulesProcessor
 from config import Config
 from infer import Inference
 from ui.edit_table import EditableTable
@@ -232,14 +232,17 @@ class BatchRules(QtWidgets.QWidget):
             if widget and isinstance(widget, BatchRulesGroup):
                 yield widget
 
-    def addGroup(self, title: str, color: str, exclusive: bool, combine: bool, captions: list[str]):
-        group = BatchRulesGroup(title, color, exclusive, combine, captions, self.updatePreview)
+    def addGroup(self, title: str, color: str, exclusivity: MutualExclusivity, combine: bool, captions: list[str]):
+        group = BatchRulesGroup(title, color, exclusivity, combine, captions, self.updatePreview)
         self.groupLayout.addWidget(group, 0, Qt.AlignmentFlag.AlignTop)
+
+        # TODO: When loading large number of groups 2 times, they are squished. Fix FlowLayout so this isn't needed.
+        QTimer.singleShot(1, group.updateHeight)
 
     def removeAllGroups(self):
         for i in reversed(range(self.groupLayout.count())):
             item = self.groupLayout.takeAt(i)
-            if widget := item.widget():
+            if item and (widget := item.widget()):
                 widget.deleteLater()
 
 
@@ -259,7 +262,7 @@ class BatchRules(QtWidgets.QWidget):
 
             self.removeAllGroups()
             for group in preset.groups:
-                self.addGroup(group.name, group.color, group.mutuallyExclusive, group.combineTags, group.captions)
+                self.addGroup(group.name, group.color, group.exclusivity, group.combineTags, group.captions)
         finally:
             self._updateEnabled = True
             self._updateHighlightFormats()
@@ -312,9 +315,7 @@ class BatchRules(QtWidgets.QWidget):
         rulesProcessor.setup(prefix, suffix, separator, self.chkRemoveDup.isChecked(), self.chkSortCaptions.isChecked())
         rulesProcessor.setSearchReplacePairs(self.tableReplace.getContent())
         rulesProcessor.setBannedCaptions(self.bannedCaptions)
-        rulesProcessor.setCaptionGroups( group.captions for group in self.groups )
-        rulesProcessor.setMutuallyExclusiveCaptionGroups( group.captions for group in self.groups if group.mutuallyExclusive )
-        rulesProcessor.setCombinationCaptionGroups( group.captions for group in self.groups if group.combineTags )
+        rulesProcessor.setCaptionGroups( (group.captions, group.exclusivity, group.combineTags) for group in self.groups )
         return rulesProcessor
 
     @Slot()
@@ -417,7 +418,7 @@ class BatchRules(QtWidgets.QWidget):
 
 
 class BatchRulesGroup(QtWidgets.QWidget):
-    def __init__(self, title: str, color: str, exclusive: bool, combine: bool, captions: list[str], updatePreview):
+    def __init__(self, title: str, color: str, exclusivity: MutualExclusivity, combine: bool, captions: list[str], updatePreview):
         super().__init__()
         self.color = color
         self.captions = list(captions)
@@ -430,12 +431,19 @@ class BatchRulesGroup(QtWidgets.QWidget):
         qtlib.setMonospace(lblTitle, 1.0, True)
         layout.addWidget(lblTitle, 0, Qt.AlignmentFlag.AlignTop)
 
-        flowLayout = FlowLayout(spacing=1)
+        flowLayout = FlowLayout(spacing=2)
 
-        self.chkExclusive = QtWidgets.QCheckBox("Mutually Exclusive")
-        self.chkExclusive.setChecked(exclusive)
-        self.chkExclusive.checkStateChanged.connect(updatePreview)
-        flowLayout.addWidget(self.chkExclusive)
+        self.cboExclusive = QtWidgets.QComboBox()
+        self.cboExclusive.addItem("Keep All", MutualExclusivity.Disabled)
+        self.cboExclusive.addItem("Keep Last", MutualExclusivity.KeepLast)
+        self.cboExclusive.addItem("Keep First", MutualExclusivity.KeepFirst)
+        self.cboExclusive.addItem("Priority", MutualExclusivity.Priority)
+
+        exclusivityIndex = self.cboExclusive.findData(exclusivity)
+        self.cboExclusive.setCurrentIndex(exclusivityIndex)
+
+        self.cboExclusive.currentIndexChanged.connect(updatePreview)
+        flowLayout.addWidget(self.cboExclusive)
 
         self.chkCombine = QtWidgets.QCheckBox("Combine Tags")
         self.chkCombine.setChecked(combine)
@@ -456,15 +464,20 @@ class BatchRulesGroup(QtWidgets.QWidget):
 
 
     @property
-    def mutuallyExclusive(self) -> bool:
-        return self.chkExclusive.isChecked()
+    def exclusivity(self) -> MutualExclusivity:
+        return self.cboExclusive.currentData()
 
     @property
     def combineTags(self) -> bool:
         return self.chkCombine.isChecked()
 
-    def resizeEvent(self, event) -> None:
+
+    @Slot()
+    def updateHeight(self):
         self.flowWidget.setMinimumHeight(self.flowWidget.sizeHint().height())
+
+    def resizeEvent(self, event) -> None:
+        self.updateHeight()
         return super().resizeEvent(event)
 
 
