@@ -2,6 +2,7 @@ from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QEvent, QTimer
 import lib.qtlib as qtlib
 from ui.flow_layout import FlowLayout
+from .caption_tab import CaptionTab
 from .caption_container import CaptionContainer, CaptionContext
 
 # - As tab in Caption Window
@@ -34,13 +35,13 @@ HELP = [
 ]
 
 
-class CaptionFocus(QtWidgets.QWidget):
+class CaptionFocus(CaptionTab):
     def __init__(self, container: CaptionContainer, context: CaptionContext):
-        super().__init__()
+        super().__init__(context)
         self.setAcceptDrops(True)
+        self._tabActive = False
 
         self.container = container
-        self.ctx = context
         self.keyHandler = KeyEventFilter(self)
 
         self.separator = context.settings.separator
@@ -105,7 +106,18 @@ class CaptionFocus(QtWidgets.QWidget):
         self.setLayout(layout)
 
 
+    def onTabEnabled(self):
+        self._tabActive = True
+        self.ctx.controlUpdated.emit()
+
+    def onTabDisabled(self):
+        self._tabActive = False
+        self.ctx.controlUpdated.emit()
+
+
     def getFocusSet(self) -> set[str]:
+        if not self._tabActive:
+            return set()
         return {tag for t in self.txtFocusTags.text().split(self.separator.strip()) if (tag := t.strip())}
 
     def setFocusTags(self, tags: list[str]):

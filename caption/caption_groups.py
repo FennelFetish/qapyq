@@ -2,6 +2,7 @@ from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot
 from lib import qtlib, util
 from ui.flow_layout import FlowLayout, ReorderWidget
+from .caption_tab import CaptionTab
 from .caption_preset import CaptionPreset, MutualExclusivity
 
 
@@ -12,14 +13,11 @@ from .caption_preset import CaptionPreset, MutualExclusivity
 # - any word  ('b d' in 'a b c d e', also 'b f')
 
 
-class CaptionGroups(QtWidgets.QWidget):
+class CaptionGroups(CaptionTab):
     HUE_OFFSET = 0.3819444 # 1.0 - inverted golden ratio, ~137.5°
 
     def __init__(self, context):
-        super().__init__()
-
-        from .caption_container import CaptionContext
-        self.ctx: CaptionContext = context
+        super().__init__(context)
 
         self._nextGroupHue = util.rnd01()
         self.colorSet = CaptionColorSet(self)

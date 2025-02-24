@@ -6,12 +6,12 @@ from lib.template_parser import TemplateVariableParser, VariableHighlighter
 from lib.filelist import DataKeys
 import lib.qtlib as qtlib
 from config import Config
+from .caption_tab import CaptionTab
 
 
-class CaptionGenerate(QtWidgets.QWidget):
+class CaptionGenerate(CaptionTab):
     def __init__(self, context):
-        super().__init__()
-        self.ctx = context
+        super().__init__(context)
 
         self._highlighter = VariableHighlighter()
         self._parser = TemplateVariableParser()
@@ -129,6 +129,9 @@ class CaptionGenerate(QtWidgets.QWidget):
         task.signals.fail.connect(self.onFail)
 
         if "caption" in content:
+            currentFile = self.ctx.tab.filelist.getCurrentFile()
+            self.onFileChanged(currentFile)
+
             task.prompts = [
                 {name: self._parser.parse(prompt) for name, prompt in conv.items()}
                 for conv in self.promptWidget.getParsedPrompts()

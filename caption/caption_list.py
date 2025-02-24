@@ -2,6 +2,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
 from lib.captionfile import CaptionFile, FileTypeSelector
 import lib.qtlib as qtlib
+from .caption_tab import CaptionTab
 
 
 # List all captions and tags from current json file for comparison.
@@ -11,12 +12,9 @@ import lib.qtlib as qtlib
 # Only load and highlight captions when tab is active.
 
 
-class CaptionList(QtWidgets.QWidget):
+class CaptionList(CaptionTab):
     def __init__(self, context):
-        super().__init__()
-
-        from .caption_container import CaptionContext
-        self.ctx: CaptionContext = context
+        super().__init__(context)
 
         self._build()
 

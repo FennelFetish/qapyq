@@ -43,6 +43,19 @@ class CaptionContext(QtWidgets.QTabWidget):
         self.addTab(self.generate, "Generate")
         self.addTab(CaptionList(self), "List")
 
+        self._activeWidget = None
+        self.currentChanged.connect(self.onTabChanged)
+        self.onTabChanged(0)
+
+    @Slot()
+    def onTabChanged(self, index: int):
+        if self._activeWidget:
+            self._activeWidget.onTabDisabled()
+
+        if widget := self.widget(index):
+            self._activeWidget = widget
+            widget.onTabEnabled()
+
 
 
 class CaptionContainer(QtWidgets.QWidget):

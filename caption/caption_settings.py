@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt, Slot, QSignalBlocker
 import lib.qtlib as qtlib
 from ui.edit_table import EditableTable
 from ui.flow_layout import SortedStringFlowWidget
+from .caption_tab import CaptionTab
 from .caption_preset import CaptionPreset
 from config import Config
 
@@ -13,12 +14,9 @@ from config import Config
 #        --> Would probably be easier and more accurate to use LLM for such transformations
 
 
-class CaptionSettings(QtWidgets.QWidget):
+class CaptionSettings(CaptionTab):
     def __init__(self, context):
-        super().__init__()
-
-        from .caption_container import CaptionContext
-        self.ctx: CaptionContext = context
+        super().__init__(context)
 
         self.bannedSeparator = ', '
         self._defaultPresetPath = Config.pathExport
