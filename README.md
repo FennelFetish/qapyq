@@ -2,7 +2,7 @@
 
 # qapyq
 <sup>(CapPic)</sup><br />
-**An image viewer and AI-assisted editing tool that helps with curating datasets for generative AI models, finetunes and LoRA.** 
+**An image viewer and AI-assisted editing tool that helps with curating datasets for generative AI models, finetunes and LoRA.**
 
 <br clear="left"/>
 <br /><br />
@@ -22,10 +22,11 @@
 
 - **Image Viewer**: Display and navigate images
   - Quick-starting desktop application built with Qt
+  - Runs smoothly with tens of thousands of images
   - Modular interface that lets you place windows on different monitors
   - Open multiple tabs
   - Zoom/pan and fullscreen mode
-  - Gallery with thumbnails
+  - Gallery with thumbnails and optionally captions
   - Compare two images
   - Measure size and pixel distances
   - Slideshow
@@ -40,18 +41,25 @@
 
 - **Captioning**: Describe images with text
   - Edit captions manually with drag-and-drop support
-  - Tag sorting and filtering rules
+  - Tag grouping, merging, sorting, filtering and replacement rules
   - Colored text highlighting
-  - Automated captioning
+  - Automated captioning with support for grounding
   - Prompt presets
-  - Iterative prompting with each answer saved to different entries in a `.json` file
+  - Multi-turn conversations with each answer saved to different entries in a `.json` file
   - Further refinement with LLMs
+
+- **Stats/Filters**: Summarize your data and get an overview
+  - List all tags, image resolutions or size of concept folders
+  - Filter images and create subsets
+  - Combine and chain filters
+  - Export the summaries as CSV
 
 - **Batch Processing**: Process whole folders at once
   - Flexible batch captioning, tagging and transformation
   - Batch scaling of images
   - Batch masking with user-defined macros
   - Batch cropping of images using your macros
+  - Copy and move files, create symlinks, ZIP captions for backups
 
 - **AI Assistance**:
   - Support for state-of-the-art captioning and masking models
@@ -67,12 +75,14 @@
 
 - **Captioning**
   - [Florence-2](https://huggingface.co/collections/microsoft/florence-6669f44df0d87d9c3bfb76de)
-  - [InternVL2](https://huggingface.co/collections/OpenGVLab/internvl-20-667d3961ab5eb12c7ed1463e)
+  - [InternVL2](https://huggingface.co/collections/OpenGVLab/internvl-20-667d3961ab5eb12c7ed1463e), [InternVL2.5](https://huggingface.co/collections/OpenGVLab/internvl25-673e1019b66e2218f68d7c1c), [InternVL2.5-MPO](https://huggingface.co/collections/OpenGVLab/internvl25-mpo-6753fed98cd828219b12f849)
   - [JoyCaption](https://huggingface.co/fancyfeast/llama-joycaption-alpha-two-hf-llava)
   - [MiniCPM-V-2.6 (GGUF)](https://huggingface.co/openbmb/MiniCPM-V-2_6-gguf) ([alternative link](https://huggingface.co/bartowski/MiniCPM-V-2_6-GGUF))
-  - [Molmo](https://huggingface.co/collections/allenai/molmo-66f379e6fe3b8ef090a8ca19) (recommended)
-  - [Ovis-1.6](https://huggingface.co/AIDC-AI/Ovis1.6-Gemma2-9B)
+  - [Molmo](https://huggingface.co/collections/allenai/molmo-66f379e6fe3b8ef090a8ca19)
+  - [Moondream2 (GGUF)](https://huggingface.co/vikhyatk/moondream2)
+  - [Ovis-1.6](https://huggingface.co/AIDC-AI/Ovis1.6-Gemma2-9B), [Ovis2](https://huggingface.co/collections/AIDC-AI/ovis2-67ab36c7e497429034874464)
   - [Qwen2-VL](https://huggingface.co/collections/Qwen/qwen2-vl-66cee7455501d7126940800d)
+  - [Qwen2.5-VL](https://huggingface.co/collections/Qwen/qwen25-vl-6795ffac22b334a837c0f9a5) (needs transformers 4.49 manually installed)
 
 - **LLM**
   - Models in GGUF format with embedded chat template (llama-cpp backend).
@@ -85,6 +95,7 @@
   - Box Detection
     - YOLO/Adetailer detection models
     - [Florence-2](https://huggingface.co/collections/microsoft/florence-6669f44df0d87d9c3bfb76de)
+    - [Qwen2.5-VL](https://huggingface.co/collections/Qwen/qwen25-vl-6795ffac22b334a837c0f9a5)
   - Segmentation / Background Removal
     - [InSPyReNet](https://github.com/plemeri/InSPyReNet/blob/main/docs/model_zoo.md) (Plus_Ultra)
     - [RMBG-2.0](https://huggingface.co/briaai/RMBG-2.0)
@@ -92,7 +103,7 @@
 
 
 ## Setup
-Requires Python.
+Requires Python 3.10.
 
 By default, prebuilt packages for CUDA 12.4 are installed. If you need a different CUDA version, change the index URL in `requirements-pytorch.txt` and `requirements-llamacpp.txt` before running the setup script.
 
