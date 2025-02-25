@@ -21,7 +21,7 @@ class CaptionGroups(CaptionTab):
 
         self._nextGroupHue = util.rnd01()
         self.colorSet = CaptionColorSet(self)
-        context.controlUpdated.connect(self.colorSet.clearCache)
+        self.ctx.controlUpdated.connect(self.colorSet.clearCache)
 
         self._build()
         self.addGroup()
@@ -471,9 +471,10 @@ class CaptionColorSet:
     def update(self):
         colors: dict[str, str] = dict()
         formats: dict[str, QtGui.QTextCharFormat] = dict()
+        ctx = self.groups.ctx
 
         # First insert all focus tags. This is the default color if focus tags don't belong to groups.
-        focusSet = self.groups.ctx.focus.getFocusSet()
+        focusSet = ctx.focus.getFocusSet()
         for focusTag in focusSet:
             colors[focusTag] = self.COLOR_FOCUS_DEFAULT
             formats[focusTag] = self.focusFormat
@@ -490,16 +491,21 @@ class CaptionColorSet:
                     colors[caption]  = mutedColor
                     formats[caption] = mutedFormat
 
-        # Insert banned coler. This will overwrite group colors.
+        # Insert banned color. This will overwrite group colors.
         bannedColor, bannedFormat = self._getMuted(qtlib.COLOR_BUBBLE_BAN) if focusSet else (qtlib.COLOR_BUBBLE_BAN, self.bannedFormat)
         bannedFocusColor, bannedFocusFormat = self._getMuted(self.COLOR_FOCUS_BAN, 1, 1) if focusSet else (qtlib.COLOR_BUBBLE_BAN, self.bannedFormat)
-        for banned in self.groups.ctx.settings.bannedCaptions:
+        for banned in ctx.settings.bannedCaptions:
             if banned in focusSet:
                 colors[banned]  = bannedFocusColor
                 formats[banned] = bannedFocusFormat
             else:
                 colors[banned]  = bannedColor
                 formats[banned] = bannedFormat
+
+        # Hover color
+        for caption, color in colors.items():
+            if ctx.isHovered(caption):
+                colors[caption], formats[caption] = self._getHovered(color)
 
         self._cachedColors = colors
         self._cachedCharFormats = formats
@@ -520,3 +526,15 @@ class CaptionColorSet:
         mutedFormat.setForeground(qtlib.getHighlightColor(mutedColor))
 
         return mutedColor, mutedFormat
+
+    def _getHovered(self, color: str):
+        h, s, v = util.get_hsv(color)
+        s = max(0.3, min(1.0, s*0.8))
+        v = max(0.2, min(1.0, v*1.6))
+        hoveredColor = util.hsv_to_rgb(h, s, v)
+
+        hoveredFormat = QtGui.QTextCharFormat()
+        hoveredFormat.setForeground(qtlib.getHighlightColor(hoveredColor))
+        hoveredFormat.setFontUnderline(True)
+
+        return hoveredColor, hoveredFormat

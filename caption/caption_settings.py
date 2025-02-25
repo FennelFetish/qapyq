@@ -56,10 +56,12 @@ class CaptionSettings(CaptionTab):
         row += 1
         self.chkPrefixSeparator = QtWidgets.QCheckBox("Append separator to prefix")
         self.chkPrefixSeparator.setChecked(True)
+        self.chkPrefixSeparator.toggled.connect(lambda: self.ctx.controlUpdated.emit())
         layout.addWidget(self.chkPrefixSeparator, row, 1, Qt.AlignmentFlag.AlignTop)
 
         self.chkSuffixSeparator = QtWidgets.QCheckBox("Prepend separator to suffix")
         self.chkSuffixSeparator.setChecked(True)
+        self.chkSuffixSeparator.toggled.connect(lambda: self.ctx.controlUpdated.emit())
         layout.addWidget(self.chkSuffixSeparator, row, 2, Qt.AlignmentFlag.AlignTop)
 
         row += 1
@@ -67,10 +69,12 @@ class CaptionSettings(CaptionTab):
 
         self.chkRemoveDup = QtWidgets.QCheckBox("Remove Duplicates/Subsets")
         self.chkRemoveDup.setChecked(True)
+        self.chkRemoveDup.toggled.connect(lambda: self.ctx.controlUpdated.emit())
         layout.addWidget(self.chkRemoveDup, row, 1, Qt.AlignmentFlag.AlignTop)
 
         self.chkSortCaptions = QtWidgets.QCheckBox("Sort Captions")
         self.chkSortCaptions.setChecked(True)
+        self.chkSortCaptions.toggled.connect(lambda: self.ctx.controlUpdated.emit())
         layout.addWidget(self.chkSortCaptions, row, 2, Qt.AlignmentFlag.AlignTop)
 
         row += 1
@@ -89,6 +93,7 @@ class CaptionSettings(CaptionTab):
         qtlib.setMonospace(self.txtPrefix)
         qtlib.setTextEditHeight(self.txtPrefix, 2)
         qtlib.setShowWhitespace(self.txtPrefix)
+        self.txtPrefix.textChanged.connect(lambda: self.ctx.controlUpdated.emit())
         layout.addWidget(QtWidgets.QLabel("Prefix:"), row, 4, Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self.txtPrefix, row, 5, 2, 1, Qt.AlignmentFlag.AlignTop)
 
@@ -97,6 +102,7 @@ class CaptionSettings(CaptionTab):
         qtlib.setMonospace(self.txtSuffix)
         qtlib.setTextEditHeight(self.txtSuffix, 2)
         qtlib.setShowWhitespace(self.txtSuffix)
+        self.txtSuffix.textChanged.connect(lambda: self.ctx.controlUpdated.emit())
         layout.addWidget(QtWidgets.QLabel("Suffix:"), row, 4, Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self.txtSuffix, row, 5, Qt.AlignmentFlag.AlignTop)
 

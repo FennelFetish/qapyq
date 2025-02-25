@@ -9,14 +9,16 @@ class CaptionBubbles(ReorderWidget):
     remove = Signal(int)
     dropped = Signal(str)
 
-    def __init__(self, captionColors, showWeights=True, showRemove=False, editable=True):
+    def __init__(self, context, showWeights=True, showRemove=False, editable=True):
         super().__init__()
         self.dataCallback = lambda widget: widget.text
         self.receivedDrop.connect(self._onDrop)
 
+        from .caption_container import CaptionContext
+        self.ctx: CaptionContext = context
+
         self.text = ""
         self.separator = ','
-        self._getColors = captionColors
         self.showWeights = showWeights
         self.showRemove = showRemove
         self.editable = editable
@@ -43,7 +45,7 @@ class CaptionBubbles(ReorderWidget):
     def updateBubbles(self):
         oldBubbles: list[Bubble] = [bubble for bubble in self.getBubbles()]
 
-        colors = self._getColors()
+        colors = self.ctx.groups.getCaptionColors()
         i = -1
         for i, caption in enumerate(self.text.split(self.separator)):
             caption = caption.strip()
@@ -56,8 +58,12 @@ class CaptionBubbles(ReorderWidget):
                 bubble.setFocusProxy(self)
                 self.layout().addWidget(bubble)
 
+            color = colors.get(caption)
+            if color is None:
+                color = qtlib.COLOR_BUBBLE_HOVER if self.ctx.isHovered(caption) else qtlib.COLOR_BUBBLE_BLACK
+
             bubble.text = caption
-            bubble.setColor(colors.get(caption, qtlib.COLOR_BUBBLE_BLACK))
+            bubble.setColor(color)
             bubble.forceUpdateWidth()
 
         for i in range(i+1, len(oldBubbles)):

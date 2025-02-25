@@ -25,6 +25,8 @@ class CaptionContext(QtWidgets.QTabWidget):
         super().__init__()
         self.tab = tab
         self.getSelectedCaption = container.getSelectedCaption
+        self.getHoveredCaption = container.getHoveredCaption
+        self.isHovered = container.isHovered
         self.isAutoApplyRules = container.isAutoApplyRules
         self.setAutoApplyRules = container.setAutoApplyRules
 
@@ -89,17 +91,18 @@ class CaptionContainer(QtWidgets.QWidget):
         self._splitter = splitter
 
         row += 1
-        self.txtRulesPreview = QtWidgets.QPlainTextEdit()
+        self.txtRulesPreview = HoverTextEdit(self)
         self.txtRulesPreview.setReadOnly(True)
-        qtlib.setMonospace(self.txtRulesPreview)
+        qtlib.setMonospace(self.txtRulesPreview, 1.1)
         qtlib.setShowWhitespace(self.txtRulesPreview)
         qtlib.setTextEditHeight(self.txtRulesPreview, 2, "min")
+        self.txtRulesPreview.hoverTextChanged.connect(lambda: self.ctx.controlUpdated.emit())
         self.txtRulesPreview.hide()
         splitter.addWidget(self.txtRulesPreview)
         splitter.setStretchFactor(row, 1)
 
         row += 1
-        self.bubbles = CaptionBubbles(self.ctx.groups.getCaptionColors, showWeights=False, showRemove=True, editable=False)
+        self.bubbles = CaptionBubbles(self.ctx, showWeights=False, showRemove=True, editable=False)
         self.bubbles.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.MinimumExpanding)
         self.bubbles.setContentsMargins(4, 4, 4, 4)
         self.bubbles.setFocusProxy(self)
@@ -308,18 +311,33 @@ class CaptionContainer(QtWidgets.QWidget):
             start = 0
             sep = self.captionSeparator.strip()
             for caption in text.split(sep):
-                if format := formats.get(caption.strip()):
-                    cursor.setPosition(start)
-                    cursor.setPosition(start+len(caption), QtGui.QTextCursor.MoveMode.KeepAnchor)
+                # Strip and count whitespace left and right
+                captionStrip = caption.lstrip()
+                padLeft = len(caption) - len(captionStrip)
+                captionStrip = captionStrip.rstrip()
+                padRight = len(caption) - padLeft - len(captionStrip)
+
+                format = formats.get(captionStrip)
+                if not format and self.isHovered(captionStrip):
+                    # Char format for colored captions is made in CaptionColorSet
+                    format = QtGui.QTextCharFormat()
+                    format.setFontUnderline(True)
+
+                if format:
+                    cursor.setPosition(start+padLeft)
+                    cursor.setPosition(start+len(caption)-padRight, QtGui.QTextCursor.MoveMode.KeepAnchor)
                     cursor.setCharFormat(format)
                 start += len(caption) + len(sep)
 
 
     def getSelectedCaption(self) -> str:
         text = self.txtCaption.toPlainText()
+        cursorPos = self.txtCaption.textCursor().position()
+        return self._getSelectedCaption(text, cursorPos)
+
+    def _getSelectedCaption(self, text: str, cursorPos: int) -> str:
         splitSeparator = self.captionSeparator.strip()
         lenSplitSeparator = len(splitSeparator)
-        cursorPos = self.txtCaption.textCursor().position()
 
         accumulatedLength = 0
         for part in text.split(splitSeparator):
@@ -328,6 +346,12 @@ class CaptionContainer(QtWidgets.QWidget):
                 return part.strip()
 
         return ""
+
+    def getHoveredCaption(self) -> str:
+        return self.txtRulesPreview.hoverText if self.txtRulesPreview.isVisible() else ""
+
+    def isHovered(self, text: str) -> bool:
+        return self.txtRulesPreview.isVisible() and self.txtRulesPreview.isHovered(text)
 
 
     def isAutoApplyRules(self) -> bool:
@@ -554,3 +578,49 @@ class DropTextEdit(QtWidgets.QPlainTextEdit):
         # Postpone updates when dropping so they don't interfere with ongoing drag operations in ReorderWidget.
         # But don't postpone normal updates to prevent flickering.
         QTimer.singleShot(0, self.textChanged.emit)
+
+
+
+class HoverTextEdit(QtWidgets.QPlainTextEdit):
+    hoverTextChanged = Signal(str)
+
+    def __init__(self, container: CaptionContainer):
+        super().__init__()
+        self.setMouseTracking(True)
+        self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+
+        self.container = container
+        self.hoverText = ""
+        self._hoverWords: set[str] = set()
+
+
+    def isHovered(self, text: str) -> bool:
+        return bool(text) and self._hoverWords.issuperset(text.split(" "))
+
+
+    def setHoverText(self, text: str):
+        if self.hoverText == text:
+            return
+
+        self._hoverWords.clear()
+        if text:
+            self._hoverWords.update(text.split(" "))
+
+        self.hoverText = text
+        self.hoverTextChanged.emit(text)
+
+
+    def mouseMoveEvent(self, event):
+        super().mouseMoveEvent(event)
+
+        text = self.toPlainText()
+        cursorPos = self.cursorForPosition(event.pos()).position()
+
+        newHoverText = ""
+        if 0 < cursorPos < len(text):
+            newHoverText = self.container._getSelectedCaption(text, cursorPos)
+        self.setHoverText(newHoverText)
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        self.setHoverText("")
