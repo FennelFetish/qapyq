@@ -176,7 +176,7 @@ class CaptionSettings(CaptionTab):
 
     @Slot()
     def banSelectedCaption(self):
-        caption = self.ctx.getSelectedCaption()
+        caption = self.ctx.container.getSelectedCaption()
         self.addBannedCaption(caption)
 
 
@@ -192,7 +192,7 @@ class CaptionSettings(CaptionTab):
         preset.searchReplace = self.searchReplacePairs
         preset.banned = self.bannedCaptions
 
-        preset.autoApplyRules = self.ctx.isAutoApplyRules()
+        preset.autoApplyRules = self.ctx.container.isAutoApplyRules()
 
         self.ctx.groups.saveToPreset(preset)
         return preset
@@ -277,7 +277,7 @@ class CaptionSettings(CaptionTab):
         self.chkRemoveDup.setChecked(preset.removeDuplicates)
         self.chkSortCaptions.setChecked(preset.sortCaptions)
 
-        self.ctx.setAutoApplyRules(preset.autoApplyRules)
+        self.ctx.container.setAutoApplyRules(preset.autoApplyRules)
 
         with QSignalBlocker(self.tableReplace):
             self.searchReplacePairs = preset.searchReplace

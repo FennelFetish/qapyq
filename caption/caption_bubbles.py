@@ -60,7 +60,7 @@ class CaptionBubbles(ReorderWidget):
 
             color = colors.get(caption)
             if color is None:
-                color = qtlib.COLOR_BUBBLE_HOVER if self.ctx.isHovered(caption) else qtlib.COLOR_BUBBLE_BLACK
+                color = qtlib.COLOR_BUBBLE_HOVER if self.ctx.container.isHovered(caption) else qtlib.COLOR_BUBBLE_BLACK
 
             bubble.text = caption
             bubble.setColor(color)

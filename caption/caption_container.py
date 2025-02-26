@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Signal, Slot, QSignalBlocker, QTimer
@@ -14,6 +15,7 @@ from .caption_list import CaptionList
 
 
 class CaptionContext(QtWidgets.QTabWidget):
+    captionEdited       = Signal(str)
     captionClicked      = Signal(str)
     separatorChanged    = Signal(str)
     controlUpdated      = Signal()
@@ -21,14 +23,10 @@ class CaptionContext(QtWidgets.QTabWidget):
     captionGenerated    = Signal(str, str)
 
 
-    def __init__(self, container, tab: ImgTab):
+    def __init__(self, container: CaptionContainer, tab: ImgTab):
         super().__init__()
+        self.container = container
         self.tab = tab
-        self.getSelectedCaption = container.getSelectedCaption
-        self.getHoveredCaption = container.getHoveredCaption
-        self.isHovered = container.isHovered
-        self.isAutoApplyRules = container.isAutoApplyRules
-        self.setAutoApplyRules = container.setAutoApplyRules
 
         self.settings = CaptionSettings(self)
         self.groups   = CaptionGroups(self)
@@ -40,7 +38,6 @@ class CaptionContext(QtWidgets.QTabWidget):
         self.addTab(self.settings, "Rules")
         self.addTab(self.groups, "Groups")
         self.addTab(self.focus, "Focus")
-        #self.addTab(QtWidgets.QWidget(), "Variables (json)")
         #self.addTab(QtWidgets.QWidget(), "Folder Overrides") # Let variables from json override settings?
         self.addTab(self.generate, "Generate")
         self.addTab(CaptionList(self), "List")
@@ -255,6 +252,8 @@ class CaptionContainer(QtWidgets.QWidget):
         self.captionCache.setState(DataKeys.IconStates.Changed)
         self.btnSave.setChanged(True)
 
+        self.ctx.captionEdited.emit(text)
+
     @Slot()
     def _onSourceChanged(self):
         self.btnReset.setChanged(True)
@@ -451,7 +450,7 @@ class CaptionContainer(QtWidgets.QWidget):
         if textNew != text:
             self.setCaption(textNew)
 
-    def createRulesProcessor(self):
+    def createRulesProcessor(self) -> CaptionRulesProcessor:
         removeDup = self.ctx.settings.isRemoveDuplicates
         sortCaptions = self.ctx.settings.isSortCaptions
 

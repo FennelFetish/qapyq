@@ -301,7 +301,7 @@ class CaptionControlGroup(QtWidgets.QWidget):
 
     @Slot()
     def _addCaptionClick(self):
-        text = self.groups.ctx.getSelectedCaption()
+        text = self.groups.ctx.container.getSelectedCaption()
         self._addCaptionDrop(text)
 
     @Slot()
@@ -504,7 +504,7 @@ class CaptionColorSet:
 
         # Hover color
         for caption, color in colors.items():
-            if ctx.isHovered(caption):
+            if ctx.container.isHovered(caption):
                 colors[caption], formats[caption] = self._getHovered(color)
 
         self._cachedColors = colors

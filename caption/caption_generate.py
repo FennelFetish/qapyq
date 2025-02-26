@@ -7,6 +7,7 @@ from lib.filelist import DataKeys
 import lib.qtlib as qtlib
 from config import Config
 from .caption_tab import CaptionTab
+from .caption_filter import CaptionRulesProcessor
 
 
 class CaptionGenerate(CaptionTab):
@@ -14,11 +15,18 @@ class CaptionGenerate(CaptionTab):
         super().__init__(context)
 
         self._highlighter = VariableHighlighter()
-        self._parser = TemplateVariableParser()
+        self._parser = CurrentVariableParser(context)
         self._parser.stripAround = False
         self._parser.stripMultiWhitespace = False
 
+        self._hasCurrentVar = False
+        self._hasRefinedVar = False
+
         self._build()
+
+        self.ctx.controlUpdated.connect(self._onControlUpdated)
+        self.ctx.captionEdited.connect(self._onCaptionEdited)
+
 
     def _build(self):
         layout = QtWidgets.QGridLayout()
@@ -89,14 +97,34 @@ class CaptionGenerate(CaptionTab):
         self.setLayout(layout)
 
 
-    def onFileChanged(self, currentFile):
+    def onFileChanged(self, currentFile: str):
         self._parser.setup(currentFile)
         self._onPromptChanged()
 
     @Slot()
+    def _onControlUpdated(self):
+        self._parser.invalidateRulesProcessor()
+        if self._hasRefinedVar:
+            self.updatePreview(self.promptWidget.prompts)
+
+    @Slot()
+    def _onCaptionEdited(self, caption: str):
+        if self._hasCurrentVar or self._hasRefinedVar:
+            self.updatePreview(self.promptWidget.prompts)
+
+    @Slot()
     def _onPromptChanged(self):
-        text = self.promptWidget.prompts
-        preview, varPositions = self._parser.parseWithPositions(text)
+        prompt = self.promptWidget.prompts
+        self._hasCurrentVar = CurrentVariableParser.CURRENT_VAR in prompt
+        self._hasRefinedVar = CurrentVariableParser.REFINED_VAR in prompt
+        self.updatePreview(prompt)
+
+
+    def updatePreview(self, prompt: str):
+        if self._hasRefinedVar:
+            self._parser.updateRefinedCaption(self.ctx.container.getCaption())
+
+        preview, varPositions = self._parser.parseWithPositions(prompt)
         self.txtPromptPreview.setPlainText(preview)
 
         with QSignalBlocker(self.promptWidget.txtPrompts):
@@ -170,6 +198,42 @@ class CaptionGenerate(CaptionTab):
     def onFail(self, errorMsg):
         self.btnGenerate.setEnabled(True)
         self.statusBar.showColoredMessage(errorMsg, False, 0)
+
+
+
+class CurrentVariableParser(TemplateVariableParser):
+    CURRENT_VAR_NAME = "current"
+    CURRENT_VAR      = "{{current}}"
+
+    REFINED_VAR_NAME = "refined"
+    REFINED_VAR      = "{{refined}}"
+
+
+    def __init__(self, context, imgPath: str = None):
+        super().__init__(imgPath)
+
+        from .caption_container import CaptionContainer
+        self.container: CaptionContainer = context.container
+
+        self.refinedCaption = ""
+        self.cachedRulesProcessor: CaptionRulesProcessor | None = None
+
+    def updateRefinedCaption(self, caption: str):
+        if not self.cachedRulesProcessor:
+            self.cachedRulesProcessor = self.container.createRulesProcessor()
+        self.refinedCaption = self.cachedRulesProcessor.process(caption)
+
+    def invalidateRulesProcessor(self):
+        self.cachedRulesProcessor = None
+
+    def _getImgProperties(self, var: str) -> str | None:
+        match var:
+            case self.CURRENT_VAR_NAME:
+                return self.container.getCaption()
+            case self.REFINED_VAR_NAME:
+                return self.refinedCaption
+
+        return super()._getImgProperties(var)
 
 
 
