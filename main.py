@@ -21,7 +21,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.toolbar = MainToolBar(self, self.menu)
         self.addToolBar(self.toolbar)
 
-        self._fullscreenTab = None
+        self._previousTab: ImgTab | None = None
+        self._fullscreenTab: ImgTab | None = None
         self.buildTabs()
         self.addTab()
 
@@ -55,6 +56,11 @@ class MainWindow(QtWidgets.QMainWindow):
     @property
     def currentTab(self) -> ImgTab:
         return self.tabWidget.currentWidget()
+
+    @property
+    def previousTab(self) -> ImgTab | None:
+        "The previous tab is updated when the tab is changed. This property is only available while initializing a new tab."
+        return self._previousTab
 
     @Slot()
     def switchTab(self):
@@ -92,6 +98,8 @@ class MainWindow(QtWidgets.QMainWindow):
         tab = self.currentTab
         for win in self.auxWindows.values():
             win.setTab(tab)
+
+        self._previousTab = tab
 
         self.toolbar.setTool(tab.toolName if tab else None)
         self.updateTitle(self.tabWidget.tabText(index))

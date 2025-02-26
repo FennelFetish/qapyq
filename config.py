@@ -104,6 +104,10 @@ class Config:
     inferSelectedPresets    = dict()
     INFER_PRESET_SAMPLECFG_KEY = "sample_config"
 
+    # Caption
+    captionRulesLoadMode    = "previous"
+    captionShowPreview      = False
+
     # Gallery
     galleryThumbnailSize    = 200
     galleryThumbnailThreads = 6
@@ -162,6 +166,9 @@ class Config:
         cls.inferScalePresets     = data.get("infer_scale_presets", cls.inferScalePresets)
         cls.inferSelectedPresets  = data.get("infer_selected_presets", cls.inferSelectedPresets)
 
+        cls.captionRulesLoadMode  = data.get("caption_rules_load_mode", cls.captionRulesLoadMode)
+        cls.captionShowPreview    = bool(data.get("caption_show_preview", cls.captionShowPreview))
+
         cls.galleryThumbnailSize    = int(data.get("gallery_thumbnail_size", cls.galleryThumbnailSize))
         cls.galleryThumbnailThreads = int(data.get("gallery_thumbnail_threads", cls.galleryThumbnailThreads))
 
@@ -211,6 +218,9 @@ class Config:
         data["infer_mask_presets"]          = cls.inferMaskPresets
         data["infer_scale_presets"]         = cls.inferScalePresets
         data["infer_selected_presets"]      = cls.inferSelectedPresets
+
+        data["caption_rules_load_mode"]     = cls.captionRulesLoadMode
+        data["caption_show_preview"]        = cls.captionShowPreview
 
         data["gallery_thumbnail_size"]      = cls.galleryThumbnailSize
         data["gallery_thumbnail_threads"]   = cls.galleryThumbnailThreads

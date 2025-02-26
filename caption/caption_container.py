@@ -6,6 +6,8 @@ from lib import qtlib
 from lib.filelist import DataKeys
 from lib.captionfile import FileTypeSelector
 from ui.tab import ImgTab
+from config import Config
+from .caption_menu import CaptionMenu, RulesLoadMode
 from .caption_bubbles import CaptionBubbles
 from .caption_filter import CaptionRulesProcessor
 from .caption_generate import CaptionGenerate
@@ -66,6 +68,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.captionSeparator = ', '
 
         self.ctx = CaptionContext(self, tab)
+        self._menu = CaptionMenu(self, self.ctx)
         self._build(self.ctx)
 
         self.ctx.captionClicked.connect(self.toggleCaption)
@@ -74,10 +77,16 @@ class CaptionContainer(QtWidgets.QWidget):
         self.ctx.controlUpdated.connect(self._onControlUpdated)
         self.ctx.needsRulesApplied.connect(self.applyRulesIfAuto)
 
+        self._menu.previewToggled.connect(self._onPreviewToggled)
+
         tab.filelist.addListener(self)
         self.onFileChanged( tab.filelist.getCurrentFile() )
 
-        self.ctx.settings._loadDefaultPreset()
+        self._loadRules()
+
+        if Config.captionShowPreview:
+            QTimer.singleShot(1, lambda: self._onPreviewToggled(True))
+
 
     def _build(self, ctx):
         row = 0
@@ -131,7 +140,7 @@ class CaptionContainer(QtWidgets.QWidget):
         col = 0
         btnMenu = QtWidgets.QPushButton("☰")
         btnMenu.setFixedWidth(40)
-        btnMenu.setMenu(self._buildMenu())
+        btnMenu.setMenu(self._menu)
         layout.addWidget(btnMenu, 0, col)
         layout.setColumnStretch(col, 0)
 
@@ -203,34 +212,32 @@ class CaptionContainer(QtWidgets.QWidget):
         widget.setLayout(layout)
         return widget
 
-    def _buildMenu(self):
-        menu = QtWidgets.QMenu(self)
-        menu.addSection("Rules and Groups")
 
-        actSaveDefaults = menu.addAction("Save as Defaults...")
-        actSaveDefaults.triggered.connect(self.ctx.settings.saveAsDefaultPreset)
+    def _loadRules(self):
+        try:
+            loadMode = RulesLoadMode(Config.captionRulesLoadMode)
+        except ValueError:
+            print(f"WARNING: Invalid caption rules load mode: {Config.captionRulesLoadMode}")
+            loadMode = RulesLoadMode.Empty
 
-        actLoadDefaults = menu.addAction("Reset to Defaults...")
-        actLoadDefaults.triggered.connect(self.ctx.settings.loadDefaultPreset)
+        match loadMode:
+            case RulesLoadMode.Defaults:
+                self.ctx.settings._loadDefaultPreset()
+            case RulesLoadMode.Previous:
+                # When the caption window is not open, this _loadRules method is called only upon opening it for the first time for an ImgTab.
+                # Then, prevTab will be the current tab and CaptionContainer is None.
+                # TODO: Add another way of referencing the previous tab without holding an actual reference that keeps the tab in memory?
+                prevTab = self.ctx.tab.mainWindow.previousTab
+                if not prevTab:
+                    return
 
-        actClear = menu.addAction("Clear...")
-        actClear.triggered.connect(self.ctx.settings.clearPreset)
+                prevCaptionWin: CaptionContainer | None = prevTab.getWindowContent("caption")
+                if not prevCaptionWin:
+                    self.ctx.settings._loadDefaultPreset()
+                    return
 
-        menu.addSeparator()
-
-        actSave = menu.addAction("Save As...")
-        actSave.triggered.connect(self.ctx.settings.savePreset)
-
-        actLoad = menu.addAction("Load from File...")
-        actLoad.triggered.connect(self.ctx.settings.loadPreset)
-
-        menu.addSeparator()
-
-        actPreview = menu.addAction("Show refined preview")
-        actPreview.setCheckable(True)
-        actPreview.toggled.connect(self._onPreviewToggled)
-
-        return menu
+                prevPreset = prevCaptionWin.ctx.settings.getPreset()
+                self.ctx.settings.applyPreset(prevPreset)
 
 
     def getCaption(self) -> str:
@@ -279,6 +286,7 @@ class CaptionContainer(QtWidgets.QWidget):
     @Slot()
     def _onPreviewToggled(self, enabled: bool):
         self.txtRulesPreview.setVisible(enabled)
+        Config.captionShowPreview = enabled
         if enabled:
             self._updatePreview(self.getCaption())
 
