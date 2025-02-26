@@ -173,8 +173,16 @@ class TabStatusBar(ColoredMessageStatusBar):
 
     def setImageInfo(self, pixmap: QPixmap):
         size = pixmap.size()
+        w, h = size.width(), size.height()
+
+        aspectText = ""
+        if min(w, h) > 0:
+            aspect = w / h
+            aspectText = f"{aspect:.3f}" if aspect >= 1 else f"{aspect:.3f} (1:{1/aspect:.3f})"
+            aspectText = f"  AR: {aspectText}"
+
         alpha = "  (Alpha)" if pixmap.hasAlphaChannel() else ""
-        self._lblImgSize.setText(f"W: {size.width()}  H: {size.height()}{alpha}")
+        self._lblImgSize.setText(f"W: {w}  H: {h}{aspectText}{alpha}")
 
 
 
