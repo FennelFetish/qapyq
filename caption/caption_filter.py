@@ -1,6 +1,7 @@
 from typing import Iterable
 import re
 from .caption_preset import MutualExclusivity
+from .caption_conditionals import ConditionalFilterRule
 
 
 class CaptionFilter:
@@ -144,6 +145,23 @@ class PriorityFilter():
 
         for i in sorted(allDeleteIndices, reverse=True):
             del captions[i]
+        return captions
+
+
+
+class ConditionalsFilter(CaptionFilter):
+    def __init__(self):
+        self.rules = list[ConditionalFilterRule]()
+
+    def setup(self, rules: Iterable[ConditionalFilterRule]) -> None:
+        self.rules = list(rules)
+
+    def filterCaptions(self, captions: list[str]) -> list[str]:
+        for rule in self.rules:
+            if varParser := rule.evaluateExpression(captions):
+                for action in rule.actions:
+                    captions = action(varParser, captions)
+
         return captions
 
 
@@ -327,6 +345,7 @@ class CaptionRulesProcessor:
         self.exclusiveFilterPriority = PriorityFilter()
         self.dupFilter = DuplicateCaptionFilter()
         self.banFilter = BannedCaptionFilter()
+        self.conditionalsFilter = ConditionalsFilter()
         self.sortFilter = SortCaptionFilter()
         self.combineFilter = TagCombineFilter()
         self.subsetFilter = SubsetFilter()
@@ -361,6 +380,9 @@ class CaptionRulesProcessor:
 
         self.combineFilter.setup(tags for tags, _, combine in captionGroups if combine)
 
+    def setConditionalRules(self, rules: Iterable[ConditionalFilterRule]) -> None:
+        self.conditionalsFilter.setup(rules)
+
 
     def process(self, text: str) -> str:
         text = self.replaceFilter.filterText(text)
@@ -378,6 +400,8 @@ class CaptionRulesProcessor:
 
         captions = self.banFilter.filterCaptions(captions)
 
+        captions = self.conditionalsFilter.filterCaptions(captions)
+
         if self.removeDup:
             # Remove subsets after banning, so no tags are wrongly merged and removed with banned tags.
             captions = self.subsetFilter.filterCaptions(captions)
@@ -392,6 +416,8 @@ class CaptionRulesProcessor:
         # Strip and remove empty captions
         captions = (cap for c in captions if (cap := c.strip()))
 
+        # If the caption already contains prefix or suffix as a tag in another place, and sorting is enabled,
+        # that tag is sorted to front/back instead of prepending prefix/appending suffix.
         text = self.separator.join(captions)
         text = self.prefixSuffixFilter.filterText(text)
         return text

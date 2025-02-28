@@ -25,7 +25,7 @@ class CaptionMenu(QtWidgets.QMenu):
 
 
     def _build(self):
-        self.addSection("Rules and Groups")
+        self.addSection("Caption Rules")
 
         self._buildOnNewTabSubmenu()
         self.addSeparator()

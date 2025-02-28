@@ -104,6 +104,7 @@ class FlowLayout(QtWidgets.QLayout):
 
 
 
+# Layout must provide insertWidget() method.
 # All places that use dropEvent() must postpone the action using QTimer.singleShot
 class ReorderWidget(QtWidgets.QWidget):
     COLOR_FACTORS = [1.6, 1.9, 2.0, 1.0] # BGRA
@@ -138,8 +139,10 @@ class ReorderWidget(QtWidgets.QWidget):
         image = pixmap.toImage()
         pixelRatio = image.devicePixelRatioF()
 
-        mat = qtlib.qimageToNumpy(image).astype(np.float32)
-        mat *= self.COLOR_FACTORS
+        mat = qtlib.qimageToNumpy(image)
+        matF = mat.astype(np.float32)
+        matF *= self.COLOR_FACTORS
+        matF.clip(0.0, 255.0, mat, casting="unsafe")
 
         # Add border
         # col = QtWidgets.QApplication.palette().color(QtGui.QPalette.ColorRole.Highlight)
@@ -149,9 +152,6 @@ class ReorderWidget(QtWidgets.QWidget):
         # mat[h-1, :, ...] = borderColor # Bottom
         # mat[:, 0, ...]   = borderColor # Left
         # mat[:, w-1, ...] = borderColor # Right
-
-        mat.clip(0.0, 255.0, mat)
-        mat = mat.astype(np.uint8)
 
         image = qtlib.numpyToQImage(mat)
         image.setDevicePixelRatio(pixelRatio)
@@ -292,6 +292,32 @@ class ReorderWidget(QtWidgets.QWidget):
             if posX > ele.x() + ele.width():
                 i = n
         return i
+
+
+
+class ManualStartReorderWidget(ReorderWidget):
+    def __init__(self):
+        super().__init__(False)
+        self.showCursorPicture = False
+
+    def dragEnterEvent(self, e):
+        if not e.mimeData().hasText():
+            e.accept()
+
+    def mouseMoveEvent(self, e):
+        pass
+
+
+class ReorderDragHandle(qtlib.VerticalSeparator):
+    def __init__(self, widget: QtWidgets.QWidget):
+        super().__init__()
+        self.setCursor(Qt.CursorShape.DragMoveCursor)
+        self.widget = widget
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.buttons() == Qt.MouseButton.LeftButton:
+            reorderWidget: ReorderWidget = self.widget.parentWidget()
+            reorderWidget._startDrag(self.widget)
 
 
 

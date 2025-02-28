@@ -10,9 +10,10 @@ from config import Config
 from .caption_menu import CaptionMenu, RulesLoadMode
 from .caption_bubbles import CaptionBubbles
 from .caption_filter import CaptionRulesProcessor
-from .caption_generate import CaptionGenerate
-from .caption_groups import CaptionGroups
 from .caption_settings import CaptionSettings
+from .caption_groups import CaptionGroups
+from .caption_conditionals import CaptionConditionals
+from .caption_generate import CaptionGenerate
 from .caption_list import CaptionList
 
 
@@ -30,15 +31,20 @@ class CaptionContext(QtWidgets.QTabWidget):
         self.container = container
         self.tab = tab
 
-        self.settings = CaptionSettings(self)
-        self.groups   = CaptionGroups(self)
-        self.generate = CaptionGenerate(self)
+        self._cachedRulesProcessor: CaptionRulesProcessor | None = None
+        self.controlUpdated.connect(self._invalidateRulesProcessor) # First Slot for controlUpdated
+
+        self.settings     = CaptionSettings(self)
+        self.groups       = CaptionGroups(self)
+        self.conditionals = CaptionConditionals(self)
+        self.generate     = CaptionGenerate(self)
 
         from .caption_focus import CaptionFocus
         self.focus = CaptionFocus(container, self)
 
         self.addTab(self.settings, "Rules")
         self.addTab(self.groups, "Groups")
+        self.addTab(self.conditionals, "Conditionals")
         self.addTab(self.focus, "Focus")
         #self.addTab(QtWidgets.QWidget(), "Folder Overrides") # Let variables from json override settings?
         self.addTab(self.generate, "Generate")
@@ -57,14 +63,22 @@ class CaptionContext(QtWidgets.QTabWidget):
             self._activeWidget = widget
             widget.onTabEnabled()
 
+    @Slot()
+    def _invalidateRulesProcessor(self):
+        self._cachedRulesProcessor = None
+
+    def rulesProcessor(self) -> CaptionRulesProcessor:
+        if not self._cachedRulesProcessor:
+            self._cachedRulesProcessor = self.container.createRulesProcessor()
+        return self._cachedRulesProcessor
+
 
 
 class CaptionContainer(QtWidgets.QWidget):
     def __init__(self, tab):
         super().__init__()
-        self.captionCache = CaptionCache(tab.filelist)
-        self._cachedRulesProcessor: CaptionRulesProcessor | None = None
 
+        self.captionCache = CaptionCache(tab.filelist)
         self.captionSeparator = ', '
 
         self.ctx = CaptionContext(self, tab)
@@ -295,14 +309,11 @@ class CaptionContainer(QtWidgets.QWidget):
             splitterSizes[idx] = self.txtRulesPreview.minimumHeight()
             self._splitter.setSizes(splitterSizes)
 
-    def _updatePreview(self, text: str, invalidateRules=False):
+    def _updatePreview(self, text: str):
         if not self.txtRulesPreview.isVisible():
             return
 
-        if invalidateRules or self._cachedRulesProcessor is None:
-            self._cachedRulesProcessor = self.createRulesProcessor()
-
-        textNew = self._cachedRulesProcessor.process(text)
+        textNew = self.ctx.rulesProcessor().process(text)
         self.txtRulesPreview.setPlainText(textNew)
         self._highlight(textNew, self.txtRulesPreview)
 
@@ -374,11 +385,14 @@ class CaptionContainer(QtWidgets.QWidget):
         self._highlight(text, self.txtCaption)
         self.bubbles.updateBubbles()
         self.updateSelectionState(text)
-        self._updatePreview(text, invalidateRules=True)
+        self._updatePreview(text)
 
     def updateSelectionState(self, captionText: str):
         separator = self.captionSeparator.strip()
-        captionSet = { cap for c in captionText.split(separator) if (cap := c.strip()) }
+        captions = [ cap for c in captionText.split(separator) if (cap := c.strip()) ]
+        self.ctx.conditionals.updateState(captions)
+
+        captionSet = set(captions)
         self.ctx.groups.updateSelectedState(captionSet)
         self.ctx.focus.updateSelectionState(captionSet)
 
@@ -467,6 +481,7 @@ class CaptionContainer(QtWidgets.QWidget):
         rulesProcessor.setSearchReplacePairs(self.ctx.settings.searchReplacePairs)
         rulesProcessor.setBannedCaptions(self.ctx.settings.bannedCaptions)
         rulesProcessor.setCaptionGroups( (group.captions, group.exclusivity, group.combineTags) for group in self.ctx.groups.groups )
+        rulesProcessor.setConditionalRules(self.ctx.conditionals.getFilterRules())
         return rulesProcessor
 
 

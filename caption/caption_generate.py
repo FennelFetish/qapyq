@@ -7,7 +7,6 @@ from lib.filelist import DataKeys
 import lib.qtlib as qtlib
 from config import Config
 from .caption_tab import CaptionTab
-from .caption_filter import CaptionRulesProcessor
 
 
 class CaptionGenerate(CaptionTab):
@@ -103,7 +102,6 @@ class CaptionGenerate(CaptionTab):
 
     @Slot()
     def _onControlUpdated(self):
-        self._parser.invalidateRulesProcessor()
         if self._hasRefinedVar:
             self.updatePreview(self.promptWidget.prompts)
 
@@ -211,25 +209,18 @@ class CurrentVariableParser(TemplateVariableParser):
 
     def __init__(self, context, imgPath: str = None):
         super().__init__(imgPath)
-
-        from .caption_container import CaptionContainer
-        self.container: CaptionContainer = context.container
-
         self.refinedCaption = ""
-        self.cachedRulesProcessor: CaptionRulesProcessor | None = None
+
+        from .caption_container import CaptionContext
+        self.ctx: CaptionContext = context
 
     def updateRefinedCaption(self, caption: str):
-        if not self.cachedRulesProcessor:
-            self.cachedRulesProcessor = self.container.createRulesProcessor()
-        self.refinedCaption = self.cachedRulesProcessor.process(caption)
-
-    def invalidateRulesProcessor(self):
-        self.cachedRulesProcessor = None
+        self.refinedCaption = self.ctx.rulesProcessor().process(caption)
 
     def _getImgProperties(self, var: str) -> str | None:
         match var:
             case self.CURRENT_VAR_NAME:
-                return self.container.getCaption()
+                return self.ctx.container.getCaption()
             case self.REFINED_VAR_NAME:
                 return self.refinedCaption
 

@@ -19,13 +19,14 @@ class CaptionPreset:
         self.prefixSeparator = True
         self.suffixSeparator = True
 
-        self.autoApplyRules : bool = False
-        self.removeDuplicates : bool = True
-        self.sortCaptions : bool = True
+        self.autoApplyRules: bool   = False
+        self.removeDuplicates: bool = True
+        self.sortCaptions: bool     = True
 
-        self.groups: list[CaptionPresetGroup] = []
-        self.searchReplace: list[tuple[str, str]] = []
-        self.banned: list[str] = []
+        self.groups         = list[CaptionPresetGroup]()
+        self.conditionals   = list[CaptionPresetConditional]()
+        self.searchReplace  = list[tuple[str, str]]()
+        self.banned         = list[str]()
 
     def addGroup(self, name: str, color: str, exclusivity: MutualExclusivity, combineTags: bool, captions: list[str]):
         group = CaptionPresetGroup()
@@ -38,6 +39,7 @@ class CaptionPreset:
 
     def toDict(self):
         groupData = [g.toDict() for g in self.groups]
+        conditionals = [condRule.toDict() for condRule in self.conditionals]
         return {
             "version": CaptionPreset.version,
             "prefix": self.prefix,
@@ -49,6 +51,7 @@ class CaptionPreset:
             "remove_duplicates": self.removeDuplicates,
             "sort_captions": self.sortCaptions,
             "groups": groupData,
+            "conditionals": conditionals,
             "search_replace": self.searchReplace,
             "banned": self.banned
         }
@@ -73,15 +76,21 @@ class CaptionPreset:
         self.searchReplace      = data.get("search_replace", [])
         self.banned             = data.get("banned", [])
 
-        if "groups" in data:
-            for group in data["groups"]:
-                self.addGroup(
-                    group.get("name", "Group"),
-                    group.get("color", "#000"),
-                    self.loadExclusivity(group),
-                    group.get("combine_tags", False),
-                    group.get("captions", [])
-                )
+        self.groups.clear()
+        for group in data.get("groups", []):
+            self.addGroup(
+                group.get("name", "Group"),
+                group.get("color", "#000"),
+                self.loadExclusivity(group),
+                group.get("combine_tags", False),
+                group.get("captions", [])
+            )
+
+        self.conditionals.clear()
+        for condData in data.get("conditionals", []):
+            cond = CaptionPresetConditional()
+            cond.fromDict(condData)
+            self.conditionals.append(cond)
 
     @staticmethod
     def loadExclusivity(group: dict) -> MutualExclusivity:
@@ -116,3 +125,66 @@ class CaptionPresetGroup:
             "combine_tags": self.combineTags,
             "captions": list(self.captions)
         }
+
+
+
+class CaptionPresetConditional:
+    class Condition:
+        def __init__(self):
+            self.key    = ""
+            self.params = dict[str, str]()
+
+        def toDict(self) -> dict:
+            return {
+                "condition": self.key,
+                "params":    self.params
+            }
+
+        def fromDict(self, data: dict):
+            self.key    = data.get("condition", "")
+            self.params = data.get("params", {})
+
+
+    class Action:
+        def __init__(self):
+            self.key = ""
+            self.params = dict[str, str]()
+
+        def toDict(self) -> dict:
+            return {
+                "action": self.key,
+                "params": self.params
+            }
+
+        def fromDict(self, data: dict):
+            self.key    = data.get("action", "")
+            self.params = data.get("params", {})
+
+
+    def __init__(self):
+        self.expression = ""
+        self.conditions = list[self.Condition]()
+        self.actions    = list[self.Action]()
+
+    def toDict(self) -> dict:
+        return {
+            "expression": self.expression,
+            "conditions": [cond.toDict() for cond in self.conditions],
+            "actions":    [action.toDict() for action in self.actions]
+        }
+
+    def fromDict(self, data: dict):
+        self.conditions.clear()
+        self.actions.clear()
+
+        self.expression = data.get("expression", "")
+
+        for condData in data.get("conditions", []):
+            cond = self.Condition()
+            cond.fromDict(condData)
+            self.conditions.append(cond)
+
+        for actionData in data.get("actions", []):
+            action = self.Action()
+            action.fromDict(actionData)
+            self.actions.append(action)

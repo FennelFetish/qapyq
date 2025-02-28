@@ -144,7 +144,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 from batch.batch_container import BatchContainer
                 return BatchContainer
             case "caption":
-                from caption import CaptionContainer
+                from caption.caption_container import CaptionContainer
                 return CaptionContainer
         return None
 

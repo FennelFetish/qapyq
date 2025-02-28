@@ -497,6 +497,15 @@ class MenuComboBox(QtWidgets.QComboBox):
 
 
 
+class NonScrollComboBox(QtWidgets.QComboBox):
+    def __init__(self):
+        super().__init__()
+
+    def wheelEvent(self, e: QtGui.QWheelEvent) -> None:
+        e.ignore()
+
+
+
 class PercentageSpinBox(QtWidgets.QSpinBox):
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)

@@ -182,19 +182,20 @@ class CaptionSettings(CaptionTab):
 
     def getPreset(self):
         preset = CaptionPreset()
-        preset.prefix = self.txtPrefix.toPlainText()
-        preset.suffix = self.txtSuffix.toPlainText()
-        preset.separator = self.txtSeparator.text()
-        preset.prefixSeparator = self.chkPrefixSeparator.isChecked()
-        preset.suffixSeparator = self.chkSuffixSeparator.isChecked()
+        preset.prefix           = self.txtPrefix.toPlainText()
+        preset.suffix           = self.txtSuffix.toPlainText()
+        preset.separator        = self.txtSeparator.text()
+        preset.prefixSeparator  = self.chkPrefixSeparator.isChecked()
+        preset.suffixSeparator  = self.chkSuffixSeparator.isChecked()
         preset.removeDuplicates = self.chkRemoveDup.isChecked()
-        preset.sortCaptions = self.chkSortCaptions.isChecked()
-        preset.searchReplace = self.searchReplacePairs
-        preset.banned = self.bannedCaptions
+        preset.sortCaptions     = self.chkSortCaptions.isChecked()
+        preset.searchReplace    = self.searchReplacePairs
+        preset.banned           = self.bannedCaptions
 
         preset.autoApplyRules = self.ctx.container.isAutoApplyRules()
 
         self.ctx.groups.saveToPreset(preset)
+        self.ctx.conditionals.saveToPreset(preset)
         return preset
 
     @Slot()
@@ -287,5 +288,6 @@ class CaptionSettings(CaptionTab):
 
         with QSignalBlocker(self.ctx):
             self.ctx.groups.loadFromPreset(preset)
+            self.ctx.conditionals.loadFromPreset(preset)
 
         self.ctx.controlUpdated.emit()

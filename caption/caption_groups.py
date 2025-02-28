@@ -1,7 +1,7 @@
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot
 from lib import qtlib, util
-from ui.flow_layout import FlowLayout, ReorderWidget
+from ui.flow_layout import FlowLayout, ReorderWidget, ManualStartReorderWidget, ReorderDragHandle
 from .caption_tab import CaptionTab
 from .caption_preset import CaptionPreset, MutualExclusivity
 
@@ -48,10 +48,10 @@ class CaptionGroups(CaptionTab):
         self.groupLayout.setContentsMargins(0, 0, 0, 0)
         self.groupLayout.setSpacing(0)
 
-        self.groupWidget = GroupReorderWidget()
-        self.groupWidget.setLayout(self.groupLayout)
-        self.groupWidget.orderChanged.connect(self._emitUpdatedApplyRules)
-        scrollGroup = qtlib.BaseColorScrollArea(self.groupWidget)
+        groupReorderWidget = ManualStartReorderWidget()
+        groupReorderWidget.setLayout(self.groupLayout)
+        groupReorderWidget.orderChanged.connect(self._emitUpdatedApplyRules)
+        scrollGroup = qtlib.BaseColorScrollArea(groupReorderWidget)
         scrollGroup.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
         layout.addWidget(scrollGroup, row, 0, 1, 5)
 
@@ -169,7 +169,7 @@ class CaptionControlGroup(QtWidgets.QWidget):
         layout.setContentsMargins(3, 5, 5, 0)
         layout.setSpacing(4)
 
-        layout.addWidget(GroupDragHandle(self, self.groups.groupWidget), 0, 0, 2, 1)
+        layout.addWidget(ReorderDragHandle(self), 0, 0, 2, 1)
         layout.setColumnMinimumWidth(0, 10)
         layout.addWidget(self.headerWidget, 0, 1)
         layout.addWidget(self.buttonWidget, 1, 1)
@@ -187,7 +187,7 @@ class CaptionControlGroup(QtWidgets.QWidget):
         self.txtName.setMaximumWidth(300)
         qtlib.setMonospace(self.txtName, 1.2, bold=True)
 
-        self.cboExclusive = QtWidgets.QComboBox()
+        self.cboExclusive = qtlib.NonScrollComboBox()
         self.cboExclusive.addItem("Disabled", MutualExclusivity.Disabled)
         self.cboExclusive.addItem("Keep Last", MutualExclusivity.KeepLast)
         self.cboExclusive.addItem("Keep First", MutualExclusivity.KeepFirst)
@@ -370,33 +370,6 @@ class GroupColor(QtWidgets.QFrame):
         self.setStyleSheet(f".GroupColor{{background-color: {color}}}")
         self.charFormat.setForeground( qtlib.getHighlightColor(color) )
         self.group.groups.ctx.controlUpdated.emit()
-
-
-
-class GroupReorderWidget(ReorderWidget):
-    def __init__(self):
-        super().__init__(False)
-        self.showCursorPicture = False
-
-    def dragEnterEvent(self, e):
-        if not e.mimeData().hasText():
-            e.accept()
-
-    def mouseMoveEvent(self, e):
-        pass
-
-
-
-class GroupDragHandle(qtlib.VerticalSeparator):
-    def __init__(self, group: CaptionControlGroup, reorderWidget: GroupReorderWidget):
-        super().__init__()
-        self.setCursor(Qt.CursorShape.DragMoveCursor)
-        self.group = group
-        self.reorderWidget = reorderWidget
-
-    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
-        if event.buttons() == Qt.MouseButton.LeftButton:
-            self.reorderWidget._startDrag(self.group)
 
 
 

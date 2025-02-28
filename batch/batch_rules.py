@@ -2,11 +2,13 @@ import os
 from typing import Callable
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Slot, QTimer
-from caption import CaptionPreset, MutualExclusivity, CaptionRulesProcessor
+from caption.caption_preset import CaptionPreset, CaptionPresetConditional, MutualExclusivity
+from caption.caption_filter import CaptionRulesProcessor
+from caption.caption_conditionals import ConditionalRule
 from config import Config
 from infer import Inference
 from ui.edit_table import EditableTable
-from ui.flow_layout import FlowLayout, SortedStringFlowWidget
+from ui.flow_layout import FlowLayout, SortedStringFlowWidget, ManualStartReorderWidget
 from lib import qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
@@ -29,21 +31,31 @@ class BatchRules(QtWidgets.QWidget):
         self._task = None
         self._taskSignalHandler = None
 
-        self.btnStart = QtWidgets.QPushButton("Start Batch Rules")
-        self.btnStart.clicked.connect(self.startStop)
+        splitter = QtWidgets.QSplitter(Qt.Orientation.Vertical)
+        splitter.addWidget(self._buildSubTabs())
+        splitter.addWidget(self._buildSettings())
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(1, False)
+        splitter.setStretchFactor(0, 5)
+        splitter.setStretchFactor(1, 1)
 
         layout = QtWidgets.QVBoxLayout()
-        layout.addWidget(self._buildRules())
-        layout.addWidget(self._buildGroups())
-        layout.addWidget(self._buildSettings())
+        layout.addWidget(splitter)
+
+        self.btnStart = QtWidgets.QPushButton("Start Batch Rules")
+        self.btnStart.clicked.connect(self.startStop)
         layout.addWidget(self.btnStart)
 
-        layout.setStretch(0, 0)
-        layout.setStretch(1, 1)
-        layout.setStretch(2, 0)
-        layout.setStretch(3, 0)
         self.setLayout(layout)
 
+
+    def _buildSubTabs(self):
+        tabWidget = QtWidgets.QTabWidget()
+        #tabWidget.setCornerWidget(QtWidgets.QPushButton("☰"))
+        tabWidget.addTab(self._buildRules(), "Rules")
+        tabWidget.addTab(self._buildGroups(), "Groups")
+        tabWidget.addTab(self._buildConditionals(), "Conditionals")
+        return tabWidget
 
     def _buildRules(self):
         layout = QtWidgets.QGridLayout()
@@ -140,10 +152,9 @@ class BatchRules(QtWidgets.QWidget):
         self.banWidget.changed.connect(self._onBannedChanged)
         layout.addWidget(qtlib.BaseColorScrollArea(self.banWidget), row, 3, 1, 4)
 
-        groupBox = QtWidgets.QGroupBox("Rules")
-        groupBox.setLayout(layout)
-        return groupBox
-
+        widget = QtWidgets.QWidget()
+        widget.setLayout(layout)
+        return widget
 
     def _buildGroups(self):
         self.groupLayout = QtWidgets.QVBoxLayout()
@@ -152,14 +163,33 @@ class BatchRules(QtWidgets.QWidget):
 
         widget = QtWidgets.QWidget()
         widget.setLayout(self.groupLayout)
+        scrollArea = qtlib.BaseColorScrollArea(widget)
+        scrollArea.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
+        return scrollArea
 
-        boxLayout = QtWidgets.QVBoxLayout()
-        boxLayout.setContentsMargins(0, 0, 0, 0)
-        boxLayout.addWidget(qtlib.BaseColorScrollArea(widget))
+    def _buildConditionals(self):
+        self.conditionalsLayout = QtWidgets.QVBoxLayout()
+        self.conditionalsLayout.setContentsMargins(0, 0, 0, 0)
+        self.conditionalsLayout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.conditionalsLayout.setSpacing(8)
 
-        groupBox = QtWidgets.QGroupBox("Groups")
-        groupBox.setLayout(boxLayout)
-        return groupBox
+        condReorderWidget = ManualStartReorderWidget()
+        condReorderWidget.setLayout(self.conditionalsLayout)
+        condReorderWidget.orderChanged.connect(self.updatePreview)
+        scrollArea = qtlib.BaseColorScrollArea(condReorderWidget)
+        scrollArea.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(scrollArea, 1)
+
+        btnAddConditional = QtWidgets.QPushButton("✚ Add Conditional Rule")
+        btnAddConditional.clicked.connect(lambda: self.addConditional(None))
+        layout.addWidget(btnAddConditional, 0, Qt.AlignmentFlag.AlignBottom)
+
+        widget = QtWidgets.QWidget()
+        widget.setLayout(layout)
+        return widget
 
 
     def _buildSettings(self):
@@ -246,6 +276,34 @@ class BatchRules(QtWidgets.QWidget):
                 widget.deleteLater()
 
 
+    @property
+    def conditionals(self):
+        for i in range(self.conditionalsLayout.count()):
+            widget = self.conditionalsLayout.itemAt(i).widget()
+            if widget and isinstance(widget, ConditionalRule):
+                yield widget
+
+    def addConditional(self, cond: CaptionPresetConditional | None):
+        condWidget = ConditionalRule()
+        if cond:
+            condWidget.loadFromPreset(cond)
+        condWidget.ruleUpdated.connect(self.updatePreview)
+        condWidget.removeClicked.connect(self.removeConditional)
+        self.conditionalsLayout.addWidget(condWidget, 0, Qt.AlignmentFlag.AlignTop)
+
+    @Slot()
+    def removeConditional(self, condWidget: ConditionalRule):
+        self.conditionalsLayout.removeWidget(condWidget)
+        condWidget.deleteLater()
+        self.updatePreview()
+
+    def removeAllConditionals(self):
+        for i in reversed(range(self.conditionalsLayout.count())):
+            item = self.conditionalsLayout.takeAt(i)
+            if item and (widget := item.widget()):
+                widget.deleteLater()
+
+
     def applyPreset(self, preset: CaptionPreset):
         try:
             self._updateEnabled = False
@@ -263,6 +321,10 @@ class BatchRules(QtWidgets.QWidget):
             self.removeAllGroups()
             for group in preset.groups:
                 self.addGroup(group.name, group.color, group.exclusivity, group.combineTags, group.captions)
+
+            self.removeAllConditionals()
+            for cond in preset.conditionals:
+                self.addConditional(cond)
         finally:
             self._updateEnabled = True
             self._updateHighlightFormats()
@@ -316,6 +378,7 @@ class BatchRules(QtWidgets.QWidget):
         rulesProcessor.setSearchReplacePairs(self.tableReplace.getContent())
         rulesProcessor.setBannedCaptions(self.bannedCaptions)
         rulesProcessor.setCaptionGroups( (group.captions, group.exclusivity, group.combineTags) for group in self.groups )
+        rulesProcessor.setConditionalRules(condRule.getFilterRule() for condRule in self.conditionals)
         return rulesProcessor
 
     @Slot()
