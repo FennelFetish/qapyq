@@ -1,5 +1,5 @@
 import re, os, random
-from typing import Tuple, List
+from typing import Tuple, List, Callable
 from PySide6 import QtWidgets, QtGui
 from .captionfile import CaptionFile
 from . import qtlib
@@ -268,16 +268,21 @@ class TemplateVariableParser:
 
             case "reverse":
                 sep = self._getFuncArg(args, 0, ", ")
-                return self._funcReverse(value, sep)
+                return self._funcSplitProcess(value, sep, list[str].reverse)
 
             case "shuffle":
                 sep = self._getFuncArg(args, 0, ", ")
-                return self._funcShuffle(value, 0, sep)
+                return self._funcSplitProcess(value, sep, self._funcShuffle)
 
             case "shufflekeep":
                 keep = self._getFuncArgInt(args, 0, 1)
                 sep = self._getFuncArg(args, 1, ", ")
-                return self._funcShuffle(value, keep, sep)
+                return self._funcSplitProcess(value, sep, self._funcShuffle, keep)
+
+            case "first":
+                count = self._getFuncArgInt(args, 0, 1)
+                sep = self._getFuncArg(args, 1, ", ")
+                return self._funcSplitProcess(value, sep, lambda elements: elements[:count])
 
             case "join":
                 if not args:
@@ -290,35 +295,27 @@ class TemplateVariableParser:
 
         return value
 
-    def _funcReverse(self, value: str, sep: str) -> str:
-        sepStrip = sep.strip()
-        if not sepStrip:
-            sepStrip = sep
-        endsWithSepStrip = value.endswith(sepStrip)
-
-        elements = [ele for e in reversed(value.split(sepStrip)) if (ele := e.strip())]
-        value = sep.join(elements)
-        if endsWithSepStrip:
-            value += sepStrip
-        return value
-
-    def _funcShuffle(self, value: str, keep: int, sep: str) -> str:
-        sepStrip = sep.strip()
-        if not sepStrip:
-            sepStrip = sep
+    def _funcSplitProcess(self, value: str, sep: str, processFunc: Callable[[list[str]], list[str] | None], *processArgs):
+        sepStrip = sep.strip() or sep
         endsWithSepStrip = value.endswith(sepStrip)
 
         elements = [ele for e in value.split(sepStrip) if (ele := e.strip())]
-        keepElements = elements[:keep]
-        elements = elements[keep:]
+        result = processFunc(elements, *processArgs)
+        if result is None:
+            result = elements
 
-        random.shuffle(elements)
-        keepElements.extend(elements)
-
-        value = sep.join(keepElements)
+        value = sep.join(result)
         if endsWithSepStrip:
             value += sepStrip
         return value
+
+    def _funcShuffle(self, elements: list[str], keep=0) -> list[str]:
+        keepElements = elements[:keep]
+        shuffleElements = elements[keep:]
+
+        random.shuffle(shuffleElements)
+        keepElements.extend(shuffleElements)
+        return keepElements
 
 
 
