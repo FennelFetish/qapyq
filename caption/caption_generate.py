@@ -201,10 +201,10 @@ class CaptionGenerate(CaptionTab):
 
 class CurrentVariableParser(TemplateVariableParser):
     CURRENT_VAR_NAME = "current"
-    CURRENT_VAR      = "{{current}}"
+    CURRENT_VAR      = "{{current"
 
     REFINED_VAR_NAME = "refined"
-    REFINED_VAR      = "{{refined}}"
+    REFINED_VAR      = "{{refined"
 
 
     def __init__(self, context, imgPath: str = None):
