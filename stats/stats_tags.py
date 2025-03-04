@@ -1,11 +1,18 @@
+from typing import Iterable
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QAbstractItemModel, QModelIndex
 from lib.captionfile import FileTypeSelector
 from ui.tab import ImgTab
+from batch.batch_container import BatchContainer
+from batch.batch_rules import BatchRules
 from caption.caption_container import CaptionContainer
 from caption.caption_groups import CaptionControlGroup
+from caption.caption_preset import CaptionPreset, CaptionPresetConditional, MutualExclusivity
 from .stats_base import StatsLayout, StatsBaseProxyModel, ExportCsv
+
+
+SEP = ", "
 
 
 class TagStats(QtWidgets.QWidget):
@@ -18,7 +25,7 @@ class TagStats(QtWidgets.QWidget):
         self.proxyModel = TagProxyModel()
         self.proxyModel.setSourceModel(self.model)
 
-        self.table = TagTableView(self.tab)
+        self.table = TagTableView(self)
         self.table.setModel(self.proxyModel)
         self.table.captionRulesChanged.connect(self.reloadColors)
 
@@ -143,7 +150,7 @@ class TagModel(QAbstractItemModel):
 
     def __init__(self):
         super().__init__()
-        self.separator = ","
+        self.separator = SEP.strip()
         self.font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.SystemFont.FixedFont)
 
         self.tags: list[TagData] = list()
@@ -273,9 +280,10 @@ class TagProxyModel(StatsBaseProxyModel):
 class TagTableView(QtWidgets.QTableView):
     captionRulesChanged = Signal()
 
-    def __init__(self, tab: ImgTab):
+    def __init__(self, tagStats: TagStats):
         super().__init__()
-        self.tab = tab
+        self.tagStats = tagStats
+        self.tab = tagStats.tab
 
         self._menu = self._buildMenu()
         self._index: QModelIndex | None = None
@@ -284,20 +292,41 @@ class TagTableView(QtWidgets.QTableView):
         menu = QtWidgets.QMenu("Tag Menu", self)
 
         actAdd = menu.addAction("Add to Caption")
-        actAdd.triggered.connect(self._addTag)
+        actAdd.triggered.connect(self._addTags)
 
         self._groupMenu = QtWidgets.QMenu("Add to Group")
         menu.addMenu(self._groupMenu)
 
         actFocus = menu.addAction("Add to Focus")
-        actFocus.triggered.connect(self._focusTag)
+        actFocus.triggered.connect(self._focusTags)
 
         menu.addSeparator()
 
         actBan = menu.addAction("Ban")
-        actBan.triggered.connect(self._banTag)
+        actBan.triggered.connect(self._banTags)
+
+        menu.addSeparator()
+        menu.addMenu(self._buildBatchMenu())
 
         return menu
+
+    def _buildBatchMenu(self) -> QtWidgets.QMenu:
+        batchMenu = QtWidgets.QMenu("Batch")
+
+        actAdd = batchMenu.addAction("Add to All...")
+        actAdd.triggered.connect(self._batchAddTags)
+
+        actRemove = batchMenu.addAction("Remove Tag(s)...")
+        actRemove.triggered.connect(self._batchRemoveTags)
+
+        actReplace = batchMenu.addAction("Replace Tag(s)...")
+        actReplace.triggered.connect(self._batchReplaceTags)
+
+        actPrioritizeSelected = batchMenu.addAction("Prioritize Selected Tag...")
+        actPrioritizeSelected.triggered.connect(self._batchPrioritizeSelectedTag)
+
+        return batchMenu
+
 
     def _rebuildGroupMenu(self):
         self._groupMenu.clear()
@@ -306,11 +335,11 @@ class TagTableView(QtWidgets.QTableView):
         if captionWin:
             for group in captionWin.ctx.groups.groups:
                 act = self._groupMenu.addAction(group.name)
-                act.triggered.connect(lambda checked, group=group: self._addTagToGroup(group))
+                act.triggered.connect(lambda checked, group=group: self._addTagsToGroup(group))
 
             self._groupMenu.addSeparator()
             actNewGroup = self._groupMenu.addAction("New Group")
-            actNewGroup.triggered.connect(lambda checked, captionWin=captionWin: self._addTagToNewGroup(captionWin))
+            actNewGroup.triggered.connect(lambda checked, captionWin=captionWin: self._addTagsToNewGroup(captionWin))
 
         if self._groupMenu.isEmpty():
             actEmpty = self._groupMenu.addAction("Caption Window not open")
@@ -326,35 +355,101 @@ class TagTableView(QtWidgets.QTableView):
             self._index = None
 
 
+    def currentTag(self) -> str:
+        if self._index is None:
+            return ""
+        return self.model().data(self._index, TagModel.ROLE_TAG)
+
+    def selectedTags(self) -> Iterable[str]:
+        return (
+            self.model().data(index, TagModel.ROLE_TAG)
+            for index in self.selectionModel().selectedRows()
+        )
+
+
     @Slot()
-    def _addTag(self):
+    def _addTags(self):
         if captionWin := getCaptionWindow(self.tab, self):
-            tag = self.model().data(self._index, TagModel.ROLE_TAG)
-            captionWin.appendToCaption(tag)
+            for tag in self.selectedTags():
+                captionWin.appendToCaption(tag)
+
+            # Not needed, but will connect the update signal
             self.captionRulesChanged.emit()
 
     @Slot()
-    def _focusTag(self):
+    def _focusTags(self):
         if captionWin := getCaptionWindow(self.tab, self):
-            tag = self.model().data(self._index, TagModel.ROLE_TAG)
-            captionWin.ctx.focus.appendFocusTag(tag)
+            for tag in self.selectedTags():
+                captionWin.ctx.focus.appendFocusTag(tag)
             self.captionRulesChanged.emit()
 
     @Slot()
-    def _banTag(self):
+    def _banTags(self):
         if captionWin := getCaptionWindow(self.tab, self):
-            tag = self.model().data(self._index, TagModel.ROLE_TAG)
-            if captionWin.ctx.settings.addBannedCaption(tag):
-                self.captionRulesChanged.emit()
-
-    def _addTagToGroup(self, group: CaptionControlGroup):
-        tag = self.model().data(self._index, TagModel.ROLE_TAG)
-        if group._addCaptionDrop(tag):
+            for tag in self.selectedTags():
+                captionWin.ctx.settings.addBannedCaption(tag)
             self.captionRulesChanged.emit()
 
-    def _addTagToNewGroup(self, captionWin: CaptionContainer):
+    def _addTagsToGroup(self, group: CaptionControlGroup):
+        for tag in self.selectedTags():
+            group._addCaptionDrop(tag)
+        self.captionRulesChanged.emit()
+
+    def _addTagsToNewGroup(self, captionWin: CaptionContainer):
         group = captionWin.ctx.groups.addGroup()
-        self._addTagToGroup(group)
+        self._addTagsToGroup(group)
+
+
+    @Slot()
+    def _batchAddTags(self):
+        preset = CaptionPreset()
+        for tag in self.selectedTags():
+            cond = CaptionPresetConditional.Condition()
+            cond.key = "AllTagsPresent"
+            cond.params = {"tags": tag}
+
+            actionAdd = CaptionPresetConditional.Action()
+            actionAdd.key = "AddTags"
+            actionAdd.params = {"tags": tag}
+
+            rule = CaptionPresetConditional()
+            rule.expression = "not A"
+            rule.conditions.append(cond)
+            rule.actions.append(actionAdd)
+            preset.conditionals.append(rule)
+
+        applyBatchRulesPreset(self.tab, self, preset, self.tagStats.captionSrc, "conditionals")
+
+    @Slot()
+    def _batchRemoveTags(self):
+        preset = CaptionPreset()
+        preset.banned.extend(self.selectedTags())
+        applyBatchRulesPreset(self.tab, self, preset, self.tagStats.captionSrc, "rules")
+
+    @Slot()
+    def _batchReplaceTags(self):
+        preset = CaptionPreset()
+        for tag in self.selectedTags():
+            actionReplace = CaptionPresetConditional.Action()
+            actionReplace.key = "ReplaceTags"
+            actionReplace.params = {"search": tag, "replace": ""}
+
+            rule = CaptionPresetConditional()
+            rule.expression = "True"
+            rule.actions.append(actionReplace)
+            preset.conditionals.append(rule)
+
+        applyBatchRulesPreset(self.tab, self, preset, self.tagStats.captionSrc, "conditionals")
+
+    @Slot()
+    def _batchPrioritizeSelectedTag(self):
+        currentTag = self.currentTag()
+        tags = [tag for tag in self.selectedTags() if tag != currentTag]
+        tags.append(currentTag)
+
+        preset = CaptionPreset()
+        preset.addGroup("Group", "#000", MutualExclusivity.Priority, False, tags)
+        applyBatchRulesPreset(self.tab, self, preset, self.tagStats.captionSrc, "groups")
 
 
 
@@ -408,12 +503,38 @@ class TagStatsLayout(StatsLayout):
 
 
 def getCaptionWindow(tab: ImgTab, parent: QtWidgets.QWidget, show=False) -> CaptionContainer | None:
-    if not show and (captionWin := tab.getWindowContent("caption")):
-        return captionWin
+    return getAuxWindow("caption", tab, parent, show)
 
-    # If CaptionWindow didn't exist, show it
-    if captionWin := tab.mainWindow.showAuxWindow("caption", tab):
-        return captionWin
+def getBatchWindow(tab: ImgTab, parent: QtWidgets.QWidget, show=False) -> BatchContainer | None:
+    return getAuxWindow("batch", tab, parent, show)
 
-    QtWidgets.QMessageBox.information(parent, "Failed", "Caption Window is not open.")
+
+def applyBatchRulesPreset(tab: ImgTab, parent: QtWidgets.QWidget, captionPreset: CaptionPreset, captionSrc: FileTypeSelector, subtab=""):
+    batchWin = getBatchWindow(tab, parent, show=True)
+    if not batchWin:
+        return
+
+    rulesTab: BatchRules = batchWin.getTab("rules", selectTab=True)
+    rulesTab.srcSelector.type = captionSrc.type
+    rulesTab.srcSelector.name = captionSrc.name
+    rulesTab.destSelector.type = captionSrc.type
+    rulesTab.destSelector.name = captionSrc.name
+
+    captionPreset.removeDuplicates = False
+    captionPreset.sortCaptions = False
+    rulesTab.applyPreset(captionPreset)
+
+    if subtab:
+        rulesTab.showSubtab(subtab)
+
+
+def getAuxWindow(windowName: str, tab: ImgTab, parent: QtWidgets.QWidget, show: bool) -> QtWidgets.QWidget | None:
+    if not show and (win := tab.getWindowContent(windowName)):
+        return win
+
+    # If Window didn't exist, show it
+    if win := tab.mainWindow.showAuxWindow(windowName, tab):
+        return win
+
+    QtWidgets.QMessageBox.information(parent, "Failed", f"{windowName.capitalize()} Window is not open.")
     return None

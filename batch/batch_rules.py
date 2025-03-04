@@ -50,12 +50,21 @@ class BatchRules(QtWidgets.QWidget):
 
 
     def _buildSubTabs(self):
-        tabWidget = QtWidgets.QTabWidget()
+        self.subtabWidget = QtWidgets.QTabWidget()
         #tabWidget.setCornerWidget(QtWidgets.QPushButton("☰"))
-        tabWidget.addTab(self._buildRules(), "Rules")
-        tabWidget.addTab(self._buildGroups(), "Groups")
-        tabWidget.addTab(self._buildConditionals(), "Conditionals")
-        return tabWidget
+        self.subtabWidget.addTab(self._buildRules(), "Rules")
+        self.subtabWidget.addTab(self._buildGroups(), "Groups")
+        self.subtabWidget.addTab(self._buildConditionals(), "Conditionals")
+        return self.subtabWidget
+
+    def showSubtab(self, name: str):
+        tabIndexes = {
+            "rules": 0,
+            "groups": 1,
+            "conditionals": 2
+        }
+        self.subtabWidget.setCurrentIndex(tabIndexes[name])
+
 
     def _buildRules(self):
         layout = QtWidgets.QGridLayout()
@@ -359,7 +368,10 @@ class BatchRules(QtWidgets.QWidget):
         dialog.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
 
         if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes:
-            self.applyPreset(CaptionPreset())
+            preset = CaptionPreset()
+            preset.removeDuplicates = False
+            preset.sortCaptions = False
+            self.applyPreset(preset)
 
 
     def setupProcessor(self) -> CaptionRulesProcessor:

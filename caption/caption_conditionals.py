@@ -347,6 +347,7 @@ class ConditionalFilterRule:
     }
 
     def __init__(self):
+        # Conditions can be empty, but that only works for custom expressions (like "True")
         self.conditions = dict[str, ConditionFunc]()
         self.actions = list[ActionFunc]()
 
@@ -507,7 +508,7 @@ class RuleCondition(QtWidgets.QWidget):
         self.cboCondition = qtlib.NonScrollComboBox()
         for condKey, condDef in CONDITIONS.items():
             self.cboCondition.addItem(condDef.name, condKey)
-        self.cboCondition.currentIndexChanged.connect(lambda: self.conditionUpdated.emit())
+        self.cboCondition.currentIndexChanged.connect(self._onConditionChanged)
         layout.addWidget(self.cboCondition)
 
         self.txtCondParam = QtWidgets.QLineEdit()
@@ -516,6 +517,14 @@ class RuleCondition(QtWidgets.QWidget):
         layout.addWidget(self.txtCondParam)
 
         self.setLayout(layout)
+
+    @Slot()
+    def _onConditionChanged(self, index: int):
+        condKey: str = self.cboCondition.itemData(index)
+        condDef = CONDITIONS[condKey]
+        self.txtCondParam.setToolTip(condDef.params[0])
+
+        self.conditionUpdated.emit()
 
 
     @property
@@ -555,6 +564,8 @@ class RuleCondition(QtWidgets.QWidget):
         if not condDef:
             condKey = self.cboCondition.itemData(0)
             condDef = CONDITIONS[condKey]
+
+        self.txtCondParam.setToolTip(condDef.params[0])
 
         with QSignalBlocker(self):
             condIndex = self.cboCondition.findData(condKey)
@@ -604,15 +615,18 @@ class RuleAction(QtWidgets.QWidget):
         actionDef = ACTIONS[actionKey]
         numParams = actionDef.numParams
 
-        for txt in self.txtParams[0:numParams]:
+        for i, txt in enumerate(self.txtParams[0:numParams]):
+            txt.setToolTip(actionDef.params[i])
             txt.show()
         for txt in self.txtParams[numParams:]:
+            txt.setToolTip("")
             txt.hide()
 
         startIndex = max(0, len(self.txtParams))
         for i in range(startIndex, numParams):
             txt = QtWidgets.QLineEdit()
             qtlib.setMonospace(txt)
+            txt.setToolTip(actionDef.params[i])
             txt.textChanged.connect(lambda: self.actionUpdated.emit())
             self.txtParams.append(txt)
             self._paramLayout.addWidget(txt)

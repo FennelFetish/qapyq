@@ -6,9 +6,10 @@ from .batch_apply import BatchApply
 from .batch_scale import BatchScale
 from .batch_mask import BatchMask
 from .batch_crop import BatchCrop
+#from .batch_metric import BatchMetric
+from .batch_file import BatchFile
 from .batch_log import BatchLog
 from .batch_task import BatchProgressUpdate
-from .batch_file import BatchFile
 import lib.qtlib as qtlib
 
 
@@ -16,7 +17,7 @@ class BatchContainer(QtWidgets.QTabWidget):
     def __init__(self, tab):
         super().__init__()
         self.tab = tab
-        
+
         self.progressbar = BatchProgressBar()
         self.statusBar = qtlib.ColoredMessageStatusBar()
         self.statusBar.addPermanentWidget(self.progressbar)
@@ -32,6 +33,7 @@ class BatchContainer(QtWidgets.QTabWidget):
             "scale":        BatchScale(tab, log, self.progressbar, self.statusBar),
             "mask":         BatchMask(tab, log, self.progressbar, self.statusBar),
             "crop":         BatchCrop(tab, log, self.progressbar, self.statusBar),
+            #"metric":       BatchMetric(tab, log, self.progressbar, self.statusBar),
             "file":         BatchFile(tab, log, self.progressbar, self.statusBar),
             "log":          logWidget
         }
@@ -43,11 +45,19 @@ class BatchContainer(QtWidgets.QTabWidget):
         self.addTab(self._widgets["scale"], "Scale (Image)")
         self.addTab(self._widgets["mask"], "Mask (Image)")
         self.addTab(self._widgets["crop"], "Crop (Image)")
+        #self.addTab(self._widgets["metric"], "Metric (Image)")
         self.addTab(self._widgets["file"], "File")
         self.addTab(self._widgets["log"], "Log")
 
         tab.filelist.addListener(self)
         self.onFileChanged(tab.filelist.getCurrentFile())
+
+
+    def getTab(self, name: str, selectTab=False) -> BatchRules:
+        widget = self._widgets[name]
+        if selectTab:
+            self.setCurrentWidget(widget)
+        return widget
 
 
     def onFileChanged(self, currentFile):
@@ -64,7 +74,7 @@ class BatchProgressBar(QtWidgets.QProgressBar):
         super().__init__()
         self._timeText = ""
         self._lastTime = None
-    
+
     def setTime(self, time: BatchProgressUpdate | None):
         if time is None:
             return

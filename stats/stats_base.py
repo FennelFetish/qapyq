@@ -367,11 +367,11 @@ class ExportCsv:
                 for col in range(model.columnCount())
             ))
 
-            cls.writeRow(writer, model, QModelIndex())
+            cls.writeRows(writer, model, QModelIndex())
 
 
     @classmethod
-    def writeRow(cls, writer, model: StatsBaseProxyModel, parent: QModelIndex):
+    def writeRows(cls, writer, model: StatsBaseProxyModel, parent: QModelIndex):
         for row in range(model.rowCount(parent)):
             writer.writerow((
                 model.data(model.index(row, col, parent), cls.ROLE_CSV)
@@ -381,4 +381,4 @@ class ExportCsv:
             # Recurse
             child = model.index(row, 0, parent)
             if model.hasChildren(child):
-                cls.writeRow(writer, model, child)
+                cls.writeRows(writer, model, child)
