@@ -293,6 +293,13 @@ class TemplateVariableParser:
                 val2 = self._getValue(key)
                 return sep.join(val for v in (value, val2) if (val := v.strip()))
 
+            case "nosubsets":
+                if len(args) > 0 and args[0]:
+                    val2 = self._getValue(args[0])
+                    sep = self._getFuncArg(args, 1, ", ")
+                    sepsOther = self._getFuncArg(args, 2, ",.:;")
+                    return self._funcSplitProcess(value, sep, self._createFuncRemoveSubsets(val2, sepsOther))
+
         return value
 
     def _funcSplitProcess(self, value: str, sep: str, processFunc: Callable[[list[str]], list[str] | None], *processArgs):
@@ -316,6 +323,27 @@ class TemplateVariableParser:
         random.shuffle(shuffleElements)
         keepElements.extend(shuffleElements)
         return keepElements
+
+    def _createFuncRemoveSubsets(self, otherValue: str, otherSeps: str):
+        sep = otherSeps[0]
+        otherValue = otherValue.translate(str.maketrans({
+            sepChar: sep for sepChar in otherSeps[1:]
+        }))
+
+        otherEleWords = [
+            {word.lower() for w in ele.split(" ") if (word := w.strip())}
+            for e in otherValue.split(sep) if (ele := e.strip())
+        ]
+
+        def funcRemoveSubsets(elements: list[str]):
+            newElements = list[str]()
+            for ele in elements:
+                words = [word.lower() for w in ele.split(" ") if (word := w.strip())]
+                if not any(otherWords.issuperset(words) for otherWords in otherEleWords):
+                    newElements.append(ele)
+            return newElements
+
+        return funcRemoveSubsets
 
 
 
