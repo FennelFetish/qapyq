@@ -300,6 +300,11 @@ class TemplateVariableParser:
                     sepsOther = self._getFuncArg(args, 2, ",.:;")
                     return self._funcSplitProcess(value, sep, self._createFuncRemoveSubsets(val2, sepsOther))
 
+            case "noprefix":
+                for prefix in self._getFuncArg(args, 0, "A ,a ,The ,the ").split(","):
+                    value = value.removeprefix(prefix)
+                return value
+
         return value
 
     def _funcSplitProcess(self, value: str, sep: str, processFunc: Callable[[list[str]], list[str] | None], *processArgs):
