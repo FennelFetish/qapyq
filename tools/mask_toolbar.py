@@ -131,8 +131,10 @@ class MaskToolBar(QtWidgets.QToolBar):
             "invert":       mask_ops.InvertMaskOperation,
             "threshold":    mask_ops.ThresholdMaskOperation,
             "normalize":    mask_ops.NormalizeMaskOperation,
+            "quantize":     mask_ops.QuantizeMaskOperation,
             "morph":        mask_ops.MorphologyMaskOperation,
             "blur_gauss":   mask_ops.BlurMaskOperation,
+            "detect_pad":   mask_ops.DetectPadMaskOperation,
             "blend_layers": mask_ops.BlendLayersMaskOperation,
 
             "cond_area":    mask_ops.AreaConditionMaskOperation,
@@ -162,9 +164,11 @@ class MaskToolBar(QtWidgets.QToolBar):
             self.cboOperation.addItem("Invert", "invert")
             self.cboOperation.addItem("Threshold", "threshold")
             self.cboOperation.addItem("Normalize", "normalize")
+            self.cboOperation.addItem("Quantize", "quantize")
             self.cboOperation.addItem("Morphology", "morph")
             #self.cboOperation.addItem("Linear Gradient", "gradient_linear")
             self.cboOperation.addItem("Gaussian Blur", "blur_gauss")
+            self.cboOperation.addItem("Detect Padding", "detect_pad")
             self.cboOperation.addItem("Blend Layers", "blend_layers")
 
             # Add detect / segment operations

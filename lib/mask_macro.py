@@ -25,9 +25,11 @@ class MacroOp(Enum):
     Clear           = auto()    # color (int)
     Invert          = auto()
     Threshold       = auto()    # color
-    Normalize       = auto()    # colorMin, colorMax
+    Normalize       = auto()    # colorMin, colorMax  # TODO: rename to minColor, maxColor
+    Quantize        = auto()    # mode, gridSize
     Morph           = auto()    # mode, radius
     GaussBlur       = auto()    # mode, radius
+    DetectPad       = auto()    # minColor, maxColor, tolerance, fillColor
     BlendLayers     = auto()    # mode, srcLayer
 
     CondColor       = auto()    # minColor, maxColor (float)
@@ -96,6 +98,7 @@ class MaskingMacro:
             MacroOp.Invert:     mask_ops.InvertMaskOperation.operate,
             MacroOp.Threshold:  mask_ops.ThresholdMaskOperation.operate,
             MacroOp.Normalize:  mask_ops.NormalizeMaskOperation.operate,
+            MacroOp.Quantize:   mask_ops.QuantizeMaskOperation.operate,
             MacroOp.Morph:      mask_ops.MorphologyMaskOperation.operate,
             MacroOp.GaussBlur:  mask_ops.BlurMaskOperation.operate,
 
@@ -222,6 +225,8 @@ class MaskingMacro:
                 return self.opBrush(mat, args)
             case MacroOp.FloodFill:
                 return self.opFloodFill(mat, args)
+            case MacroOp.DetectPad:
+                return self.opDetectPad(mat, imgPath, args)
             case MacroOp.Detect:
                 return self.opDetect(mat, imgPath, args)
             case MacroOp.Segment:
@@ -241,6 +246,12 @@ class MaskingMacro:
     def opBlendLayers(mat: np.ndarray, layers: list[np.ndarray], args: dict) -> np.ndarray:
         srcMat = layers[ int(args.pop("srcLayer")) ]
         return mask_ops.BlendLayersMaskOperation.operate(srcMat, mat, **args)
+
+    @staticmethod
+    def opDetectPad(mat: np.ndarray, imgPath: str, args: dict) -> np.ndarray:
+        import cv2 as cv
+        image = cv.imread(imgPath, cv.IMREAD_UNCHANGED)
+        return mask_ops.DetectPadMaskOperation.operate(mat, image, **args)
 
     def opDetect(self, mat: np.ndarray, imgPath: str, args: dict) -> np.ndarray:
         # TODO: Don't start on every call?

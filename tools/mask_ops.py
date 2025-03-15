@@ -803,6 +803,89 @@ class NormalizeMaskOperation(MaskOperation):
 
 
 
+class QuantizeMaskOperation(MaskOperation):
+    def __init__(self, maskTool):
+        super().__init__(maskTool)
+
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
+
+        row = 0
+        self.cboMode = QtWidgets.QComboBox()
+        self.cboMode.addItem("Minimum", "min")
+        self.cboMode.addItem("Maximum", "max")
+        self.cboMode.addItem("Mean", "mean")
+        self.cboMode.addItem("Median", "median")
+        layout.addWidget(QtWidgets.QLabel("Mode:"), row, 0)
+        layout.addWidget(self.cboMode, row, 1)
+
+        row += 1
+        self.spinGridSize = QtWidgets.QSpinBox()
+        self.spinGridSize.setRange(2, 4096)
+        self.spinGridSize.setSingleStep(1)
+        self.spinGridSize.setValue(8)
+        layout.addWidget(QtWidgets.QLabel("Grid Size:"), row, 0)
+        layout.addWidget(self.spinGridSize, row, 1)
+
+        self.setLayout(layout)
+
+    @staticmethod
+    def operate(mat: np.ndarray, mode: str, gridSize: int) -> np.ndarray:
+        match mode:
+            case "min":    tileValueFunc = np.min
+            case "max":    tileValueFunc = np.max
+            case "mean":   tileValueFunc = np.mean
+            case "median": tileValueFunc = np.median
+            case _:
+                raise ValueError(f"Invalid quantization mode: {mode}")
+
+        h, w   = mat.shape
+        tilesX = w // gridSize
+        tilesY = h // gridSize
+        sizeX  = tilesX * gridSize
+        sizeY  = tilesY * gridSize
+
+        # If the mask size is not divisible by gridSize, crop
+        matQuant = mat if (sizeX==w and sizeY==h) else mat[0:sizeY, 0:sizeX]
+
+        tiles = matQuant.reshape(tilesY, gridSize, tilesX, gridSize)
+        tileValues = tileValueFunc(tiles, axis=(1, 3)).astype(np.uint8)
+
+        matQuant = cv.resize(tileValues, (sizeX, sizeY), interpolation=cv.INTER_NEAREST)
+
+        # Pad and process border tiles separately
+        if sizeX != w or sizeY != h:
+            padX = w - sizeX
+            padY = h - sizeY
+            matQuant = np.pad(matQuant, ((0, padY), (0, padX)), mode="empty")
+
+            # If both sides are padded, the corner will be calculated twice. Doesn't matter.
+            if padX > 0:
+                for y in range(0, h, gridSize):
+                    matQuant[y:y+gridSize, sizeX:w] = tileValueFunc( mat[y:y+gridSize, sizeX:w] )
+            if padY > 0:
+                for x in range(0, w, gridSize):
+                    matQuant[sizeY:h, x:x+gridSize] = tileValueFunc( mat[sizeY:h, x:x+gridSize] )
+
+        return matQuant
+
+    @override
+    def onMousePress(self, pos, pressure: float, alt=False):
+        mode: str = self.cboMode.currentData()
+        gridSize = self.spinGridSize.value()
+
+        mat = self.maskItem.toNumpy()
+        mat = self.operate(mat, mode, gridSize)
+        self.maskItem.fromNumpy(mat)
+
+        self.maskTool.setEdited()
+        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.Quantize, mode=mode, gridSize=gridSize)
+        self.maskTool._toolbar.addHistory(f"Quantize ({mode} {gridSize})", mat, macroItem)
+
+
+
 class MorphologyMaskOperation(MaskOperation):
     def __init__(self, maskTool):
         super().__init__(maskTool)
@@ -957,6 +1040,127 @@ class BlurMaskOperation(MaskOperation):
         self.maskTool.setEdited()
         macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.GaussBlur, mode=mode, radius=radius, border=borderType, borderVal=borderVal)
         self.maskTool._toolbar.addHistory(f"Gaussian Blur ({mode} {radius})", mat, macroItem)
+
+
+
+class DetectPadMaskOperation(MaskOperation):
+    def __init__(self, maskTool):
+        super().__init__(maskTool)
+
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
+
+        row = 0
+        self.spinMinColor = QtWidgets.QDoubleSpinBox()
+        self.spinMinColor.setRange(0.0, 1.0)
+        self.spinMinColor.setSingleStep(0.1)
+        self.spinMinColor.setValue(0.0)
+        layout.addWidget(QtWidgets.QLabel("Min Color:"), row, 0)
+        layout.addWidget(self.spinMinColor, row, 1)
+
+        row += 1
+        self.spinMaxColor = QtWidgets.QDoubleSpinBox()
+        self.spinMaxColor.setRange(0.0, 1.0)
+        self.spinMaxColor.setSingleStep(0.1)
+        self.spinMaxColor.setValue(1.0)
+        layout.addWidget(QtWidgets.QLabel("Max Color:"), row, 0)
+        layout.addWidget(self.spinMaxColor, row, 1)
+
+        row += 1
+        self.spinTolerance = QtWidgets.QDoubleSpinBox()
+        self.spinTolerance.setRange(0.0, 1.0)
+        self.spinTolerance.setSingleStep(0.01)
+        self.spinTolerance.setValue(0.0)
+        layout.addWidget(QtWidgets.QLabel("Tolerance:"), row, 0)
+        layout.addWidget(self.spinTolerance, row, 1)
+
+        row += 1
+        self.spinFillColor = QtWidgets.QDoubleSpinBox()
+        self.spinFillColor.setRange(0.0, 1.0)
+        self.spinFillColor.setSingleStep(0.1)
+        self.spinFillColor.setValue(1.0)
+        layout.addWidget(QtWidgets.QLabel("Fill Color:"), row, 0)
+        layout.addWidget(self.spinFillColor, row, 1)
+
+        self.setLayout(layout)
+
+    @staticmethod
+    def operate(mat: np.ndarray, image: np.ndarray, minColor: int, maxColor: int, tolerance: int, fillColor: int) -> np.ndarray:
+        h, w = image.shape[:2]
+        channels = 1 if len(image.shape) < 3 else image.shape[2]
+        match channels:
+            case 3: image = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
+            case 4: image = cv.cvtColor(image, cv.COLOR_BGRA2GRAY)
+
+        padTop, padLeft = 0, 0
+        padBottomInv, padRightInv = h, w  # Inverted (start index of padding)
+
+        # Compare to top left corner
+        padColor = int(image[0, 0])
+        if minColor <= padColor <= maxColor:
+            padColorMin = max(padColor-tolerance, minColor)
+            padColorMax = min(padColor+tolerance, maxColor)
+
+            for padTop in range(h):
+                row = image[padTop]
+                if not np.all((row >= padColorMin) & (row <= padColorMax)):
+                    break
+
+            for padLeft in range(w):
+                col = image[:, padLeft]
+                if not np.all((col >= padColorMin) & (col <= padColorMax)):
+                    break
+
+            mat[0:padTop, :] = fillColor
+            mat[:, 0:padLeft] = fillColor
+
+        # Compare to bottom right corner
+        padColor = int(image[h-1, w-1])
+        if minColor <= padColor <= maxColor:
+            padColorMin = max(padColor-tolerance, minColor)
+            padColorMax = min(padColor+tolerance, maxColor)
+
+            for padBottomInv in range(h-1, -1, -1):
+                row = image[padBottomInv]
+                if not np.all((row >= padColorMin) & (row <= padColorMax)):
+                    break
+
+            for padRightInv in range(w-1, -1, -1):
+                col = image[:, padRightInv]
+                if not np.all((col >= padColorMin) & (col <= padColorMax)):
+                    break
+
+            mat[padBottomInv+1:h, :] = fillColor
+            mat[:, padRightInv+1:w] = fillColor
+
+        return mat
+
+    @override
+    def onMousePress(self, pos, pressure: float, alt=False):
+        minColor = self.spinMinColor.value()
+        maxColor = self.spinMaxColor.value()
+        tolerance = self.spinTolerance.value()
+        fillColor = self.spinFillColor.value()
+
+        minColor8Bit = round(minColor*255)
+        maxColor8Bit = round(maxColor*255)
+        tolerance8Bit = round(tolerance*255)
+        fillColor8Bit = round(fillColor*255)
+
+        image = qtlib.qimageToNumpy( self.maskTool._imgview.image.pixmap().toImage() )
+        image[..., :3] = image[..., 2::-1] # Convert RGB(A) -> BGR(A)
+
+        mat = self.maskItem.toNumpy()
+        mat = self.operate(mat, image, minColor8Bit, maxColor8Bit, tolerance8Bit, fillColor8Bit)
+        self.maskItem.fromNumpy(mat)
+
+        self.maskTool.setEdited()
+        macroItem = self.maskTool.macro.addOperation(
+            mask_macro.MacroOp.DetectPad, minColor=minColor8Bit, maxColor=maxColor8Bit, tolerance=tolerance8Bit, fillColor=fillColor8Bit
+        )
+        self.maskTool._toolbar.addHistory(f"Detect Pad ({fillColor:.2f})", mat, macroItem)
 
 
 
