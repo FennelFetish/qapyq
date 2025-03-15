@@ -5,6 +5,9 @@ from ui.flow_layout import FlowLayout, ReorderWidget
 
 # TODO: Nested bubbles for expressions like: (blue (starry:0.8) sky:1.2)
 
+# TODO: Colors for combined tags
+
+
 class CaptionBubbles(ReorderWidget):
     remove = Signal(int)
     dropped = Signal(str)
