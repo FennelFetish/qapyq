@@ -9,16 +9,6 @@ import tools.scale as scale
 import ui.export_settings as export
 
 
-INTERP_MODES = {
-    "Nearest": Image.Resampling.NEAREST,
-    "Linear":  Image.Resampling.BILINEAR,
-    "Cubic":   Image.Resampling.BICUBIC,
-    "Area":    Image.Resampling.BOX,
-    "Lanczos": Image.Resampling.LANCZOS,
-    "Hamming": Image.Resampling.HAMMING
-}
-
-
 class BatchScale(QtWidgets.QWidget):
     EXPORT_PRESET_KEY = "batch-scale"
 
@@ -38,7 +28,7 @@ class BatchScale(QtWidgets.QWidget):
 
         config = Config.exportPresets.get(self.EXPORT_PRESET_KEY, {})
         self.pathSettings = export.PathSettings(self.parser)
-        self.pathSettings.pathTemplate   = config.get("path_template", "{{path}}_{{w}}x{{h}}")
+        self.pathSettings.pathTemplate   = config.get("path_template", "{{path}}_{{w}}x{{h}}.png")
         self.pathSettings.overwriteFiles = config.get("overwrite", False)
 
         self._task = None
@@ -109,20 +99,14 @@ class BatchScale(QtWidgets.QWidget):
         layout = QtWidgets.QFormLayout()
 
         self.cboInterpUp = QtWidgets.QComboBox()
-        self.cboInterpUp.addItems(INTERP_MODES.keys())
+        self.cboInterpUp.addItems(export.INTERP_MODES_PIL.keys())
         self.cboInterpUp.setCurrentIndex(4) # Default: Lanczos
         layout.addRow("Interpolation Up:", self.cboInterpUp)
 
         self.cboInterpDown = QtWidgets.QComboBox()
-        self.cboInterpDown.addItems(INTERP_MODES.keys())
+        self.cboInterpDown.addItems(export.INTERP_MODES_PIL.keys())
         self.cboInterpDown.setCurrentIndex(3) # Default: Area
         layout.addRow("Interpolation Down:", self.cboInterpDown)
-
-        self.cboFormat = QtWidgets.QComboBox()
-        self.cboFormat.addItems(export.FORMATS.keys())
-        self.cboFormat.currentTextChanged.connect(self._onExtensionChanged)
-        layout.addRow("Format:", self.cboFormat)
-        self._onExtensionChanged(self.cboFormat.currentText())
 
         groupBox = QtWidgets.QGroupBox("Export Settings")
         groupBox.setLayout(layout)
@@ -147,17 +131,12 @@ class BatchScale(QtWidgets.QWidget):
         modeKey = self.cboScaleMode.itemData(index)
         if not modeKey:
             return
-        
+
         self.selectedScaleMode = self.scaleModes[modeKey]
         self.selectedScaleMode.sizeChanged.connect(self.updateSize)
         self.scaleModeLayout.addWidget(self.selectedScaleMode)
         self.selectedScaleMode.show()
         self.selectedScaleMode.updateSize()
-
-    @Slot()
-    def _onExtensionChanged(self, ext: str):
-        self.pathSettings.extension = ext
-        self.pathSettings.updatePreview()
 
     def onFileChanged(self, file: str):
         if pixmap := self.tab.imgview.image.pixmap():
@@ -209,9 +188,8 @@ class BatchScale(QtWidgets.QWidget):
 
         scaleFunc = self.selectedScaleMode.getScaleFunc()
         self._task = BatchScaleTask(self.log, self.tab.filelist, scaleFunc, self.pathSettings)
-        self._task.interpUp   = INTERP_MODES[ self.cboInterpUp.currentText() ]
-        self._task.interpDown = INTERP_MODES[ self.cboInterpDown.currentText() ]
-        self._task.format     = export.FORMATS[ self.cboFormat.currentText() ]
+        self._task.interpUp   = export.INTERP_MODES_PIL[ self.cboInterpUp.currentText() ]
+        self._task.interpDown = export.INTERP_MODES_PIL[ self.cboInterpDown.currentText() ]
 
         self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
         self._taskSignalHandler.finished.connect(self.taskDone)
@@ -229,12 +207,10 @@ class BatchScaleTask(BatchTask):
         super().__init__("scale", log, filelist)
         self.scaleFunc      = scaleFunc
         self.pathTemplate   = pathSettings.pathTemplate
-        self.extension      = pathSettings.extension
         self.overwriteFiles = pathSettings.overwriteFiles
 
         self.interpUp       = None
         self.interpDown     = None
-        self.format: export.Format = None
 
     def runPrepare(self):
         self.parser = export.ExportVariableParser()
@@ -247,15 +223,10 @@ class BatchScaleTask(BatchTask):
             interp = self.interpUp if (w>image.width or h>image.height) else self.interpDown
             image = image.resize((w, h), resample=interp)
 
-        if convertMode := self.format.conversion.get(image.mode):
-            self.log(f"Converting mode from {image.mode} to {convertMode}")
-            image = image.convert(convertMode)
-
         self.parser.setup(imgFile)
         self.parser.width = w
         self.parser.height = h
 
-        path = self.parser.parsePath(self.pathTemplate, self.extension, self.overwriteFiles)
-        export.createFolders(path, self.log)
-        image.save(path, **self.format.saveParams)
+        path = self.parser.parsePath(self.pathTemplate, self.overwriteFiles)
+        export.saveImagePIL(path, image, self.log)
         return path

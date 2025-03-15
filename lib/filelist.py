@@ -36,9 +36,6 @@ class DataKeys:
         Saved   = "saved"
 
 
-# When looking for the mask of an image, these extensions are checked:
-MASK_EXTENSIONS = ["png", "webp", "jpg", "jpeg"]
-
 # Only images with these extensions are loaded into the FileList:
 VALID_EXTENSION = set([ f".{format.data().decode('utf-8').lower()}" for format in QImageReader.supportedImageFormats() ])
 
