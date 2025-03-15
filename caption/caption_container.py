@@ -19,7 +19,6 @@ from .caption_list import CaptionList
 
 class CaptionContext(QtWidgets.QTabWidget):
     captionEdited       = Signal(str)
-    captionClicked      = Signal(str)
     separatorChanged    = Signal(str)
     controlUpdated      = Signal()
     needsRulesApplied   = Signal()
@@ -85,7 +84,6 @@ class CaptionContainer(QtWidgets.QWidget):
         self._menu = CaptionMenu(self, self.ctx)
         self._build(self.ctx)
 
-        self.ctx.captionClicked.connect(self.toggleCaption)
         self.ctx.captionGenerated.connect(self._onCaptionGenerated)
         self.ctx.separatorChanged.connect(self._onSeparatorChanged)
         self.ctx.controlUpdated.connect(self._onControlUpdated)
@@ -97,6 +95,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.onFileChanged( tab.filelist.getCurrentFile() )
 
         self._loadRules()
+        QTimer.singleShot(1, self._forceUpdateGroupSelection) # Workaround for BUG
 
         if Config.captionShowPreview:
             QTimer.singleShot(1, lambda: self._onPreviewToggled(True))
@@ -320,6 +319,8 @@ class CaptionContainer(QtWidgets.QWidget):
 
     def _highlight(self, text: str, txtWidget: QtWidgets.QPlainTextEdit):
         formats = self.ctx.groups.getCaptionCharFormats()
+        wordFormatMap = self.ctx.groups.getCaptionCombineFormats()
+
         with QSignalBlocker(txtWidget):
             cursor = txtWidget.textCursor()
             cursor.setPosition(0)
@@ -335,17 +336,60 @@ class CaptionContainer(QtWidgets.QWidget):
                 captionStrip = captionStrip.rstrip()
                 padRight = len(caption) - padLeft - len(captionStrip)
 
-                format = formats.get(captionStrip)
-                if not format and self.isHovered(captionStrip):
+                start += padLeft
+
+                if format := formats.get(captionStrip):
+                    self._highlightPart(cursor, format, start, len(captionStrip))
+                elif self.isHovered(captionStrip):
                     # Char format for colored captions is made in CaptionColorSet
                     format = QtGui.QTextCharFormat()
                     format.setFontUnderline(True)
+                    self._highlightPart(cursor, format, start, len(captionStrip))
 
-                if format:
-                    cursor.setPosition(start+padLeft)
-                    cursor.setPosition(start+len(caption)-padRight, QtGui.QTextCursor.MoveMode.KeepAnchor)
-                    cursor.setCharFormat(format)
-                start += len(caption) + len(sep)
+                # Try highlighting combined words
+                else:
+                    captionWords = captionStrip.split(" ")
+                    lastWord = captionWords[-1]
+                    pos = start
+
+                    if (combineFormat := wordFormatMap.get(lastWord)) and (groupFormat := combineFormat.getGroupFormat(captionWords)):
+                        for word in captionWords[:-1]:
+                            if word in groupFormat.words:
+                                self._highlightPart(cursor, groupFormat.format, pos, len(word))
+                            pos += len(word) + 1
+
+                        self._highlightPart(cursor, groupFormat.format, pos, len(lastWord))
+
+                    # if (combineFormat := wordFormatMap.get(lastWord)):
+                    #     wordSet, wordFormat = combineFormat.getFormat(captionWords)
+                    #     if wordSet and wordFormat:
+                    #         lastWordFormat = None
+                    #         for word in captionWords[:-1]:
+                    #             if word in wordSet:
+                    #                 self._highlightPart(cursor, wordFormat, pos, len(word))
+                    #                 lastWordFormat = wordFormat
+                    #             pos += len(word) + 1
+
+                    #         if lastWordFormat:
+                    #             self._highlightPart(cursor, lastWordFormat, pos, len(lastWord))
+
+                    # if (combineFormat := wordFormatMap.get(lastWord)) and combineFormat.hasSubset(captionWords):
+                    #     lastWordFormat = None
+                    #     for word in captionWords[:-1]:
+                    #         if wordFormat := combineFormat.wordFormats.get(word):
+                    #             self._highlightPart(cursor, wordFormat, pos, len(word))
+                    #             lastWordFormat = wordFormat
+                    #         pos += len(word) + 1
+
+                    #     if lastWordFormat:
+                    #         self._highlightPart(cursor, lastWordFormat, pos, len(lastWord))
+
+                start += len(captionStrip) + padRight + len(sep)
+
+    def _highlightPart(self, cursor: QtGui.QTextCursor, format: QtGui.QTextCharFormat, start: int, length: int):
+        cursor.setPosition(start)
+        cursor.setPosition(start+length, QtGui.QTextCursor.MoveMode.KeepAnchor)
+        cursor.setCharFormat(format)
 
 
     def getSelectedCaption(self) -> str:
@@ -387,14 +431,23 @@ class CaptionContainer(QtWidgets.QWidget):
         self.updateSelectionState(text)
         self._updatePreview(text)
 
-    def updateSelectionState(self, captionText: str):
+    def updateSelectionState(self, captionText: str, force=False):
         separator = self.captionSeparator.strip()
         captions = [ cap for c in captionText.split(separator) if (cap := c.strip()) ]
-        self.ctx.conditionals.updateState(captions)
-
         captionSet = set(captions)
-        self.ctx.groups.updateSelectedState(captionSet)
+
+        self.ctx.conditionals.updateState(captions)
+        self.ctx.groups.updateSelectedState(captionSet, force)
         self.ctx.focus.updateSelectionState(captionSet)
+
+    @Slot()
+    def _forceUpdateGroupSelection(self):
+        # BUG: The stylesheet for GroupButtons is not correctly applied when opening a new tab,
+        # possibly because they are not visible during tab creation?
+        # Since GroupButtons only re-apply the stylesheet when the color changes for performance reasons, they are not enabled correctly.
+        # As a workaround, force a color update after creating a new tab.
+        text = self.txtCaption.toPlainText()
+        self.updateSelectionState(text, force=True)
 
 
     @Slot()
@@ -408,11 +461,15 @@ class CaptionContainer(QtWidgets.QWidget):
         if self.isAutoApplyRules():
             self.applyRules()
 
-    @Slot()
-    def toggleCaption(self, caption: str):
+    def toggleCaption(self, caption: str, removeWords: set[str]|None):
         caption = caption.strip()
         captions = []
         removed = False
+
+        # lastWord = ""
+        # if removeWords:
+        #     print(f"removeWords: {removeWords}")
+        #     lastWord = caption.rsplit(" ", 1)[-1]
 
         text = self.txtCaption.toPlainText()
         if text:
@@ -420,6 +477,18 @@ class CaptionContainer(QtWidgets.QWidget):
                 current = current.strip()
                 if caption == current:
                     removed = True
+                # elif removeWords and current.endswith(lastWord):
+                #     # All removeWords need to exist in 'current'
+                #     # TODO: Still buggy! Removing from other groups when removeWords has one word.
+                #     currentWords = [word for word in current.split(" ")]
+                #     if not removeWords.issubset(currentWords):
+                #         captions.append(current)
+                #         continue
+
+                #     current = " ".join(word for word in currentWords if word not in removeWords)
+                #     if current != lastWord:
+                #         captions.append(current)
+                #     removed = True
                 else:
                     captions.append(current)
 
@@ -464,6 +533,7 @@ class CaptionContainer(QtWidgets.QWidget):
 
     @Slot()
     def applyRules(self):
+        # FIXME: The preview is made after applying the rules to the text. This can change the sorting of combined tags.
         rulesProcessor = self.createRulesProcessor()
         text = self.txtCaption.toPlainText()
         textNew = rulesProcessor.process(text)

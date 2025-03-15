@@ -1,4 +1,5 @@
 from typing import Iterable
+from collections import Counter
 import re
 from .caption_preset import MutualExclusivity
 from .caption_conditionals import ConditionalFilterRule
@@ -110,7 +111,8 @@ class MutuallyExclusiveFilter(CaptionFilter):
 
 
 
-# Removes tags depending on their position in group
+# Removes tags depending on their position in group.
+# Prioritizes tags that come later in the group.
 class PriorityFilter():
     def __init__(self):
         self.groups: list[dict[str, int]] = list()
@@ -167,19 +169,27 @@ class ConditionalsFilter(CaptionFilter):
 
 
 # TODO: Wildcard that matches all colors?
-# TODO: Or make a more general combination filter not associated with groups, with regex patterns?s
+# TODO: Or make a more general combination filter not associated with groups, with regex patterns?
 # TODO: Maximum number of combined tags. Split into multiple if threshold reached.
 class TagCombineFilter(CaptionFilter):
     # short hair, brown hair    -> short brown hair   short, brown -> group 0
     # messy hair, curly hair    -> messy curly hair   messy, curly -> group 1
 
     def __init__(self):
-        self.groupMap: dict[str, int] = dict() # key: tag as-is / value: group index
+        self.groupMap = dict[str, int]() # key: tag as-is / value: group index
         self._nextGroupIndex = 1
+
+        self.sort = True
+        self.tagOrder = dict[str, int]()
+        self._nextOrder = 0
+
+        # Tag => Split words
+        self.groupWords = dict[str, set[str]]()
 
     def setup(self, captionGroups: Iterable[list[str]]) -> None:
         self.groupMap.clear()
         self._nextGroupIndex = 1
+        self._nextOrder = 0
         for caps in captionGroups:
             self.registerCombinationGroup(caps)
 
@@ -187,28 +197,98 @@ class TagCombineFilter(CaptionFilter):
         # Create new group index for each different end-word.
         groupWords: dict[str, int] = dict()
 
-        for cap in captions:
-            cap = cap.strip()
-            if not cap:
-                continue
+        for cap in (cap for c in captions if (cap := c.strip())):
+            words = [word for word in cap.split(" ") if word]
+            self.groupWords[cap] = set(words)
 
-            groupWord = cap.rsplit(" ", 1)[-1]
-            groupIndex = groupWords.get(groupWord)
+            lastWord = words[-1]
+            groupIndex = groupWords.get(lastWord)
             if groupIndex is None:
-                groupIndex = self._nextGroupIndex
-                groupWords[groupWord] = groupIndex
+                groupWords[lastWord] = groupIndex = self._nextGroupIndex
                 self._nextGroupIndex += 1
-
             self.groupMap[cap] = groupIndex
 
+            self.tagOrder[cap] = self._nextOrder
+            self._nextOrder += 1
+
+    def _sortKey(self, tag: str) -> int:
+        return self.tagOrder.get(tag, -1)
+
+
+    def _getGroupIndex(self, caption: str) -> int | None:
+        groupIndex = self.groupMap.get(caption)
+        if groupIndex is not None:
+            return groupIndex
+
+        # Also match when all words in this caption are part of a group separately
+        # (for adding new words to existing combined captions)
+        captionWords = caption.split(" ")
+        if len(captionWords) < 3:
+            return None
+
+        # Try all words, count group indexes
+        indexCounter = Counter()
+        lastWord = captionWords[-1]
+        for word in captionWords[:-1]:
+            groupIndex = self.groupMap.get(f"{word} {lastWord}")
+            indexCounter[groupIndex] += 1
+
+        # Try combinations with last two words for combining 3-word tags
+        if len(captionWords) > 3:
+            lastTwoWords = " ".join(captionWords[-2:])
+            for word in captionWords[:-2]:
+                groupIndex = self.groupMap.get(f"{word} {lastTwoWords}")
+                indexCounter[groupIndex] += 1
+
+        groupIndex = max(indexCounter, key=indexCounter.get)
+        #print(f"most common group index for group[{lastWord}]: {groupIndex}")
+        return groupIndex
+
+
+    # NOTE: Splitting is buggy: This will extract tags from other groups too.
+    # Splitting captions is a relatively easy way to allow combining tags with pre-existing combined tags.
+    # Other tried methods failed with combining and sorting 3-word tags.
+    # The current limitation here: When the combined tag contains another word that doesn't belong to the group,
+    # like when it was manually edited, that tag is not split, because the order is undefined.
+    # def _splitCaptions(self, captions: list[str]) -> list[str]:
+    #     newCaptions = list[str]()
+    #     addCaptions = list[str]()
+    #     usedWords = set[str]()
+
+    #     for caption in captions:
+    #         words = {word for word in caption.split(" ") if word}
+    #         if len(words) < 3:
+    #             newCaptions.append(caption)
+    #             continue
+
+    #         # Extract tags in the order defined in groups.
+    #         # This will acts as sorting, but it's not complete,
+    #         # because there can be other tags belonging to this group that come later.
+    #         addCaptions.clear()
+    #         usedWords.clear()
+    #         for groupTag, groupWordSet in self.groupWords.items():
+    #             if groupWordSet.issubset(words):
+    #                 addCaptions.append(groupTag)
+    #                 usedWords.update(groupWordSet)
+
+    #         remainingWords = words.difference(usedWords)
+    #         if remainingWords:
+    #             newCaptions.append(caption)
+    #         else:
+    #             newCaptions.extend(addCaptions)
+
+    #     return newCaptions
+
+
     def filterCaptions(self, captions: list[str]) -> list[str]:
-        newCaptions: list[str | list[str]] = list()
-        groups: dict[int, list[str]] = dict()
+        newCaptions = list[str | list[str]]()
+        groups = dict[int, list[str]]()
 
         # Find groups
+        #for caption in self._splitCaptions(captions):
         for caption in captions:
-            # TODO: Also match When all words in this caption are part of a group separately (for adding new words to existing combined captions)
-            groupIndex = self.groupMap.get(caption)
+            groupIndex = self._getGroupIndex(caption)
+            #groupIndex = self.groupMap.get(caption)
 
             # Not registered for combination: Append unmodified string.
             if groupIndex is None:
@@ -219,48 +299,50 @@ class TagCombineFilter(CaptionFilter):
 
             # First of group: Create and append list.
             if group is None:
-                group = list()
+                groups[groupIndex] = group = list[str]()
                 newCaptions.append(group)
-                groups[groupIndex] = group
 
             group.append(caption)
 
         # Merge groups to string
-        existingWords: set[str] = set()
+        combinedWords = list[str]()
+        existingWords = set[str]()
         for i, caption in enumerate(newCaptions):
             if not isinstance(caption, list):
                 continue
 
+            # if self.sort:
+            #     #print(f"pre sorting: {caption}")
+            #     caption.sort(key=self._sortKey)
+            #     #print(f"post sorting: {caption}")
+
             # Extract last word
             lastWord = caption[0].rsplit(" ", 1)[-1].strip()
-            combined = lastWord
-            for tag in reversed(caption):
-                # Remove last word from tag.
-                # Prepend to 'combined' only if tag is not empty afterwards (when tag had multiple words).
-                if tag := tag.rsplit(" ", 1)[:-1]:
-                    tag = tag[0].strip()
-                    combined = f"{tag} {combined}"
+            #print(f"last word: {lastWord}")
 
-            # Remove duplicate words, keeping the last.
-            # This allows combining tags with 2 or more "last words".
+            combinedWords.clear()
             existingWords.clear()
             existingWords.add(lastWord)
 
-            words = combined.split(" ")
-            combined = lastWord
-            for word in reversed(words):
-                if word in existingWords:
-                    continue
-                existingWords.add(word)
-                combined = f"{word} {combined}"
+            # Remove duplicate words, keeping the last (by building in reversed order).
+            # This allows combining tags with 2 or more "last words".
+            #print(f"caption: {caption}")
+            for tag in reversed(caption):
+                for word in reversed(tag.split(" ")[:-1]):
+                    if word not in existingWords:
+                        existingWords.add(word)
+                        combinedWords.append(word)
 
-            newCaptions[i] = combined
+            combinedWords.reverse()
+            combinedWords.append(lastWord)
+            newCaptions[i] = " ".join(combinedWords)
 
         # All lists replaced by strings
         return newCaptions
 
 
 
+# TODO: This removes too many subsets. Create whitelist?
 # Remove tags when all its words occur in another longer tag
 # bamboo, forest, bamboo forest -> bamboo forest
 # Also removes newly added duplicate tags when it were already combined with others in TagCombineFilter.
@@ -358,6 +440,7 @@ class CaptionRulesProcessor:
         self.separator = separator
         self.removeDup = removeDup
         self.sortCaptions = sortCaptions
+        self.combineFilter.sort = sortCaptions
 
         self.prefixSuffixFilter.setup(prefix, suffix)
 
@@ -384,6 +467,7 @@ class CaptionRulesProcessor:
         self.conditionalsFilter.setup(rules)
 
 
+    # TODO: Sort combined tags. Split all tags of combine-groups first? But check if all tags are part of same group
     def process(self, text: str) -> str:
         text = self.replaceFilter.filterText(text)
         captions = [c.strip() for c in text.split(self.separator.strip())]
