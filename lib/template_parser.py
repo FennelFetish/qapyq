@@ -199,6 +199,9 @@ class TemplateVariableParser:
             case "name.ext":
                 return os.path.basename(self.imgPath)
 
+            case "ext":
+                return os.path.splitext(self.imgPath)[1].lstrip(".")
+
         if var.startswith("folder"):
             try:
                 path = os.path.dirname(self.imgPath)

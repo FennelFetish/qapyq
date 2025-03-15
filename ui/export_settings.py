@@ -239,6 +239,7 @@ class PathSettings(QtWidgets.QWidget):
     {{path.ext}}  Image path with extension
     {{name}}      Image filename
     {{name.ext}}  Image filename with extension
+    {{ext}}       Extension
     {{folder}}    Folder of image
     {{folder-1}}  Parent folder 1 (or 2, 3...)
     {{folder:/}}  Folder hierarchy from given path to image
