@@ -1,6 +1,7 @@
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, QSignalBlocker
+from PySide6.QtCore import Qt, Slot
 from ui.export_settings import ExportWidget
+from ui.size_preset import SizePresetComboBox
 from config import Config
 from lib.qtlib import COLOR_RED, COLOR_GREEN
 from .crop import CropTool
@@ -51,10 +52,9 @@ class CropToolBar(QtWidgets.QToolBar):
         btnQuad = QtWidgets.QPushButton("Quad")
         btnQuad.clicked.connect(self.sizeQuad)
 
-        self.cboSizePresets = QtWidgets.QComboBox()
-        self.cboSizePresets.currentTextChanged.connect(self.selectSizePreset)
-        self.onSizePresetsUpdated(Config.cropSizePresets)
-        self.cboSizePresets.setCurrentIndex(1) # Initialize to first preset
+        self.cboSizePresets = SizePresetComboBox()
+        self.cboSizePresets.presetSelected.connect(self.selectSizePreset)
+        self.cboSizePresets.selectFirstPreset()
 
         layout = QtWidgets.QGridLayout()
         layout.setContentsMargins(1, 1, 1, 1)
@@ -183,13 +183,7 @@ class CropToolBar(QtWidgets.QToolBar):
         self.spinH.setValue( self.spinW.value() )
 
     @Slot()
-    def selectSizePreset(self, text: str):
-        if not text:
-            return
-
-        w, h = text.split("x")
-        w, h = int(w), int(h)
-
+    def selectSizePreset(self, w: int, h: int):
         # Calc orientation (-1, 0, 1) by subtracting booleans
         oldOrientation = (self.spinH.value() > self.spinW.value()) - (self.spinH.value() < self.spinW.value())
         newOrientation = (h > w) - (h < w)
@@ -201,12 +195,6 @@ class CropToolBar(QtWidgets.QToolBar):
         self.spinH.setValue(h)
         self.updateSize()
         self.cboSizePresets.setCurrentIndex(0)
-
-    @Slot()
-    def onSizePresetsUpdated(self, presets: list[str]):
-        with QSignalBlocker(self.cboSizePresets):
-            self.cboSizePresets.clear()
-            self.cboSizePresets.addItems([""] + presets)
 
 
     @Slot()

@@ -11,6 +11,7 @@ from lib.mask_macro import MaskingMacro
 from infer import Inference
 from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
 import ui.export_settings as export
+from ui.size_preset import SizeBucket, SizePresetWidget
 
 # TODO: Set which mask layers are used to define crop region (last layer, layer nr, each layer defines a region, maximum)
 
@@ -30,13 +31,6 @@ class OutputMaskType(Enum):
     File    = "file"
     Alpha   = "alpha"
 
-
-class SizeBucket:
-    def __init__(self, w: int, h: int):
-        self.w = w
-        self.h = h
-        self.area = w*h
-        self.aspect = w/h
 
 
 class BatchCrop(QtWidgets.QWidget):
@@ -125,12 +119,8 @@ class BatchCrop(QtWidgets.QWidget):
         layout = QtWidgets.QGridLayout()
 
         row = 0
-        layout.addWidget(QtWidgets.QLabel("Width x Height, one per line:"), row, 0, 1, 2)
-
-        row += 1
-        self.txtBuckets = QtWidgets.QPlainTextEdit()
-        self.loadSizeBuckets()
-        layout.addWidget(self.txtBuckets, row, 0, 1, 2)
+        self.sizePresets = SizePresetWidget()
+        layout.addWidget(self.sizePresets, row, 0, 1, 2)
 
         row += 1
         self.chkInverseBuckets = QtWidgets.QCheckBox("Include Swapped (Height x Width)")
@@ -139,11 +129,11 @@ class BatchCrop(QtWidgets.QWidget):
 
         row += 1
         btnSaveBuckets = QtWidgets.QPushButton("Save to Config")
-        btnSaveBuckets.clicked.connect(self.saveSizeBuckets)
+        btnSaveBuckets.clicked.connect(self.sizePresets.saveSizeBuckets)
         layout.addWidget(btnSaveBuckets, row, 0)
 
         btnLoadBuckets = QtWidgets.QPushButton("Load from Config")
-        btnLoadBuckets.clicked.connect(self.loadSizeBuckets)
+        btnLoadBuckets.clicked.connect(lambda: self.sizePresets.reloadSizeBuckets())
         layout.addWidget(btnLoadBuckets, row, 1)
 
         groupBox = QtWidgets.QGroupBox("Target Size Buckets")
@@ -304,47 +294,6 @@ class BatchCrop(QtWidgets.QWidget):
             self.cboInputMacro.setCurrentIndex(index)
 
 
-    def parseSizeBuckets(self, includeSwapped: bool) -> list[SizeBucket]:
-        lines = self.txtBuckets.toPlainText().splitlines()
-        buckets = []
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-
-            elements = self.BUCKET_SPLIT.split(line)
-            if len(elements) != 2:
-                print(f"Invalid format for bucket size: {line}")
-                continue
-
-            try:
-                w = int(elements[0].strip())
-                h = int(elements[1].strip())
-                buckets.append(SizeBucket(w, h))
-
-                if includeSwapped and w != h:
-                    buckets.append(SizeBucket(h, w))
-            except ValueError:
-                print(f"Invalid format for bucket size: {line}")
-
-        return buckets
-
-    @Slot()
-    def loadSizeBuckets(self):
-        text = "\n".join(Config.cropSizePresets)
-        self.txtBuckets.setPlainText(text)
-
-    @Slot()
-    def saveSizeBuckets(self):
-        buckets = []
-        for bucket in self.parseSizeBuckets(False):
-            buckets.append(f"{bucket.w}x{bucket.h}")
-        Config.cropSizePresets = buckets
-
-        from tools.crop import CROP_SIGNALS
-        CROP_SIGNALS.sizePresetsUpdated.emit(buckets)
-
-
     def _confirmStart(self) -> bool:
         ops = []
 
@@ -438,7 +387,7 @@ class BatchCrop(QtWidgets.QWidget):
         self._task.combined      = not self.chkMultipleOutputs.isChecked()
         self._task.allowUpscale  = self.chkAllowUpscale.isChecked()
         self._task.sizeFactor    = self.spinCropSize.value()
-        self._task.sizeBuckets   = self.parseSizeBuckets(self.chkInverseBuckets.isChecked())
+        self._task.sizeBuckets   = self.sizePresets.parseSizeBuckets(self.chkInverseBuckets.isChecked())
         self._task.interpUp      = export.INTERP_MODES[ self.cboInterpUp.currentText() ]
         self._task.interpDown    = export.INTERP_MODES[ self.cboInterpDown.currentText() ]
 
