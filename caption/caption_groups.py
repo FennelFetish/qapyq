@@ -6,6 +6,7 @@ from lib import qtlib, util, colors
 from ui.flow_layout import FlowLayout, ReorderWidget, ManualStartReorderWidget, ReorderDragHandle
 from .caption_tab import CaptionTab
 from .caption_preset import CaptionPreset, MutualExclusivity
+from .caption_wildcard import WildcardWindow, expandWildcards
 
 
 # TODO?: Per group matching method:
@@ -20,6 +21,8 @@ class CaptionGroups(CaptionTab):
 
     def __init__(self, context):
         super().__init__(context)
+
+        self.wildcards: dict[str, list[str]] = dict()
 
         self._nextGroupHue = util.rnd01()
         self.colorSet = CaptionColorSet(self)
@@ -39,10 +42,13 @@ class CaptionGroups(CaptionTab):
         layout.setColumnStretch(2, 1)
         layout.setColumnStretch(3, 0)
         layout.setColumnStretch(4, 0)
+        layout.setColumnStretch(5, 0)
+        layout.setColumnStretch(6, 0)
         layout.setColumnMinimumWidth(0, 40)
         layout.setColumnMinimumWidth(1, 12)
         layout.setColumnMinimumWidth(3, 12)
-        layout.setColumnMinimumWidth(4, 40)
+        layout.setColumnMinimumWidth(5, 12)
+        layout.setColumnMinimumWidth(6, 40)
 
         row = 0
         self.groupLayout = QtWidgets.QVBoxLayout()
@@ -55,7 +61,7 @@ class CaptionGroups(CaptionTab):
         groupReorderWidget.orderChanged.connect(self._emitUpdatedApplyRules)
         scrollGroup = qtlib.BaseColorScrollArea(groupReorderWidget)
         scrollGroup.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
-        layout.addWidget(scrollGroup, row, 0, 1, 5)
+        layout.addWidget(scrollGroup, row, 0, 1, 7)
 
         row += 1
         layout.addWidget(Trash(), row, 0)
@@ -64,9 +70,22 @@ class CaptionGroups(CaptionTab):
         btnAddGroup.clicked.connect(self.addGroup)
         layout.addWidget(btnAddGroup, row, 2)
 
-        layout.addWidget(Trash(), row, 4)
+        btnOpenWildcards = QtWidgets.QPushButton("Wildcards...")
+        btnOpenWildcards.setMinimumWidth(100)
+        btnOpenWildcards.clicked.connect(self._openWildcardWindow)
+        layout.addWidget(btnOpenWildcards, row, 4)
+
+        layout.addWidget(Trash(), row, 6)
 
         self.setLayout(layout)
+
+
+    @Slot()
+    def _openWildcardWindow(self):
+        win = WildcardWindow(self, self.wildcards)
+        if win.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            self.wildcards = win.wildcards
+            self.ctx.controlUpdated.emit()
 
 
     @property
@@ -141,10 +160,13 @@ class CaptionGroups(CaptionTab):
 
 
     def saveToPreset(self, preset: CaptionPreset):
+        preset.wildcards = dict(self.wildcards)
         for group in self.groups:
             preset.addGroup(group.name, group.color, group.exclusivity, group.combineTags, group.captions)
 
     def loadFromPreset(self, preset: CaptionPreset):
+        self.wildcards = dict(preset.wildcards)
+
         self.removeAllGroups()
         for group in preset.groups:
             groupWidget: CaptionControlGroup = self.addGroup()
@@ -244,19 +266,27 @@ class CaptionControlGroup(QtWidgets.QWidget):
     def updateSelectedState(self, captions: set[str], force: bool):
         enabledColor, disabledColor = self.colorWidget.color, self.colorWidget.disabledColor
         for button in self.buttons:
-            checked = button.text.strip() in captions
+            checked = any(
+                (text in captions)
+                for text in expandWildcards(button.text.strip(), self.groups.wildcards)
+            )
+
             color = enabledColor if checked else disabledColor
             button.setChecked(checked, color, force)
 
     def updateSelectedStateCombine(self, captionWords: list[tuple[str, set[str]]], force: bool):
         enabledColor, disabledColor = self.colorWidget.color, self.colorWidget.disabledColor
         for button in self.buttons:
-            checked = self._checkSelectionStateCombine(button, captionWords)
+            checked = any(
+                self._checkSelectionStateCombine(text, captionWords)
+                for text in expandWildcards(button.text.strip(), self.groups.wildcards)
+            )
+
             color = enabledColor if checked else disabledColor
             button.setChecked(checked, color, force)
 
-    def _checkSelectionStateCombine(self, button: GroupButton, captionWords: list[tuple[str, set[str]]]) -> bool:
-        buttonWords = button.words()
+    def _checkSelectionStateCombine(self, text: str, captionWords: list[tuple[str, set[str]]]) -> bool:
+        buttonWords = [word for word in text.split(" ") if word]
         for lastWord, captionWordSet in captionWords:
             if buttonWords[-1] == lastWord and captionWordSet.issuperset(buttonWords[:-1]):
                 return True
@@ -334,6 +364,14 @@ class CaptionControlGroup(QtWidgets.QWidget):
     @property
     def captions(self) -> list[str]:
         return [button.text for button in self.buttons]
+
+    @property
+    def captionsExpandWildcards(self) -> list[str]:
+        return [
+            tag
+            for button in self.buttons
+            for tag in expandWildcards(button.text, self.groups.wildcards)
+        ]
 
     def addCaption(self, text: str) -> bool:
         # Check if caption already exists in group
@@ -425,13 +463,20 @@ class GroupButton(qtlib.EditablePushButton):
             self.color = color
             self.setStyleSheet(qtlib.bubbleStylePad(color))
 
+    @Slot()
+    def _onClicked(self):
+        self.buttonClicked.emit(self)
+
 
     def words(self) -> list[str]:
         return [word for word in self.text.strip().split(" ") if word]
 
-    @Slot()
-    def _onClicked(self):
-        self.buttonClicked.emit(self)
+    def allWildcardWords(self, wildcards: dict) -> list[list[str]]:
+        text = self.text.strip()
+        return [
+            [word for word in expandedTag.split(" ") if word]
+            for expandedTag in expandWildcards(text, wildcards)
+        ]
 
 
 
@@ -578,7 +623,7 @@ class CaptionColorSet:
         for group in self.groups.groups:
             mutedColor, mutedFormat = self._getMuted(group.color) if focusSet else (group.color, group.charFormat)
 
-            for caption in group.captions:
+            for caption in group.captionsExpandWildcards:
                 if caption in focusSet:
                     colors[caption]  = group.color
                     formats[caption] = group.charFormat
@@ -618,24 +663,24 @@ class CaptionColorSet:
             groupWords = set[str]()
             groupLastWords = set[str]()
 
-            for button in group.buttons:
-                buttonWords = button.words()
-                if len(buttonWords) < 2:
+            for caption in group.captionsExpandWildcards:
+                words = [word for word in caption.split(" ") if word]
+                if len(words) < 2:
                     continue
 
-                groupWords.update(buttonWords)
+                groupWords.update(words)
 
-                lastWord = buttonWords[-1]
+                lastWord = words[-1]
                 groupLastWords.add(lastWord)
 
-                for word in buttonWords[:-1]:
+                for word in words[:-1]:
                     combineFormat = formatMap.get(lastWord)
                     if not combineFormat:
                         formatMap[lastWord] = combineFormat = CombineFormat(lastWord)
 
                     combineFormat.wordFormats[word] = groupFormat
 
-                    wordSet = frozenset(buttonWords)
+                    wordSet = frozenset(words)
                     #combineFormat.tagSets.add(wordSet)
                     #combineFormat.tagFormats[wordSet] = groupFormat
 

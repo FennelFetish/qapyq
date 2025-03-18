@@ -24,6 +24,7 @@ class CaptionPreset:
         self.sortCaptions: bool     = True
 
         self.groups         = list[CaptionPresetGroup]()
+        self.wildcards      = dict[str, list[str]]()
         self.conditionals   = list[CaptionPresetConditional]()
         self.searchReplace  = list[tuple[str, str]]()
         self.banned         = list[str]()
@@ -51,6 +52,7 @@ class CaptionPreset:
             "remove_duplicates": self.removeDuplicates,
             "sort_captions": self.sortCaptions,
             "groups": groupData,
+            "wildcards": self.wildcards,
             "conditionals": conditionals,
             "search_replace": self.searchReplace,
             "banned": self.banned
@@ -75,6 +77,7 @@ class CaptionPreset:
         self.sortCaptions       = data.get("sort_captions", True)
         self.searchReplace      = data.get("search_replace", [])
         self.banned             = data.get("banned", [])
+        self.wildcards          = data.get("wildcards", {})
 
         self.groups.clear()
         for group in data.get("groups", []):
