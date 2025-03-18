@@ -550,14 +550,14 @@ class CaptionContainer(QtWidgets.QWidget):
         rulesProcessor.setup(self.ctx.settings.prefix, self.ctx.settings.suffix, self.captionSeparator, removeDup, sortCaptions)
         rulesProcessor.setSearchReplacePairs(self.ctx.settings.searchReplacePairs)
         rulesProcessor.setBannedCaptions(self.ctx.settings.bannedCaptions)
-        rulesProcessor.setCaptionGroups( (group.captions, group.exclusivity, group.combineTags) for group in self.ctx.groups.groups )
+        rulesProcessor.setCaptionGroups( (group.captionsExpandWildcards, group.exclusivity, group.combineTags) for group in self.ctx.groups.groups )
         rulesProcessor.setConditionalRules(self.ctx.conditionals.getFilterRules())
         return rulesProcessor
 
 
     @Slot()
     def saveCaption(self):
-        # Skip to next file when saving succeds and skip-on-save is enabled. Don't loop.
+        # Skip to next file when saving succeeds and skip-on-save is enabled. Don't loop.
         filelist = self.ctx.tab.filelist
         if self.saveCaptionNoSkip() and self.chkSkipOnSave.isChecked() and not filelist.isLastFile():
             filelist.setNextFile()
