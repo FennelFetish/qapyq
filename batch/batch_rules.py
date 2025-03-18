@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt, Slot, QTimer
 from caption.caption_preset import CaptionPreset, CaptionPresetConditional, MutualExclusivity
 from caption.caption_filter import CaptionRulesProcessor
 from caption.caption_conditionals import ConditionalRule
+from caption.caption_wildcard import expandWildcards
 from config import Config
 from infer import Inference
 from ui.edit_table import EditableTable
@@ -27,6 +28,8 @@ class BatchRules(QtWidgets.QWidget):
         self._defaultPresetPath = Config.pathExport
         self._highlightFormats = dict()
         self._updateEnabled = True
+
+        self.wildcards = {}
 
         self._task = None
         self._taskSignalHandler = None
@@ -326,6 +329,7 @@ class BatchRules(QtWidgets.QWidget):
             self.chkSortCaptions.setChecked(preset.sortCaptions)
             self.tableReplace.setContent(preset.searchReplace)
             self.banWidget.setItems(preset.banned)
+            self.wildcards = preset.wildcards
 
             self.removeAllGroups()
             for group in preset.groups:
@@ -389,7 +393,7 @@ class BatchRules(QtWidgets.QWidget):
         rulesProcessor.setup(prefix, suffix, separator, self.chkRemoveDup.isChecked(), self.chkSortCaptions.isChecked())
         rulesProcessor.setSearchReplacePairs(self.tableReplace.getContent())
         rulesProcessor.setBannedCaptions(self.bannedCaptions)
-        rulesProcessor.setCaptionGroups( (group.captions, group.exclusivity, group.combineTags) for group in self.groups )
+        rulesProcessor.setCaptionGroups( (group.captionsExpandWildcards(self.wildcards), group.exclusivity, group.combineTags) for group in self.groups )
         rulesProcessor.setConditionalRules(condRule.getFilterRule() for condRule in self.conditionals)
         return rulesProcessor
 
@@ -435,7 +439,7 @@ class BatchRules(QtWidgets.QWidget):
         for group in self.groups:
             groupFormat = QtGui.QTextCharFormat()
             groupFormat.setForeground( qtlib.getHighlightColor(group.color) )
-            for cap in group.captions:
+            for cap in group.captionsExpandWildcards(self.wildcards):
                 self._highlightFormats[cap] = groupFormat
 
         bannedFormat = QtGui.QTextCharFormat()
@@ -546,6 +550,12 @@ class BatchRulesGroup(QtWidgets.QWidget):
     def combineTags(self) -> bool:
         return self.chkCombine.isChecked()
 
+    def captionsExpandWildcards(self, wildcards: dict) -> list[str]:
+        return [
+            expandedCap
+            for cap in self.captions
+            for expandedCap in expandWildcards(cap, wildcards)
+        ]
 
     @Slot()
     def updateHeight(self):
