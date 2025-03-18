@@ -9,7 +9,6 @@ import numpy as np
 from config import Config
 from infer import Inference
 from lib import qtlib
-from lib.filelist import MASK_EXTENSIONS
 from lib.mask_macro import MaskingMacro
 from lib.mask_macro_vis import MacroVisualization
 import ui.export_settings as export
@@ -49,11 +48,11 @@ class BatchMask(QtWidgets.QWidget):
         srcConfig = Config.exportPresets.get(self.EXPORT_PRESET_KEY_SRC, {})
         self.srcPathSettings = export.PathSettings(self.parser, showInfo=False)
         self.srcPathSettings.setAsInput()
-        self.srcPathSettings.pathTemplate = srcConfig.get("path_template", "{{path}}-masklabel")
-        
+        self.srcPathSettings.pathTemplate = srcConfig.get("path_template", "{{path}}-masklabel.png")
+
         destConfig = Config.exportPresets.get(self.EXPORT_PRESET_KEY_DEST, {})
         self.destPathSettings = export.PathSettings(self.parser, showInfo=False, showSkip=True)
-        self.destPathSettings.pathTemplate   = destConfig.get("path_template", "{{path}}-masklabel")
+        self.destPathSettings.pathTemplate   = destConfig.get("path_template", "{{path}}-masklabel.png")
         self.destPathSettings.overwriteFiles = destConfig.get("overwrite", True)
 
         self._task = None
@@ -139,13 +138,9 @@ class BatchMask(QtWidgets.QWidget):
         layout = QtWidgets.QGridLayout()
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 0)
-        layout.setColumnStretch(2, 0)
-        layout.setColumnStretch(3, 0)
-        layout.setColumnStretch(4, 0)
-        layout.setColumnStretch(5, 1)
+        layout.setColumnStretch(2, 1)
         layout.setColumnMinimumWidth(0, 70)
         layout.setColumnMinimumWidth(1, 220)
-        layout.setColumnMinimumWidth(2, 8)
 
         row = 0
         self.cboDestType = QtWidgets.QComboBox()
@@ -154,18 +149,9 @@ class BatchMask(QtWidgets.QWidget):
         layout.addWidget(QtWidgets.QLabel("Save in:"), row, 0)
         layout.addWidget(self.cboDestType, row, 1)
 
-        self.lblFormat = QtWidgets.QLabel("Format:")
-        layout.addWidget(self.lblFormat, row, 3)
-
-        self.cboFormat = QtWidgets.QComboBox()
-        self.cboFormat.addItems(["PNG", "WEBP"])
-        self.cboFormat.currentTextChanged.connect(self._onExtensionChanged)
-        self._onExtensionChanged(self.cboFormat.currentText())
-        layout.addWidget(self.cboFormat, row, 4)
-
         row += 1
         self.destPathSettings.layout().setColumnMinimumWidth(0, 70)
-        layout.addWidget(self.destPathSettings, row, 0, 1, 6)
+        layout.addWidget(self.destPathSettings, row, 0, 1, 3)
 
         groupBox = QtWidgets.QGroupBox("Destination")
         groupBox.setLayout(layout)
@@ -187,11 +173,6 @@ class BatchMask(QtWidgets.QWidget):
         skipEnabled = (mode not in SRC_MODE_NEW_LAYERS)
         self.chkSkipNoInput.setEnabled(skipEnabled)
 
-    @Slot()
-    def _onExtensionChanged(self, ext: str):
-        self.destPathSettings.extension = ext
-        self.destPathSettings.updatePreview()
-
 
     @Slot()
     def reloadMacros(self):
@@ -203,7 +184,7 @@ class BatchMask(QtWidgets.QWidget):
 
             index = max(0, self.cboMacro.findText(selectedText))
             self.cboMacro.setCurrentIndex(index)
-        
+
         self._onMacroChanged(index)
 
     def _onMacroChanged(self, index):
@@ -336,10 +317,9 @@ def createFileMaskSource(pathTemplate: str, numLayers: int, skipNonExisting: boo
         parser.width  = w
         parser.height = h
 
-        pathNoExt = parser.parsePath(pathTemplate, "", True) # No extension, but with '.' at the end
-        for path in (f"{pathNoExt}{ext}" for ext in MASK_EXTENSIONS):
-            if os.path.exists(path):
-                return loadMask(path, w, h)
+        path = parser.parsePath(pathTemplate, True)
+        if os.path.exists(path):
+            return loadMask(path, w, h)
 
         if skipNonExisting:
             raise MaskSkipException()
@@ -358,7 +338,7 @@ def createAlphaMaskSource(skipNonExisting: bool):
         if skipNonExisting:
             raise MaskSkipException()
         return [ np.zeros((h, w), dtype=np.uint8) ]
-    
+
     return alphaMaskSource
 
 
@@ -372,7 +352,6 @@ class BatchMaskTask(BatchTask):
         self.saveMode       = saveMode
 
         self.pathTemplate   = destPathSettings.pathTemplate
-        self.extension      = destPathSettings.extension
         self.overwriteFiles = destPathSettings.overwriteFiles
         self.skipExistingFiles = destPathSettings.skipExistingFiles
 
@@ -410,7 +389,7 @@ class BatchMaskTask(BatchTask):
         self.parser.height = h
 
         noCounter = self.overwriteFiles or self.skipExistingFiles
-        path = self.parser.parsePath(self.pathTemplate, self.extension, noCounter)
+        path = self.parser.parsePath(self.pathTemplate, noCounter)
         if self.skipExistingFiles and os.path.exists(path):
             raise MaskSkipException()
         return path

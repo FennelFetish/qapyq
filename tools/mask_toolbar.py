@@ -26,7 +26,7 @@ class MaskToolBar(QtWidgets.QToolBar):
         layout.addWidget(self._buildHistory())
         layout.addWidget(self._buildMacro())
 
-        self.exportWidget = export.ExportWidget("mask", maskTool.tab.filelist, showInterpolation=False, formats=["PNG","WEBP"])
+        self.exportWidget = export.ExportWidget("mask", maskTool.tab.filelist, showInterpolation=False)
         layout.addWidget(self.exportWidget)
 
         btnReload = SaveButton("Reload")

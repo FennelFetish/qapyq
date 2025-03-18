@@ -19,6 +19,15 @@ INTERP_MODES = {
     "Lanczos": cv.INTER_LANCZOS4
 }
 
+INTERP_MODES_PIL = {
+    "Nearest": Image.Resampling.NEAREST,
+    "Linear":  Image.Resampling.BILINEAR,
+    "Cubic":   Image.Resampling.BICUBIC,
+    "Area":    Image.Resampling.BOX,
+    "Lanczos": Image.Resampling.LANCZOS,
+    "Hamming": Image.Resampling.HAMMING
+}
+
 
 class Format:
     def __init__(self, saveParams: dict, conversion: dict = {}):
@@ -29,12 +38,14 @@ class Format:
 FORMATS = {
     "PNG":  Format({"optimize": True, "compress_level": 9}),
     "JPG":  Format({"optimize": True, "quality": 100, "subsampling": 0}, {"RGBA": "RGB", "P": "RGB"}),
-    "WEBP": Format({"lossless": True, "quality": 100, "exact": True})
+    "WEBP": Format({"lossless": True, "quality": 100, "exact": True}),
+    "TIFF": Format({"compression": "tiff_lzw"})
 }
 
 EXTENSION_MAP = {
     "JPEG": "JPG"
 }
+
 
 def getFormat(extension: str):
     key = extension.lstrip('.').upper()
@@ -43,14 +54,16 @@ def getFormat(extension: str):
     key = EXTENSION_MAP.get(key, "")
     return FORMATS.get(key)
 
-def saveImage(path, mat: np.ndarray, logger=print, convertFromBGR=True):
-    _, ext = os.path.splitext(path)
-    format = getFormat(ext)
-
+def saveImage(path: str, mat: np.ndarray, logger=print, convertFromBGR=True):
     if convertFromBGR:
         mat[..., :3] = mat[..., 2::-1] # Convert BGR(A) -> RGB(A)
 
     img = Image.fromarray(mat.squeeze()) # No copy!
+    saveImagePIL(path, img, logger)
+
+def saveImagePIL(path: str, img: Image.Image, logger=print):
+    ext = os.path.splitext(path)[1]
+    format = getFormat(ext)
 
     createFolders(path, logger)
     if not format:
@@ -62,7 +75,6 @@ def saveImage(path, mat: np.ndarray, logger=print, convertFromBGR=True):
         img = img.convert(convertMode)
 
     img.save(path, **format.saveParams)
-
 
 def createFolders(filename, logger=print) -> None:
     folder = os.path.dirname(filename)
@@ -79,7 +91,10 @@ class ExportWidget(QtWidgets.QWidget):
     MODE_AUTO = "auto"
     MODE_MANUAL = "manual"
 
-    def __init__(self, configKey: str, filelist, showInterpolation=True, formats: list[str]=[]):
+    FILE_FILTER = "Images (*.png *.jpg *.jpeg *.webp);;All Files (*)"
+
+
+    def __init__(self, configKey: str, filelist, showInterpolation=True):
         super().__init__()
         self.configKey = configKey
         self.filelist = filelist
@@ -87,22 +102,20 @@ class ExportWidget(QtWidgets.QWidget):
         self._defaultPath = Config.pathExport
 
         config = Config.exportPresets.get(configKey, {})
-        self.pathTemplate   = config.get("path_template", "{{name}}_{{date}}_{{time}}_{{w}}x{{h}}")
+        self.pathTemplate   = config.get("path_template", "{{name}}_{{date}}_{{time}}_{{w}}x{{h}}.png")
         self.overwriteFiles = config.get("overwrite", False)
-        self._extension = "png"
 
         self.parser = ExportVariableParser()
 
-        self._build(formats)
+        self._build()
         self._onSaveModeChanged(self.cboSaveMode.currentIndex())
 
-    def _build(self, formats: list[str]):
+    def _build(self):
         collapsible = superqt.QCollapsible("Export Settings")
         collapsible.layout().setContentsMargins(2, 2, 2, 0)
         collapsible.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
         collapsible.setLineWidth(0)
-        collapsible.addWidget(self._buildParams(formats))
-        collapsible.addWidget(self._buildPathSettings())
+        collapsible.addWidget(self._buildSettings())
 
         self.txtPathSample = ClickableTextEdit()
         self.txtPathSample.setToolTip("Click to change export path")
@@ -116,56 +129,37 @@ class ExportWidget(QtWidgets.QWidget):
         layout.addWidget(self.txtPathSample)
         self.setLayout(layout)
 
-    def _buildParams(self, formats: list[str]):
+    def _buildSettings(self):
         layout = QtWidgets.QGridLayout()
-        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setColumnStretch(1, 1)
 
+        row = 0
         self.cboScalePreset = ScalePresetComboBox()
         if self.showInterpolation:
             lblScaling = QtWidgets.QLabel("<a href='model_settings'>Scaling</a>:")
             lblScaling.linkActivated.connect(self.cboScalePreset.showModelSettings)
-            layout.addWidget(lblScaling, 0, 0)
-            layout.addWidget(self.cboScalePreset, 0, 1)
+            layout.addWidget(lblScaling, row, 0)
+            layout.addWidget(self.cboScalePreset, row, 1)
+            row += 1
 
-        self.cboFormat = QtWidgets.QComboBox()
-        self.cboFormat.addItems(formats if formats else FORMATS.keys())
-        self.cboFormat.currentTextChanged.connect(self._onExtensionChanged)
-        layout.addWidget(QtWidgets.QLabel("Format:"), 1, 0)
-        layout.addWidget(self.cboFormat, 1, 1)
-
-        group = QtWidgets.QGroupBox("Parameter")
-        group.setLayout(layout)
-        return group
-
-    def _buildPathSettings(self):
-        layout = QtWidgets.QGridLayout()
-        layout.setContentsMargins(1, 1, 1, 1)
-        layout.setColumnStretch(0, 0)
-        layout.setColumnStretch(1, 1)
-
+        lblPath = QtWidgets.QLabel("<a href='export_settings'>Path:</a>")
+        lblPath.linkActivated.connect(self.openExportSettings)
         self.cboSaveMode = QtWidgets.QComboBox()
         self.cboSaveMode.addItem("Template", self.MODE_AUTO)
         self.cboSaveMode.addItem("Dialog", self.MODE_MANUAL)
         self.cboSaveMode.currentIndexChanged.connect(self._onSaveModeChanged)
-        layout.addWidget(QtWidgets.QLabel("Path:"), 0, 0)
-        layout.addWidget(self.cboSaveMode, 0, 1)
+        layout.addWidget(lblPath, row, 0)
+        layout.addWidget(self.cboSaveMode, row, 1)
 
-        self.btnOpenSettings = QtWidgets.QPushButton("Edit Path...")
-        self.btnOpenSettings.clicked.connect(self.openExportSettings)
-        layout.addWidget(self.btnOpenSettings, 1, 0, 1, 2)
+        widget = QtWidgets.QWidget()
+        widget.setLayout(layout)
+        return widget
 
-        group = QtWidgets.QGroupBox("Destination")
-        group.setLayout(layout)
-        return group
-
-    @Slot()
-    def _onExtensionChanged(self, ext: str):
-        self.extension = ext # property assignment with sanitization
 
     @Slot()
     def _onSaveModeChanged(self, index):
         enabled = (self.cboSaveMode.itemData(index) == self.MODE_AUTO)
-        self.btnOpenSettings.setEnabled(enabled)
         self.txtPathSample.setEnabled(enabled)
 
     @Slot()
@@ -195,16 +189,6 @@ class ExportWidget(QtWidgets.QWidget):
         self.txtPathSample.setPlainText(examplePath)
 
 
-    @property
-    def extension(self) -> str:
-        return self._extension
-
-    @extension.setter
-    def extension(self, ext: str) -> None:
-        self._extension = ext.lstrip('.').lower()
-        self.updateSample()
-
-
     def getInterpolationMode(self, upscale):
         return self.cboScalePreset.getInterpolationMode(upscale)
 
@@ -228,14 +212,12 @@ class ExportWidget(QtWidgets.QWidget):
         # Manually pick destination path: Use filename from path template
         path = os.path.basename(path)
         path = os.path.join(self._defaultPath, path)
-
-        fileFilter = f"All Files (*)"
-        path, selectedFilter = QtWidgets.QFileDialog.getSaveFileName(self, "Save Image", path, fileFilter)
+        path, selectedFilter = QtWidgets.QFileDialog.getSaveFileName(self, "Save Image", path, self.FILE_FILTER)
         if not path:
             return ""
 
         path = os.path.abspath(path)
-        _, ext = os.path.splitext(path)
+        ext = os.path.splitext(path)[1]
         if not ext:
             # Do not simply append an extension: That would bypass overwrite confirmation.
             QtWidgets.QMessageBox.warning(self, "Invalid Path", "The extension is missing from the filename.")
@@ -247,7 +229,7 @@ class ExportWidget(QtWidgets.QWidget):
     def getAutoExportPath(self, imgFile, forReading=False) -> str:
         self.parser.setup(imgFile)
         overwriteFiles = self.overwriteFiles or forReading
-        return self.parser.parsePath(self.pathTemplate, self._extension, overwriteFiles)
+        return self.parser.parsePath(self.pathTemplate, overwriteFiles)
 
 
 
@@ -257,6 +239,7 @@ class PathSettings(QtWidgets.QWidget):
     {{path.ext}}  Image path with extension
     {{name}}      Image filename
     {{name.ext}}  Image filename with extension
+    {{ext}}       Extension
     {{folder}}    Folder of image
     {{folder-1}}  Parent folder 1 (or 2, 3...)
     {{folder:/}}  Folder hierarchy from given path to image
@@ -266,13 +249,13 @@ class PathSettings(QtWidgets.QWidget):
     {{date}}      Date yyyymmdd
     {{time}}      Time hhmmss
 
-The file extension is always added.
 An increasing counter is appended when a file exists and overwriting is disabled.
+The template must include a file extension.
 
 Examples:
-    {{name}}_{{w}}x{{h}}
-    {{path}}-masklabel
-    /home/user/Pictures/{{folder}}/{{date}}_{{time}}_{{w}}x{{h}}"""
+    {{name}}_{{w}}x{{h}}.webp
+    {{path}}-masklabel.png
+    /home/user/Pictures/{{folder}}/{{date}}_{{time}}_{{w}}x{{h}}.jpg"""
 
 
     def __init__(self, parser, showInfo=True, showSkip=False) -> None:
@@ -409,7 +392,7 @@ Examples:
                 self.txtPathTemplate.setTextCursor(cursor)
 
             text, varPositions = self.parser.parsePathWithPositions(text)
-            self.txtPreview.setPlainText(text + f".{self._extension}")
+            self.txtPreview.setPlainText(text)
             self.highlighter.highlight(self.txtPathTemplate, self.txtPreview, varPositions, not self.isEnabled())
 
     def _choosePath(self):
@@ -487,21 +470,26 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
             self.width, self.height = 0, 0
 
 
-    def parsePath(self, pathTemplate: str, extension: str, overwriteFiles: bool) -> str:
+    def parsePath(self, pathTemplate: str, overwriteFiles: bool) -> str:
         path = self.parse(pathTemplate)
         path = path.translate(INVALID_CHARS)
         path = os.path.normpath(os.path.join(Config.pathExport, path))
 
-        # Callers expect a '.', even when extension is empty
         if overwriteFiles:
-            path = f"{path}.{extension}"
-        else:
-            head = path
-            path = f"{head}.{extension}"
-            counter = 1
-            while os.path.exists(path):
-                path = f"{head}_{counter:03}.{extension}"
-                counter += 1
+            return path
+
+        path, extension = os.path.splitext(path)
+        if len(extension) > 5: # Includes dot
+            print(f"WARNING: File extension '{extension}' looks invalid")
+            path = path + extension
+            extension = ""
+
+        head = path
+        path = f"{head}{extension}"
+        counter = 1
+        while os.path.exists(path):
+            path = f"{head}_{counter:03}{extension}"
+            counter += 1
 
         return path
 

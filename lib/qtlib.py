@@ -470,10 +470,18 @@ class MenuComboBox(QtWidgets.QComboBox):
         act = self.menu.addAction(text)
         act.triggered.connect(lambda checked, i=index: self.setCurrentIndex(i))
 
-    def addMenuAction(self, text) -> QtGui.QAction:
+    def addItems(self, items: list[str]):
+        for item in items:
+            self.addItem(item)
+
+    def addItemWithoutMenuAction(self, text: str, userData=None):
+        super().addItem(text, userData)
+        self._nextIndex += 1
+
+    def addMenuAction(self, text: str) -> QtGui.QAction:
         return self.menu.addAction(text)
 
-    def addSubmenu(self, text):
+    def addSubmenu(self, text: str):
         submenu = QtWidgets.QMenu(text)
         self.menu.addMenu(submenu)
         return submenu

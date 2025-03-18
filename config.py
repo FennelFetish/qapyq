@@ -15,15 +15,15 @@ class Config:
 
     exportPresets = {
         "crop":  {
-            "path_template": "{{path}}_{{w}}x{{h}}",
+            "path_template": "{{path}}_{{w}}x{{h}}.png",
             "overwrite": False
         },
         "scale":  {
-            "path_template": "{{path}}_{{w}}x{{h}}",
+            "path_template": "{{path}}_{{w}}x{{h}}.png",
             "overwrite": False
         },
         "mask":  {
-            "path_template": "{{path}}-masklabel",
+            "path_template": "{{path}}-masklabel.png",
             "overwrite": True
         }
     }

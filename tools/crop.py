@@ -1,12 +1,13 @@
 from typing_extensions import override
 import cv2 as cv
 import numpy as np
-from PySide6.QtCore import QPointF, QRect, QRectF, Qt, QTimer, QObject, QThreadPool, Signal, Slot
+from PySide6.QtCore import QPointF, QRect, QRectF, Qt, QTimer, QThreadPool, Slot
 from PySide6.QtGui import QBrush, QPen, QColor, QPainterPath, QPolygonF, QTransform, QCursor
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QMenu
 from .view import ViewTool
 from lib.filelist import DataKeys
 import ui.export_settings as export
+from ui.size_preset import SIZE_PRESET_SIGNALS
 from config import Config
 
 
@@ -23,12 +24,6 @@ def createPen(r, g, b):
     pen = QPen( QColor(r, g, b, 180) )
     pen.setDashPattern([5,5])
     return pen
-
-
-class CropToolSignals(QObject):
-    sizePresetsUpdated = Signal(list)
-
-CROP_SIGNALS = CropToolSignals()
 
 
 class CropTool(ViewTool):
@@ -66,10 +61,7 @@ class CropTool(ViewTool):
 
         from .crop_toolbar import CropToolBar
         self._toolbar = CropToolBar(self)
-        CROP_SIGNALS.sizePresetsUpdated.connect(self._toolbar.onSizePresetsUpdated)
-
         self._menu = CropContextMenu(self)
-        CROP_SIGNALS.sizePresetsUpdated.connect(self._menu.onSizePresetsUpdated)
 
 
     def setTargetSize(self, width, height):
@@ -573,8 +565,11 @@ class CropContextMenu(QMenu):
     def __init__(self, cropTool: CropTool):
         super().__init__()
         self.cropTool = cropTool
-        self.onSizePresetsUpdated(Config.cropSizePresets)
 
+        self.onSizePresetsUpdated(Config.cropSizePresets)
+        SIZE_PRESET_SIGNALS.sizePresetsUpdated.connect(self.onSizePresetsUpdated)
+
+    @Slot()
     def onSizePresetsUpdated(self, presets: list[str]):
         self.clear()
 
@@ -590,7 +585,6 @@ class CropContextMenu(QMenu):
             actSize = self.addAction(size)
             actSize.triggered.connect(lambda chosen, text=size: self._onSizeSelected(text))
 
-
     def getMousePos(self) -> QPointF:
         mousePos = self.cropTool._imgview.mapFromGlobal( QCursor.pos() )
         return mousePos.toPointF()
@@ -600,7 +594,8 @@ class CropContextMenu(QMenu):
         self.cropTool.resetSelection(self.getMousePos())
 
     def _onSizeSelected(self, text: str):
-        self.cropTool._toolbar.selectSizePreset(text)
+        w, h = text.split("x")
+        self.cropTool._toolbar.selectSizePreset(int(w), int(h))
         self.cropTool.updateSelection(self.getMousePos())
 
     @Slot()

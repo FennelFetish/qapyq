@@ -5,6 +5,7 @@ import numpy as np
 from config import Config
 from .view import ViewTool
 import ui.export_settings as export
+from ui.size_preset import SizePresetComboBox
 from lib.qtlib import COLOR_RED, COLOR_GREEN
 from lib.filelist import DataKeys
 
@@ -340,9 +341,8 @@ class ScaleMode(QtWidgets.QWidget):
         self.lblTargetAspect = QtWidgets.QLabel()
         self.lblScale = QtWidgets.QLabel("1.0")
 
-        self.cboSizePresets = QtWidgets.QComboBox()
-        self.cboSizePresets.addItems([""] + Config.cropSizePresets)
-        self.cboSizePresets.currentTextChanged.connect(self._onSizePresetChosen)
+        self.cboSizePresets = SizePresetComboBox()
+        self.cboSizePresets.presetSelected.connect(self._onSizePresetChosen)
 
 
     def getScaleFunc(self) -> Callable[[int, int], tuple[int, int]]:
@@ -383,14 +383,9 @@ class ScaleMode(QtWidgets.QWidget):
         pass
 
     @Slot()
-    def _onSizePresetChosen(self, text: str):
-        if not text:
-            return
-
-        w, h = text.split("x")
-        self.applySizePreset(int(w), int(h))
+    def _onSizePresetChosen(self, w: int, h: int):
+        self.applySizePreset(w, h)
         self.updateSize()
-        self.cboSizePresets.setCurrentIndex(0)
 
 
 class FixedScaleMode(ScaleMode):

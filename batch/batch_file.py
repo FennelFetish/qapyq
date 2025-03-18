@@ -8,7 +8,6 @@ from config import Config
 from infer import Inference
 from ui.tab import ImgTab
 from lib import qtlib
-from lib.filelist import MASK_EXTENSIONS
 from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
 import ui.export_settings as export
 
@@ -494,11 +493,9 @@ class BatchFileTask(BatchTask):
         # self.maskPathParser.width = imgSize.width()
         # self.maskPathParser.height = imgSize.height()
 
-        maskSrcPathNoExt = self.maskPathParser.parsePath(self.maskPathTemplate, "", True) # No extension, but with '.' at the end
-        for maskSrcPath in (f"{maskSrcPathNoExt}{ext}" for ext in MASK_EXTENSIONS):
-            if os.path.exists(maskSrcPath):
-                return self.processFile(maskSrcPath, targetFolder, os.path.basename(maskSrcPath), self.overwriteMasks)
-
+        maskSrcPath = self.maskPathParser.parsePath(self.maskPathTemplate, True)
+        if os.path.exists(maskSrcPath):
+            return self.processFile(maskSrcPath, targetFolder, os.path.basename(maskSrcPath), self.overwriteMasks)
         return None
 
     def processCaption(self, srcPath: str, targetFolder: str, targetFileName: str, overwrite: bool) -> str | None:

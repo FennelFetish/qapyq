@@ -7,11 +7,11 @@ import cv2 as cv
 import numpy as np
 from config import Config
 from lib import qtlib
-from lib.filelist import MASK_EXTENSIONS
 from lib.mask_macro import MaskingMacro
 from infer import Inference
 from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
 import ui.export_settings as export
+from ui.size_preset import SizeBucket, SizePresetWidget
 
 # TODO: Set which mask layers are used to define crop region (last layer, layer nr, each layer defines a region, maximum)
 
@@ -31,13 +31,6 @@ class OutputMaskType(Enum):
     File    = "file"
     Alpha   = "alpha"
 
-
-class SizeBucket:
-    def __init__(self, w: int, h: int):
-        self.w = w
-        self.h = h
-        self.area = w*h
-        self.aspect = w/h
 
 
 class BatchCrop(QtWidgets.QWidget):
@@ -126,12 +119,8 @@ class BatchCrop(QtWidgets.QWidget):
         layout = QtWidgets.QGridLayout()
 
         row = 0
-        layout.addWidget(QtWidgets.QLabel("Width x Height, one per line:"), row, 0, 1, 2)
-
-        row += 1
-        self.txtBuckets = QtWidgets.QPlainTextEdit()
-        self.loadSizeBuckets()
-        layout.addWidget(self.txtBuckets, row, 0, 1, 2)
+        self.sizePresets = SizePresetWidget()
+        layout.addWidget(self.sizePresets, row, 0, 1, 2)
 
         row += 1
         self.chkInverseBuckets = QtWidgets.QCheckBox("Include Swapped (Height x Width)")
@@ -140,11 +129,11 @@ class BatchCrop(QtWidgets.QWidget):
 
         row += 1
         btnSaveBuckets = QtWidgets.QPushButton("Save to Config")
-        btnSaveBuckets.clicked.connect(self.saveSizeBuckets)
+        btnSaveBuckets.clicked.connect(self.sizePresets.saveSizeBuckets)
         layout.addWidget(btnSaveBuckets, row, 0)
 
         btnLoadBuckets = QtWidgets.QPushButton("Load from Config")
-        btnLoadBuckets.clicked.connect(self.loadSizeBuckets)
+        btnLoadBuckets.clicked.connect(lambda: self.sizePresets.reloadSizeBuckets())
         layout.addWidget(btnLoadBuckets, row, 1)
 
         groupBox = QtWidgets.QGroupBox("Target Size Buckets")
@@ -173,7 +162,7 @@ class BatchCrop(QtWidgets.QWidget):
 
         config = Config.exportPresets.get(self.EXPORT_PRESET_KEY_INMASK, {})
         self.inputMaskPathSettings = export.PathSettings(self.inputPathParser, showInfo=False)
-        self.inputMaskPathSettings.pathTemplate = config.get("path_template", "{{path}}-masklabel")
+        self.inputMaskPathSettings.pathTemplate = config.get("path_template", "{{path}}-masklabel.png")
         self.inputMaskPathSettings.setAsInput()
         layout.addWidget(self.inputMaskPathSettings, row, 3, 3, 1)
 
@@ -216,19 +205,9 @@ class BatchCrop(QtWidgets.QWidget):
 
         config = Config.exportPresets.get(self.EXPORT_PRESET_KEY_OUTMASK, {})
         self.outputMaskPathSettings = export.PathSettings(self.outputPathParser, showInfo=False)
-        self.outputMaskPathSettings.pathTemplate   = config.get("path_template", "{{path}}_{{region}}_{{w}}x{{h}}-masklabel")
+        self.outputMaskPathSettings.pathTemplate   = config.get("path_template", "{{path}}_{{region}}_{{w}}x{{h}}-masklabel.png")
         self.outputMaskPathSettings.overwriteFiles = config.get("overwrite", False)
         layout.addWidget(self.outputMaskPathSettings, row, 3, 3, 1)
-
-        row += 1
-        self.lblOutputMaskFormat = QtWidgets.QLabel("Format:")
-        layout.addWidget(self.lblOutputMaskFormat, row, 0)
-
-        self.cboOutputMaskFormat = QtWidgets.QComboBox()
-        self.cboOutputMaskFormat.addItems(("PNG", "WEBP"))
-        self.cboOutputMaskFormat.currentTextChanged.connect(self._onOutputMaskExtensionChanged)
-        self._onOutputMaskExtensionChanged(self.cboOutputMaskFormat.currentText())
-        layout.addWidget(self.cboOutputMaskFormat, row, 1)
 
         row += 1
         layout.addWidget(QtWidgets.QWidget(), row, 0)
@@ -258,7 +237,7 @@ class BatchCrop(QtWidgets.QWidget):
 
         config = Config.exportPresets.get(self.EXPORT_PRESET_KEY_IMG, {})
         self.outputImagePathSettings = export.PathSettings(self.outputPathParser, showInfo=False)
-        self.outputImagePathSettings.pathTemplate   = config.get("path_template", "{{path}}_{{region}}_{{w}}x{{h}}")
+        self.outputImagePathSettings.pathTemplate   = config.get("path_template", "{{path}}_{{region}}_{{w}}x{{h}}.png")
         self.outputImagePathSettings.overwriteFiles = config.get("overwrite", False)
         layout.addWidget(self.outputImagePathSettings, row, 3, 4, 1)
 
@@ -268,14 +247,6 @@ class BatchCrop(QtWidgets.QWidget):
         self.cboInterpDown.setCurrentIndex(3) # Default: Area
         layout.addWidget(QtWidgets.QLabel("Interp Down:"), row, 0)
         layout.addWidget(self.cboInterpDown, row, 1)
-
-        row += 1
-        self.cboOutputImageFormat = QtWidgets.QComboBox()
-        self.cboOutputImageFormat.addItems(export.FORMATS.keys())
-        self.cboOutputImageFormat.currentTextChanged.connect(self._onOutputImageExtensionChanged)
-        self._onOutputImageExtensionChanged(self.cboOutputImageFormat.currentText())
-        layout.addWidget(QtWidgets.QLabel("Format:"), row, 0)
-        layout.addWidget(self.cboOutputImageFormat, row, 1)
 
         row += 1
         layout.addWidget(QtWidgets.QWidget(), row, 0)
@@ -308,18 +279,8 @@ class BatchCrop(QtWidgets.QWidget):
     def _onOutputMaskModeChanged(self, index: int):
         mode = self.cboOutputMaskMode.itemData(index)
         enabled = (mode == OutputMaskType.File)
-        for widget in (self.lblOutputMaskFormat, self.cboOutputMaskFormat, self.outputMaskPathSettings):
-            widget.setEnabled(enabled)
+        self.outputMaskPathSettings.setEnabled(enabled)
 
-    @Slot()
-    def _onOutputMaskExtensionChanged(self, ext: str):
-        self.outputMaskPathSettings.extension = ext
-        self.outputMaskPathSettings.updatePreview()
-
-    @Slot()
-    def _onOutputImageExtensionChanged(self, ext: str):
-        self.outputImagePathSettings.extension = ext
-        self.outputImagePathSettings.updatePreview()
 
     @Slot()
     def reloadMacros(self):
@@ -331,47 +292,6 @@ class BatchCrop(QtWidgets.QWidget):
 
             index = max(0, self.cboInputMacro.findText(selectedText))
             self.cboInputMacro.setCurrentIndex(index)
-
-
-    def parseSizeBuckets(self, includeSwapped: bool) -> list[SizeBucket]:
-        lines = self.txtBuckets.toPlainText().splitlines()
-        buckets = []
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-
-            elements = self.BUCKET_SPLIT.split(line)
-            if len(elements) != 2:
-                print(f"Invalid format for bucket size: {line}")
-                continue
-
-            try:
-                w = int(elements[0].strip())
-                h = int(elements[1].strip())
-                buckets.append(SizeBucket(w, h))
-
-                if includeSwapped and w != h:
-                    buckets.append(SizeBucket(h, w))
-            except ValueError:
-                print(f"Invalid format for bucket size: {line}")
-
-        return buckets
-
-    @Slot()
-    def loadSizeBuckets(self):
-        text = "\n".join(Config.cropSizePresets)
-        self.txtBuckets.setPlainText(text)
-    
-    @Slot()
-    def saveSizeBuckets(self):
-        buckets = []
-        for bucket in self.parseSizeBuckets(False):
-            buckets.append(f"{bucket.w}x{bucket.h}")
-        Config.cropSizePresets = buckets
-
-        from tools.crop import CROP_SIGNALS
-        CROP_SIGNALS.sizePresetsUpdated.emit(buckets)
 
 
     def _confirmStart(self) -> bool:
@@ -452,7 +372,7 @@ class BatchCrop(QtWidgets.QWidget):
                 maskSrcFunc = createAlphaMaskSource()
             case _:
                 raise ValueError("Invalid input mask type")
-        
+
         match self.cboOutputMaskMode.currentData():
             case OutputMaskType.Discard:
                 maskDestFunc = createDiscardMaskDest()
@@ -467,7 +387,7 @@ class BatchCrop(QtWidgets.QWidget):
         self._task.combined      = not self.chkMultipleOutputs.isChecked()
         self._task.allowUpscale  = self.chkAllowUpscale.isChecked()
         self._task.sizeFactor    = self.spinCropSize.value()
-        self._task.sizeBuckets   = self.parseSizeBuckets(self.chkInverseBuckets.isChecked())
+        self._task.sizeBuckets   = self.sizePresets.parseSizeBuckets(self.chkInverseBuckets.isChecked())
         self._task.interpUp      = export.INTERP_MODES[ self.cboInterpUp.currentText() ]
         self._task.interpDown    = export.INTERP_MODES[ self.cboInterpDown.currentText() ]
 
@@ -509,10 +429,9 @@ def createFileMaskSource(pathTemplate: str):
         parser.width  = w
         parser.height = h
 
-        pathNoExt = parser.parsePath(pathTemplate, "", False)
-        for path in (f"{pathNoExt}{ext}" for ext in MASK_EXTENSIONS):
-            if os.path.exists(path):
-                return loadMask(path)
+        path = parser.parsePath(pathTemplate, True)
+        if os.path.exists(path):
+            return loadMask(path)
         return None
 
     return mask
@@ -537,7 +456,6 @@ def createDiscardMaskDest():
 
 def createFileMaskDest(pathSettings: export.PathSettings, log):
     pathTemplate   = pathSettings.pathTemplate
-    extension      = pathSettings.extension
     overwriteFiles = pathSettings.overwriteFiles
     parser = export.ExportVariableParser()
 
@@ -561,7 +479,7 @@ def createFileMaskDest(pathSettings: export.PathSettings, log):
         parser.height = targetSize.h
         parser.region = regionIndex
 
-        path = parser.parsePath(pathTemplate, extension, overwriteFiles)
+        path = parser.parsePath(pathTemplate, overwriteFiles)
         export.saveImage(path, scaled, log)
 
         return imgCropped
@@ -614,7 +532,6 @@ class BatchCropTask(BatchTask):
         self.maskDestFunc = maskDestFunc
 
         self.outPathTemplate   = imgPathSettings.pathTemplate
-        self.outExtension      = imgPathSettings.extension
         self.outOverwriteFiles = imgPathSettings.overwriteFiles
 
         self.combined       = True
@@ -786,6 +703,6 @@ class BatchCropTask(BatchTask):
         self.outPathParser.height = targetSize.h
         self.outPathParser.region = index
 
-        path = self.outPathParser.parsePath(self.outPathTemplate, self.outExtension, self.outOverwriteFiles)
+        path = self.outPathParser.parsePath(self.outPathTemplate, self.outOverwriteFiles)
         export.saveImage(path, scaled, self.log)
         return path

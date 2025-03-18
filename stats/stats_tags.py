@@ -3,6 +3,8 @@ from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QAbstractItemModel, QModelIndex
 from lib.captionfile import FileTypeSelector
+from lib.util import CaptionSplitter
+import lib.qtlib as qtlib
 from ui.tab import ImgTab
 from batch.batch_container import BatchContainer
 from batch.batch_rules import BatchRules
@@ -10,9 +12,6 @@ from caption.caption_container import CaptionContainer
 from caption.caption_groups import CaptionControlGroup
 from caption.caption_preset import CaptionPreset, CaptionPresetConditional, MutualExclusivity
 from .stats_base import StatsLayout, StatsBaseProxyModel, ExportCsv
-
-
-SEP = ", "
 
 
 class TagStats(QtWidgets.QWidget):
@@ -30,18 +29,25 @@ class TagStats(QtWidgets.QWidget):
         self.table.captionRulesChanged.connect(self.reloadColors)
 
         self._layout = TagStatsLayout(self, tab, self.proxyModel, self.table, 1)
-        self._layout.insertLayout(0, self._buildSourceSelector())
+        self._layout.insertLayout(0, self._buildTopRow())
         self._layout.setStatsWidget(self._buildStats())
         self.setLayout(self._layout)
 
-    def _buildSourceSelector(self):
+    def _buildTopRow(self):
         self.captionSrc = FileTypeSelector()
         self.captionSrc.type = FileTypeSelector.TYPE_TAGS
+
+        self.txtSepChars = QtWidgets.QLineEdit(",.:;\\n")
+        qtlib.setMonospace(self.txtSepChars)
+        self.txtSepChars.setMaximumWidth(120)
 
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(QtWidgets.QLabel("Load From:"))
         layout.addLayout(self.captionSrc)
-        layout.addStretch()
+        layout.addSpacing(20)
+        layout.addWidget(QtWidgets.QLabel("Separators:"))
+        layout.addWidget(self.txtSepChars)
+        layout.addStretch(1)
         return layout
 
     def _buildStats(self):
@@ -74,7 +80,7 @@ class TagStats(QtWidgets.QWidget):
 
     @Slot()
     def reload(self):
-        self.model.reload(self.tab.filelist.getFiles(), self.captionSrc)
+        self.model.reload(self.tab.filelist.getFiles(), self.captionSrc, self.txtSepChars.text())
         self.table.sortByColumn(1, Qt.SortOrder.AscendingOrder)
         self.table.resizeColumnsToContents()
 
@@ -150,13 +156,13 @@ class TagModel(QAbstractItemModel):
 
     def __init__(self):
         super().__init__()
-        self.separator = SEP.strip()
         self.font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.SystemFont.FixedFont)
 
         self.tags: list[TagData] = list()
         self.summary = TagSummary()
 
-    def reload(self, files: list[str], captionSrc: FileTypeSelector):
+    def reload(self, files: list[str], captionSrc: FileTypeSelector, sepChars: str):
+        splitter = CaptionSplitter(sepChars)
         self.beginResetModel()
 
         self.tags.clear()
@@ -168,9 +174,7 @@ class TagModel(QAbstractItemModel):
             if not caption:
                 continue
 
-            tags = caption.split(self.separator)
-            tags = (tag.strip() for tag in tags)
-            tags = [tag for tag in tags if tag]
+            tags = splitter.split(caption)
             self.summary.addFile(tags)
 
             for tag in tags:
