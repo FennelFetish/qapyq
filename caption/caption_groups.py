@@ -95,13 +95,23 @@ class CaptionGroups(CaptionTab):
             if widget and isinstance(widget, CaptionControlGroup):
                 yield widget
 
-    @Slot()
-    def addGroup(self):
+
+    def _createGroup(self):
         group = CaptionControlGroup(self, "Group")
         group.color = util.hsv_to_rgb(self._nextGroupHue, 0.5, 0.25)
         self._nextGroupHue += self.HUE_OFFSET
+        return group
 
+    @Slot()
+    def addGroup(self):
+        group = self._createGroup()
         self.groupLayout.addWidget(group)
+        self.ctx.controlUpdated.emit()
+        return group
+
+    def addGroupAt(self, index: int):
+        group = self._createGroup()
+        self.groupLayout.insertWidget(index, group)
         self.ctx.controlUpdated.emit()
         return group
 
@@ -196,7 +206,7 @@ class CaptionControlGroup(QtWidgets.QWidget):
         self.buttonWidget = ReorderWidget(giveDrop=True, takeDrop=True)
         self.buttonWidget.setLayout(self.buttonLayout)
         self.buttonWidget.setMinimumHeight(14)
-        self.buttonWidget.dragStartMinDistance = 4
+        self.buttonWidget.dragStartMinDistance = 6
         self.buttonWidget.dataCallback = lambda widget: widget.text
         self.buttonWidget.orderChanged.connect(self.groups._emitUpdatedApplyRules)
         self.buttonWidget.receivedDrop.connect(self._addCaptionDrop)
@@ -241,8 +251,9 @@ class CaptionControlGroup(QtWidgets.QWidget):
         btnAddCaption.clicked.connect(self._addCaptionClick)
         btnAddCaption.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
-        btnRemoveGroup = QtWidgets.QPushButton("Remove Group")
-        btnRemoveGroup.clicked.connect(lambda: self.groups.removeGroup(self))
+        btnGroupMenu = QtWidgets.QPushButton("☰")
+        btnGroupMenu.setFixedWidth(40)
+        btnGroupMenu.setMenu(GroupMenu(self))
 
         self.headerLayout = QtWidgets.QHBoxLayout()
         self.headerLayout.setContentsMargins(0, 0, 0, 0)
@@ -257,10 +268,15 @@ class CaptionControlGroup(QtWidgets.QWidget):
         self.headerLayout.addStretch()
 
         self.headerLayout.addWidget(btnAddCaption)
-        self.headerLayout.addWidget(btnRemoveGroup)
+        self.headerLayout.addWidget(btnGroupMenu)
         self.headerWidget = QtWidgets.QWidget()
         self.headerWidget.setContentsMargins(0, 0, 0, 0)
         self.headerWidget.setLayout(self.headerLayout)
+
+
+    @property
+    def index(self) -> int:
+        return self.groups.groupLayout.indexOf(self)
 
 
     def updateSelectedState(self, captions: set[str], force: bool):
@@ -532,6 +548,25 @@ class GroupColor(QtWidgets.QFrame):
 
         self.colorChanged.emit(color)
         self.group.groups.ctx.controlUpdated.emit()
+
+
+
+class GroupMenu(QtWidgets.QMenu):
+    def __init__(self, group: CaptionControlGroup):
+        super().__init__()
+        self.group = group
+        self._build()
+
+    def _build(self):
+        groups = self.group.groups
+
+        actNewGroupAbove = self.addAction("Create Group Above")
+        actNewGroupAbove.triggered.connect(lambda: groups.addGroupAt(self.group.index))
+
+        self.addSeparator()
+
+        actRemoveGroup = self.addAction("Remove Group")
+        actRemoveGroup.triggered.connect(lambda: groups.removeGroup(self.group))
 
 
 
