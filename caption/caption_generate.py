@@ -1,4 +1,4 @@
-import os, traceback
+import os, re, traceback
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject, QSignalBlocker
 from infer import Inference, InferencePresetWidget, TagPresetWidget, PromptWidget, PromptsHighlighter, InferenceProcess
@@ -113,8 +113,8 @@ class CaptionGenerate(CaptionTab):
     @Slot()
     def _onPromptChanged(self):
         prompt = self.promptWidget.prompts
-        self._hasCurrentVar = CurrentVariableParser.CURRENT_VAR in prompt
-        self._hasRefinedVar = CurrentVariableParser.REFINED_VAR in prompt
+        self._hasCurrentVar = CurrentVariableParser.currentInPrompt(prompt)
+        self._hasRefinedVar = CurrentVariableParser.refinedInPrompt(prompt)
         self.updatePreview(prompt)
 
 
@@ -201,10 +201,10 @@ class CaptionGenerate(CaptionTab):
 
 class CurrentVariableParser(TemplateVariableParser):
     CURRENT_VAR_NAME = "current"
-    CURRENT_VAR      = "{{current"
+    CURRENT_VAR_PATTERN = re.compile(r'{{.*current.*}}')
 
-    REFINED_VAR_NAME = "refined"
-    REFINED_VAR      = "{{refined"
+    REFINED_VAR_NAME  = "refined"
+    REFINED_VAR_PATTERN = re.compile(r'{{.*refined.*}}')
 
 
     def __init__(self, context, imgPath: str = None):
@@ -225,6 +225,14 @@ class CurrentVariableParser(TemplateVariableParser):
                 return self.refinedCaption
 
         return super()._getImgProperties(var)
+
+    @classmethod
+    def currentInPrompt(cls, prompt: str) -> bool:
+        return cls.CURRENT_VAR_PATTERN.search(prompt) is not None
+
+    @classmethod
+    def refinedInPrompt(cls, prompt: str) -> bool:
+        return cls.REFINED_VAR_PATTERN.search(prompt) is not None
 
 
 
