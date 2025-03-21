@@ -154,13 +154,16 @@ class PriorityFilter():
 class ConditionalsFilter(CaptionFilter):
     def __init__(self):
         self.rules = list[ConditionalFilterRule]()
+        self.separator = ", "
 
-    def setup(self, rules: Iterable[ConditionalFilterRule]) -> None:
+    def setup(self, rules: Iterable[ConditionalFilterRule], separator: str) -> None:
         self.rules = list(rules)
+        self.separator = separator
 
     def filterCaptions(self, captions: list[str]) -> list[str]:
         for rule in self.rules:
             if varParser := rule.evaluateExpression(captions):
+                varParser.separator = self.separator
                 for action in rule.actions:
                     captions = action(varParser, captions)
 
@@ -464,7 +467,7 @@ class CaptionRulesProcessor:
         self.combineFilter.setup(tags for tags, _, combine in captionGroups if combine)
 
     def setConditionalRules(self, rules: Iterable[ConditionalFilterRule]) -> None:
-        self.conditionalsFilter.setup(rules)
+        self.conditionalsFilter.setup(rules, self.separator)
 
 
     # TODO: Sort combined tags. Split all tags of combine-groups first? But check if all tags are part of same group

@@ -100,8 +100,13 @@ class BatchApply(QtWidgets.QWidget):
         qtlib.setMonospace(self.txtPreview)
         qtlib.setTextEditHeight(self.txtPreview, 10, "min")
         qtlib.setShowWhitespace(self.txtPreview)
-        layout.addWidget(QtWidgets.QLabel("Preview:"), row, 0, Qt.AlignmentFlag.AlignTop)
-        layout.addWidget(self.txtPreview, row, 1, 1, 2)
+        layout.addWidget(QtWidgets.QLabel("Preview:"), row, 0)
+        layout.addWidget(self.txtPreview, row, 1, 2, 2)
+
+        row += 1
+        btnUpdatePreview = QtWidgets.QPushButton("Regenerate")
+        btnUpdatePreview.clicked.connect(self._updatePreview)
+        layout.addWidget(btnUpdatePreview, row, 0, Qt.AlignmentFlag.AlignTop)
         layout.setRowStretch(row, 1)
 
         row += 1

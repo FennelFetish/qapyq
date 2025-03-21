@@ -287,6 +287,11 @@ class TemplateVariableParser:
                 sep = self._getFuncArg(args, 1, ", ")
                 return self._funcSplitProcess(value, sep, lambda elements: elements[:count])
 
+            case "drop":
+                count = max(1, self._getFuncArgInt(args, 0, 1))
+                sep = self._getFuncArg(args, 1, ", ")
+                return self._funcSplitProcess(value, sep, lambda elements: elements[:-count])
+
             case "join":
                 if not args:
                     return value
