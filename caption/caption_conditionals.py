@@ -484,6 +484,89 @@ class ConditionalFilterRule:
 
 
 
+class RuleParams(QtWidgets.QHBoxLayout):
+    def __init__(self, defs: dict[str, ConditionDef] | dict[str, ActionDef], signalUpdate, firstStretch=1):
+        super().__init__()
+        self.setContentsMargins(0, 0, 0, 0)
+        self._defs = defs
+        self.signalUpdate = signalUpdate
+        self.firstStretch = firstStretch
+
+        self.txtParams = list[QtWidgets.QLineEdit]()
+        self._definition: ConditionDef | ActionDef = None
+
+        # Not part of the layout
+        self.cboDefinitions = qtlib.NonScrollComboBox()
+        for defKey, defVal in defs.items():
+            self.cboDefinitions.addItem(defVal.name, defKey)
+        self.cboDefinitions.currentIndexChanged.connect(self._onDefinitionChanged)
+        self._onDefinitionChanged(self.cboDefinitions.currentIndex())
+
+    @Slot()
+    def _onDefinitionChanged(self, index: int):
+        defKey: str = self.cboDefinitions.itemData(index)
+        self._definition = self._defs[defKey]
+        self.updateParams()
+
+    def updateParams(self):
+        numParams = self._definition.numParams
+        params = self._definition.params
+
+        for i, txt in enumerate(self.txtParams[0:numParams]):
+            txt.setToolTip(params[i])
+            txt.show()
+        for txt in self.txtParams[numParams:]:
+            txt.setToolTip("")
+            txt.hide()
+
+        startIndex = max(0, len(self.txtParams))
+        for i in range(startIndex, numParams):
+            txt = QtWidgets.QLineEdit()
+            qtlib.setMonospace(txt)
+            txt.setMinimumWidth(50)
+            txt.setToolTip(params[i])
+            txt.textChanged.connect(lambda: self.signalUpdate.emit())
+
+            self.txtParams.append(txt)
+            stretch = self.firstStretch if i==0 else 1
+            self.addWidget(txt, stretch)
+
+        self.signalUpdate.emit()
+
+    @property
+    def definitionKey(self) -> str:
+        return self.cboDefinitions.currentData()
+
+    def createFunc(self):
+        params = [txt.text() for txt in self.txtParams[:self._definition.numParams]]
+        return self._definition.factory(params)
+
+    def toDict(self, data: dict[str, str]):
+        for i, paramName in enumerate(self._definition.params):
+            data[paramName] = self.txtParams[i].text()
+
+    def fromDict(self, defKey: str, data: dict[str, str]):
+        if defKey in self._defs:
+            defIndex = self.cboDefinitions.findData(defKey)
+        else:
+            defKey = self.cboDefinitions.itemData(0)
+            defIndex = 0
+            data = {}
+
+        self.cboDefinitions.setCurrentIndex(defIndex)
+        self._definition = self._defs[defKey]
+        self.updateParams()
+
+        if data:
+            for i, paramName in enumerate(self._definition.params):
+                value: str = data.get(paramName, "")
+                self.txtParams[i].setText(value)
+        else:
+            for txt in self.txtParams:
+                txt.setText("")
+
+
+
 class RuleCondition(QtWidgets.QWidget):
     conditionUpdated = Signal()
     removeClicked = Signal(object)
@@ -505,27 +588,11 @@ class RuleCondition(QtWidgets.QWidget):
 
         layout.addWidget(QtWidgets.QLabel("If:"))
 
-        self.cboCondition = qtlib.NonScrollComboBox()
-        for condKey, condDef in CONDITIONS.items():
-            self.cboCondition.addItem(condDef.name, condKey)
-        self.cboCondition.currentIndexChanged.connect(self._onConditionChanged)
-        layout.addWidget(self.cboCondition)
-
-        self.txtCondParam = QtWidgets.QLineEdit()
-        qtlib.setMonospace(self.txtCondParam)
-        self.txtCondParam.textChanged.connect(lambda: self.conditionUpdated.emit())
-        layout.addWidget(self.txtCondParam)
+        self.params = RuleParams(CONDITIONS, self.conditionUpdated, 10)
+        layout.addWidget(self.params.cboDefinitions)
+        layout.addLayout(self.params)
 
         self.setLayout(layout)
-
-    @Slot()
-    def _onConditionChanged(self, index: int):
-        condKey: str = self.cboCondition.itemData(index)
-        condDef = CONDITIONS[condKey]
-        self.txtCondParam.setToolTip(condDef.params[0])
-
-        self.conditionUpdated.emit()
-
 
     @property
     def variable(self) -> str:
@@ -537,47 +604,20 @@ class RuleCondition(QtWidgets.QWidget):
             self._var = var
             self.lblVar.setText(var)
 
-
     def updateConditionState(self, state: bool):
         color = qtlib.COLOR_GREEN if state else qtlib.COLOR_RED
         self.lblVar.setStyleSheet(f"color: {color}")
 
-
     def createConditionFunc(self) -> ConditionFunc:
-        condKey: str = self.cboCondition.currentData()
-        condDef = CONDITIONS[condKey]
-        params = [self.txtCondParam.text()]
-        return condDef.factory(params)
-
+        return self.params.createFunc()
 
     def saveToPreset(self, cond: CaptionPresetConditional.Condition):
-        cond.key = self.cboCondition.currentData()
-        condDef = CONDITIONS[cond.key]
-
-        # TODO: Multiple params?
-        for paramName in condDef.params:
-            cond.params[paramName] = self.txtCondParam.text()
+        cond.key = self.params.definitionKey
+        self.params.toDict(cond.params)
 
     def loadFromPreset(self, cond: CaptionPresetConditional.Condition):
-        condKey = cond.key
-        condDef = CONDITIONS.get(condKey)
-        if not condDef:
-            condKey = self.cboCondition.itemData(0)
-            condDef = CONDITIONS[condKey]
-
-        self.txtCondParam.setToolTip(condDef.params[0])
-
         with QSignalBlocker(self):
-            condIndex = self.cboCondition.findData(condKey)
-            self.cboCondition.setCurrentIndex(condIndex)
-
-            if cond.params:
-                # TODO: Multiple params?
-                for paramName in condDef.params:
-                    value: str = cond.params.get(paramName, "")
-                    self.txtCondParam.setText(value)
-            else:
-                self.txtCondParam.setText("")
+            self.params.fromDict(cond.key, cond.params)
 
 
 
@@ -591,82 +631,26 @@ class RuleAction(QtWidgets.QWidget):
         layout = QtWidgets.QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.cboAction = qtlib.NonScrollComboBox()
-        for actKey, actDef in ACTIONS.items():
-            self.cboAction.addItem(actDef.name, actKey)
-        self.cboAction.currentIndexChanged.connect(self._onActionChanged)
-        layout.addWidget(self.cboAction)
-
-        self.txtParams = list[QtWidgets.QLineEdit]()
-        self._paramLayout = QtWidgets.QHBoxLayout()
-        self._paramLayout.setContentsMargins(0, 0, 0, 0)
-        layout.addLayout(self._paramLayout)
+        self.params = RuleParams(ACTIONS, self.actionUpdated)
+        layout.addWidget(self.params.cboDefinitions)
+        layout.addLayout(self.params)
 
         btnRemove = qtlib.BubbleRemoveButton()
         btnRemove.clicked.connect(lambda: self.removeClicked.emit(self))
         layout.addWidget(btnRemove)
 
         self.setLayout(layout)
-        self._onActionChanged(self.cboAction.currentIndex())
-
-    @Slot()
-    def _onActionChanged(self, index: int):
-        actionKey: str = self.cboAction.itemData(index)
-        actionDef = ACTIONS[actionKey]
-        numParams = actionDef.numParams
-
-        for i, txt in enumerate(self.txtParams[0:numParams]):
-            txt.setToolTip(actionDef.params[i])
-            txt.show()
-        for txt in self.txtParams[numParams:]:
-            txt.setToolTip("")
-            txt.hide()
-
-        startIndex = max(0, len(self.txtParams))
-        for i in range(startIndex, numParams):
-            txt = QtWidgets.QLineEdit()
-            qtlib.setMonospace(txt)
-            txt.setToolTip(actionDef.params[i])
-            txt.textChanged.connect(lambda: self.actionUpdated.emit())
-            self.txtParams.append(txt)
-            self._paramLayout.addWidget(txt)
-
-        self.actionUpdated.emit()
-
 
     def createActionFunc(self) -> ActionFunc:
-        actionKey: str = self.cboAction.currentData()
-        actionDef = ACTIONS[actionKey]
-        params = [txt.text() for txt in self.txtParams[:actionDef.numParams]]
-        return actionDef.factory(params)
-
+        return self.params.createFunc()
 
     def saveToPreset(self, action: CaptionPresetConditional.Action):
-        action.key = self.cboAction.currentData()
-        actionDef = ACTIONS[action.key]
-
-        for i, paramName in enumerate(actionDef.params):
-            action.params[paramName] = self.txtParams[i].text()
+        action.key = self.params.definitionKey
+        self.params.toDict(action.params)
 
     def loadFromPreset(self, action: CaptionPresetConditional.Action):
-        actionKey = action.key
-        actionDef = ACTIONS.get(actionKey)
-        if not actionDef:
-            actionKey = self.cboAction.itemData(0)
-            actionDef = ACTIONS[actionKey]
-
         with QSignalBlocker(self):
-            actionIndex = self.cboAction.findData(actionKey)
-            self.cboAction.setCurrentIndex(actionIndex)
-            self._onActionChanged(actionIndex)
-
-            if action.params:
-                for i, paramName in enumerate(actionDef.params):
-                    value: str = action.params.get(paramName, "")
-                    self.txtParams[i].setText(value)
-            else:
-                for txt in self.txtParams:
-                    txt.setText("")
+            self.params.fromDict(action.key, action.params)
 
 
 
@@ -675,6 +659,7 @@ class ConditionVariableParser:
 
     def __init__(self, vars: dict[str, list[str]]):
         self.vars = vars
+        self.separator = ", "
 
     def parse(self, template: str) -> str:
         # TODO: Parse wildcards here?
@@ -682,9 +667,26 @@ class ConditionVariableParser:
 
     def _replace(self, match: re.Match) -> str:
         var = match.group(1).strip()
+        var, *attr = var.split(".")
+        attr = attr[0].strip() if attr else ""
+
         values = self.vars.get(var)
-        if values:
+        if not values:
+            return ""
+        if not attr:
             return values[0]
+
+        match attr:
+            case "last":
+                return values[-1]
+            case "all":
+                return self.separator.join(values)
+
+        if attr.isdigit():
+            index = int(attr)
+            if 0 <= index < len(values):
+                return values[index]
+
         return ""
 
 
@@ -694,6 +696,15 @@ def splitParams(paramText: str) -> list[str]:
 
 def splitParamsStrip(paramText: str) -> list[str]:
     return [p for param in paramText.split(SEP) if (p := param.strip())]
+
+def splitParamsStripSet(paramText: str) -> set[str]:
+    return set(p for param in paramText.split(SEP) if (p := param.strip()))
+
+def getIntParam(paramText: str, default: int) -> int:
+    try:
+        return int(paramText)
+    except ValueError:
+        return default
 
 
 
@@ -713,7 +724,7 @@ def createCondAllTagsPresent(params: list[str]) -> ConditionFunc:
 
 
 def createCondAnyTagsPresent(params: list[str]) -> ConditionFunc:
-    searchSet = set(tag for t in params[0].split(SEP) if (tag := t.strip()))
+    searchSet = splitParamsStripSet(params[0])
 
     def condAnyTagsPresent(tags: list[str]) -> ConditionResult:
         for tag in tags:
@@ -722,6 +733,20 @@ def createCondAnyTagsPresent(params: list[str]) -> ConditionFunc:
         return False, None
 
     return condAnyTagsPresent
+
+
+def createCondNumTagsPresent(params: list[str]) -> ConditionFunc:
+    searchSet = splitParamsStripSet(params[0])
+    minTags = getIntParam(params[1], 1)
+    maxTags = getIntParam(params[2], 2**31)
+
+    def condNumTagsPresent(tags: list[str]) -> ConditionResult:
+        foundTags = [tag for tag in tags if tag in searchSet]
+        if minTags <= len(foundTags) <= maxTags:
+            return True, foundTags
+        return False, None
+
+    return condNumTagsPresent
 
 
 def createCondAnyWordsPresent(params: list[str]) -> ConditionFunc:
@@ -753,6 +778,7 @@ class ConditionDef:
 CONDITIONS = {
     "AllTagsPresent":       ConditionDef("All tags present", createCondAllTagsPresent, ["tags"]),
     "AnyTagsPresent":       ConditionDef("Any tags present", createCondAnyTagsPresent, ["tags"]),
+    "NumTagsPresent":       ConditionDef("Some tags present", createCondNumTagsPresent, ["tags", "min", "max"]),
     "AnyWordsPresent":      ConditionDef("Any words present", createCondAnyWordsPresent, ["words"])
 }
 
