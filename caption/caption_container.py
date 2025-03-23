@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt, Signal, Slot, QSignalBlocker, QTimer
 from lib import qtlib
 from lib.filelist import DataKeys
 from lib.captionfile import FileTypeSelector
+from lib.util import stripCountPadding
 from ui.tab import ImgTab
 from config import Config
 from .caption_menu import CaptionMenu, RulesLoadMode
@@ -128,13 +129,15 @@ class CaptionContainer(QtWidgets.QWidget):
         self.bubbles.remove.connect(self.removeCaption)
         self.bubbles.orderChanged.connect(lambda: self.setCaption( self.captionSeparator.join(self.bubbles.getCaptions()) ))
         self.bubbles.dropped.connect(self.appendToCaption)
+        self.bubbles.clicked.connect(self.selectCaption)
         splitter.addWidget(self.bubbles)
         splitter.setStretchFactor(row, 1)
 
         row += 1
-        self.txtCaption = DropTextEdit()
+        self.txtCaption = CaptionTextEdit()
         qtlib.setMonospace(self.txtCaption, 1.2)
         self.txtCaption.textChanged.connect(self._onCaptionEdited)
+        self.txtCaption.moveSelectionPressed.connect(self.moveCaptionSelection)
         splitter.addWidget(self.txtCaption)
         splitter.setStretchFactor(row, 1)
 
@@ -330,12 +333,7 @@ class CaptionContainer(QtWidgets.QWidget):
             start = 0
             sep = self.captionSeparator.strip()
             for caption in text.split(sep):
-                # Strip and count whitespace left and right
-                captionStrip = caption.lstrip()
-                padLeft = len(caption) - len(captionStrip)
-                captionStrip = captionStrip.rstrip()
-                padRight = len(caption) - padLeft - len(captionStrip)
-
+                captionStrip, padLeft, padRight = stripCountPadding(caption)
                 start += padLeft
 
                 if format := formats.get(captionStrip):
@@ -395,19 +393,55 @@ class CaptionContainer(QtWidgets.QWidget):
     def getSelectedCaption(self) -> str:
         text = self.txtCaption.toPlainText()
         cursorPos = self.txtCaption.textCursor().position()
-        return self._getSelectedCaption(text, cursorPos)
+        return self._getSelectedCaption(text, cursorPos)[0]
 
-    def _getSelectedCaption(self, text: str, cursorPos: int) -> str:
-        splitSeparator = self.captionSeparator.strip()
-        lenSplitSeparator = len(splitSeparator)
+    def _getSelectedCaption(self, text: str, cursorPos: int) -> tuple[str, int]:
+        sepStrip = self.captionSeparator.strip()
+        accumulatedLength = 0
+        for i, caption in enumerate(text.split(sepStrip)):
+            accumulatedLength += len(caption) + len(sepStrip)
+            if cursorPos < accumulatedLength:
+                return caption.strip(), i
+
+        return "", -1
+
+    @Slot()
+    def selectCaption(self, index: int):
+        text = self.txtCaption.toPlainText()
+        sepStrip, sepSpaceL, sepSpaceR = stripCountPadding(self.captionSeparator)
 
         accumulatedLength = 0
-        for part in text.split(splitSeparator):
-            accumulatedLength += len(part) + lenSplitSeparator
-            if cursorPos < accumulatedLength:
-                return part.strip()
+        splitCaptions = text.split(sepStrip)
+        for i, caption in enumerate(splitCaptions):
+            if i != index:
+                accumulatedLength += len(caption) + len(sepStrip)
+                continue
 
-        return ""
+            capStrip, capSpaceL, capSpaceR = stripCountPadding(caption)
+            offsetL = min(capSpaceL, sepSpaceR) if i > 0 else 0
+            offsetR = min(capSpaceR, sepSpaceL) if i < len(splitCaptions)-1 else 0
+
+            start = accumulatedLength + offsetL
+            end   = accumulatedLength + len(caption) - offsetR
+
+            cursor = self.txtCaption.textCursor()
+            cursor.setPosition(start, QtGui.QTextCursor.MoveMode.MoveAnchor)
+            cursor.setPosition(end, QtGui.QTextCursor.MoveMode.KeepAnchor)
+            self.txtCaption.setTextCursor(cursor)
+
+    @Slot()
+    def moveCaptionSelection(self, offset: int, offsetLine: int):
+        text = self.txtCaption.toPlainText()
+
+        cursor = self.txtCaption.textCursor()
+        if offsetLine != 0:
+            moveLineDir = QtGui.QTextCursor.MoveOperation.Up if offsetLine < 0 else QtGui.QTextCursor.MoveOperation.Down
+            cursor.movePosition(moveLineDir, QtGui.QTextCursor.MoveMode.MoveAnchor)
+
+        index = self._getSelectedCaption(text, cursor.position())[1]
+        index = max(0, index+offset)
+        self.selectCaption(index)
+
 
     def getHoveredCaption(self) -> str:
         return self.txtRulesPreview.hoverText if self.txtRulesPreview.isVisible() else ""
@@ -656,7 +690,9 @@ class CaptionCache:
 
 
 
-class DropTextEdit(QtWidgets.QPlainTextEdit):
+class CaptionTextEdit(QtWidgets.QPlainTextEdit):
+    moveSelectionPressed = Signal(int, int)
+
     def __init__(self):
         super().__init__()
 
@@ -670,6 +706,23 @@ class DropTextEdit(QtWidgets.QPlainTextEdit):
         # Postpone updates when dropping so they don't interfere with ongoing drag operations in ReorderWidget.
         # But don't postpone normal updates to prevent flickering.
         QTimer.singleShot(0, self.textChanged.emit)
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent):
+        if event.modifiers() & Qt.KeyboardModifier.AltModifier:
+            move = None
+            match event.key():
+                case Qt.Key.Key_Alt:    move = (0, 0)
+                case Qt.Key.Key_Left:   move = (-1, 0)
+                case Qt.Key.Key_Right:  move = (1, 0)
+                case Qt.Key.Key_Up:     move = (0, -1)
+                case Qt.Key.Key_Down:   move = (0, 1)
+
+            if move is not None:
+                event.accept()
+                self.moveSelectionPressed.emit(move[0], move[1])
+                return
+
+        super().keyPressEvent(event)
 
 
 
@@ -710,7 +763,7 @@ class HoverTextEdit(QtWidgets.QPlainTextEdit):
 
         newHoverText = ""
         if 0 < cursorPos < len(text):
-            newHoverText = self.container._getSelectedCaption(text, cursorPos)
+            newHoverText = self.container._getSelectedCaption(text, cursorPos)[0]
         self.setHoverText(newHoverText)
 
     def leaveEvent(self, event):
