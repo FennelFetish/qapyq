@@ -41,6 +41,17 @@ def isValidColor(color):
     return validColorPattern.match(color) is not None
 
 
+def stripCountPadding(text: str) -> tuple[str, int, int]:
+    textStrip = text.lstrip()
+    padLeft = len(text) - len(textStrip)
+
+    textStrip = textStrip.rstrip()
+    padRight = len(text) - padLeft - len(textStrip)
+
+    return textStrip, padLeft, padRight
+
+
+
 class Singleton(type):
     _instances = {}
     def __call__(cls, *args, **kwargs):

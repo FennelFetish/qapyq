@@ -1,4 +1,4 @@
-from PySide6 import QtWidgets
+from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Signal, Slot
 import lib.qtlib as qtlib
 from ui.flow_layout import FlowLayout, ReorderWidget
@@ -11,6 +11,7 @@ from ui.flow_layout import FlowLayout, ReorderWidget
 class CaptionBubbles(ReorderWidget):
     remove = Signal(int)
     dropped = Signal(str)
+    clicked = Signal(int)
 
     def __init__(self, context, showWeights=True, showRemove=False, editable=True):
         super().__init__()
@@ -57,7 +58,7 @@ class CaptionBubbles(ReorderWidget):
                 bubble = oldBubbles[i]
                 bubble.index = i
             else:
-                bubble = Bubble(i, self.remove, self.showWeights, self.showRemove, self.editable)
+                bubble = Bubble(self, i, self.showWeights, self.showRemove, self.editable)
                 bubble.setFocusProxy(self)
                 self.layout().addWidget(bubble)
 
@@ -84,9 +85,10 @@ class CaptionBubbles(ReorderWidget):
 
 # TODO: Change background color according to weight (blue=low, red=high?)
 class Bubble(QtWidgets.QFrame):
-    def __init__(self, index, removeSignal, showWeights=True, showRemove=False, editable=True):
+    def __init__(self, bubbles: CaptionBubbles, index, showWeights=True, showRemove=False, editable=True):
         super().__init__()
 
+        self.bubbles = bubbles
         self.index = index
         self._text = ""
         self.color = ""
@@ -118,7 +120,7 @@ class Bubble(QtWidgets.QFrame):
         if showRemove:
             btnRemove = qtlib.BubbleRemoveButton()
             btnRemove.setFocusProxy(self)
-            btnRemove.clicked.connect(lambda: removeSignal.emit(self.index))
+            btnRemove.clicked.connect(lambda: self.bubbles.remove.emit(self.index))
             layout.addWidget(btnRemove)
 
         self.setLayout(layout)
@@ -158,6 +160,14 @@ class Bubble(QtWidgets.QFrame):
         if self.spinWeight:
             self.spinWeight.wheelEvent(event)
             self.spinWeight.lineEdit().setCursorPosition(0) # Clear text selection
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent):
+        if event.button() == Qt.MouseButton.LeftButton:
+            event.accept()
+            self.bubbles.clicked.emit(self.index)
+            return
+
+        super().mousePressEvent(event)
 
 
 
