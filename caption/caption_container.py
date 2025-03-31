@@ -138,6 +138,7 @@ class CaptionContainer(QtWidgets.QWidget):
         qtlib.setMonospace(self.txtCaption, 1.2)
         self.txtCaption.textChanged.connect(self._onCaptionEdited)
         self.txtCaption.moveSelectionPressed.connect(self.moveCaptionSelection)
+        self.txtCaption.deleteSelectionPressed.connect(self.removeSelectedCaption)
         splitter.addWidget(self.txtCaption)
         splitter.setStretchFactor(row, 1)
 
@@ -541,6 +542,19 @@ class CaptionContainer(QtWidgets.QWidget):
         del captions[index]
         self.setCaption( self.captionSeparator.join(captions) )
 
+    @Slot()
+    def removeSelectedCaption(self):
+        text = self.txtCaption.toPlainText()
+        cursor = self.txtCaption.textCursor()
+        index = self._getSelectedCaption(text, cursor.position())[1]
+        self.removeCaption(index)
+
+        # Set cursor to start of next caption
+        self.selectCaption(index)
+        cursor = self.txtCaption.textCursor()
+        cursor.setPosition(cursor.selectionStart())
+        self.txtCaption.setTextCursor(cursor)
+
 
     @Slot()
     def _onCaptionGenerated(self, text, mode):
@@ -692,6 +706,7 @@ class CaptionCache:
 
 class CaptionTextEdit(QtWidgets.QPlainTextEdit):
     moveSelectionPressed = Signal(int, int)
+    deleteSelectionPressed = Signal()
 
     def __init__(self):
         super().__init__()
@@ -716,6 +731,11 @@ class CaptionTextEdit(QtWidgets.QPlainTextEdit):
                 case Qt.Key.Key_Right:  move = (1, 0)
                 case Qt.Key.Key_Up:     move = (0, -1)
                 case Qt.Key.Key_Down:   move = (0, 1)
+
+                case Qt.Key.Key_Delete:
+                    event.accept()
+                    self.deleteSelectionPressed.emit()
+                    return
 
             if move is not None:
                 event.accept()
