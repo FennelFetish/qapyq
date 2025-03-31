@@ -55,6 +55,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @property
     def currentTab(self) -> ImgTab:
+        if self._fullscreenTab:
+            return self._fullscreenTab
         return self.tabWidget.currentWidget()
 
     @property

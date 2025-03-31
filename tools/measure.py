@@ -95,6 +95,7 @@ class MeasureTool(ViewTool):
 
         imgSize = self._imgview.image.pixmap().size()
         imgPixels = imgSize.width() * imgSize.height()
+        imgPixels = max(imgPixels, 1)
         area = (dx+1) * (dy+1)
         areaPercent = 100 * area / imgPixels
 
