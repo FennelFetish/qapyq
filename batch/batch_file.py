@@ -365,7 +365,7 @@ class FileMaskSettings(QtWidgets.QGroupBox):
 
         self.maskPathSettings = export.PathSettings(self.maskPathParser, showInfo=False)
         self.maskPathSettings.btnChoosePath.setMinimumWidth(110)
-        self.maskPathSettings.pathTemplate   = "{{path}}-masklabel"
+        self.maskPathSettings.pathTemplate   = "{{path}}-masklabel.png"
         self.maskPathSettings.overwriteFiles = False
 
         layout.addWidget(self.maskPathSettings, 0, 0)
