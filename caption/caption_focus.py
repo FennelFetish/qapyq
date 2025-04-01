@@ -144,7 +144,7 @@ class CaptionFocus(CaptionTab):
             bubble.setColor(bubble.groupColor if exists else qtlib.COLOR_BUBBLE_BLACK)
 
     def _updateSelectionState(self):
-        captions = self.container.getCaption().split(self.separator.strip())
+        captions = self.ctx.text.getCaption().split(self.separator.strip())
         captionSet = { cap for c in captions if (cap := c.strip()) }
         self.updateSelectionState(captionSet)
 
@@ -158,7 +158,7 @@ class CaptionFocus(CaptionTab):
         if not text:
             return
 
-        colors = self.ctx.groups.getCaptionColors()
+        colors = self.ctx.highlight.colors
 
         for i, tag in enumerate(text.split(self.separator.strip())):
             tag = tag.strip()
@@ -204,7 +204,7 @@ class CaptionFocus(CaptionTab):
 
         captions = []
         exists = False
-        text = self.container.getCaption()
+        text = self.ctx.text.getCaption()
         if text:
             for current in text.split(self.separator.strip()):
                 current = current.strip()
@@ -219,7 +219,7 @@ class CaptionFocus(CaptionTab):
 
         newText = self.separator.join(captions)
         if newText != text:
-            self.container.setCaption(newText)
+            self.ctx.text.setCaption(newText)
             self.ctx.needsRulesApplied.emit()
 
         # Always save, even when text is unchanged.

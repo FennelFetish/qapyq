@@ -99,7 +99,7 @@ class TagStats(QtWidgets.QWidget):
         if not captionWin:
             return
 
-        self.model.updateColors(captionWin.ctx.groups.getCaptionCharFormats())
+        self.model.updateColors(captionWin.ctx.highlight.charFormats)
         if not self._captionSlotConnected:
             captionWin.ctx.controlUpdated.connect(self.reloadColors)
             self._captionSlotConnected = True
@@ -374,8 +374,9 @@ class TagTableView(QtWidgets.QTableView):
     @Slot()
     def _addTags(self):
         if captionWin := getCaptionWindow(self.tab, self):
+            textField = captionWin.ctx.text
             for tag in self.selectedTags():
-                captionWin.appendToCaption(tag)
+                textField.appendToCaption(tag)
 
             # Not needed, but will connect the update signal
             self.captionRulesChanged.emit()
