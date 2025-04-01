@@ -49,7 +49,7 @@ class CaptionBubbles(ReorderWidget):
     def updateBubbles(self):
         oldBubbles: list[Bubble] = [bubble for bubble in self.getBubbles()]
 
-        colors = self.ctx.groups.getCaptionColors()
+        colors = self.ctx.highlight.colors
         i = -1
         for i, caption in enumerate(self.text.split(self.separator)):
             caption = caption.strip()

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Callable, Iterable
 from collections import Counter
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal
@@ -16,6 +17,13 @@ from .caption_wildcard import WildcardWindow, expandWildcards
 # - any word  ('b d' in 'a b c d e', also 'b f')
 
 
+def splitCaptionWords(captions: Iterable[str]) -> list[tuple[str, set[str]]]:
+    return [
+        (words[-1], set(words[:-1])) # Tuple of: last word / set of remaining words
+        for words in (cap.split(" ") for cap in captions)
+    ]
+
+
 class CaptionGroups(CaptionTab):
     HUE_OFFSET = 0.3819444 # 1.0 - inverted golden ratio, ~137.5°
 
@@ -25,8 +33,6 @@ class CaptionGroups(CaptionTab):
         self.wildcards: dict[str, list[str]] = dict()
 
         self._nextGroupHue = util.rnd01()
-        self.colorSet = CaptionColorSet(self)
-        self.ctx.controlUpdated.connect(self.colorSet.clearCache)
 
         self._build()
         self.addGroup()
@@ -137,30 +143,18 @@ class CaptionGroups(CaptionTab):
         self.ctx.controlUpdated.emit()
 
 
-    def getCaptionColors(self) -> dict[str, str]:
-        return self.colorSet.colors
-
-    def getCaptionCharFormats(self) -> dict[str, QtGui.QTextCharFormat]:
-        return self.colorSet.charFormats
-
-    def getCaptionCombineFormats(self) -> dict[str, CombineFormat]:
-        return self.colorSet.combineFormats
-
-
     def updateSelectedState(self, captions: set[str], force: bool):
         captionWords: list[tuple[str, set[str]]] | None = None
 
         for group in self.groups:
             if group.combineTags:
                 if captionWords is None:
-                    captionWords = [
-                        (words[-1], set(words[:-1])) # Tuple of: last word / set of remaining words
-                        for words in (cap.split(" ") for cap in captions)
-                    ]
-
-                group.updateSelectedStateCombine(captionWords, force)
+                    captionWords = splitCaptionWords(captions)
+                checkFunc = lambda button: GroupButton.checkSelectedCombine(button, captionWords, self.wildcards)
             else:
-                group.updateSelectedState(captions, force)
+                checkFunc = lambda button: GroupButton.checkSelected(button, captions, self.wildcards)
+
+            group.updateSelectedState(checkFunc, force)
 
 
     @Slot()
@@ -279,34 +273,12 @@ class CaptionControlGroup(QtWidgets.QWidget):
         return self.groups.groupLayout.indexOf(self)
 
 
-    def updateSelectedState(self, captions: set[str], force: bool):
+    def updateSelectedState(self, checkFunc: Callable, force: bool):
         enabledColor, disabledColor = self.colorWidget.color, self.colorWidget.disabledColor
         for button in self.buttons:
-            checked = any(
-                (text in captions)
-                for text in expandWildcards(button.text.strip(), self.groups.wildcards)
-            )
-
+            checked = checkFunc(button)
             color = enabledColor if checked else disabledColor
             button.setChecked(checked, color, force)
-
-    def updateSelectedStateCombine(self, captionWords: list[tuple[str, set[str]]], force: bool):
-        enabledColor, disabledColor = self.colorWidget.color, self.colorWidget.disabledColor
-        for button in self.buttons:
-            checked = any(
-                self._checkSelectionStateCombine(text, captionWords)
-                for text in expandWildcards(button.text.strip(), self.groups.wildcards)
-            )
-
-            color = enabledColor if checked else disabledColor
-            button.setChecked(checked, color, force)
-
-    def _checkSelectionStateCombine(self, text: str, captionWords: list[tuple[str, set[str]]]) -> bool:
-        buttonWords = [word for word in text.split(" ") if word]
-        for lastWord, captionWordSet in captionWords:
-            if buttonWords[-1] == lastWord and captionWordSet.issuperset(buttonWords[:-1]):
-                return True
-        return False
 
 
     @property
@@ -419,7 +391,7 @@ class CaptionControlGroup(QtWidgets.QWidget):
 
     @Slot()
     def _addCaptionClick(self):
-        text = self.groups.ctx.container.getSelectedCaption()
+        text = self.groups.ctx.text.getSelectedCaption()
         self._addCaptionDrop(text)
 
     @Slot()
@@ -437,10 +409,38 @@ class CaptionControlGroup(QtWidgets.QWidget):
 
     @Slot()
     def _onButtonClicked(self, button: GroupButton):
+        wildcards = self.groups.wildcards
+        wildcardTags = expandWildcards(button.text, wildcards)
+        if len(wildcardTags) <= 1:
+            self._toggleCaption(button, wildcardTags[0])
+            return
+
+        # Build and show menu for expanded wildcards
+        captionText = self.groups.ctx.text
+        caption = captionText.getCaption()
+        captions = {cap for c in caption.split(captionText.separator.strip()) if (cap := c.strip())}
+        captionWords = splitCaptionWords(captions) if self.combineTags else None
+
+        menu = QtWidgets.QMenu("Expanded Wildcards")
+        for tag in wildcardTags:
+            if captionWords:
+                checked = GroupButton._checkSelectedCombine(tag, captionWords)
+            else:
+                checked = tag in captions
+
+            act = menu.addAction(tag)
+            act.setCheckable(True)
+            act.setChecked(checked)
+            act.triggered.connect(lambda checked, button=button, cap=tag: self._toggleCaption(button, cap))
+
+        menu.exec( button.mapToGlobal(button.rect().bottomLeft()) )
+
+    @Slot()
+    def _toggleCaption(self, button: GroupButton, caption: str):
         # When the button is being unchecked, prepare words for removal from combined tags
         removeWords = None
         if self.combineTags and button.checked:
-            words = button.words()
+            words = [word for word in caption.strip().split(" ") if word]
             lastWord = words[-1]
             removeWords = set(words[:-1])
 
@@ -451,7 +451,7 @@ class CaptionControlGroup(QtWidgets.QWidget):
                     removeWords.difference_update(otherButton.words())
 
         # TODO: Send 'keepWords'?
-        self.groups.ctx.container.toggleCaption(button.text, removeWords)
+        self.groups.ctx.text.toggleCaption(caption, removeWords)
 
 
     def resizeEvent(self, event):
@@ -462,7 +462,7 @@ class CaptionControlGroup(QtWidgets.QWidget):
 class GroupButton(qtlib.EditablePushButton):
     buttonClicked = Signal(object)
 
-    def __init__(self, text):
+    def __init__(self, text: str):
         super().__init__(text, self.stylerFunc, extraWidth=3)
         self.clicked.connect(self._onClicked)
 
@@ -493,6 +493,27 @@ class GroupButton(qtlib.EditablePushButton):
             [word for word in expandedTag.split(" ") if word]
             for expandedTag in expandWildcards(text, wildcards)
         ]
+
+
+    def checkSelected(self, captions: set[str], wildcards: dict) -> bool:
+        return any(
+            (text in captions)
+            for text in expandWildcards(self.text.strip(), wildcards)
+        )
+
+    def checkSelectedCombine(self, captionWords: list[tuple[str, set[str]]], wildcards: dict) -> bool:
+        return any(
+            self._checkSelectedCombine(text, captionWords)
+            for text in expandWildcards(self.text.strip(), wildcards)
+        )
+
+    @staticmethod
+    def _checkSelectedCombine(text: str, captionWords: list[tuple[str, set[str]]]) -> bool:
+        buttonWords = [word for word in text.split(" ") if word]
+        for lastWord, captionWordSet in captionWords:
+            if buttonWords[-1] == lastWord and captionWordSet.issuperset(buttonWords[:-1]):
+                return True
+        return False
 
 
 
@@ -602,254 +623,6 @@ class Trash(QtWidgets.QLabel):
             style += "; background: #801616"
 
         self.setStyleSheet("QLabel{" + style + "}")
-
-
-
-class CaptionColorSet:
-    COLOR_FOCUS_DEFAULT = "#901313"
-    COLOR_FOCUS_BAN     = "#686868"
-
-    def __init__(self, groups: CaptionGroups):
-        self.groups = groups
-        self._nextGroupHue = util.rnd01()
-
-        self._cachedColors: dict[str, str] | None = None
-        self._cachedCharFormats: dict[str, QtGui.QTextCharFormat] | None = None
-        self._cachedCombineFormats: dict[str, CombineFormat] | None = None
-
-        self.bannedFormat = QtGui.QTextCharFormat()
-        self.bannedFormat.setForeground(QtGui.QColor.fromHsvF(0, 0, 0.5))
-
-        self.focusFormat = QtGui.QTextCharFormat()
-        self.focusFormat.setForeground(qtlib.getHighlightColor(self.COLOR_FOCUS_DEFAULT))
-
-
-    @property
-    def colors(self) -> dict[str, str]:
-        if not self._cachedColors:
-            self.update()
-        return self._cachedColors
-
-    @property
-    def charFormats(self) -> dict[str, QtGui.QTextCharFormat]:
-        if not self._cachedCharFormats:
-            self.update()
-        return self._cachedCharFormats
-
-    @property
-    def combineFormats(self) -> dict[str, CombineFormat]:
-        if not self._cachedCombineFormats:
-            self.updateCombineFormats()
-        return self._cachedCombineFormats
-
-
-    def update(self):
-        colors: dict[str, str] = dict()
-        formats: dict[str, QtGui.QTextCharFormat] = dict()
-        ctx = self.groups.ctx
-
-        # First insert all focus tags. This is the default color if focus tags don't belong to groups.
-        focusSet = ctx.focus.getFocusSet()
-        for focusTag in focusSet:
-            colors[focusTag] = self.COLOR_FOCUS_DEFAULT
-            formats[focusTag] = self.focusFormat
-
-        # Insert group colors
-        for group in self.groups.groups:
-            mutedColor, mutedFormat = self._getMuted(group.color) if focusSet else (group.color, group.charFormat)
-
-            for caption in group.captionsExpandWildcards:
-                if caption in focusSet:
-                    colors[caption]  = group.color
-                    formats[caption] = group.charFormat
-                else:
-                    colors[caption]  = mutedColor
-                    formats[caption] = mutedFormat
-
-        # Insert banned color. This will overwrite group colors.
-        bannedColor, bannedFormat = self._getMuted(qtlib.COLOR_BUBBLE_BAN) if focusSet else (qtlib.COLOR_BUBBLE_BAN, self.bannedFormat)
-        bannedFocusColor, bannedFocusFormat = self._getMuted(self.COLOR_FOCUS_BAN, 1, 1) if focusSet else (qtlib.COLOR_BUBBLE_BAN, self.bannedFormat)
-        for banned in ctx.settings.bannedCaptions:
-            if banned in focusSet:
-                colors[banned]  = bannedFocusColor
-                formats[banned] = bannedFocusFormat
-            else:
-                colors[banned]  = bannedColor
-                formats[banned] = bannedFormat
-
-        # Hover color
-        for caption, color in colors.items():
-            if ctx.container.isHovered(caption):
-                colors[caption], formats[caption] = self._getHovered(color)
-
-        self._cachedColors = colors
-        self._cachedCharFormats = formats
-
-
-    def updateCombineFormats(self):
-        # Last Word => CombineFormat
-        formatMap = dict[str, CombineFormat]()
-
-        for group in self.groups.groups:
-            if not group.combineTags:
-                continue
-
-            groupFormat = group.charFormat
-            groupWords = set[str]()
-            groupLastWords = set[str]()
-
-            for caption in group.captionsExpandWildcards:
-                words = [word for word in caption.split(" ") if word]
-                if len(words) < 2:
-                    continue
-
-                groupWords.update(words)
-
-                lastWord = words[-1]
-                groupLastWords.add(lastWord)
-
-                for word in words[:-1]:
-                    combineFormat = formatMap.get(lastWord)
-                    if not combineFormat:
-                        formatMap[lastWord] = combineFormat = CombineFormat(lastWord)
-
-                    combineFormat.wordFormats[word] = groupFormat
-
-                    wordSet = frozenset(words)
-                    #combineFormat.tagSets.add(wordSet)
-                    #combineFormat.tagFormats[wordSet] = groupFormat
-
-            for lastWord in groupLastWords:
-                wordSet = set(groupWords)
-                wordSet.discard(lastWord)
-                formatMap[lastWord].groupFormats.append(CombineFormat.GroupFormat(wordSet, groupFormat))
-
-        # Remove entries with only one word
-        self._cachedCombineFormats = {k: cf for k, cf in formatMap.items() if cf.finalize()}
-
-
-    @Slot()
-    def clearCache(self):
-        self._cachedColors = None
-        self._cachedCharFormats = None
-        self._cachedCombineFormats = None
-
-
-    def _getMuted(self, color: str, mixS=0.22, mixV=0.3):
-        mutedColor = colors.mixBubbleColor(color, mixS, mixV)
-        mutedFormat = QtGui.QTextCharFormat()
-        mutedFormat.setForeground(qtlib.getHighlightColor(mutedColor))
-        return mutedColor, mutedFormat
-
-    def _getHovered(self, color: str):
-        h, s, v = util.get_hsv(color)
-        s = max(0.3, min(1.0, s*0.8))
-        v = max(0.2, min(1.0, v*1.6))
-        hoveredColor = util.hsv_to_rgb(h, s, v)
-
-        hoveredFormat = QtGui.QTextCharFormat()
-        hoveredFormat.setForeground(qtlib.getHighlightColor(hoveredColor))
-        hoveredFormat.setFontUnderline(True)
-
-        return hoveredColor, hoveredFormat
-
-
-
-# One CombineFormat is shared by multiple groups.
-# Retrieved from dict [ Last Word => CombineFormat ]
-# That dict is uses for faster initial lookup, matching the last word.
-class CombineFormat:
-    class GroupFormat:
-        def __init__(self, words: set[str], format: QtGui.QTextCharFormat):
-            self.words = frozenset(words)
-            self.format = format
-
-
-    def __init__(self, lastWord: str):
-        self.wordFormats = dict[str, QtGui.QTextCharFormat]()
-        #self.tagSets = set[frozenset[str]]()
-
-        #self.tagFormats = dict[frozenset[str], QtGui.QTextCharFormat]()
-        #self._tagFormatsSorted = list[tuple[frozenset[str], QtGui.QTextCharFormat]]()
-
-        self.lastWord = lastWord
-        self.groupFormats = list[self.GroupFormat]()
-
-    def finalize(self) -> bool:
-        if len(self.wordFormats) < 2:
-            return False
-
-        # print("CombineFormat Tag Order:")
-        # for k in self.tagFormats.keys():
-        #     print(f"  {k}")
-
-        # self._tagFormatsSorted = sorted(((k, v) for k, v in self.tagFormats.items()), key=lambda item: -len(item[0]))
-        # self.tagFormats = None
-
-        # print("CombineFormat Tag Order (sorted):")
-        # for k, v in self._tagFormatsSorted:
-        #     print(f"  {k}")
-
-
-        self.groupFormats.sort(key=lambda item: -len(item.words))
-        return True
-
-    # def hasSubset(self, captionWords: list[str]) -> bool:
-    #     captionWords = [word for word in captionWords if word]
-    #     for tagSet in self.tagSets:
-    #         print(f"subset test: {tagSet} -> in caption -> {captionWords}")
-    #         if tagSet.issubset(captionWords):
-    #             print("  => True")
-    #             return True
-    #     return False
-
-    # def hasSubset(self, captionWords: list[str]) -> bool:
-    #     captionWords = [word for word in captionWords if word]
-    #     for tagSet, format in self._tagFormatsSorted:
-    #         print(f"subset test: {tagSet} -> in caption -> {captionWords}")
-    #         if tagSet.issubset(captionWords):
-    #             print("  => True")
-    #             return True
-    #     return False
-
-
-    # # Find group with longest match (maximum number of 'captionWords' in group tags)
-    # def getFormat(self, captionWords: list[str]):
-    #     captionWords = [word for word in captionWords if word]
-
-    #     # TODO: Return set with words in group
-
-    #     for tagSet, format in self._tagFormatsSorted:
-    #         print(f"subset test: {tagSet} -> in caption -> {captionWords}")
-    #         if tagSet.issubset(captionWords):
-    #             print("  => True")
-    #             return tagSet, format
-
-    #     return None, None
-
-
-    # Find group with longest match (maximum number of 'captionWords' in group tags)
-    def getGroupFormat(self, captionWords: list[str]):
-        captionWords = [word for word in captionWords if word and word != self.lastWord]
-        if not captionWords:
-            return None
-
-        maxWords = 0
-        bestFormat = None
-
-        for groupFormat in self.groupFormats:
-            intersection = groupFormat.words.intersection(captionWords)
-            # Complete match: All caption words are members of the same group
-            if len(intersection) == len(captionWords):
-                return groupFormat
-
-            if len(intersection) > maxWords:
-                maxWords = len(intersection)
-                bestFormat = groupFormat
-
-        # if bestFormat:
-        #     print(f"for caption: {captionWords}  => best group: {bestFormat.words}")
-        return bestFormat
 
 
 

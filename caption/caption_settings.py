@@ -176,7 +176,7 @@ class CaptionSettings(CaptionTab):
 
     @Slot()
     def banSelectedCaption(self):
-        caption = self.ctx.container.getSelectedCaption()
+        caption = self.ctx.text.getSelectedCaption()
         self.addBannedCaption(caption)
 
 

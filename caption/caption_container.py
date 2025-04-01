@@ -1,15 +1,15 @@
 from __future__ import annotations
-import os
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Signal, Slot, QSignalBlocker, QTimer
+from PySide6.QtCore import Qt, Signal, Slot, QTimer
 from lib import qtlib
 from lib.filelist import DataKeys
 from lib.captionfile import FileTypeSelector
-from lib.util import stripCountPadding
 from ui.tab import ImgTab
 from config import Config
 from .caption_menu import CaptionMenu, RulesLoadMode
 from .caption_bubbles import CaptionBubbles
+from .caption_text import CaptionTextEdit
+from .caption_highlight import CaptionHighlight
 from .caption_filter import CaptionRulesProcessor
 from .caption_settings import CaptionSettings
 from .caption_groups import CaptionGroups
@@ -23,17 +23,18 @@ class CaptionContext(QtWidgets.QTabWidget):
     separatorChanged    = Signal(str)
     controlUpdated      = Signal()
     needsRulesApplied   = Signal()
-    captionGenerated    = Signal(str, str)
 
 
     def __init__(self, container: CaptionContainer, tab: ImgTab):
         super().__init__()
         self.container = container
+        self.text = container.txtCaption
         self.tab = tab
 
         self._cachedRulesProcessor: CaptionRulesProcessor | None = None
         self.controlUpdated.connect(self._invalidateRulesProcessor) # First Slot for controlUpdated
 
+        self.highlight    = CaptionHighlight(self)
         self.settings     = CaptionSettings(self)
         self.groups       = CaptionGroups(self)
         self.conditionals = CaptionConditionals(self)
@@ -78,6 +79,9 @@ class CaptionContainer(QtWidgets.QWidget):
     def __init__(self, tab):
         super().__init__()
 
+        self.txtCaption = CaptionTextEdit()
+        self.txtCaption.needsRulesApplied.connect(self.applyRulesIfAuto)
+
         self.captionCache = CaptionCache(tab.filelist)
         self.captionSeparator = ', '
 
@@ -85,7 +89,6 @@ class CaptionContainer(QtWidgets.QWidget):
         self._menu = CaptionMenu(self, self.ctx)
         self._build(self.ctx)
 
-        self.ctx.captionGenerated.connect(self._onCaptionGenerated)
         self.ctx.separatorChanged.connect(self._onSeparatorChanged)
         self.ctx.controlUpdated.connect(self._onControlUpdated)
         self.ctx.needsRulesApplied.connect(self.applyRulesIfAuto)
@@ -126,19 +129,16 @@ class CaptionContainer(QtWidgets.QWidget):
         self.bubbles.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.MinimumExpanding)
         self.bubbles.setContentsMargins(4, 4, 4, 4)
         self.bubbles.setFocusProxy(self)
-        self.bubbles.remove.connect(self.removeCaption)
-        self.bubbles.orderChanged.connect(lambda: self.setCaption( self.captionSeparator.join(self.bubbles.getCaptions()) ))
-        self.bubbles.dropped.connect(self.appendToCaption)
-        self.bubbles.clicked.connect(self.selectCaption)
+        self.bubbles.orderChanged.connect(self._onBubbleOrderChanged)
+        self.bubbles.remove.connect(self.txtCaption.removeCaption)
+        self.bubbles.dropped.connect(self.txtCaption.appendToCaption)
+        self.bubbles.clicked.connect(self.txtCaption.selectCaption)
         splitter.addWidget(self.bubbles)
         splitter.setStretchFactor(row, 1)
 
         row += 1
-        self.txtCaption = CaptionTextEdit()
         qtlib.setMonospace(self.txtCaption, 1.2)
         self.txtCaption.textChanged.connect(self._onCaptionEdited)
-        self.txtCaption.moveSelectionPressed.connect(self.moveCaptionSelection)
-        self.txtCaption.deleteSelectionPressed.connect(self.removeSelectedCaption)
         splitter.addWidget(self.txtCaption)
         splitter.setStretchFactor(row, 1)
 
@@ -257,17 +257,10 @@ class CaptionContainer(QtWidgets.QWidget):
                 self.ctx.settings.applyPreset(prevPreset)
 
 
-    def getCaption(self) -> str:
-        return self.txtCaption.toPlainText()
-
-    def setCaption(self, text):
-        self.txtCaption.setPlainText(text)
-        self.txtCaption.moveCursor(QtGui.QTextCursor.MoveOperation.End)
-
     @Slot()
     def _onCaptionEdited(self):
-        text = self.txtCaption.toPlainText()
-        self._highlight(text, self.txtCaption)
+        text = self.txtCaption.getCaption()
+        self.ctx.highlight.highlight(text, self.captionSeparator, self.txtCaption)
         self.bubbles.setText(text)
         self.updateSelectionState(text)
         self._updatePreview(text)
@@ -277,6 +270,12 @@ class CaptionContainer(QtWidgets.QWidget):
         self.btnSave.setChanged(True)
 
         self.ctx.captionEdited.emit(text)
+
+    @Slot()
+    def _onBubbleOrderChanged(self):
+        text = self.captionSeparator.join(self.bubbles.getCaptions())
+        self.txtCaption.setCaption(text)
+
 
     @Slot()
     def _onSourceChanged(self):
@@ -305,7 +304,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.txtRulesPreview.setVisible(enabled)
         Config.captionShowPreview = enabled
         if enabled:
-            self._updatePreview(self.getCaption())
+            self._updatePreview(self.txtCaption.getCaption())
 
             splitterSizes = self._splitter.sizes()
             idx = self._splitter.indexOf(self.txtRulesPreview)
@@ -318,130 +317,7 @@ class CaptionContainer(QtWidgets.QWidget):
 
         textNew = self.ctx.rulesProcessor().process(text)
         self.txtRulesPreview.setPlainText(textNew)
-        self._highlight(textNew, self.txtRulesPreview)
-
-
-    def _highlight(self, text: str, txtWidget: QtWidgets.QPlainTextEdit):
-        formats = self.ctx.groups.getCaptionCharFormats()
-        wordFormatMap = self.ctx.groups.getCaptionCombineFormats()
-
-        with QSignalBlocker(txtWidget):
-            cursor = txtWidget.textCursor()
-            cursor.setPosition(0)
-            cursor.movePosition(QtGui.QTextCursor.MoveOperation.End, QtGui.QTextCursor.MoveMode.KeepAnchor)
-            cursor.setCharFormat(QtGui.QTextCharFormat())
-
-            start = 0
-            sep = self.captionSeparator.strip()
-            for caption in text.split(sep):
-                captionStrip, padLeft, padRight = stripCountPadding(caption)
-                start += padLeft
-
-                if format := formats.get(captionStrip):
-                    self._highlightPart(cursor, format, start, len(captionStrip))
-                elif self.isHovered(captionStrip):
-                    # Char format for colored captions is made in CaptionColorSet
-                    format = QtGui.QTextCharFormat()
-                    format.setFontUnderline(True)
-                    self._highlightPart(cursor, format, start, len(captionStrip))
-
-                # Try highlighting combined words
-                else:
-                    captionWords = captionStrip.split(" ")
-                    lastWord = captionWords[-1]
-                    pos = start
-
-                    if (combineFormat := wordFormatMap.get(lastWord)) and (groupFormat := combineFormat.getGroupFormat(captionWords)):
-                        for word in captionWords[:-1]:
-                            if word in groupFormat.words:
-                                self._highlightPart(cursor, groupFormat.format, pos, len(word))
-                            pos += len(word) + 1
-
-                        self._highlightPart(cursor, groupFormat.format, pos, len(lastWord))
-
-                    # if (combineFormat := wordFormatMap.get(lastWord)):
-                    #     wordSet, wordFormat = combineFormat.getFormat(captionWords)
-                    #     if wordSet and wordFormat:
-                    #         lastWordFormat = None
-                    #         for word in captionWords[:-1]:
-                    #             if word in wordSet:
-                    #                 self._highlightPart(cursor, wordFormat, pos, len(word))
-                    #                 lastWordFormat = wordFormat
-                    #             pos += len(word) + 1
-
-                    #         if lastWordFormat:
-                    #             self._highlightPart(cursor, lastWordFormat, pos, len(lastWord))
-
-                    # if (combineFormat := wordFormatMap.get(lastWord)) and combineFormat.hasSubset(captionWords):
-                    #     lastWordFormat = None
-                    #     for word in captionWords[:-1]:
-                    #         if wordFormat := combineFormat.wordFormats.get(word):
-                    #             self._highlightPart(cursor, wordFormat, pos, len(word))
-                    #             lastWordFormat = wordFormat
-                    #         pos += len(word) + 1
-
-                    #     if lastWordFormat:
-                    #         self._highlightPart(cursor, lastWordFormat, pos, len(lastWord))
-
-                start += len(captionStrip) + padRight + len(sep)
-
-    def _highlightPart(self, cursor: QtGui.QTextCursor, format: QtGui.QTextCharFormat, start: int, length: int):
-        cursor.setPosition(start)
-        cursor.setPosition(start+length, QtGui.QTextCursor.MoveMode.KeepAnchor)
-        cursor.setCharFormat(format)
-
-
-    def getSelectedCaption(self) -> str:
-        text = self.txtCaption.toPlainText()
-        cursorPos = self.txtCaption.textCursor().position()
-        return self._getSelectedCaption(text, cursorPos)[0]
-
-    def _getSelectedCaption(self, text: str, cursorPos: int) -> tuple[str, int]:
-        sepStrip = self.captionSeparator.strip()
-        accumulatedLength = 0
-        for i, caption in enumerate(text.split(sepStrip)):
-            accumulatedLength += len(caption) + len(sepStrip)
-            if cursorPos < accumulatedLength:
-                return caption.strip(), i
-
-        return "", -1
-
-    @Slot()
-    def selectCaption(self, index: int):
-        text = self.txtCaption.toPlainText()
-        sepStrip, sepSpaceL, sepSpaceR = stripCountPadding(self.captionSeparator)
-
-        accumulatedLength = 0
-        splitCaptions = text.split(sepStrip)
-        for i, caption in enumerate(splitCaptions):
-            if i != index:
-                accumulatedLength += len(caption) + len(sepStrip)
-                continue
-
-            capStrip, capSpaceL, capSpaceR = stripCountPadding(caption)
-            offsetL = min(capSpaceL, sepSpaceR) if i > 0 else 0
-            offsetR = min(capSpaceR, sepSpaceL) if i < len(splitCaptions)-1 else 0
-
-            start = accumulatedLength + offsetL
-            end   = accumulatedLength + len(caption) - offsetR
-
-            cursor = self.txtCaption.textCursor()
-            cursor.setPosition(start, QtGui.QTextCursor.MoveMode.MoveAnchor)
-            cursor.setPosition(end, QtGui.QTextCursor.MoveMode.KeepAnchor)
-            self.txtCaption.setTextCursor(cursor)
-
-    @Slot()
-    def moveCaptionSelection(self, offset: int, offsetLine: int):
-        text = self.txtCaption.toPlainText()
-
-        cursor = self.txtCaption.textCursor()
-        if offsetLine != 0:
-            moveLineDir = QtGui.QTextCursor.MoveOperation.Up if offsetLine < 0 else QtGui.QTextCursor.MoveOperation.Down
-            cursor.movePosition(moveLineDir, QtGui.QTextCursor.MoveMode.MoveAnchor)
-
-        index = self._getSelectedCaption(text, cursor.position())[1]
-        index = max(0, index+offset)
-        self.selectCaption(index)
+        self.ctx.highlight.highlight(textNew, self.captionSeparator, self.txtRulesPreview)
 
 
     def getHoveredCaption(self) -> str:
@@ -460,8 +336,8 @@ class CaptionContainer(QtWidgets.QWidget):
 
     @Slot()
     def _onControlUpdated(self):
-        text = self.txtCaption.toPlainText()
-        self._highlight(text, self.txtCaption)
+        text = self.txtCaption.getCaption()
+        self.ctx.highlight.highlight(text, self.captionSeparator, self.txtCaption)
         self.bubbles.updateBubbles()
         self.updateSelectionState(text)
         self._updatePreview(text)
@@ -481,97 +357,8 @@ class CaptionContainer(QtWidgets.QWidget):
         # possibly because they are not visible during tab creation?
         # Since GroupButtons only re-apply the stylesheet when the color changes for performance reasons, they are not enabled correctly.
         # As a workaround, force a color update after creating a new tab.
-        text = self.txtCaption.toPlainText()
+        text = self.txtCaption.getCaption()
         self.updateSelectionState(text, force=True)
-
-
-    @Slot()
-    def appendToCaption(self, text: str):
-        caption = self.txtCaption.toPlainText()
-        if caption:
-            caption += self.captionSeparator
-        caption += text
-        self.setCaption(caption)
-
-        if self.isAutoApplyRules():
-            self.applyRules()
-
-    def toggleCaption(self, caption: str, removeWords: set[str]|None):
-        caption = caption.strip()
-        captions = []
-        removed = False
-
-        # lastWord = ""
-        # if removeWords:
-        #     print(f"removeWords: {removeWords}")
-        #     lastWord = caption.rsplit(" ", 1)[-1]
-
-        text = self.txtCaption.toPlainText()
-        if text:
-            for current in text.split(self.captionSeparator.strip()):
-                current = current.strip()
-                if caption == current:
-                    removed = True
-                # elif removeWords and current.endswith(lastWord):
-                #     # All removeWords need to exist in 'current'
-                #     # TODO: Still buggy! Removing from other groups when removeWords has one word.
-                #     currentWords = [word for word in current.split(" ")]
-                #     if not removeWords.issubset(currentWords):
-                #         captions.append(current)
-                #         continue
-
-                #     current = " ".join(word for word in currentWords if word not in removeWords)
-                #     if current != lastWord:
-                #         captions.append(current)
-                #     removed = True
-                else:
-                    captions.append(current)
-
-        if not removed:
-            captions.append(caption)
-
-        self.setCaption( self.captionSeparator.join(captions) )
-        if self.isAutoApplyRules():
-            self.applyRules()
-
-    @Slot()
-    def removeCaption(self, index: int):
-        text = self.txtCaption.toPlainText()
-        splitSeparator = self.captionSeparator.strip()
-        captions = [c.strip() for c in text.split(splitSeparator)]
-        del captions[index]
-        self.setCaption( self.captionSeparator.join(captions) )
-
-    @Slot()
-    def removeSelectedCaption(self):
-        text = self.txtCaption.toPlainText()
-        cursor = self.txtCaption.textCursor()
-        index = self._getSelectedCaption(text, cursor.position())[1]
-        self.removeCaption(index)
-
-        # Set cursor to start of next caption
-        self.selectCaption(index)
-        cursor = self.txtCaption.textCursor()
-        cursor.setPosition(cursor.selectionStart())
-        self.txtCaption.setTextCursor(cursor)
-
-
-    @Slot()
-    def _onCaptionGenerated(self, text, mode):
-        caption = self.txtCaption.toPlainText()
-        if caption:
-            if mode == "Append":
-                caption += os.linesep + text
-            elif mode == "Prepend":
-                caption = text + os.linesep + caption
-            elif mode == "Replace":
-                caption = text
-        else:
-            caption = text
-
-        self.setCaption(caption)
-        if self.isAutoApplyRules():
-            self.applyRules()
 
 
     @Slot()
@@ -583,12 +370,12 @@ class CaptionContainer(QtWidgets.QWidget):
     def applyRules(self):
         # FIXME: The preview is made after applying the rules to the text. This can change the sorting of combined tags.
         rulesProcessor = self.createRulesProcessor()
-        text = self.txtCaption.toPlainText()
+        text = self.txtCaption.getCaption()
         textNew = rulesProcessor.process(text)
 
         # Only set when text has changed to prevent save button turning red
         if textNew != text:
-            self.setCaption(textNew)
+            self.txtCaption.setCaption(textNew)
 
     def createRulesProcessor(self) -> CaptionRulesProcessor:
         removeDup = self.ctx.settings.isRemoveDuplicates
@@ -611,7 +398,7 @@ class CaptionContainer(QtWidgets.QWidget):
             filelist.setNextFile()
 
     def saveCaptionNoSkip(self) -> bool:
-        text = self.txtCaption.toPlainText()
+        text = self.txtCaption.getCaption()
         currentFile = self.ctx.tab.filelist.getCurrentFile()
 
         if self.destSelector.saveCaption(currentFile, text):
@@ -627,7 +414,7 @@ class CaptionContainer(QtWidgets.QWidget):
         # Use cached caption if it exists in dictionary
         cachedCaption = self.captionCache.get()
         if cachedCaption:
-            self.setCaption(cachedCaption)
+            self.txtCaption.setCaption(cachedCaption)
             self.captionCache.setState(DataKeys.IconStates.Changed)
         else:
             self.resetCaption()
@@ -638,10 +425,10 @@ class CaptionContainer(QtWidgets.QWidget):
         text = self.srcSelector.loadCaption(currentFile)
 
         if text:
-            self.setCaption(text)
+            self.txtCaption.setCaption(text)
             self.captionCache.setState(DataKeys.IconStates.Exists)
         else:
-            self.setCaption("")
+            self.txtCaption.setCaption("")
             self.captionCache.setState(None)
 
         # When setting the text, _onCaptionEdited() will make a cache entry and turn the save button red. So we revert that here.
@@ -653,15 +440,14 @@ class CaptionContainer(QtWidgets.QWidget):
     @Slot()
     def _onSeparatorChanged(self, separator):
         self.captionSeparator = separator
+        self.txtCaption.separator = separator
         self.bubbles.separator = separator
         self._onControlUpdated()
 
 
     def onFileChanged(self, currentFile):
         self.loadCaption()
-        if self.isAutoApplyRules():
-            self.applyRules()
-
+        self.applyRulesIfAuto()
         self.ctx.generate.onFileChanged(currentFile)
 
     def onFileListChanged(self, currentFile):
@@ -704,48 +490,6 @@ class CaptionCache:
 
 
 
-class CaptionTextEdit(QtWidgets.QPlainTextEdit):
-    moveSelectionPressed = Signal(int, int)
-    deleteSelectionPressed = Signal()
-
-    def __init__(self):
-        super().__init__()
-
-    def dropEvent(self, event: QtGui.QDropEvent):
-        with QSignalBlocker(self):
-            super().dropEvent(event)
-
-        # Don't remove buttons from CaptionControlGroup
-        event.setDropAction(Qt.DropAction.CopyAction)
-
-        # Postpone updates when dropping so they don't interfere with ongoing drag operations in ReorderWidget.
-        # But don't postpone normal updates to prevent flickering.
-        QTimer.singleShot(0, self.textChanged.emit)
-
-    def keyPressEvent(self, event: QtGui.QKeyEvent):
-        if event.modifiers() & Qt.KeyboardModifier.AltModifier:
-            move = None
-            match event.key():
-                case Qt.Key.Key_Alt:    move = (0, 0)
-                case Qt.Key.Key_Left:   move = (-1, 0)
-                case Qt.Key.Key_Right:  move = (1, 0)
-                case Qt.Key.Key_Up:     move = (0, -1)
-                case Qt.Key.Key_Down:   move = (0, 1)
-
-                case Qt.Key.Key_Delete:
-                    event.accept()
-                    self.deleteSelectionPressed.emit()
-                    return
-
-            if move is not None:
-                event.accept()
-                self.moveSelectionPressed.emit(move[0], move[1])
-                return
-
-        super().keyPressEvent(event)
-
-
-
 class HoverTextEdit(QtWidgets.QPlainTextEdit):
     hoverTextChanged = Signal(str)
 
@@ -783,7 +527,7 @@ class HoverTextEdit(QtWidgets.QPlainTextEdit):
 
         newHoverText = ""
         if 0 < cursorPos < len(text):
-            newHoverText = self.container._getSelectedCaption(text, cursorPos)[0]
+            newHoverText = CaptionTextEdit.getCaptionAtCursor(text, self.container.captionSeparator, cursorPos)[0]
         self.setHoverText(newHoverText)
 
     def leaveEvent(self, event):
