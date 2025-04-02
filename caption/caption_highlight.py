@@ -71,7 +71,7 @@ class CaptionHighlight:
                 elif self.ctx.container.isHovered(captionStrip):
                     self._highlightPart(cursor, self._hoverFormat, start, len(captionStrip))
                 else:
-                    # Try highlighting combined words
+                    # Try highlighting partial matches and combined tags
                     captionWords = captionStrip.split(" ")
                     if matcherFormats := matchNode.match(captionWords):
                         pos = start
@@ -135,14 +135,8 @@ class CaptionHighlight:
 
         for group in self.ctx.groups.groups:
             groupFormat = group.charFormat
-
             for caption in group.captionsExpandWildcards:
-                words = [word for word in caption.split(" ") if word]
-
-                node = root
-                for word in reversed(words):
-                    node = node[word]
-                node.format = groupFormat
+                root.add(caption.split(" "), groupFormat)
 
         self._cachedMatcherNode = root
 
@@ -188,6 +182,13 @@ class MatcherNode:
         if node is None:
             self.children[key] = node = MatcherNode(key)
         return node
+
+    def add(self, words: list[str], format: QtGui.QTextCharFormat):
+        node = self
+        for word in reversed(words):
+            if word:
+                node = node[word]
+        node.format = format
 
 
     def __str__(self) -> str:
@@ -237,3 +238,40 @@ class MatcherNode:
                 node = handleLeaf(stack[-1].node, child, i)
 
         return formats
+
+
+    def splitWords(self, words: list[str]) -> list[list[str]]:
+        node = self
+        stack = list[MatcherNode]()
+        groups = list[list[str]]()
+
+        def handleLeaf(node: MatcherNode, child: MatcherNode) -> MatcherNode:
+            if child.format:
+                group = [n.name for n in stack]
+                group.append(child.name)
+                group.reverse()
+                groups.append(group)
+
+            if child.children:
+                stack.append(child)
+                return child
+            return node
+
+
+        for word in reversed(words):
+            if not word:
+                continue
+
+            if child := node.children.get(word):
+                node = handleLeaf(node, child)
+
+            # Search for a different transition by unwinding stack
+            elif len(stack) > 1 and (child := stack[-2].children.get(word)):
+                stack.pop()
+                node = handleLeaf(stack[-1], child)
+
+        return groups
+
+    def split(self, words: list[str]) -> list[str]:
+        groups = self.splitWords(words)
+        return [" ".join(groupWords) for groupWords in groups]
