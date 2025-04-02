@@ -26,7 +26,7 @@ class WildcardWindow(QtWidgets.QDialog):
         infoLayout = QtWidgets.QHBoxLayout()
         infoLayout.addWidget(QtWidgets.QLabel("One per line. Example:"), 0)
 
-        lblExample = QtWidgets.QLabel("colors: blue, green, black, white")
+        lblExample = QtWidgets.QLabel("color: blue, green, black, white")
         qtlib.setMonospace(lblExample)
         infoLayout.addWidget(lblExample, 1)
 
@@ -36,7 +36,7 @@ class WildcardWindow(QtWidgets.QDialog):
         layout.addLayout(infoLayout, row, 0, 1, 3)
 
         row += 1
-        layout.addWidget(QtWidgets.QLabel("Use in group-tags as \"{{colors}} pants\"."))
+        layout.addWidget(QtWidgets.QLabel("Use in group-tags as \"{{color}} pants\"."), row, 0, 1, 3)
 
         row += 1
         layout.setRowStretch(row, 1)
