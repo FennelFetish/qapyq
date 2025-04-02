@@ -346,11 +346,10 @@ class CaptionContainer(QtWidgets.QWidget):
     def updateSelectionState(self, captionText: str, force=False):
         separator = self.captionSeparator.strip()
         captions = [ cap for c in captionText.split(separator) if (cap := c.strip()) ]
-        captionSet = set(captions)
 
         self.ctx.conditionals.updateState(captions)
-        self.ctx.groups.updateSelectedState(captionSet, force)
-        self.ctx.focus.updateSelectionState(captionSet)
+        self.ctx.groups.updateSelectedState(captions, force)
+        self.ctx.focus.updateSelectionState(set(captions))
 
     @Slot()
     def _forceUpdateGroupSelection(self):

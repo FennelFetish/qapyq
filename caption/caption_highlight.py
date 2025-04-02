@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Iterable
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Slot, QSignalBlocker
 from lib import qtlib, util, colors
@@ -275,3 +276,13 @@ class MatcherNode:
     def split(self, words: list[str]) -> list[str]:
         groups = self.splitWords(words)
         return [" ".join(groupWords) for groupWords in groups]
+
+    def matchSplitCaptions(self, captions: Iterable[str]) -> set[str]:
+        captionSet = set[str]()
+        for cap in captions:
+            if matchSplit := self.split(cap.split(" ")):
+                captionSet.update(matchSplit)
+            else:
+                captionSet.add(cap)
+
+        return captionSet

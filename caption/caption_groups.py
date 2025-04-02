@@ -1,5 +1,4 @@
 from __future__ import annotations
-from typing import Callable, Iterable
 from collections import Counter
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal
@@ -17,13 +16,6 @@ from .caption_wildcard import WildcardWindow, expandWildcards
 # - any word  ('b d' in 'a b c d e', also 'b f')
 
 
-def splitCaptionWords(captions: Iterable[str]) -> list[tuple[str, set[str]]]:
-    return [
-        (words[-1], set(words[:-1])) # Tuple of: last word / set of remaining words
-        for words in (cap.split(" ") for cap in captions)
-    ]
-
-
 class CaptionGroups(CaptionTab):
     HUE_OFFSET = 0.3819444 # 1.0 - inverted golden ratio, ~137.5°
 
@@ -31,7 +23,6 @@ class CaptionGroups(CaptionTab):
         super().__init__(context)
 
         self.wildcards: dict[str, list[str]] = dict()
-
         self._nextGroupHue = util.rnd01()
 
         self._build()
@@ -143,18 +134,10 @@ class CaptionGroups(CaptionTab):
         self.ctx.controlUpdated.emit()
 
 
-    def updateSelectedState(self, captions: set[str], force: bool):
-        captionWords: list[tuple[str, set[str]]] | None = None
-
+    def updateSelectedState(self, captions: list[str], force: bool):
+        captionSet = self.ctx.highlight.matchNode.matchSplitCaptions(captions)
         for group in self.groups:
-            if group.combineTags:
-                if captionWords is None:
-                    captionWords = splitCaptionWords(captions)
-                checkFunc = lambda button: GroupButton.checkSelectedCombine(button, captionWords, self.wildcards)
-            else:
-                checkFunc = lambda button: GroupButton.checkSelected(button, captions, self.wildcards)
-
-            group.updateSelectedState(checkFunc, force)
+            group.updateSelectedState(captionSet, force)
 
 
     @Slot()
@@ -192,8 +175,6 @@ class CaptionControlGroup(QtWidgets.QWidget):
         self.groups = groups
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Fixed)
 
-        self._combineWords = list[str]()
-
         self._buildHeaderWidget(name)
 
         self.buttonLayout = FlowLayout(spacing=1)
@@ -203,6 +184,7 @@ class CaptionControlGroup(QtWidgets.QWidget):
         self.buttonWidget.dragStartMinDistance = 6
         self.buttonWidget.dataCallback = lambda widget: widget.text
         self.buttonWidget.orderChanged.connect(self.groups._emitUpdatedApplyRules)
+        self.buttonWidget.orderChanged.connect(self._updateCombineWords)
         self.buttonWidget.receivedDrop.connect(self._addCaptionDrop)
 
         separatorLine = QtWidgets.QFrame()
@@ -273,10 +255,12 @@ class CaptionControlGroup(QtWidgets.QWidget):
         return self.groups.groupLayout.indexOf(self)
 
 
-    def updateSelectedState(self, checkFunc: Callable, force: bool):
+    def updateSelectedState(self, captions: set[str], force: bool):
         enabledColor, disabledColor = self.colorWidget.color, self.colorWidget.disabledColor
+        wildcards = self.groups.wildcards
+
         for button in self.buttons:
-            checked = checkFunc(button)
+            checked = not captions.isdisjoint( expandWildcards(button.text.strip(), wildcards) )
             color = enabledColor if checked else disabledColor
             button.setChecked(checked, color, force)
 
@@ -336,16 +320,35 @@ class CaptionControlGroup(QtWidgets.QWidget):
         # Emit signal to update preview, but don't apply rules, as this settings can remove tags.
         self.groups.ctx.controlUpdated.emit()
 
+    @Slot()
     def _updateCombineWords(self):
-        self._combineWords.clear()
-        if self.combineTags:
-            counter = Counter[str](
-                button.text.strip().split(" ")[-1]
-                for button in self.buttons
-            )
-            self._combineWords.extend(word for word, count in counter.items() if count > 1)
+        if not self.combineTags:
+            self.lblCombineWords.setText("")
+            self.lblCombineWords.setStyleSheet("")
+            return
 
-        self.lblCombineWords.setText(", ". join(self._combineWords))
+        counter = Counter[tuple[str, str, int]]()
+        for button in self.buttons:
+            words = [word for word in button.text.strip().split(" ") if word]
+            for length in range(len(words)):
+                suffixWords = words[length:]
+                suffix = " ".join(suffixWords)
+                counter[(suffix, words[-1], len(suffixWords))] += 1
+
+        sortedSuffixes = sorted((
+            ((suffix, lastWord), (count, suffixLen))
+            for (suffix, lastWord, suffixLen), count in counter.items()
+            if count > 1
+        ), key=lambda entry: entry[1], reverse=True)
+
+        combineWords = list[str]()
+        usedLastWords = set[str]()
+        for (suffix, lastWord), _ in sortedSuffixes:
+            if lastWord not in usedLastWords:
+                combineWords.append(suffix)
+                usedLastWords.add(lastWord)
+
+        self.lblCombineWords.setText(", ".join(combineWords))
         self.lblCombineWords.setStyleSheet(f"color: {self.colorWidget.highlightColor}")
 
 
@@ -363,9 +366,8 @@ class CaptionControlGroup(QtWidgets.QWidget):
 
     def addCaption(self, text: str) -> bool:
         # Check if caption already exists in group
-        for button in self.buttons:
-            if text == button.text:
-                return False
+        if any(text == button.text for button in self.buttons):
+            return False
 
         self._addCaption(text)
         self._updateCombineWords()
@@ -409,25 +411,20 @@ class CaptionControlGroup(QtWidgets.QWidget):
 
     @Slot()
     def _onButtonClicked(self, button: GroupButton):
-        wildcards = self.groups.wildcards
-        wildcardTags = expandWildcards(button.text, wildcards)
+        wildcardTags = expandWildcards(button.text, self.groups.wildcards)
         if len(wildcardTags) <= 1:
             self._toggleCaption(button, wildcardTags[0])
             return
 
         # Build and show menu for expanded wildcards
-        captionText = self.groups.ctx.text
-        caption = captionText.getCaption()
-        captions = {cap for c in caption.split(captionText.separator.strip()) if (cap := c.strip())}
-        captionWords = splitCaptionWords(captions) if self.combineTags else None
+        textField = self.groups.ctx.text
+        captions = textField.getCaption().split(textField.separator.strip())
+        captions = (cap for c in captions if (cap := c.strip()))
+        captions = self.groups.ctx.highlight.matchNode.matchSplitCaptions(captions)
 
         menu = QtWidgets.QMenu("Expanded Wildcards")
         for tag in wildcardTags:
-            if captionWords:
-                checked = GroupButton._checkSelectedCombine(tag, captionWords)
-            else:
-                checked = tag in captions
-
+            checked = tag in captions
             act = menu.addAction(tag)
             act.setCheckable(True)
             act.setChecked(checked)
@@ -487,34 +484,6 @@ class GroupButton(qtlib.EditablePushButton):
     def words(self) -> list[str]:
         return [word for word in self.text.strip().split(" ") if word]
 
-    def allWildcardWords(self, wildcards: dict) -> list[list[str]]:
-        text = self.text.strip()
-        return [
-            [word for word in expandedTag.split(" ") if word]
-            for expandedTag in expandWildcards(text, wildcards)
-        ]
-
-
-    def checkSelected(self, captions: set[str], wildcards: dict) -> bool:
-        return any(
-            (text in captions)
-            for text in expandWildcards(self.text.strip(), wildcards)
-        )
-
-    def checkSelectedCombine(self, captionWords: list[tuple[str, set[str]]], wildcards: dict) -> bool:
-        return any(
-            self._checkSelectedCombine(text, captionWords)
-            for text in expandWildcards(self.text.strip(), wildcards)
-        )
-
-    @staticmethod
-    def _checkSelectedCombine(text: str, captionWords: list[tuple[str, set[str]]]) -> bool:
-        buttonWords = [word for word in text.split(" ") if word]
-        for lastWord, captionWordSet in captionWords:
-            if buttonWords[-1] == lastWord and captionWordSet.issuperset(buttonWords[:-1]):
-                return True
-        return False
-
 
 
 class GroupColor(QtWidgets.QFrame):
@@ -560,7 +529,7 @@ class GroupColor(QtWidgets.QFrame):
             return
 
         self._color = color
-        self._disabledColor = colors.mixBubbleColor(color, 0.32, 0.1)
+        self._disabledColor = colors.mixBubbleColor(color, 0.35, 0.17)
         self.setStyleSheet(f".GroupColor{{background-color: {color}}}")
 
         highlightColor = qtlib.getHighlightColor(color)
