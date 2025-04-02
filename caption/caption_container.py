@@ -80,6 +80,7 @@ class CaptionContainer(QtWidgets.QWidget):
         super().__init__()
 
         self.txtCaption = CaptionTextEdit()
+        self.txtCaption.textChanged.connect(self._onCaptionEdited)
         self.txtCaption.needsRulesApplied.connect(self.applyRulesIfAuto)
 
         self.captionCache = CaptionCache(tab.filelist)
@@ -138,7 +139,6 @@ class CaptionContainer(QtWidgets.QWidget):
 
         row += 1
         qtlib.setMonospace(self.txtCaption, 1.2)
-        self.txtCaption.textChanged.connect(self._onCaptionEdited)
         splitter.addWidget(self.txtCaption)
         splitter.setStretchFactor(row, 1)
 
