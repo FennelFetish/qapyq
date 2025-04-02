@@ -1,15 +1,18 @@
 from __future__ import annotations
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Signal, Slot, QSignalBlocker, QTimer
+from PySide6.QtCore import Qt, Slot, QSignalBlocker, QTimer
 from lib.util import stripCountPadding
 
 
 class CaptionTextEdit(QtWidgets.QPlainTextEdit):
-    needsRulesApplied = Signal()
-
-    def __init__(self):
+    def __init__(self, context):
         super().__init__()
-        self.separator = ", "
+
+        from .caption_container import CaptionContext
+        self.ctx: CaptionContext = context
+
+        self.separator = self.ctx.settings.separator
+        self.ctx.separatorChanged.connect(self._onSeparatorChanged)
 
 
     def getCaption(self) -> str:
@@ -28,17 +31,12 @@ class CaptionTextEdit(QtWidgets.QPlainTextEdit):
         caption += text
 
         self.setCaption(caption)
-        self.needsRulesApplied.emit()
+        self.ctx.needsRulesApplied.emit()
 
-    def toggleCaption(self, caption: str, removeWords: set[str]|None):
+    def toggleCaption(self, caption: str, removeWords: set[str] | None):
         caption = caption.strip()
         captions = []
         removed = False
-
-        # lastWord = ""
-        # if removeWords:
-        #     print(f"removeWords: {removeWords}")
-        #     lastWord = caption.rsplit(" ", 1)[-1]
 
         text = self.toPlainText()
         if text:
@@ -46,26 +44,22 @@ class CaptionTextEdit(QtWidgets.QPlainTextEdit):
                 current = current.strip()
                 if caption == current:
                     removed = True
-                # elif removeWords and current.endswith(lastWord):
-                #     # All removeWords need to exist in 'current'
-                #     # TODO: Still buggy! Removing from other groups when removeWords has one word.
-                #     currentWords = [word for word in current.split(" ")]
-                #     if not removeWords.issubset(currentWords):
-                #         captions.append(current)
-                #         continue
+                    continue
 
-                #     current = " ".join(word for word in currentWords if word not in removeWords)
-                #     if current != lastWord:
-                #         captions.append(current)
-                #     removed = True
-                else:
-                    captions.append(current)
+                elif removeWords:
+                    currentWords = current.split(" ")
+                    currentMatchSplit = self.ctx.highlight.matchNode.split(currentWords)
+                    if caption in currentMatchSplit:
+                        current = " ".join(word for word in currentWords if (word not in removeWords))
+                        removed = True
+
+                captions.append(current)
 
         if not removed:
             captions.append(caption)
 
         self.setCaption( self.separator.join(captions) )
-        self.needsRulesApplied.emit()
+        self.ctx.needsRulesApplied.emit()
 
     @Slot()
     def removeCaption(self, index: int):
@@ -143,6 +137,11 @@ class CaptionTextEdit(QtWidgets.QPlainTextEdit):
         self.setTextCursor(cursor)
 
 
+    @Slot()
+    def _onSeparatorChanged(self, separator: str):
+        self.separator = separator
+
+
     def keyPressEvent(self, event: QtGui.QKeyEvent):
         if event.modifiers() & Qt.KeyboardModifier.AltModifier:
             move = None
@@ -154,9 +153,8 @@ class CaptionTextEdit(QtWidgets.QPlainTextEdit):
                 case Qt.Key.Key_Down:   move = (0, 1)
 
                 case Qt.Key.Key_Delete:
-                    event.accept()
                     self.removeSelectedCaption()
-                    return
+                    move = (0, 0)
 
             if move is not None:
                 event.accept()

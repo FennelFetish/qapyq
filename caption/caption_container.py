@@ -28,17 +28,18 @@ class CaptionContext(QtWidgets.QTabWidget):
     def __init__(self, container: CaptionContainer, tab: ImgTab):
         super().__init__()
         self.container = container
-        self.text = container.txtCaption
         self.tab = tab
 
         self._cachedRulesProcessor: CaptionRulesProcessor | None = None
         self.controlUpdated.connect(self._invalidateRulesProcessor) # First Slot for controlUpdated
 
-        self.highlight    = CaptionHighlight(self)
         self.settings     = CaptionSettings(self)
         self.groups       = CaptionGroups(self)
         self.conditionals = CaptionConditionals(self)
         self.generate     = CaptionGenerate(self)
+
+        self.text         = CaptionTextEdit(self)
+        self.highlight    = CaptionHighlight(self)
 
         from .caption_focus import CaptionFocus
         self.focus = CaptionFocus(container, self)
@@ -79,14 +80,14 @@ class CaptionContainer(QtWidgets.QWidget):
     def __init__(self, tab):
         super().__init__()
 
-        self.txtCaption = CaptionTextEdit()
-        self.txtCaption.textChanged.connect(self._onCaptionEdited)
-        self.txtCaption.needsRulesApplied.connect(self.applyRulesIfAuto)
-
         self.captionCache = CaptionCache(tab.filelist)
         self.captionSeparator = ', '
 
         self.ctx = CaptionContext(self, tab)
+
+        self.txtCaption = self.ctx.text
+        self.txtCaption.textChanged.connect(self._onCaptionEdited)
+
         self._menu = CaptionMenu(self, self.ctx)
         self._build(self.ctx)
 
@@ -438,9 +439,8 @@ class CaptionContainer(QtWidgets.QWidget):
 
 
     @Slot()
-    def _onSeparatorChanged(self, separator):
+    def _onSeparatorChanged(self, separator: str):
         self.captionSeparator = separator
-        self.txtCaption.separator = separator
         self.bubbles.separator = separator
         self._onControlUpdated()
 
