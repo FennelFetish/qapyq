@@ -47,9 +47,8 @@ class CaptionBubbles(ReorderWidget):
                 yield widget
 
     def updateBubbles(self):
-        oldBubbles: list[Bubble] = [bubble for bubble in self.getBubbles()]
+        oldBubbles = list[Bubble](self.getBubbles())
 
-        colors = self.ctx.highlight.colors
         i = -1
         for i, caption in enumerate(self.text.split(self.separator)):
             caption = caption.strip()
@@ -62,7 +61,7 @@ class CaptionBubbles(ReorderWidget):
                 bubble.setFocusProxy(self)
                 self.layout().addWidget(bubble)
 
-            color = colors.get(caption)
+            color = self._getBubbleColor(caption)
             if color is None:
                 color = qtlib.COLOR_BUBBLE_HOVER if self.ctx.container.isHovered(caption) else qtlib.COLOR_BUBBLE_BLACK
 
@@ -72,6 +71,19 @@ class CaptionBubbles(ReorderWidget):
 
         for i in range(i+1, len(oldBubbles)):
             oldBubbles[i].deleteLater()
+
+    def _getBubbleColor(self, caption: str) -> str | None:
+        highlight = self.ctx.highlight
+        if color := highlight.colors.get(caption):
+            return color
+
+        captionWords = [word for word in caption.split(" ") if word]
+        matchFormats = highlight.matchNode.match(captionWords)
+        if len(matchFormats) != len(captionWords):
+            return None
+
+        colors = set(format.color for format in matchFormats.values())
+        return next(iter(colors)) if len(colors) == 1 else None
 
 
     def resizeEvent(self, event):
