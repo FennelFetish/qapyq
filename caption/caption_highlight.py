@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Iterable
+from typing import Iterable, Generic, TypeVar, Optional
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Slot, QSignalBlocker
 from lib import qtlib, util, colors
@@ -10,6 +10,13 @@ COLOR_FOCUS_DEFAULT = "#901313"
 COLOR_FOCUS_BAN     = "#686868"
 
 
+class CaptionFormat:
+    def __init__(self, charFormat: QtGui.QTextCharFormat, color: str):
+        self.charFormat = charFormat
+        self.color = color
+
+
+
 class CaptionHighlight:
     def __init__(self, context):
         from .caption_container import CaptionContext
@@ -18,7 +25,7 @@ class CaptionHighlight:
 
         self._cachedColors: dict[str, str] | None = None
         self._cachedCharFormats: dict[str, QtGui.QTextCharFormat] | None = None
-        self._cachedMatcherNode: MatcherNode | None = None
+        self._cachedMatcherNode: MatcherNode[CaptionFormat] | None = None
 
         self._bannedFormat = QtGui.QTextCharFormat()
         self._bannedFormat.setForeground(QtGui.QColor.fromHsvF(0, 0, 0.5))
@@ -43,7 +50,7 @@ class CaptionHighlight:
         return self._cachedCharFormats
 
     @property
-    def matchNode(self) -> MatcherNode:
+    def matchNode(self) -> MatcherNode[CaptionFormat]:
         if not self._cachedMatcherNode:
             self.updateMatcherNode()
         return self._cachedMatcherNode
@@ -132,13 +139,12 @@ class CaptionHighlight:
 
 
     def updateMatcherNode(self):
-        root = MatcherNode("")
+        root = MatcherNode()
 
         for group in self.ctx.groups.groups:
-            groupFormat = group.charFormat
-            groupColor = group.color
+            payload = CaptionFormat(group.charFormat, group.color)
             for caption in group.captionsExpandWildcards:
-                root.add(caption.split(" "), groupFormat, groupColor)
+                root.add(caption.split(" "), payload)
 
         self._cachedMatcherNode = root
 
@@ -170,17 +176,19 @@ class CaptionHighlight:
 
 
 
-class MatcherNode:
-    class Format:
-        def __init__(self, charFormat: QtGui.QTextCharFormat, color: str):
-            self.charFormat = charFormat
-            self.color = color
+TPayload = TypeVar("TPayload")
 
+class MatcherNode(Generic[TPayload]):
+    'Matches and splits captions into components as defined in Caption Groups.'
 
-    def __init__(self, name: str):
+    def __init__(self, name: str = ""):
         self.name = name
         self.children = dict[str, MatcherNode]()
-        self.format: MatcherNode.Format | None = None  # The presence of 'self.format' marks leaf nodes.
+
+        # The presence of a payload marks end nodes:
+        # These are starting words. A match is completed upon reaching them.
+        # End nodes can have children.
+        self.payload: Optional[TPayload] = None
 
     def __setitem__(self, key: str, node: MatcherNode):
         self.children[key] = node
@@ -191,12 +199,12 @@ class MatcherNode:
             self.children[key] = node = MatcherNode(key)
         return node
 
-    def add(self, words: list[str], charFormat: QtGui.QTextCharFormat, color: str):
+    def add(self, words: list[str], payload: TPayload):
         node = self
         for word in reversed(words):
             if word:
                 node = node[word]
-        node.format = MatcherNode.Format(charFormat, color)
+        node.payload = payload
 
 
     def __str__(self) -> str:
@@ -214,23 +222,22 @@ class MatcherNode:
             self.node = node
             self.index = index
 
-    def match(self, words: list[str]) -> dict[int, MatcherNode.Format]:
+    def match(self, words: list[str]) -> dict[int, TPayload]:
         node = self
         stack = list[self.MatcherStackEntry]()
-        formats = dict[int, MatcherNode.Format]()
+        payloads = dict[int, TPayload]()
 
-        def handleLeaf(node: MatcherNode, child: MatcherNode, index: int, override=False) -> MatcherNode:
-            if child.format:
+        def checkMatch(node: MatcherNode, child: MatcherNode, index: int, override=False) -> MatcherNode:
+            if child.payload is not None:
                 for entry in stack:
-                    if override or (entry.index not in formats):
-                        formats[entry.index] = child.format
-                formats[index] = child.format
+                    if override or (entry.index not in payloads):
+                        payloads[entry.index] = child.payload
+                payloads[index] = child.payload
 
             if child.children:
                 stack.append(self.MatcherStackEntry(child, index))
                 return child
             return node
-
 
         for i in range(len(words)-1, -1, -1):
             word = words[i]
@@ -238,14 +245,14 @@ class MatcherNode:
                 continue
 
             if child := node.children.get(word):
-                node = handleLeaf(node, child, i, True)
+                node = checkMatch(node, child, i, True)
 
             # Search for a different transition by unwinding stack
             elif len(stack) > 1 and (child := stack[-2].node.children.get(word)):
                 stack.pop()
-                node = handleLeaf(stack[-1].node, child, i)
+                node = checkMatch(stack[-1].node, child, i)
 
-        return formats
+        return payloads
 
 
     def splitWords(self, words: list[str]) -> list[list[str]]:
@@ -253,8 +260,8 @@ class MatcherNode:
         stack = list[MatcherNode]()
         groups = list[list[str]]()
 
-        def handleLeaf(node: MatcherNode, child: MatcherNode) -> MatcherNode:
-            if child.format:
+        def checkMatch(node: MatcherNode, child: MatcherNode) -> MatcherNode:
+            if child.payload is not None:
                 group = [n.name for n in stack]
                 group.append(child.name)
                 group.reverse()
@@ -265,18 +272,17 @@ class MatcherNode:
                 return child
             return node
 
-
         for word in reversed(words):
             if not word:
                 continue
 
             if child := node.children.get(word):
-                node = handleLeaf(node, child)
+                node = checkMatch(node, child)
 
             # Search for a different transition by unwinding stack
             elif len(stack) > 1 and (child := stack[-2].children.get(word)):
                 stack.pop()
-                node = handleLeaf(stack[-1], child)
+                node = checkMatch(stack[-1], child)
 
         return groups
 
