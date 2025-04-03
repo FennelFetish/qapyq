@@ -78,7 +78,7 @@ class CaptionHighlight:
                         pos = start
                         for i, word in enumerate(captionWords):
                             if format := matcherFormats.get(i):
-                                self._highlightPart(cursor, format, pos, len(word))
+                                self._highlightPart(cursor, format.charFormat, pos, len(word))
                             pos += len(word) + 1
 
                 start += len(captionStrip) + padRight + len(separator)
@@ -136,8 +136,9 @@ class CaptionHighlight:
 
         for group in self.ctx.groups.groups:
             groupFormat = group.charFormat
+            groupColor = group.color
             for caption in group.captionsExpandWildcards:
-                root.add(caption.split(" "), groupFormat)
+                root.add(caption.split(" "), groupFormat, groupColor)
 
         self._cachedMatcherNode = root
 
@@ -170,10 +171,16 @@ class CaptionHighlight:
 
 
 class MatcherNode:
+    class Format:
+        def __init__(self, charFormat: QtGui.QTextCharFormat, color: str):
+            self.charFormat = charFormat
+            self.color = color
+
+
     def __init__(self, name: str):
         self.name = name
         self.children = dict[str, MatcherNode]()
-        self.format: QtGui.QTextCharFormat | None = None
+        self.format: MatcherNode.Format | None = None  # The presence of 'self.format' marks leaf nodes.
 
     def __setitem__(self, key: str, node: MatcherNode):
         self.children[key] = node
@@ -184,12 +191,12 @@ class MatcherNode:
             self.children[key] = node = MatcherNode(key)
         return node
 
-    def add(self, words: list[str], format: QtGui.QTextCharFormat):
+    def add(self, words: list[str], charFormat: QtGui.QTextCharFormat, color: str):
         node = self
         for word in reversed(words):
             if word:
                 node = node[word]
-        node.format = format
+        node.format = MatcherNode.Format(charFormat, color)
 
 
     def __str__(self) -> str:
@@ -207,10 +214,10 @@ class MatcherNode:
             self.node = node
             self.index = index
 
-    def match(self, words: list[str]) -> dict[int, QtGui.QTextCharFormat]:
+    def match(self, words: list[str]) -> dict[int, MatcherNode.Format]:
         node = self
         stack = list[self.MatcherStackEntry]()
-        formats = dict[int, QtGui.QTextCharFormat]()
+        formats = dict[int, MatcherNode.Format]()
 
         def handleLeaf(node: MatcherNode, child: MatcherNode, index: int, override=False) -> MatcherNode:
             if child.format:
