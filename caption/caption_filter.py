@@ -200,7 +200,7 @@ class TagCombineFilter(CaptionFilter):
 
         for cap in (cap for c in captions if (cap := c.strip())):
             words = [word for word in cap.split(" ") if word]
-            self.matcherNode.add(words, "dummy")
+            self.matcherNode.add(words, None, None)
 
             lastWord = words[-1]
             groupIndex = groupWords.get(lastWord)
@@ -218,7 +218,7 @@ class TagCombineFilter(CaptionFilter):
     # Splitting captions is a relatively easy way to allow combining tags with pre-existing combined tags.
     # Other tried methods failed with combining and sorting 3-word tags.
     # The current limitation here: When the combined tag contains another word that doesn't belong to the group,
-    # like when it was manually edited, that tag is not processed, because the order is undefined.
+    # like when it was manually edited, that tag is not split, because the order is undefined.
     def _splitCaptions(self, captions: list[str]) -> list[str]:
         newCaptions = list[str]()
         addCaptions = list[str]()
@@ -231,9 +231,12 @@ class TagCombineFilter(CaptionFilter):
                 remainingWords.clear()
                 remainingWords.update(cap for cap in captionWords if cap)
 
+                # Don't split into subsets: Start with longest and only add captions if they have new words.
+                matchSplitWords.sort(key=len, reverse=True)
                 for words in matchSplitWords:
-                    remainingWords.difference_update(words)
-                    addCaptions.append(" ".join(words))
+                    if not remainingWords.isdisjoint(words):
+                        remainingWords.difference_update(words)
+                        addCaptions.append(" ".join(words))
 
                 # Don't use the split captions if there are other words present.
                 if not remainingWords:
@@ -445,16 +448,24 @@ class CaptionRulesProcessor:
 
         captions = self.conditionalsFilter.filterCaptions(captions)
 
-        if self.removeDup:
-            # Remove subsets after banning, so no tags are wrongly merged and removed with banned tags.
-            captions = self.subsetFilter.filterCaptions(captions)
-            captions = self.dupFilter.filterCaptions(captions) # SubsetFilter won't remove exact duplicates
+        # TODO: Check if changing this order has side effects
+        # if self.removeDup:
+        #     # Remove subsets after banning, so no tags are wrongly merged and removed with banned tags.
+        #     captions = self.subsetFilter.filterCaptions(captions)
+        #     captions = self.dupFilter.filterCaptions(captions) # SubsetFilter won't remove exact duplicates
 
         # Sort before combine filter so order inside group will define order of words inside combined tag
         if self.sortCaptions:
             captions = self.sortFilter.filterCaptions(captions)
 
+        # Combine tags before removing subsets: When the same tag (or subsets of that tag's words) are in multiple groups,
+        # the subset filter might remove them before they had the chance to combine with others.
         captions = self.combineFilter.filterCaptions(captions)
+
+        if self.removeDup:
+            # Remove subsets after banning, so no tags are wrongly merged and removed with banned tags.
+            captions = self.subsetFilter.filterCaptions(captions)
+            captions = self.dupFilter.filterCaptions(captions) # SubsetFilter won't remove exact duplicates
 
         # Strip and remove empty captions
         captions = (cap for c in captions if (cap := c.strip()))
