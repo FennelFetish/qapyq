@@ -368,7 +368,6 @@ class CaptionContainer(QtWidgets.QWidget):
 
     @Slot()
     def applyRules(self):
-        # FIXME: The preview is made after applying the rules to the text. This can change the sorting of combined tags.
         rulesProcessor = self.createRulesProcessor()
         text = self.txtCaption.getCaption()
         textNew = rulesProcessor.process(text)

@@ -40,31 +40,52 @@ class BannedCaptionFilter(CaptionFilter):
 
 
 class SortCaptionFilter(CaptionFilter):
+    ORDER_PREFIX_MAX = -1
+    ORDER_SUFFIX_MIN = 1_000_000
+    ORDER_NOTFOUND = ORDER_SUFFIX_MIN - 1
+
     def __init__(self):
         super().__init__()
-        self.captionOrder = dict()
+        self.captionOrder = dict[str, int]()
+        self.matcherNode: MatcherNode[int] = None
 
-    def setup(self, captionGroups: Iterable[list[str]], prefix, suffix, separator) -> None:
+    def setup(self, captionGroups: Iterable[list[str]], prefix: str, suffix: str, separator: str) -> None:
         self.captionOrder.clear()
+        self.matcherNode = MatcherNode[int]()
 
-        i = 0
+        i = 1  # Only truthy values
         for group in captionGroups:
             for caption in group:
+                self.matcherNode.add(caption.split(" "), i)
                 self.captionOrder[caption] = i
                 i += 1
 
-        separator = separator.strip()
-        prefixCaptions = [c.strip() for c in prefix.split(separator)]
-        for i, c in enumerate(reversed(prefixCaptions)):
-            self.captionOrder[c] = -1-i
+        sepStrip = separator.strip()
+        prefixCaptions = [cap for c in prefix.split(sepStrip) if (cap := c.strip())]
+        for i, cap in enumerate(reversed(prefixCaptions)):
+            self.captionOrder[cap] = self.ORDER_PREFIX_MAX - i
 
-        suffixCaptions = [c.strip() for c in suffix.split(separator)]
-        for i, c in enumerate(suffixCaptions):
-            self.captionOrder[c] = 100000+i
+        suffixCaptions = [cap for c in suffix.split(sepStrip) if (cap := c.strip())]
+        for i, cap in enumerate(suffixCaptions):
+            self.captionOrder[cap] = self.ORDER_SUFFIX_MIN + i
+
+    def _sortKey(self, caption: str) -> int:
+        if order := self.captionOrder.get(caption):
+            return order
+
+        # Handle sorting of combined tags
+        captionWords = [word for word in caption.split(" ") if word]
+        matchOrders = self.matcherNode.match(captionWords)
+        numExtraWords = len(captionWords) - len(matchOrders)
+
+        # For each two words with well-defined order, one extra word is tolerated.
+        if matchOrders and numExtraWords <= len(matchOrders) // 2:
+            return max(matchOrders.values())
+
+        return self.ORDER_NOTFOUND
 
     def filterCaptions(self, captions: list[str]) -> list[str]:
-        order = {c: self.captionOrder.get(c, 65536) for c in captions} # TODO: Extra dict not necessary?
-        return sorted(captions, key=lambda c: order[c])
+        return sorted(captions, key=self._sortKey)
 
 
 
@@ -185,12 +206,14 @@ class TagCombineFilter(CaptionFilter):
         self.tagOrder = dict[str, int]()
         self._nextOrder = 0
 
-        self.matcherNode = MatcherNode("")
+        self.matcherNode: MatcherNode[bool] = None
 
     def setup(self, captionGroups: Iterable[list[str]]) -> None:
         self.groupMap.clear()
         self._nextGroupIndex = 1
         self._nextOrder = 0
+        self.matcherNode = MatcherNode[bool]()
+
         for caps in captionGroups:
             self.registerCombinationGroup(caps)
 
@@ -200,7 +223,7 @@ class TagCombineFilter(CaptionFilter):
 
         for cap in (cap for c in captions if (cap := c.strip())):
             words = [word for word in cap.split(" ") if word]
-            self.matcherNode.add(words, None, None)
+            self.matcherNode.add(words, True)
 
             lastWord = words[-1]
             groupIndex = groupWords.get(lastWord)
