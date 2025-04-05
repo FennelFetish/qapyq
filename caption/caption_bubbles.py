@@ -2,6 +2,7 @@ from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Signal, Slot
 import lib.qtlib as qtlib
 from ui.flow_layout import FlowLayout, ReorderWidget
+from .caption_context import CaptionContext
 
 # TODO: Nested bubbles for expressions like: (blue (starry:0.8) sky:1.2)
 
@@ -13,13 +14,12 @@ class CaptionBubbles(ReorderWidget):
     dropped = Signal(str)
     clicked = Signal(int)
 
-    def __init__(self, context, showWeights=True, showRemove=False, editable=True):
+    def __init__(self, context: CaptionContext, showWeights=True, showRemove=False, editable=True):
         super().__init__()
         self.dataCallback = lambda widget: widget.text
         self.receivedDrop.connect(self._onDrop)
 
-        from .caption_container import CaptionContext
-        self.ctx: CaptionContext = context
+        self.ctx = context
 
         self.text = ""
         self.separator = ','

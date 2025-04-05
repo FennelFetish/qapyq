@@ -8,6 +8,7 @@ from lib.filelist import DataKeys
 import lib.qtlib as qtlib
 from config import Config
 from .caption_tab import CaptionTab
+from .caption_context import CaptionContext
 
 
 class ApplyMode(Enum):
@@ -232,12 +233,10 @@ class CurrentVariableParser(TemplateVariableParser):
     REFINED_VAR_PATTERN = re.compile(r'{{.*refined.*}}')
 
 
-    def __init__(self, context, imgPath: str = None):
+    def __init__(self, context: CaptionContext, imgPath: str = None):
         super().__init__(imgPath)
+        self.ctx = context
         self.refinedCaption = ""
-
-        from .caption_container import CaptionContext
-        self.ctx: CaptionContext = context
 
     def updateRefinedCaption(self, caption: str):
         self.refinedCaption = self.ctx.rulesProcessor().process(caption)

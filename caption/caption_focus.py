@@ -3,7 +3,9 @@ from PySide6.QtCore import Qt, Slot, Signal, QObject, QEvent, QTimer
 import lib.qtlib as qtlib
 from ui.flow_layout import FlowLayout
 from .caption_tab import CaptionTab
-from .caption_container import CaptionContainer, CaptionContext
+from .caption_context import CaptionContext
+from .caption_container import CaptionContainer
+
 
 # - As tab in Caption Window
 # - Overrides current colors, highlights defined tags

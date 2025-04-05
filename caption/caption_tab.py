@@ -5,7 +5,7 @@ class CaptionTab(QtWidgets.QWidget):
     def __init__(self, context):
         super().__init__()
 
-        from .caption_container import CaptionContext
+        from .caption_context import CaptionContext
         self.ctx: CaptionContext = context
 
 

@@ -4,76 +4,12 @@ from PySide6.QtCore import Qt, Signal, Slot, QTimer
 from lib import qtlib
 from lib.filelist import DataKeys
 from lib.captionfile import FileTypeSelector
-from ui.tab import ImgTab
 from config import Config
+from .caption_context import CaptionContext
 from .caption_menu import CaptionMenu, RulesLoadMode
 from .caption_bubbles import CaptionBubbles
 from .caption_text import CaptionTextEdit
-from .caption_highlight import CaptionHighlight
 from .caption_filter import CaptionRulesProcessor
-from .caption_settings import CaptionSettings
-from .caption_groups import CaptionGroups
-from .caption_conditionals import CaptionConditionals
-from .caption_generate import CaptionGenerate
-from .caption_list import CaptionList
-
-
-class CaptionContext(QtWidgets.QTabWidget):
-    captionEdited       = Signal(str)
-    separatorChanged    = Signal(str)
-    controlUpdated      = Signal()
-    needsRulesApplied   = Signal()
-
-
-    def __init__(self, container: CaptionContainer, tab: ImgTab):
-        super().__init__()
-        self.container = container
-        self.tab = tab
-
-        self._cachedRulesProcessor: CaptionRulesProcessor | None = None
-        self.controlUpdated.connect(self._invalidateRulesProcessor) # First Slot for controlUpdated
-
-        self.settings     = CaptionSettings(self)
-        self.groups       = CaptionGroups(self)
-        self.conditionals = CaptionConditionals(self)
-        self.generate     = CaptionGenerate(self)
-
-        self.text         = CaptionTextEdit(self)
-        self.highlight    = CaptionHighlight(self)
-
-        from .caption_focus import CaptionFocus
-        self.focus = CaptionFocus(container, self)
-
-        self.addTab(self.settings, "Rules")
-        self.addTab(self.groups, "Groups")
-        self.addTab(self.conditionals, "Conditionals")
-        self.addTab(self.focus, "Focus")
-        #self.addTab(QtWidgets.QWidget(), "Folder Overrides") # Let variables from json override settings?
-        self.addTab(self.generate, "Generate")
-        self.addTab(CaptionList(self), "List")
-
-        self._activeWidget = None
-        self.currentChanged.connect(self.onTabChanged)
-        self.onTabChanged(0)
-
-    @Slot()
-    def onTabChanged(self, index: int):
-        if self._activeWidget:
-            self._activeWidget.onTabDisabled()
-
-        if widget := self.widget(index):
-            self._activeWidget = widget
-            widget.onTabEnabled()
-
-    @Slot()
-    def _invalidateRulesProcessor(self):
-        self._cachedRulesProcessor = None
-
-    def rulesProcessor(self) -> CaptionRulesProcessor:
-        if not self._cachedRulesProcessor:
-            self._cachedRulesProcessor = self.container.createRulesProcessor()
-        return self._cachedRulesProcessor
-
 
 
 class CaptionContainer(QtWidgets.QWidget):
