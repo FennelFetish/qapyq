@@ -121,33 +121,34 @@ class BatchTask(QRunnable):
 
 class TimeAverage:
     HISTORY_SIZE = 20
-    NS_IN_MS = 1000000
+    NS_IN_S = 1_000_000_000.0
 
     def __init__(self):
+        self.tStart = 0
         self.tLast = 0
         self.history: list[int] = [0] * self.HISTORY_SIZE
         self.idxHistory = 0
 
         self.num = 0
-        self.sumMs = 0
-        self.totalMs = 0
+        self.sumNs = 0
+        self.totalNs = 0
 
     def init(self):
-        self.tLast = time.monotonic_ns()
+        self.tLast = self.tStart = time.monotonic_ns()
 
     def update(self):
         now = time.monotonic_ns()
-        tDiff = (now - self.tLast) // self.NS_IN_MS
+        tDiff = now - self.tLast
+        self.totalNs = now - self.tStart
         self.tLast = now
 
         if self.num < self.HISTORY_SIZE:
             self.num += 1
         else:
-            self.sumMs -= self.history[self.idxHistory]
+            self.sumNs -= self.history[self.idxHistory]
 
         self.history[self.idxHistory] = tDiff
-        self.sumMs += tDiff
-        self.totalMs += tDiff
+        self.sumNs += tDiff
 
         self.idxHistory += 1
         if self.idxHistory >= self.HISTORY_SIZE:
@@ -156,10 +157,10 @@ class TimeAverage:
     def getAvgTime(self) -> float:
         if self.num == 0:
             return 0.0
-        return self.sumMs / self.num / 1000.0
+        return self.sumNs / self.num / self.NS_IN_S
 
     def getTotalTime(self) -> float:
-        return self.totalMs / 1000.0
+        return self.totalNs / self.NS_IN_S
 
 
 
