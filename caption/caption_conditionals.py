@@ -149,6 +149,7 @@ class ConditionalRule(QtWidgets.QWidget):
         layout.setContentsMargins(3, 5, 5, 0)
         layout.setSpacing(4)
 
+        # First Column, Drag Handle
         col = 0
         layout.setColumnStretch(col, 0)
         layout.setColumnMinimumWidth(col, 10)
@@ -156,7 +157,7 @@ class ConditionalRule(QtWidgets.QWidget):
 
         # Left Column
         col = 1
-        layout.setColumnStretch(col, 10)
+        layout.setColumnStretch(col, 1)
         layout.addLayout(self.conditionLayout, 0, col, 2, 1, Qt.AlignmentFlag.AlignTop)
 
         btnAddCondition = QtWidgets.QPushButton("✚ Add Condition")
@@ -165,37 +166,40 @@ class ConditionalRule(QtWidgets.QWidget):
 
         # Right Column
         col = 2
-        colspanRight = 3
-        layout.setColumnStretch(col, 0)
-        layout.setColumnStretch(col+1, 10)
-        layout.setColumnStretch(col+2, 0)
+        layout.setColumnStretch(col, 1)
 
-        self.lblExpression = QtWidgets.QLabel("Expression:")
-        layout.addWidget(self.lblExpression, 0, col)
-
-        self.txtExpression = QtWidgets.QLineEdit()
-        self.txtExpression.setPlaceholderText("and")
-        qtlib.setMonospace(self.txtExpression)
-        self.txtExpression.textChanged.connect(self._onExpressionChanged)
-        layout.addWidget(self.txtExpression, 0, col+1)
-
-        btnRemoveRule = QtWidgets.QPushButton("Remove Rule")
-        btnRemoveRule.clicked.connect(lambda: self.removeClicked.emit(self))
-        layout.addWidget(btnRemoveRule, 0, col+2)
-
-        layout.addLayout(self.actionLayout, 1, col, 1, colspanRight, Qt.AlignmentFlag.AlignTop)
+        layout.addLayout(self._buildRightTopRow(), 0, col)
+        layout.addLayout(self.actionLayout, 1, col, Qt.AlignmentFlag.AlignTop)
 
         btnAddAction = QtWidgets.QPushButton("✚ Add Action")
         btnAddAction.clicked.connect(lambda: self.addRuleAction())
-        layout.addWidget(btnAddAction, 2, col, 1, colspanRight)
+        layout.addWidget(btnAddAction, 2, col)
 
         layout.setRowMinimumHeight(3, 3)
 
         separatorLine = QtWidgets.QFrame()
         separatorLine.setFrameStyle(QtWidgets.QFrame.Shape.HLine | QtWidgets.QFrame.Shadow.Sunken)
-        layout.addWidget(separatorLine, 4, 0, 1, colspanRight+2)
+        layout.addWidget(separatorLine, 4, 0, 1, 3)
 
         self.setLayout(layout)
+
+    def _buildRightTopRow(self):
+        layout = QtWidgets.QHBoxLayout()
+
+        self.lblExpression = QtWidgets.QLabel("Expression:")
+        layout.addWidget(self.lblExpression, 0)
+
+        self.txtExpression = QtWidgets.QLineEdit()
+        self.txtExpression.setPlaceholderText("and")
+        qtlib.setMonospace(self.txtExpression)
+        self.txtExpression.textChanged.connect(self._onExpressionChanged)
+        layout.addWidget(self.txtExpression, 1)
+
+        btnRemoveRule = QtWidgets.QPushButton("Remove Rule")
+        btnRemoveRule.clicked.connect(lambda: self.removeClicked.emit(self))
+        layout.addWidget(btnRemoveRule, 0)
+
+        return layout
 
 
     @Slot()
