@@ -10,6 +10,35 @@ COLOR_FOCUS_DEFAULT = "#901313"
 COLOR_FOCUS_BAN     = "#686868"
 
 
+# Adapters for data access
+class CaptionGroupData:
+    def __init__(self, captions: list[str], charFormat, color):
+        self.captions = captions
+        self.charFormat = charFormat
+        self.color = color
+
+
+class HighlightDataSource:
+    def __init__(self):
+        pass
+
+    def connectClearCache(self, slot: Slot):
+        raise NotImplementedError()
+
+    def isHovered(self, caption: str) -> bool:
+        return False
+
+    def getFocusSet(self) -> set[str]:
+        return set[str]()
+
+    def getBanned(self) -> Iterable[str]:
+        raise NotImplementedError()
+
+    def getGroups(self) -> Iterable[CaptionGroupData]:
+        raise NotImplementedError()
+
+
+# Payload for MatcherNode
 class CaptionFormat:
     def __init__(self, charFormat: QtGui.QTextCharFormat, color: str):
         self.charFormat = charFormat
@@ -18,10 +47,9 @@ class CaptionFormat:
 
 
 class CaptionHighlight:
-    def __init__(self, context):
-        from .caption_container import CaptionContext
-        self.ctx: CaptionContext = context
-        self.ctx.controlUpdated.connect(self.clearCache)
+    def __init__(self, dataSource: HighlightDataSource):
+        self.data = dataSource
+        self.data.connectClearCache(self.clearCache)
 
         self._cachedColors: dict[str, str] | None = None
         self._cachedCharFormats: dict[str, QtGui.QTextCharFormat] | None = None
@@ -76,7 +104,7 @@ class CaptionHighlight:
 
                 if format := formats.get(captionStrip):
                     self._highlightPart(cursor, format, start, len(captionStrip))
-                elif self.ctx.container.isHovered(captionStrip):
+                elif self.data.isHovered(captionStrip):
                     self._highlightPart(cursor, self._hoverFormat, start, len(captionStrip))
                 else:
                     # Try highlighting partial matches and combined tags
@@ -101,16 +129,16 @@ class CaptionHighlight:
         formats: dict[str, QtGui.QTextCharFormat] = dict()
 
         # First insert all focus tags. This is the default color if focus tags don't belong to groups.
-        focusSet = self.ctx.focus.getFocusSet()
+        focusSet = self.data.getFocusSet()
         for focusTag in focusSet:
             colors[focusTag] = COLOR_FOCUS_DEFAULT
             formats[focusTag] = self._focusFormat
 
         # Insert group colors
-        for group in self.ctx.groups.groups:
+        for group in self.data.getGroups():
             mutedColor, mutedFormat = self._getMuted(group.color) if focusSet else (group.color, group.charFormat)
 
-            for caption in group.captionsExpandWildcards:
+            for caption in group.captions:
                 if caption in focusSet:
                     colors[caption]  = group.color
                     formats[caption] = group.charFormat
@@ -121,7 +149,7 @@ class CaptionHighlight:
         # Insert banned color. This will overwrite group colors.
         bannedColor, bannedFormat = self._getMuted(qtlib.COLOR_BUBBLE_BAN) if focusSet else (qtlib.COLOR_BUBBLE_BAN, self._bannedFormat)
         bannedFocusColor, bannedFocusFormat = self._getMuted(COLOR_FOCUS_BAN, 1, 1) if focusSet else (qtlib.COLOR_BUBBLE_BAN, self._bannedFormat)
-        for banned in self.ctx.settings.bannedCaptions:
+        for banned in self.data.getBanned():
             if banned in focusSet:
                 colors[banned]  = bannedFocusColor
                 formats[banned] = bannedFocusFormat
@@ -131,7 +159,7 @@ class CaptionHighlight:
 
         # Hover color
         for caption, color in colors.items():
-            if self.ctx.container.isHovered(caption):
+            if self.data.isHovered(caption):
                 colors[caption], formats[caption] = self._getHovered(color)
 
         self._cachedColors = colors
@@ -141,10 +169,10 @@ class CaptionHighlight:
     def updateMatcherNode(self):
         root = MatcherNode()
 
-        for group in self.ctx.groups.groups:
+        for group in self.data.getGroups():
             payload = CaptionFormat(group.charFormat, group.color)
-            for caption in group.captionsExpandWildcards:
-                root.add(caption.split(" "), payload)
+            for caption in group.captions:
+                root.add(caption, payload)
 
         self._cachedMatcherNode = root
 
@@ -199,12 +227,15 @@ class MatcherNode(Generic[TPayload]):
             self.children[key] = node = MatcherNode(key)
         return node
 
-    def add(self, words: list[str], payload: TPayload):
+    def addWords(self, words: list[str], payload: TPayload):
         node = self
         for word in reversed(words):
             if word:
                 node = node[word]
         node.payload = payload
+
+    def add(self, text: str, payload: TPayload):
+        self.addWords(text.split(" "), payload)
 
 
     def __str__(self) -> str:

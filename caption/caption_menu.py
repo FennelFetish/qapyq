@@ -2,6 +2,7 @@ from enum import Enum
 from PySide6 import QtWidgets
 from PySide6.QtCore import Signal, Slot
 from config import Config
+from .caption_context import CaptionContext
 
 
 class RulesLoadMode(Enum):
@@ -14,11 +15,9 @@ class CaptionMenu(QtWidgets.QMenu):
     previewToggled = Signal(bool)
 
 
-    def __init__(self, parent, context):
+    def __init__(self, parent, context: CaptionContext):
         super().__init__(parent)
-
-        from .caption_container import CaptionContext
-        self.ctx: CaptionContext = context
+        self.ctx = context
 
         self._build()
         self.aboutToShow.connect(self._updateMenu)

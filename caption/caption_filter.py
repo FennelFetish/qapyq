@@ -56,7 +56,7 @@ class SortCaptionFilter(CaptionFilter):
         i = 1  # Only truthy values
         for group in captionGroups:
             for caption in group:
-                self.matcherNode.add(caption.split(" "), i)
+                self.matcherNode.add(caption, i)
                 self.captionOrder[caption] = i
                 i += 1
 
@@ -223,7 +223,7 @@ class TagCombineFilter(CaptionFilter):
 
         for cap in (cap for c in captions if (cap := c.strip())):
             words = [word for word in cap.split(" ") if word]
-            self.matcherNode.add(words, True)
+            self.matcherNode.addWords(words, True)
 
             lastWord = words[-1]
             groupIndex = groupWords.get(lastWord)
@@ -385,7 +385,7 @@ class PrefixSuffixFilter:
         self.prefix = ""
         self.suffix = ""
 
-    def setup(self, prefix, suffix) -> None:
+    def setup(self, prefix: str, suffix: str) -> None:
         self.prefix = prefix
         self.suffix = suffix
 
@@ -452,7 +452,6 @@ class CaptionRulesProcessor:
         self.conditionalsFilter.setup(rules, self.separator)
 
 
-    # TODO: Sort combined tags. Split all tags of combine-groups first? But check if all tags are part of same group
     def process(self, text: str) -> str:
         text = self.replaceFilter.filterText(text)
         captions = [c.strip() for c in text.split(self.separator.strip())]
@@ -470,12 +469,6 @@ class CaptionRulesProcessor:
         captions = self.banFilter.filterCaptions(captions)
 
         captions = self.conditionalsFilter.filterCaptions(captions)
-
-        # TODO: Check if changing this order has side effects
-        # if self.removeDup:
-        #     # Remove subsets after banning, so no tags are wrongly merged and removed with banned tags.
-        #     captions = self.subsetFilter.filterCaptions(captions)
-        #     captions = self.dupFilter.filterCaptions(captions) # SubsetFilter won't remove exact duplicates
 
         # Sort before combine filter so order inside group will define order of words inside combined tag
         if self.sortCaptions:
