@@ -1,4 +1,4 @@
-import sys
+import sys, os
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Slot, QPoint, QThreadPool
 from config import Config
@@ -457,6 +457,8 @@ def restoreWindows(win: MainWindow):
         win.toggleAuxWindow(winName)
 
 def main() -> int:
+    os.environ["QT_SCALE_FACTOR"] = str(Config.guiScale)
+
     app = QtWidgets.QApplication([])
     app.setStyle("Fusion")
 
@@ -471,7 +473,9 @@ def main() -> int:
     return app.exec()
 
 if __name__ == "__main__":
-    Config.load()
+    if not Config.load():
+        sys.exit(1)
+
     exitCode = main()
     Config.save()
     sys.exit(exitCode)

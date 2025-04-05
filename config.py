@@ -2,6 +2,7 @@ class Config:
     version                 = "1.0"
     windowTitle             = "qapyq"
     windowIcon              = "res/qapyq.png"
+    guiScale                = 1.0
 
     # Font
     fontMonospace           = "res/font/DejaVuSansMono.ttf"
@@ -121,14 +122,26 @@ class Config:
 
 
     @classmethod
-    def load(cls):
+    def load(cls) -> bool:
         import json, os
-        if os.path.exists(cls.pathConfig):
-            with open(cls.pathConfig, 'r') as file:
-                data = json.load(file)
-        else:
-            data = dict()
 
+        try:
+            if os.path.exists(cls.pathConfig):
+                with open(cls.pathConfig, 'r') as file:
+                    data = json.load(file)
+            else:
+                data = dict()
+
+            cls._load(data)
+            return True
+        except Exception as ex:
+            print(f"Error while reading config file from '{os.path.abspath(cls.pathConfig)}':")
+            print(f"  {ex}")
+            return False
+
+    @classmethod
+    def _load(cls, data: dict):
+        cls.guiScale              = float(data.get("gui_scale", cls.guiScale))
         cls.fontMonospace         = data.get("font_monospace", cls.fontMonospace)
 
         cls.pathExport            = data.get("path_export", cls.pathExport)
@@ -182,6 +195,7 @@ class Config:
         data = dict()
         data["version"]                     = cls.version
 
+        data["gui_scale"]                   = cls.guiScale
         data["font_monospace"]              = cls.fontMonospace
 
         data["path_export"]                 = cls.pathExport
