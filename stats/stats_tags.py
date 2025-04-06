@@ -11,6 +11,7 @@ from batch.batch_rules import BatchRules
 from caption.caption_container import CaptionContainer
 from caption.caption_groups import CaptionControlGroup
 from caption.caption_preset import CaptionPreset, CaptionPresetConditional, MutualExclusivity
+from caption.caption_highlight import MatcherNode
 from .stats_base import StatsLayout, StatsBaseProxyModel, ExportCsv
 
 
@@ -41,12 +42,16 @@ class TagStats(QtWidgets.QWidget):
         qtlib.setMonospace(self.txtSepChars)
         self.txtSepChars.setMaximumWidth(120)
 
+        self.chkSplitCombined = QtWidgets.QCheckBox("Split Combined Tags")
+
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(QtWidgets.QLabel("Load From:"))
         layout.addLayout(self.captionSrc)
-        layout.addSpacing(20)
+        layout.addSpacing(16)
         layout.addWidget(QtWidgets.QLabel("Separators:"))
         layout.addWidget(self.txtSepChars)
+        layout.addSpacing(16)
+        layout.addWidget(self.chkSplitCombined)
         layout.addStretch(1)
         return layout
 
@@ -78,9 +83,24 @@ class TagStats(QtWidgets.QWidget):
         return group
 
 
+    def _getMatcherNode(self) -> MatcherNode:
+        captionWin: CaptionContainer | None = self.tab.getWindowContent("caption")
+        if captionWin:
+            return captionWin.ctx.highlight.matchNode
+
+        msgText = 'Splitting combined tags needs the group definitions from the Caption Window, which is not open.\n\n' \
+                  'Please uncheck "Split Combined Tags" or open the Caption Window and load a preset.'
+        QtWidgets.QMessageBox.information(self, "Caption Window not open", msgText)
+        raise ValueError()
+
     @Slot()
     def reload(self):
-        self.model.reload(self.tab.filelist.getFiles(), self.captionSrc, self.txtSepChars.text())
+        try:
+            matchNode = self._getMatcherNode() if self.chkSplitCombined.isChecked() else None
+        except ValueError:
+            return
+
+        self.model.reload(self.tab.filelist.getFiles(), self.captionSrc, self.txtSepChars.text(), matchNode)
         self.table.sortByColumn(1, Qt.SortOrder.AscendingOrder)
         self.table.resizeColumnsToContents()
 
@@ -161,7 +181,7 @@ class TagModel(QAbstractItemModel):
         self.tags: list[TagData] = list()
         self.summary = TagSummary()
 
-    def reload(self, files: list[str], captionSrc: FileTypeSelector, sepChars: str):
+    def reload(self, files: list[str], captionSrc: FileTypeSelector, sepChars: str, matchNode: MatcherNode | None):
         splitter = CaptionSplitter(sepChars)
         self.beginResetModel()
 
@@ -175,6 +195,9 @@ class TagModel(QAbstractItemModel):
                 continue
 
             tags = splitter.split(caption)
+            if matchNode:
+                tags = list(matchNode.splitAllPreserveExtra(tags))
+
             self.summary.addFile(tags)
 
             for tag in tags:

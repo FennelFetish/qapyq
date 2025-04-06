@@ -238,45 +238,16 @@ class TagCombineFilter(CaptionFilter):
     def _sortKey(self, tag: str) -> int:
         return self.tagOrder.get(tag, -1)
 
-    # Splitting captions is a relatively easy way to allow combining tags with pre-existing combined tags.
-    # Other tried methods failed with combining and sorting 3-word tags.
-    # The current limitation here: When the combined tag contains another word that doesn't belong to the group,
-    # like when it was manually edited, that tag is not split, because the order is undefined.
-    def _splitCaptions(self, captions: list[str]) -> list[str]:
-        newCaptions = list[str]()
-        addCaptions = list[str]()
-        remainingWords = set[str]()
-
-        for caption in captions:
-            captionWords = caption.split(" ")
-            if matchSplitWords := self.matcherNode.splitWords(captionWords):
-                addCaptions.clear()
-                remainingWords.clear()
-                remainingWords.update(cap for cap in captionWords if cap)
-
-                # Don't split into subsets: Start with longest and only add captions if they have new words.
-                matchSplitWords.sort(key=len, reverse=True)
-                for words in matchSplitWords:
-                    if not remainingWords.isdisjoint(words):
-                        remainingWords.difference_update(words)
-                        addCaptions.append(" ".join(words))
-
-                # Don't use the split captions if there are other words present.
-                if not remainingWords:
-                    newCaptions.extend(addCaptions)
-                    continue
-
-            newCaptions.append(caption)
-
-        return newCaptions
-
-
     def filterCaptions(self, captions: list[str]) -> list[str]:
         newCaptions = list[str | list[str]]()
         groups = dict[int, list[str]]()
 
         # Find groups
-        for caption in self._splitCaptions(captions):
+        # Splitting captions is a relatively easy way to allow combining tags with pre-existing combined tags.
+        # Other tried methods failed with combining and sorting 3-word tags.
+        # The current limitation here: When the combined tag contains another word that doesn't belong to the group,
+        # like when it was manually edited, that tag is not split, because the order is undefined.
+        for caption in self.matcherNode.splitAllPreserveExtra(captions):
             groupIndex = self.groupMap.get(caption)
 
             # Not registered for combination: Append unmodified string.

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Iterable, Generic, TypeVar, Optional
+from typing import Iterable, Generator, Generic, TypeVar, Optional
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Slot, QSignalBlocker
 from lib import qtlib, util, colors
@@ -147,8 +147,13 @@ class CaptionHighlight:
                     formats[caption] = mutedFormat
 
         # Insert banned color. This will overwrite group colors.
-        bannedColor, bannedFormat = self._getMuted(qtlib.COLOR_BUBBLE_BAN) if focusSet else (qtlib.COLOR_BUBBLE_BAN, self._bannedFormat)
-        bannedFocusColor, bannedFocusFormat = self._getMuted(COLOR_FOCUS_BAN, 1, 1) if focusSet else (qtlib.COLOR_BUBBLE_BAN, self._bannedFormat)
+        if focusSet:
+            bannedColor, bannedFormat = self._getMuted(qtlib.COLOR_BUBBLE_BAN)
+            bannedFocusColor, bannedFocusFormat = self._getMuted(COLOR_FOCUS_BAN, 1, 1)
+        else:
+            bannedColor = bannedFocusColor = qtlib.COLOR_BUBBLE_BAN
+            bannedFormat = bannedFocusFormat = self._bannedFormat
+
         for banned in self.data.getBanned():
             if banned in focusSet:
                 colors[banned]  = bannedFocusColor
@@ -321,12 +326,37 @@ class MatcherNode(Generic[TPayload]):
         groups = self.splitWords(words)
         return [" ".join(groupWords) for groupWords in groups]
 
-    def matchSplitCaptions(self, captions: Iterable[str]) -> set[str]:
-        captionSet = set[str]()
+    def splitAll(self, captions: Iterable[str]) -> Generator[str]:
         for cap in captions:
             if matchSplit := self.split(cap.split(" ")):
-                captionSet.update(matchSplit)
+                yield from matchSplit
             else:
-                captionSet.add(cap)
+                yield cap
 
-        return captionSet
+    def splitAllPreserveExtra(self, captions: Iterable[str]) -> Generator[str]:
+        'Splits captions but only if no extra words are present. No subsets.'
+
+        splitCaptionWords = list[list[str]]()
+        remainingWords = set[str]()
+
+        for cap in captions:
+            captionWords = cap.split(" ")
+
+            if matchSplitWords := self.splitWords(captionWords):
+                splitCaptionWords.clear()
+                remainingWords.clear()
+                remainingWords.update(word for word in captionWords if word)
+
+                # Don't split into subsets: Start with longest and only add captions if they have new words.
+                matchSplitWords.sort(key=len, reverse=True)
+                for matchWords in matchSplitWords:
+                    if not remainingWords.isdisjoint(matchWords):
+                        remainingWords.difference_update(matchWords)
+                        splitCaptionWords.append(matchWords)
+
+                # Don't use the split captions if there are extra words present.
+                if not remainingWords:
+                    yield from (" ".join(matchWords) for matchWords in splitCaptionWords)
+                    continue
+
+            yield cap

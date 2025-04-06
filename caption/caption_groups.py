@@ -135,7 +135,7 @@ class CaptionGroups(CaptionTab):
 
 
     def updateSelectedState(self, captions: list[str], force: bool):
-        captionSet = self.ctx.highlight.matchNode.matchSplitCaptions(captions)
+        captionSet = set(self.ctx.highlight.matchNode.splitAll(captions))
         for group in self.groups:
             group.updateSelectedState(captionSet, force)
 
@@ -420,7 +420,7 @@ class CaptionControlGroup(QtWidgets.QWidget):
         textField = self.groups.ctx.text
         captions = textField.getCaption().split(textField.separator.strip())
         captions = (cap for c in captions if (cap := c.strip()))
-        captions = self.groups.ctx.highlight.matchNode.matchSplitCaptions(captions)
+        captions = set(self.groups.ctx.highlight.matchNode.splitAll(captions))
 
         menu = QtWidgets.QMenu("Expanded Wildcards")
         for tag in wildcardTags:
@@ -447,7 +447,6 @@ class CaptionControlGroup(QtWidgets.QWidget):
                 if otherButton.checked and otherButton.text.rstrip().endswith(lastWord):
                     removeWords.difference_update(otherButton.words())
 
-        # TODO: Send 'keepWords'?
         self.groups.ctx.text.toggleCaption(caption, removeWords)
 
 
