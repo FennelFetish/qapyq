@@ -1,5 +1,5 @@
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Slot, Signal
+from PySide6.QtCore import Qt, Slot, Signal, QRect
 import numpy as np
 import lib.util as util
 from config import Config
@@ -534,3 +534,44 @@ class BaseColorScrollArea(QtWidgets.QScrollArea):
         bgColor = palette.color(colorRole)
         palette.setColor(QtGui.QPalette.ColorRole.Window, bgColor)
         self.setPalette(palette)
+
+
+
+class RowScrollArea(BaseColorScrollArea):
+    def __init__(self, widget: QtWidgets.QWidget):
+        super().__init__(widget)
+
+    def _getItemIndexAtY(self, y: int, compareBottom: bool) -> int:
+        layout: QtWidgets.QLayout = self.widget().layout()
+        rowY = QRect.bottom if compareBottom else QRect.top
+
+        # Binary search
+        lo = 0
+        hi = max(layout.count()-1, 0)
+
+        while lo < hi:
+            row = (lo+hi) // 2
+            rect = layout.itemAt(row).geometry()
+            if y > rowY(rect):
+                lo = row+1 # Continue in upper half
+            else:
+                hi = row   # Continue in lower half
+
+        #assert(lo == hi)
+        return lo
+
+    def wheelEvent(self, event: QtGui.QWheelEvent):
+        scrollBar = self.verticalScrollBar()
+        scrollDown = event.angleDelta().y() < 0
+
+        row = self._getItemIndexAtY(scrollBar.value(), scrollDown)
+        row += 1 if scrollDown else -1
+
+        if row <= 0:
+            y = 0
+        elif item := self.widget().layout().itemAt(row):
+            y = item.geometry().top()
+        else:
+            y = scrollBar.maximum()
+
+        scrollBar.setValue(y)

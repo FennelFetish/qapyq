@@ -30,7 +30,7 @@ class CaptionList(CaptionTab):
         widget.setLayout(self._layout)
 
         layout = QtWidgets.QVBoxLayout()
-        layout.addWidget(qtlib.BaseColorScrollArea(widget))
+        layout.addWidget(qtlib.RowScrollArea(widget))
         self.setLayout(layout)
 
 

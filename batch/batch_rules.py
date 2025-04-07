@@ -183,7 +183,7 @@ class BatchRules(QtWidgets.QWidget):
 
         widget = QtWidgets.QWidget()
         widget.setLayout(self.groupLayout)
-        scrollArea = qtlib.BaseColorScrollArea(widget)
+        scrollArea = qtlib.RowScrollArea(widget)
         scrollArea.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
         return scrollArea
 
@@ -196,7 +196,7 @@ class BatchRules(QtWidgets.QWidget):
         condReorderWidget = ManualStartReorderWidget()
         condReorderWidget.setLayout(self.conditionalsLayout)
         condReorderWidget.orderChanged.connect(self.updatePreview)
-        scrollArea = qtlib.BaseColorScrollArea(condReorderWidget)
+        scrollArea = qtlib.RowScrollArea(condReorderWidget)
         scrollArea.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
 
         layout = QtWidgets.QVBoxLayout()

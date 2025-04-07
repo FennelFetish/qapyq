@@ -56,7 +56,7 @@ class CaptionGroups(CaptionTab):
         groupReorderWidget = ManualStartReorderWidget()
         groupReorderWidget.setLayout(self.groupLayout)
         groupReorderWidget.orderChanged.connect(self._emitUpdatedApplyRules)
-        scrollGroup = qtlib.BaseColorScrollArea(groupReorderWidget)
+        scrollGroup = qtlib.RowScrollArea(groupReorderWidget)
         scrollGroup.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
         layout.addWidget(scrollGroup, row, 0, 1, 7)
 
