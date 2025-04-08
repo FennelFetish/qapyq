@@ -89,6 +89,7 @@ class Gallery(QtWidgets.QWidget):
         self.galleryGrid = GalleryGrid(self.tab, self.captionSrc)
         self.galleryGrid.thumbnailSize = Config.galleryThumbnailSize
         self.tab.filelist.addListener(self.galleryGrid)
+        self.tab.filelist.addSelectionListener(self.galleryGrid)
         self.tab.filelist.addDataListener(self.galleryGrid)
 
         self.galleryGrid.headersUpdated.connect(self.onHeadersUpdated)

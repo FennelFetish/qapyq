@@ -24,10 +24,16 @@ DATA_ICONS = {
 
 
 class GalleryItem(QtWidgets.QWidget):
-    SelectionPrimary = 1
-    SelectionCompare = 2
+    SELECTION_PRIMARY   = 1
+    SELECTION_SECONDARY = 2
 
     BORDER_SIZE = 6
+    BORDER_SIZE_SECONDARY = 3
+
+    PEN_TEXT: QtGui.QPen = None
+    PEN_PRIMARY: QtGui.QPen = None
+    PEN_SECONDARY: QtGui.QPen = None
+
 
     def __init__(self, galleryGrid: GalleryGrid, file: str):
         super().__init__()
@@ -58,6 +64,24 @@ class GalleryItem(QtWidgets.QWidget):
             self.setImageSize(0, 0)
 
         self.onThumbnailSizeUpdated()
+
+    @classmethod
+    def _initPens(cls):
+        palette = QtWidgets.QApplication.palette()
+        textColor = palette.color(QtGui.QPalette.ColorRole.Text)
+        selectionColor = palette.color(QtGui.QPalette.ColorRole.Highlight)
+
+        cls.PEN_TEXT = QtGui.QPen(textColor)
+
+        cls.PEN_PRIMARY = QtGui.QPen(selectionColor)
+        cls.PEN_PRIMARY.setStyle(Qt.PenStyle.SolidLine)
+        cls.PEN_PRIMARY.setWidth(cls.BORDER_SIZE)
+        cls.PEN_PRIMARY.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+
+        cls.PEN_SECONDARY = QtGui.QPen(selectionColor)
+        cls.PEN_SECONDARY.setStyle(Qt.PenStyle.DotLine)
+        cls.PEN_SECONDARY.setWidth(cls.BORDER_SIZE_SECONDARY)
+        cls.PEN_SECONDARY.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
 
 
     def setIcon(self, key, state):
@@ -104,45 +128,81 @@ class GalleryItem(QtWidgets.QWidget):
     def sizeHint(self):
         return QSize(self.gallery.thumbnailSize, self._height)
 
+    def minimumSizeHint(self) -> QSize:
+        return self.sizeHint()
+
 
     @property
     def selected(self) -> bool:
-        return (self.selectionStyle & self.SelectionPrimary) != 0
+        return (self.selectionStyle & self.SELECTION_PRIMARY) != 0
 
     @selected.setter
-    def selected(self, selected) -> None:
+    def selected(self, selected: bool) -> None:
         if selected:
-            self.selectionStyle |= self.SelectionPrimary
+            self.selectionStyle |= self.SELECTION_PRIMARY
         else:
-            self.selectionStyle &= ~self.SelectionPrimary
+            self.selectionStyle &= ~self.SELECTION_PRIMARY
         self.update()
 
-    def setCompare(self, selected):
+    @property
+    def selectedSecondary(self) -> bool:
+        return (self.selectionStyle & self.SELECTION_SECONDARY) != 0
+
+    @selectedSecondary.setter
+    def selectedSecondary(self, selected: bool):
         if selected:
-            self.selectionStyle |= self.SelectionCompare
+            self.selectionStyle |= self.SELECTION_SECONDARY
         else:
-            self.selectionStyle &= ~self.SelectionCompare
+            self.selectionStyle &= ~self.SELECTION_SECONDARY
         self.update()
 
-    def mousePressEvent(self, event):
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
-            self.gallery.setSelectedItem(self, True)
+            shift = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+            ctrl  = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+
+            # Secondary range selection
+            if shift:
+                if ctrl:
+                    self.gallery.filelist.unselectFileRange(self.file)
+                else:
+                    self.gallery.filelist.selectFileRange(self.file)
+
+            # Toggle secondary selection
+            elif ctrl:
+                if not self.selected:
+                    if self.selectedSecondary:
+                        self.gallery.filelist.unselectFile(self.file)
+                    else:
+                        self.gallery.filelist.selectFile(self.file)
+
+            # Select for comparison
+            elif event.modifiers() & Qt.KeyboardModifier.AltModifier:
+                self.gallery.tab.mainWindow.setTool("compare")
+                self.gallery.tab.imgview.tool.onGalleryRightClick(self.file)
+
+            # Primary selection
+            else:
+                with self.gallery.tab.takeFocus() as filelist:
+                    filelist.setCurrentFile(self.file)
+
+        # Primary selection and open menu
         elif event.button() == Qt.MouseButton.RightButton:
-            self.gallery.tab.imgview.tool.onGalleryRightClick(self.file)
-            self.gallery.setSelectedCompare(self)
+            with self.gallery.tab.takeFocus() as filelist:
+                filelist.setCurrentFile(self.file)
+
+            menu = GalleryItemMenu(self.gallery)
+            menu.exec( self.mapToGlobal(event.pos()) )
 
 
-    def paintBorder(self, painter: QtGui.QPainter, palette: QtGui.QPalette, x, y, w, h):
-        selectionColor = palette.color(QtGui.QPalette.ColorRole.Highlight)
-        pen = QtGui.QPen(selectionColor)
-        pen.setWidth(self.BORDER_SIZE)
-        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        if self.selectionStyle & self.SelectionPrimary:
-            pen.setStyle(Qt.PenStyle.SolidLine)
-        elif self.selectionStyle & self.SelectionCompare:
-            pen.setStyle(Qt.PenStyle.DotLine)
-        painter.setPen(pen)
-        painter.drawRect(x, y, w, h)
+    def paintBorder(self, painter: QtGui.QPainter, x: int, y: int, w: int, h: int):
+        if self.selected:
+            painter.setPen(self.PEN_PRIMARY)
+            painter.drawRect(x, y, w, h)
+        elif self.selectedSecondary:
+            painter.setPen(self.PEN_SECONDARY)
+            painter.drawRect(x, y, w, h)
 
     def paintIcons(self, painter: QtGui.QPainter, x, y):
         painter.save()
@@ -162,6 +222,9 @@ class GalleryItem(QtWidgets.QWidget):
 
 
 class GalleryGridItem(GalleryItem):
+    TEXT_SPACING = 3
+    TEXT_MAX_HEIGHT = 40
+
     def __init__(self, gallery, file):
         super().__init__(gallery, file)
 
@@ -172,7 +235,8 @@ class GalleryGridItem(GalleryItem):
 
     @override
     def paintEvent(self, event):
-        palette = QtWidgets.QApplication.palette()
+        if not self.PEN_TEXT:
+            self._initPens()
 
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
@@ -182,9 +246,6 @@ class GalleryGridItem(GalleryItem):
         y = x
         w = self.width() - self.BORDER_SIZE
         h = self.height() - self.BORDER_SIZE
-
-        textSpacing = 3
-        textMaxHeight = 40
 
         # Draw image
         if self._pixmap:
@@ -197,21 +258,16 @@ class GalleryGridItem(GalleryItem):
             ThumbnailCache.updateThumbnail(self.gallery.filelist, self, self.file)
             imgH = 0
 
-        # Draw icons
         self.paintIcons(painter, x+4, y+4)
-
-        # Draw border
-        if self.selectionStyle:
-            self.paintBorder(painter, palette, x, y, w, h)
+        self.paintBorder(painter, x, y, w, h)
 
         # Draw filename
-        textColor = palette.color(QtGui.QPalette.ColorRole.Text)
-        pen = QtGui.QPen(textColor)
-        painter.setPen(pen)
-        textY = y + imgH + textSpacing
-        painter.drawText(x, textY, w, textMaxHeight, Qt.AlignmentFlag.AlignHCenter | Qt.TextFlag.TextWordWrap, self.filename)
+        textY = y + imgH + self.TEXT_SPACING
+        flags = Qt.AlignmentFlag.AlignHCenter | Qt.TextFlag.TextWordWrap
+        painter.setPen(self.PEN_TEXT)
+        painter.drawText(x, textY, w, self.TEXT_MAX_HEIGHT, flags, self.filename)
 
-        self._height = y + imgH + self.BORDER_SIZE + textSpacing + textMaxHeight
+        self._height = y + imgH + self.BORDER_SIZE + self.TEXT_SPACING + self.TEXT_MAX_HEIGHT
         self.setFixedHeight(self._height)
 
 
@@ -336,12 +392,12 @@ class GalleryListItem(GalleryItem):
 
     @override
     def paintEvent(self, event):
+        if not self.PEN_TEXT:
+            self._initPens()
         if not self._built:
             self._build()
         if not self._captionLoaded:
             self.loadCaption()
-
-        palette = QtWidgets.QApplication.palette()
 
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
@@ -364,16 +420,51 @@ class GalleryListItem(GalleryItem):
             ThumbnailCache.updateThumbnail(self.gallery.filelist, self, self.file)
             imgH = 0
 
-        # Draw icons
         self.paintIcons(painter, x+4, y+4)
-
-        # Draw border
-        if self.selectionStyle:
-            self.paintBorder(painter, palette, x, y, w, h)
+        self.paintBorder(painter, x, y, w, h)
 
         self._height = y + imgH + self.BORDER_SIZE
         self._height = max(self._height, 100)
         self.setMinimumHeight(self._height)
+
+
+
+class GalleryItemMenu(QtWidgets.QMenu):
+    def __init__(self, galleryGrid: GalleryGrid):
+        super().__init__("Gallery")
+        self.gallery = galleryGrid
+
+        actClearSelection = self.addAction("Clear Selection")
+        if galleryGrid.filelist.selectedFiles:
+            actClearSelection.triggered.connect(lambda: self.gallery.filelist.clearSelection())
+            strFiles = "Files"
+        else:
+            actClearSelection.setEnabled(False)
+            strFiles = "File"
+
+        actNewTab = self.addAction(f"Open {strFiles} in New Tab")
+        actNewTab.triggered.connect(self._openFilesInNewTab)
+
+        self.addSeparator()
+
+        actUnloadSelection = self.addAction(f"Unload Selected {strFiles}")
+        actUnloadSelection.triggered.connect(self._unloadSelectedFiles)
+
+    @Slot()
+    def _openFilesInNewTab(self):
+        filelist = self.gallery.filelist
+        files = filelist.selectedFiles or (filelist.getCurrentFile(),)
+        newTab = self.gallery.tab.mainWindow.addTab()
+        newTab.filelist.loadFilesFixed(files, filelist)
+
+    @Slot()
+    def _unloadSelectedFiles(self):
+        filelist = self.gallery.filelist
+        if filelist.selectedFiles:
+            filelist.filterFiles(lambda file: file not in filelist.selectedFiles)
+        else:
+            currentFile = filelist.getCurrentFile()
+            filelist.filterFiles(lambda file: file != currentFile)
 
 
 

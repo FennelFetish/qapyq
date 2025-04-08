@@ -50,8 +50,7 @@ class GalleryGrid(QtWidgets.QWidget):
         self.rows = 0
 
         self._selectedItem: GalleryItem | None = None
-        self._selectedCompare: GalleryItem | None = None
-        self._ignoreFileChange = False
+        self._selectedFiles: set[str] = set()
 
         self._loadTask: GalleryLoadTask | None = None
 
@@ -103,7 +102,6 @@ class GalleryGrid(QtWidgets.QWidget):
     def reloadImages(self):
         self.fileItems = dict()
         self._selectedItem = None
-        self._selectedCompare = None
 
         self.clearLayout()
 
@@ -111,33 +109,9 @@ class GalleryGrid(QtWidgets.QWidget):
         self._loadTask.loadBatch()
 
     def getLoadPercent(self) -> float:
-        if self._loadTask:
+        if self._loadTask and len(self.filelist.files) > 0:
             return len(self.fileItems) / len(self.filelist.files)
         return 1.0
-
-
-    def setSelectedItem(self, item: GalleryItem, updateFileList=False):
-        if self._selectedItem:
-            self._selectedItem.selected = False
-        item.selected = True
-        self._selectedItem = item
-
-        item.takeFocus()
-        self.fileChanged.emit(item, item.row)
-
-        if updateFileList:
-            try:
-                self._ignoreFileChange = True
-                with self.tab.takeFocus() as filelist:
-                    filelist.setCurrentFile(item.file)
-            finally:
-                self._ignoreFileChange = False
-
-    def setSelectedCompare(self, item: GalleryItem):
-        if self._selectedCompare:
-            self._selectedCompare.setCompare(False)
-        item.setCompare(True)
-        self._selectedCompare = item
 
 
     def calcColumnCount(self):
@@ -233,9 +207,15 @@ class GalleryGrid(QtWidgets.QWidget):
 
 
     def onFileChanged(self, currentFile: str):
-        if not self._ignoreFileChange:
-            widget = self.fileItems[currentFile]
-            self.setSelectedItem(widget)
+        item = self.fileItems[currentFile]
+
+        if self._selectedItem:
+            self._selectedItem.selected = False
+        item.selected = True
+        self._selectedItem = item
+
+        item.takeFocus()
+        self.fileChanged.emit(item, item.row)
 
     def onFileListChanged(self, currentFile: str):
         # When files were appended, the selection is kept
@@ -248,6 +228,12 @@ class GalleryGrid(QtWidgets.QWidget):
             self.fileChanged.emit(selectedItem, selectedItem.row)
         else:
             self.reloaded.emit()
+
+    def onFileSelectionChanged(self, selectedFiles: set[str]):
+        toggleFiles = self._selectedFiles.symmetric_difference(selectedFiles)
+        for file in toggleFiles:
+            self.fileItems[file].selectedSecondary ^= True
+        self._selectedFiles = selectedFiles.copy()
 
     def onFileDataChanged(self, file: str, key: str):
         widget = self.fileItems.get(file)
@@ -289,8 +275,6 @@ class GalleryLoadTask(QObject):
         self.row = 0
         self.col = 0
         self.emptyLastRow = False
-
-        self.compareTool = galleryGrid.tab.getTool("compare")
 
         self.timer = QTimer()
         self.timer.setSingleShot(True)
@@ -371,17 +355,13 @@ class GalleryLoadTask(QObject):
 
         self.layout.addWidget(galleryItem, row, col, Qt.AlignmentFlag.AlignTop)
 
-        if self.galleryGrid.filelist.getCurrentFile() == file:
+        filelist = self.galleryGrid.filelist
+        if filelist.getCurrentFile() == file:
             self.galleryGrid._selectedItem = galleryItem
             galleryItem.selected = True
-        else:
-            galleryItem.selected = False
 
-        if self.compareTool and self.compareTool.compareFile == file:
-            self.galleryGrid._selectedCompare = galleryItem
-            galleryItem.setCompare(True)
-        else:
-            galleryItem.setCompare(False)
+        if filelist.isSelected(file):
+            galleryItem.selectedSecondary = True
 
     def addHeader(self, dir: str, row: int) -> GalleryHeader:
         header = GalleryHeader(self.galleryGrid.tab, dir, row)

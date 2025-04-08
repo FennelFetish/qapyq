@@ -33,12 +33,20 @@ class GalleryHeader(QtWidgets.QFrame):
             text += "s"
         self.lblImgCount.setText(text)
 
+
+    @property
+    def folderFiles(self):
+        return (file for file in self.tab.filelist.getFiles() if os.path.dirname(file) == self.dir)
+
+
+    @Slot()
+    def selectFiles(self):
+        self.tab.filelist.setSelection(self.folderFiles)
+
     @Slot()
     def openFilesInNewTab(self):
-        currentFilelist = self.tab.filelist
-        files = [file for file in currentFilelist.getFiles() if os.path.dirname(file) == self.dir]
         newTab = self.tab.mainWindow.addTab()
-        newTab.filelist.loadFilesFixed(files, currentFilelist)
+        newTab.filelist.loadFilesFixed(self.folderFiles, self.tab.filelist)
 
     @Slot()
     def removeFiles(self):
@@ -67,6 +75,9 @@ class MenuLabel(QtWidgets.QLabel):
 
     def buildMenu(self) -> QtWidgets.QMenu:
         menu = QtWidgets.QMenu("Folder")
+
+        actSelectFiles = menu.addAction("Select Files")
+        actSelectFiles.triggered.connect(self.header.selectFiles)
 
         actOpenFiles = menu.addAction("Open Files in New Tab")
         actOpenFiles.triggered.connect(self.header.openFilesInNewTab)
