@@ -1,7 +1,7 @@
 from __future__ import annotations
 import os
 from PySide6 import QtGui, QtWidgets
-from PySide6.QtCore import Qt, Signal, Slot, QRect, QObject, QTimer
+from PySide6.QtCore import Qt, Signal, Slot, QRect, QPoint, QObject, QTimer, QEvent
 from lib.captionfile import FileTypeSelector
 from lib.filelist import DataKeys
 from ui.tab import ImgTab
@@ -61,6 +61,13 @@ class GalleryGrid(QtWidgets.QWidget):
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(self.itemClass.getSpacing())
         self.setLayout(self._layout)
+
+        self.filelist.addListener(self)
+        self.filelist.addSelectionListener(self)
+        self.filelist.addDataListener(self)
+
+        self._eventFilter = GalleryDragEventFilter(self)
+        self.installEventFilter(self._eventFilter)
 
 
     def setViewMode(self, mode: str):
@@ -205,6 +212,15 @@ class GalleryGrid(QtWidgets.QWidget):
                 y = min(y, rect.top())
         return y
 
+    def getItemAtPos(self, pos: QPoint) -> GalleryItem | None:
+        row = self.getRowForY(pos.y(), True)
+        for col in range(self.columns):
+            item = self._layout.itemAtPosition(row, col)
+            if item and item.geometry().contains(pos):
+                widget = item.widget()
+                return widget if isinstance(widget, GalleryItem) else None
+        return None
+
 
     def onFileChanged(self, currentFile: str):
         item = self.fileItems[currentFile]
@@ -248,6 +264,40 @@ class GalleryGrid(QtWidgets.QWidget):
             case DataKeys.CaptionState | DataKeys.CropState | DataKeys.MaskState:
                 iconState = self.filelist.getData(file, key)
                 widget.setIcon(key, iconState)
+
+
+
+class GalleryDragEventFilter(QObject):
+    MIN_DIST2 = 40 ** 2
+
+    def __init__(self, gallery: GalleryGrid):
+        super().__init__()
+        self.gallery = gallery
+        self._startPos: QPoint | None = None
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if event.type() != QEvent.Type.MouseMove:
+            self._startPos = None
+            return False
+
+        mouseEvent: QtGui.QMouseEvent = event
+        if mouseEvent.buttons() & Qt.MouseButton.LeftButton:
+            pos = mouseEvent.position().toPoint()
+            if self._checkDist(pos) and (item := self.gallery.getItemAtPos(pos)):
+                item.onDragOver(mouseEvent)
+                self._startPos = pos # Optimization: Only call onDragOver at intervals
+                return True
+
+        return False
+
+    def _checkDist(self, pos: QPoint) -> bool:
+        if self._startPos:
+            dx = pos.x() - self._startPos.x()
+            dy = pos.y() - self._startPos.y()
+            return (dx*dx + dy*dy) > self.MIN_DIST2
+
+        self._startPos = pos
+        return False
 
 
 

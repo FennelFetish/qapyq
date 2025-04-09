@@ -5,6 +5,7 @@ from bisect import bisect_right
 from .gallery_grid import GalleryGrid, GalleryHeader
 import lib.qtlib as qtlib
 from lib.captionfile import FileTypeSelector
+from ui.tab import ImgTab
 from config import Config
 
 
@@ -14,7 +15,7 @@ class Gallery(QtWidgets.QWidget):
     MIN_GRID_UPDATE_DELAY = 1.0
     THUMBNAIL_SIZE_STEP = 50
 
-    def __init__(self, tab):
+    def __init__(self, tab: ImgTab):
         super().__init__()
         self.tab = tab
         self.galleryGrid = None
@@ -40,6 +41,7 @@ class Gallery(QtWidgets.QWidget):
         self.statusBar.addPermanentWidget(self.cboViewMode)
 
         self._build()
+        tab.filelist.addSelectionListener(self)
 
     def _buildThumbnailSize(self):
         layout = QtWidgets.QHBoxLayout()
@@ -88,9 +90,6 @@ class Gallery(QtWidgets.QWidget):
 
         self.galleryGrid = GalleryGrid(self.tab, self.captionSrc)
         self.galleryGrid.thumbnailSize = Config.galleryThumbnailSize
-        self.tab.filelist.addListener(self.galleryGrid)
-        self.tab.filelist.addSelectionListener(self.galleryGrid)
-        self.tab.filelist.addDataListener(self.galleryGrid)
 
         self.galleryGrid.headersUpdated.connect(self.onHeadersUpdated)
         self.galleryGrid.reloadImages() # Slot onHeadersUpdated() needs access to cboFolders and scrollArea
@@ -149,14 +148,21 @@ class Gallery(QtWidgets.QWidget):
     def onLoadProgress(self):
         self.updateStatusBar(self.cboFolders.count())
 
-    def updateStatusBar(self, numFolders):
+    def updateStatusBar(self, numFolders: int):
+        filelist = self.galleryGrid.filelist
+
+        selectionText = ""
+        numSelectedFiles = len(filelist.selectedFiles)
+        if numSelectedFiles > 0:
+            selectionText = f"  ({numSelectedFiles} Selected)"
+
         loadText = ""
         loadPercent = self.galleryGrid.getLoadPercent()
         if loadPercent < 1.0:
             loadText = f"  (Loading Gallery: {100*loadPercent:.1f} %)"
 
-        numFiles = self.galleryGrid.filelist.getNumFiles()
-        self.statusBar.showMessage(f"{numFiles} Images in {numFolders} Folders{loadText}")
+        numFiles = filelist.getNumFiles()
+        self.statusBar.showMessage(f"{numFiles} Images in {numFolders} Folders{selectionText}{loadText}")
 
 
     def resizeEvent(self, event):
@@ -229,6 +235,9 @@ class Gallery(QtWidgets.QWidget):
     def scrollToSelection(self):
         if self.galleryGrid and (selectedItem := self.galleryGrid._selectedItem):
             QTimer.singleShot(100, lambda: self.ensureVisible(selectedItem, selectedItem.row))
+
+    def onFileSelectionChanged(self, selectedFiles: set[str]):
+        self.updateStatusBar(self.cboFolders.count())
 
 
 

@@ -182,6 +182,10 @@ class GalleryItem(QtWidgets.QWidget):
                 self.gallery.tab.mainWindow.setTool("compare")
                 self.gallery.tab.imgview.tool.onGalleryRightClick(self.file)
 
+            # Clear selection
+            elif self.selected:
+                self.gallery.filelist.clearSelection()
+
             # Primary selection
             else:
                 with self.gallery.tab.takeFocus() as filelist:
@@ -194,6 +198,15 @@ class GalleryItem(QtWidgets.QWidget):
 
             menu = GalleryItemMenu(self.gallery)
             menu.exec( self.mapToGlobal(event.pos()) )
+
+
+    def onDragOver(self, event: QtGui.QMouseEvent):
+        if not self.selected:
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                if self.selectedSecondary:
+                    self.gallery.filelist.unselectFile(self.file)
+            elif not self.selectedSecondary:
+                self.gallery.filelist.selectFile(self.file)
 
 
     def paintBorder(self, painter: QtGui.QPainter, x: int, y: int, w: int, h: int):
