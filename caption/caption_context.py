@@ -8,6 +8,7 @@ from .caption_filter import CaptionRulesProcessor
 from .caption_settings import CaptionSettings
 from .caption_groups import CaptionGroups
 from .caption_list import CaptionList
+from .caption_multi_edit import TagPresence
 
 
 class CaptionContext(QtWidgets.QTabWidget):
@@ -64,14 +65,28 @@ class CaptionContext(QtWidgets.QTabWidget):
             self._activeWidget = widget
             widget.onTabEnabled()
 
+
     @Slot()
     def _invalidateRulesProcessor(self):
         self._cachedRulesProcessor = None
 
     def rulesProcessor(self) -> CaptionRulesProcessor:
         if not self._cachedRulesProcessor:
-            self._cachedRulesProcessor = self.container.createRulesProcessor()
+            self._cachedRulesProcessor = self.createRulesProcessor()
         return self._cachedRulesProcessor
+
+    def createRulesProcessor(self) -> CaptionRulesProcessor:
+        removeDup = self.settings.isRemoveDuplicates
+        sortCaptions = self.settings.isSortCaptions
+        separator = self.settings.separator
+
+        rulesProcessor = CaptionRulesProcessor()
+        rulesProcessor.setup(self.settings.prefix, self.settings.suffix, separator, removeDup, sortCaptions)
+        rulesProcessor.setSearchReplacePairs(self.settings.searchReplacePairs)
+        rulesProcessor.setBannedCaptions(self.settings.bannedCaptions)
+        rulesProcessor.setCaptionGroups( (group.captionsExpandWildcards, group.exclusivity, group.combineTags) for group in self.groups.groups )
+        rulesProcessor.setConditionalRules(self.conditionals.getFilterRules())
+        return rulesProcessor
 
 
 
@@ -85,6 +100,12 @@ class CaptionContextDataSource(HighlightDataSource):
 
     def isHovered(self, caption: str) -> bool:
         return self.ctx.container.isHovered(caption)
+
+    def getPresence(self, caption: str) -> TagPresence:
+        multiEdit = self.ctx.container.multiEdit
+        if multiEdit.active:
+            return multiEdit.getPresence(caption)
+        return TagPresence.FullPresence
 
     def getFocusSet(self) -> set[str]:
         return self.ctx.focus.getFocusSet()

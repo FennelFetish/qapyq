@@ -2,27 +2,30 @@ from __future__ import annotations
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Signal, Slot, QTimer
 from lib import qtlib
-from lib.filelist import DataKeys
+from lib.filelist import FileList, DataKeys
 from lib.captionfile import FileTypeSelector
 from config import Config
 from .caption_context import CaptionContext
 from .caption_menu import CaptionMenu, RulesLoadMode
 from .caption_bubbles import CaptionBubbles
 from .caption_text import CaptionTextEdit
-from .caption_filter import CaptionRulesProcessor
+from .caption_multi_edit import CaptionMultiEdit
 
 
 class CaptionContainer(QtWidgets.QWidget):
     def __init__(self, tab):
         super().__init__()
+        self.filelist: FileList = tab.filelist
 
-        self.captionCache = CaptionCache(tab.filelist)
+        self.captionCache = CaptionCache(self.filelist)
         self.captionSeparator = ', '
 
         self.ctx = CaptionContext(self, tab)
 
         self.txtCaption = self.ctx.text
         self.txtCaption.textChanged.connect(self._onCaptionEdited)
+
+        self.multiEdit = CaptionMultiEdit(self.ctx, self.txtCaption)
 
         self._menu = CaptionMenu(self, self.ctx)
         self._build(self.ctx)
@@ -33,8 +36,9 @@ class CaptionContainer(QtWidgets.QWidget):
 
         self._menu.previewToggled.connect(self._onPreviewToggled)
 
-        tab.filelist.addListener(self)
-        self.onFileChanged( tab.filelist.getCurrentFile() )
+        self.filelist.addListener(self)
+        self.filelist.addSelectionListener(self)
+        self.onFileChanged(self.filelist.getCurrentFile())
 
         self._loadRules()
         QTimer.singleShot(1, self._forceUpdateGroupSelection) # Workaround for BUG
@@ -71,6 +75,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.bubbles.remove.connect(self.txtCaption.removeCaption)
         self.bubbles.dropped.connect(self.txtCaption.appendToCaption)
         self.bubbles.clicked.connect(self.txtCaption.selectCaption)
+        self.bubbles.doubleClicked.connect(self._multiEditEnsureFullPresence)
         splitter.addWidget(self.bubbles)
         splitter.setStretchFactor(row, 1)
 
@@ -112,6 +117,14 @@ class CaptionContainer(QtWidgets.QWidget):
 
         col += 1
         layout.setColumnStretch(col, 1)
+
+        col += 1
+        self.btnClearSelection = qtlib.ToggleButton("")
+        self.btnClearSelection.setToolTip("Using multi-edit mode with captions of selected images.\nClick to clear selection and return to single-edit mode.")
+        self.btnClearSelection.setFixedWidth(30)
+        self.btnClearSelection.hide()
+        self.btnClearSelection.clicked.connect(lambda state: self.filelist.clearSelection())
+        layout.addWidget(self.btnClearSelection, 0, col)
 
         col += 1
         self.btnReset = qtlib.SaveButton("Reload From:")
@@ -197,21 +210,64 @@ class CaptionContainer(QtWidgets.QWidget):
     @Slot()
     def _onCaptionEdited(self):
         text = self.txtCaption.getCaption()
+        if self.multiEdit.active:
+            self.multiEdit.onCaptionEdited(text)
+        else:
+            self.captionCache.put(text)
+            self.captionCache.setState(DataKeys.IconStates.Changed)
+
         self.ctx.highlight.highlight(text, self.captionSeparator, self.txtCaption)
         self.bubbles.setText(text)
         self.updateSelectionState(text)
         self._updatePreview(text)
 
-        self.captionCache.put(text)
-        self.captionCache.setState(DataKeys.IconStates.Changed)
         self.btnSave.setChanged(True)
-
         self.ctx.captionEdited.emit(text)
 
     @Slot()
     def _onBubbleOrderChanged(self):
         text = self.captionSeparator.join(self.bubbles.getCaptions())
         self.txtCaption.setCaption(text)
+
+    @Slot()
+    def _onControlUpdated(self):
+        text = self.txtCaption.getCaption()
+        self.ctx.highlight.highlight(text, self.captionSeparator, self.txtCaption)
+        self.bubbles.updateBubbles()
+        self.updateSelectionState(text)
+        self._updatePreview(text)
+
+    def updateSelectionState(self, captionText: str, force=False):
+        separator = self.captionSeparator.strip()
+        captions = [ cap for c in captionText.split(separator) if (cap := c.strip()) ]
+
+        self.ctx.conditionals.updateState(captions)
+        self.ctx.groups.updateSelectedState(captions, force)
+        self.ctx.focus.updateSelectionState(set(captions))
+
+    @Slot()
+    def _forceUpdateGroupSelection(self):
+        # BUG: The stylesheet for GroupButtons is not correctly applied when opening a new tab,
+        # possibly because they are not visible during tab creation?
+        # Since GroupButtons only re-apply the stylesheet when the color changes for performance reasons, they are not enabled correctly.
+        # As a workaround, force a color update after creating a new tab.
+        text = self.txtCaption.getCaption()
+        self.updateSelectionState(text, force=True)
+
+
+    @Slot()
+    def _onSeparatorChanged(self, separator: str):
+        self.captionSeparator = separator
+        self.bubbles.separator = separator
+
+        if self.multiEdit.active:
+            loadFunc = self._multiEditLoadApplyRules if self.isAutoApplyRules else self._multiEditLoad
+            text = self.multiEdit.changeSeparator(separator, loadFunc)
+            self.txtCaption.setCaption(text)
+        else:
+            self.multiEdit.separator = separator
+
+        self._onControlUpdated()
 
 
     @Slot()
@@ -270,33 +326,6 @@ class CaptionContainer(QtWidgets.QWidget):
     def setAutoApplyRules(self, enabled: bool):
         self.chkAutoApply.setChecked(enabled)
 
-
-    @Slot()
-    def _onControlUpdated(self):
-        text = self.txtCaption.getCaption()
-        self.ctx.highlight.highlight(text, self.captionSeparator, self.txtCaption)
-        self.bubbles.updateBubbles()
-        self.updateSelectionState(text)
-        self._updatePreview(text)
-
-    def updateSelectionState(self, captionText: str, force=False):
-        separator = self.captionSeparator.strip()
-        captions = [ cap for c in captionText.split(separator) if (cap := c.strip()) ]
-
-        self.ctx.conditionals.updateState(captions)
-        self.ctx.groups.updateSelectedState(captions, force)
-        self.ctx.focus.updateSelectionState(set(captions))
-
-    @Slot()
-    def _forceUpdateGroupSelection(self):
-        # BUG: The stylesheet for GroupButtons is not correctly applied when opening a new tab,
-        # possibly because they are not visible during tab creation?
-        # Since GroupButtons only re-apply the stylesheet when the color changes for performance reasons, they are not enabled correctly.
-        # As a workaround, force a color update after creating a new tab.
-        text = self.txtCaption.getCaption()
-        self.updateSelectionState(text, force=True)
-
-
     @Slot()
     def applyRulesIfAuto(self):
         if self.isAutoApplyRules():
@@ -304,37 +333,34 @@ class CaptionContainer(QtWidgets.QWidget):
 
     @Slot()
     def applyRules(self):
-        rulesProcessor = self.createRulesProcessor()
+        rulesProcessor = self.ctx.rulesProcessor()
         text = self.txtCaption.getCaption()
-        textNew = rulesProcessor.process(text)
+
+        if self.multiEdit.active:
+            textNew = self.multiEdit.reloadCaptions(self._multiEditLoadApplyRules)
+        else:
+            textNew = rulesProcessor.process(text)
 
         # Only set when text has changed to prevent save button turning red
         if textNew != text:
             self.txtCaption.setCaption(textNew)
 
-    def createRulesProcessor(self) -> CaptionRulesProcessor:
-        removeDup = self.ctx.settings.isRemoveDuplicates
-        sortCaptions = self.ctx.settings.isSortCaptions
-
-        rulesProcessor = CaptionRulesProcessor()
-        rulesProcessor.setup(self.ctx.settings.prefix, self.ctx.settings.suffix, self.captionSeparator, removeDup, sortCaptions)
-        rulesProcessor.setSearchReplacePairs(self.ctx.settings.searchReplacePairs)
-        rulesProcessor.setBannedCaptions(self.ctx.settings.bannedCaptions)
-        rulesProcessor.setCaptionGroups( (group.captionsExpandWildcards, group.exclusivity, group.combineTags) for group in self.ctx.groups.groups )
-        rulesProcessor.setConditionalRules(self.ctx.conditionals.getFilterRules())
-        return rulesProcessor
-
 
     @Slot()
     def saveCaption(self):
         # Skip to next file when saving succeeds and skip-on-save is enabled. Don't loop.
-        filelist = self.ctx.tab.filelist
-        if self.saveCaptionNoSkip() and self.chkSkipOnSave.isChecked() and not filelist.isLastFile():
-            filelist.setNextFile()
+        if self.saveCaptionNoSkip() and self.chkSkipOnSave.isChecked() and not self.filelist.isLastFile():
+            self.filelist.setNextFile()
 
     def saveCaptionNoSkip(self) -> bool:
+        if self.multiEdit.active:
+            if self.multiEdit.saveCaptions(self.destSelector):
+                self.btnSave.setChanged(False)
+                return True
+            return False
+
         text = self.txtCaption.getCaption()
-        currentFile = self.ctx.tab.filelist.getCurrentFile()
+        currentFile = self.filelist.getCurrentFile()
 
         if self.destSelector.saveCaption(currentFile, text):
             self.captionCache.remove()
@@ -356,36 +382,56 @@ class CaptionContainer(QtWidgets.QWidget):
 
     @Slot()
     def resetCaption(self):
-        currentFile = self.ctx.tab.filelist.getCurrentFile()
-        text = self.srcSelector.loadCaption(currentFile)
+        if self.multiEdit.active:
+            for file in self.filelist.selectedFiles:
+                self.filelist.removeData(file, DataKeys.Caption)
 
-        if text:
+            text = self.multiEdit.loadCaptions(self.filelist.selectedFiles, self._multiEditLoad, cacheCurrent=False)
             self.txtCaption.setCaption(text)
-            self.captionCache.setState(DataKeys.IconStates.Exists)
-        else:
-            self.txtCaption.setCaption("")
-            self.captionCache.setState(None)
 
-        # When setting the text, _onCaptionEdited() will make a cache entry and turn the save button red. So we revert that here.
-        self.captionCache.remove()
+        else:
+            currentFile = self.filelist.getCurrentFile()
+            text = self.srcSelector.loadCaption(currentFile)
+
+            if text is not None:
+                self.txtCaption.setCaption(text)
+                self.captionCache.setState(DataKeys.IconStates.Exists)
+            else:
+                self.txtCaption.setCaption("")
+                self.captionCache.setState(None)
+
+            # When setting the text, _onCaptionEdited() will make a cache entry and turn the save button red. So we revert that here.
+            self.captionCache.remove()
+
         self.btnSave.setChanged(False)
         self.btnReset.setChanged(False)
 
 
-    @Slot()
-    def _onSeparatorChanged(self, separator: str):
-        self.captionSeparator = separator
-        self.bubbles.separator = separator
-        self._onControlUpdated()
+    def onFileChanged(self, currentFile: str):
+        if self.multiEdit.active and self.filelist.isSelected(currentFile):
+            return
 
-
-    def onFileChanged(self, currentFile):
         self.loadCaption()
         self.applyRulesIfAuto()
         self.ctx.generate.onFileChanged(currentFile)
 
-    def onFileListChanged(self, currentFile):
+    def onFileListChanged(self, currentFile: str):
         self.onFileChanged(currentFile)
+
+    def onFileSelectionChanged(self, selectedFiles: set[str]):
+        if selectedFiles:
+            self.btnClearSelection.setText(str(len(selectedFiles)))
+            self.btnClearSelection.setChecked(True)
+            self.btnClearSelection.show()
+
+            loadFunc = self._multiEditLoadApplyRules if self.isAutoApplyRules else self._multiEditLoad
+            text = self.multiEdit.loadCaptions(selectedFiles, loadFunc)
+            self.txtCaption.setCaption(text)
+
+        elif self.multiEdit.active:
+            self.btnClearSelection.hide()
+            self.multiEdit.clear()
+            self.loadCaption()
 
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
@@ -398,9 +444,48 @@ class CaptionContainer(QtWidgets.QWidget):
         return super().keyPressEvent(event)
 
 
+    @Slot()
+    def _multiEditEnsureFullPresence(self, index: int):
+        if self.multiEdit.active:
+            self.multiEdit.ensureFullPresence(index)
+
+            # TODO: Only re-highlight changed index
+            text = self.txtCaption.getCaption()
+            self.ctx.highlight.highlight(text, self.captionSeparator, self.txtCaption)
+            self._updatePreview(text)
+            self.bubbles.updateBubbles()
+
+
+    # File load functions for CaptionMultiEdit.
+    # Defined here to avoid circular dependency.
+
+    def _multiEditLoad(self, file: str) -> str:
+        captionText: str | None = self.filelist.getData(file, DataKeys.Caption)
+        if captionText is not None:
+            self.filelist.setData(file, DataKeys.CaptionState, DataKeys.IconStates.Changed)
+            return captionText
+
+        captionText = self.srcSelector.loadCaption(file)
+        if captionText is not None:
+            self.filelist.setData(file, DataKeys.CaptionState, DataKeys.IconStates.Exists)
+            return captionText
+
+        # Initialize missing caption with empty string
+        # TODO: Handle failure of loading so no files are overwritten (exception)
+        return ""
+
+    def _multiEditLoadApplyRules(self, file: str) -> str:
+        caption = self._multiEditLoad(file)
+        caption = self.ctx.rulesProcessor().process(caption)
+
+        self.filelist.setData(file, DataKeys.Caption, caption)
+        self.filelist.setData(file, DataKeys.CaptionState, DataKeys.IconStates.Changed)
+        return caption
+
+
 
 class CaptionCache:
-    def __init__(self, filelist):
+    def __init__(self, filelist: FileList):
         self.filelist = filelist
 
     def get(self):
