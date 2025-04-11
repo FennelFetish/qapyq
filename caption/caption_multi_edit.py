@@ -2,7 +2,7 @@ from __future__ import annotations
 from enum import Enum
 from collections import defaultdict
 from typing import Iterable, Callable
-from lib.filelist import DataKeys, sortKey
+from lib.filelist import FileList, DataKeys, sortKey
 from lib.captionfile import FileTypeSelector
 
 # https://docs.python.org/3/library/difflib.html
@@ -10,6 +10,8 @@ from difflib import SequenceMatcher
 
 
 # TODO: For complex changes when pasting text, ask with confirmation dialog?
+
+# NOTE: Also useful for copying tags from one image to another.
 
 
 class TagPresence(Enum):
@@ -24,98 +26,123 @@ class FileTags:
         self.file: str = file
         self.tags: list[TagData] = list()
 
+    def getOrderDictAbs(self) -> dict[TagData, float]:
+        return {tag: float(i) for i, tag in enumerate(self.tags)}
+
+    def getOrderDictRel(self) -> dict[TagData, float]:
+        if len(self.tags) == 1:
+            return {self.tags[0]: 0.0}
+        return {tag: i / (len(self.tags)-1) for i, tag in enumerate(self.tags)}
+
+    def sortFilesRel(self, extraOrder: Iterable[tuple[TagData, float]]):
+        # Keep order of other tags, which may be different from display order.
+        # TODO: Make more accurate
+        order = self.getOrderDictRel()
+        order.update(extraOrder)
+        self.tags.sort(key=order.__getitem__)
+
 
 
 class TagData:
     def __init__(self, tag: str):
-        self._tag: str = tag
+        self.tag: str = tag
         self.files: dict[str, FileTags] = dict()
-
-    @property
-    def tag(self) -> str:
-        return self._tag
-
-    @tag.setter
-    def tag(self, tag: str):
-        print(f">> Update Tag: '{self._tag}' => '{tag}'")
-        self._tag = tag
 
     def __eq__(self, other):
         if isinstance(other, str):
-            return self._tag == other
+            return self.tag == other
         if isinstance(other, TagData):
-            return self._tag == other._tag
+            return self.tag == other.tag
         return False
 
     def __hash__(self) -> int:
-        return hash(self._tag)
+        return hash(self.tag)
 
     def __str__(self) -> str:
-        return self._tag
+        return self.tag
 
     def __repr__(self) -> str:
-        return f"TagData('{self._tag}')"
+        return f"TagData('{self.tag}')"
+
+
+
+class TagCounter:
+    def __init__(self):
+        self._counts: dict[str, int] = dict()
+
+    def getAndIncrease(self, tag: str) -> int:
+        count = self._counts.get(tag)
+        if count is None:
+            count = 0
+
+        self._counts[tag] = count + 1
+        return count
+
+    def clear(self):
+        self._counts.clear()
 
 
 
 class CaptionMultiEdit:
-    def __init__(self, context, textEdit):
-        from .caption_context import CaptionContext
-        self.ctx: CaptionContext = context
+    ORDER_OFFSET = 0.0001
 
-        from .caption_text import CaptionTextEdit
-        self.textEdit: CaptionTextEdit = textEdit
-
-        self.filelist = self.ctx.tab.filelist
+    def __init__(self, filelist: FileList):
+        self.filelist = filelist
         self.separator = ", "
         self.active = False
-
-        self._lastText = ""
-        self._lastLength = 0
         self._edited = False
 
-        self._tagData: dict[str, TagData] = dict() # Contains split tags
+        self._tagData: dict[str, list[TagData]] = defaultdict(list)
         self._tags: list[TagData] = list()
         self._files: list[FileTags] = list()
 
     def clear(self, cache=True):
-        if self.active:
-            if self._edited and cache:
-                self._cacheCaptions()
-            self._edited = False
+        if not self.active:
+            return
 
-            self._lastText = ""
-            self._lastLength = 0
+        if self._edited and cache:
+            self._cacheCaptions()
+        self._edited = False
 
-            self._tagData.clear()
-            self._tags.clear()
-            self._files.clear()
-            self.active = False
+        self._tagData.clear()
+        self._tags.clear()
+        self._files.clear()
+        self.active = False
 
 
     def loadCaptions(self, files: Iterable[str], loadFunc: Callable[[str], str], cacheCurrent=True) -> str:
         self.clear(cacheCurrent)
-        matchNode = self.ctx.highlight.matchNode
         sepStrip = self.separator.strip()
 
+        tagCount = TagCounter()
         tagOrderMap = defaultdict[TagData, list[float]](list)
 
-        # Sort files for consistency. FileList.selectedFiles is an unordered set.
+        # Sort files for consistent tag order. FileList.selectedFiles is an unordered set.
         for file in sorted(files, key=sortKey):
             captionText = loadFunc(file)
 
-            #tags = [tag.strip() for tag in captionText.split(sepStrip)] # Include empty
             tags = [tag for t in captionText.split(sepStrip) if (tag := t.strip())]
             fileTags = FileTags(file)
             self._files.append(fileTags)
 
-            for i, tag in enumerate(tags):
-                tagData = self._initTagData(fileTags, tag)
-                fileTags.tags.append(tagData)
+            tagCount.clear()
 
-                splitTags = matchNode.split(tag.split(" "))
-                for splitTag in splitTags:
-                    self._initTagData(fileTags, splitTag, True)
+            for i, tag in enumerate(tags):
+                # Allow duplicate tags. Map them across files:
+                # File 1: 'tag, tag'      -> 2 TagData objects are created.
+                # File 2: 'tag, tag, tag' -> Reuses the two TagData objects that were created for File 1, and adds a new one.
+                count = tagCount.getAndIncrease(tag)
+
+                tagList = self._tagData[tag]
+                if len(tagList) > count:
+                    tagData = tagList[count]
+                else:
+                    tagData = TagData(tag)
+                    tagList.append(tagData)
+                    self._tags.append(tagData)
+
+                fileTags.tags.append(tagData)
+                tagData.files[fileTags.file] = fileTags
 
                 tagOrder = i / (len(tags)-1) if len(tags) > 1 else 0.0
                 tagOrderMap[tagData].append(tagOrder)
@@ -123,15 +150,18 @@ class CaptionMultiEdit:
         if self._files:
             self.active = True
 
+            # Stable sort. File order matters, because tag insertion order depends on it.
             tagOrderMap = {tag: self._order(orderValues) for tag, orderValues in tagOrderMap.items()}
-            self._tags.sort(key=tagOrderMap.get)
+            self._tags.sort(key=tagOrderMap.__getitem__)
 
-            text = self.separator.join(tag.tag for tag in self._tags)
-            self._lastText = text
-            self._lastLength = len(text)
-            return text
+            return self.separator.join(tag.tag for tag in self._tags)
 
         return ""
+
+    @staticmethod
+    def _order(values: list[float]) -> float:
+        return sum(values) / len(values)
+
 
     def reloadCaptions(self, loadFunc: Callable[[str], str]) -> str:
         self._cacheCaptions()
@@ -143,21 +173,6 @@ class CaptionMultiEdit:
         self.separator = separator
         files = [file.file for file in self._files]
         return self.loadCaptions(files, loadFunc, False)
-
-    def _initTagData(self, fileTags: FileTags, tag: str, isSplit=False) -> TagData:
-        tagData = self._tagData.get(tag)
-        if not tagData:
-            self._tagData[tag] = tagData = TagData(tag)
-            if not isSplit:
-                self._tags.append(tagData)
-
-        tagData.files[fileTags.file] = fileTags
-        return tagData
-
-    @staticmethod
-    def _order(values: list[float]) -> float:
-        return sum(values) / len(values)
-
 
     def _cacheCaptions(self):
         for file in self._files:
@@ -182,14 +197,12 @@ class CaptionMultiEdit:
         return success
 
 
-    # TODO: Handle duplicates -> make self._dataData a dict[str, list[FileData]]
-    #                            then, search in list
-    def getPresence(self, tag: str) -> TagPresence:
+    def getPresence(self, tagText: str) -> TagPresence:
         if not self.active:
-            return TagPresence.FullPresence
+            return TagPresence.FullPresence # TODO: Return Disabled? NotPresent?
 
-        if tagData := self._tagData.get(tag):
-            if len(tagData.files) >= len(self._files):
+        if tagList := self._tagData.get(tagText):
+            if any(len(tag.files) >= len(self._files) for tag in tagList):
                 return TagPresence.FullPresence
             else:
                 return TagPresence.PartialPresence
@@ -213,15 +226,14 @@ class CaptionMultiEdit:
         return edited
 
 
-    def onCaptionEdited(self, text: str):
+    def onCaptionEdited(self, captionText: str):
         print()
-        textSplit = text.split(self.separator.strip())
 
         a = self._tags
-        b = [tag.strip() for tag in textSplit]
+        b = [tag.strip() for tag in captionText.split(self.separator.strip())] # Include empty, but always stripped
         matcher = SequenceMatcher(None, a, b, autojunk=False)
 
-        # Detect delete+insert as moves
+        # Detect pairs of delete+insert as moves
         deletedTags: dict[str, list[int]] = defaultdict(list)  # References items in 'a'
         insertedTags: dict[str, list[int]] = defaultdict(list) # References placeholder indexes in 'newTagList'
 
@@ -236,8 +248,6 @@ class CaptionMultiEdit:
 
             self._edited = True
 
-            # TODO: On edit, re-check combined tags for highlighting?
-
             match op:
                 case "replace":
                     oldTags = a[i1:i2]
@@ -246,14 +256,17 @@ class CaptionMultiEdit:
                     print(f"Op Replace: {oldTags} => {newTags}")
 
                     if len(oldTags) == 1 and len(newTags) == 2:
-                        if self._opSplit(newTagList, oldTags, newTags):
+                        if self._opSplit(newTagList, oldTags, newTags, i1):
                             continue
                     elif len(oldTags) == 2 and len(newTags) == 1:
                         if self._opMerge(newTagList, oldTags, newTags):
                             continue
 
                     # TODO: Detect move, when a tag is replaced with another existing tag. And it's not a duplicate.
-                    #       'blabla, red tree, monster'  =>  'monster, red tree'
+                    #       Or not?
+                    # 'blabla, red tree, monster'  =>  'monster, red tree'
+                    # Replace: 'blabla' => 'monster'
+                    # Delete:  'monster'
 
                     self._opReplace(newTagList, oldTags, newTags)
 
@@ -265,8 +278,7 @@ class CaptionMultiEdit:
 
                 case "insert":
                     print(f"Op Insert:  {b[j1:j2]}  between  {a[i1-1:i1+1]}")
-                    for i in range(j1, j2):
-                        tagText = b[i]
+                    for tagText in b[j1:j2]:
                         tagIndex = len(newTagList)
                         insertedTags[tagText].append(tagIndex)
                         newTagList.append(None) # Add empty placeholder
@@ -292,9 +304,9 @@ class CaptionMultiEdit:
 
 
     # Handle insertion of separator (after writing in the middle of text) by splitting a tag.
-    # Make new tag for the left side of comma. Add this tag to all files.
+    # Make new tag for the left side of comma. Add this tag to the same files.
     # Update the right side.
-    def _opSplit(self, newTagList: list[TagData | None], oldTags: list[TagData], newTags: list[str]) -> bool:
+    def _opSplit(self, newTagList: list[TagData | None], oldTags: list[TagData], newTags: list[str], oldIndex: int) -> bool:
         oldTag = oldTags[0]
         newTextLeft = newTags[0]
         newTextRight = newTags[1]
@@ -304,11 +316,20 @@ class CaptionMultiEdit:
             return False
 
         print(f"  Comma inserted, split: '{oldTag}' => '{newTextLeft}', '{newTextRight}'   -   middle: '{middle}'")
-        tag = self._createTagAllFiles(newTextLeft)
+
+        # Add tag to same files as oldTag. When the comma is removed again, this operation is undone without further effects.
+        tag = self._createTag(newTextLeft, oldTag.files.values())
         newTagList.append(tag)
 
-        oldTag.tag = newTextRight
+        self._updateTag(oldTag, newTextRight)
         newTagList.append(oldTag)
+
+        # Sort new tag before old tag
+        tagOrder = oldIndex / (len(self._tags)-1) if len(self._tags) > 1 else 0.0
+        extraOrder = ((tag, tagOrder-self.ORDER_OFFSET), (oldTag, tagOrder+self.ORDER_OFFSET))
+        for file in tag.files.values():
+            file.sortFilesRel(extraOrder)
+
         return True
 
 
@@ -316,8 +337,8 @@ class CaptionMultiEdit:
     # It doesn't matter which one is kept/removed: They are adjacent and the files are transferred.
     # The resulting tag will be present in all files which had one of the original tags.
     def _opMerge(self, newTagList: list[TagData | None], oldTags: list[TagData], newTags: list[str]) -> bool:
-        oldLeft = oldTags[0]
-        oldRight = oldTags[1]
+        oldLeft = oldTags[0]  # Keep
+        oldRight = oldTags[1] # Delete
         newText = newTags[0]
 
         middle = newText.removeprefix(oldLeft.tag).removesuffix(oldRight.tag)
@@ -325,10 +346,11 @@ class CaptionMultiEdit:
             return False
 
         print(f"  Comma removed, merge: '{oldLeft.tag}', '{oldRight.tag}' => {newText}   -   middle: '{middle}'")
-        self._transferTagFiles(oldRight, oldLeft)
+
+        self._appendTagFiles(oldRight.files.values(), oldLeft)
         self._deleteTag(oldRight)
 
-        oldLeft.tag = newText
+        self._updateTag(oldLeft, newText)
         newTagList.append(oldLeft)
         return True
 
@@ -339,15 +361,14 @@ class CaptionMultiEdit:
 
         # Replace text
         for oldTag, newText in zip(oldTags, newTags):
-            oldTag.tag = newText
+            self._updateTag(oldTag, newText)
             newTagList.append(oldTag)
 
         iExtra = min(len(oldTags), len(newTags))
 
         # Add new tags
         for newText in newTags[iExtra:]:
-            tag = self._createTagAllFiles(newText)
-            newTagList.append(tag)
+            newTagList.append( self._createTag(newText, self._files) )
 
         # Remove old tags
         for oldTag in oldTags[iExtra:]:
@@ -355,15 +376,26 @@ class CaptionMultiEdit:
 
 
     def _opMove(self, newTagList: list[TagData | None], deletedTags: dict[str, list[int]], insertedTags: dict[str, list[int]]):
+        fileTagsNeedSorting: dict[FileTags, set[TagData]] = defaultdict(set)
+        movedTagOrder: dict[TagData, float] = dict()
+
         movedTags = deletedTags.keys() & insertedTags.keys()
         for tagText in movedTags:
             deleteIndexes = deletedTags.pop(tagText)
             insertIndexes = insertedTags.pop(tagText)
 
             for iDel, iIns in zip(deleteIndexes, insertIndexes):
-                print(f"  Move: {self._tags[iDel]}({iDel}) => ({iIns})")
+                tag = self._tags[iDel]
+                print(f"  Move: {tag}({iDel}) => ({iIns})")
                 assert newTagList[iIns] is None
-                newTagList[iIns] = self._tags[iDel]
+                newTagList[iIns] = tag
+
+                for file in tag.files.values():
+                    fileTagsNeedSorting[file].add(tag)
+
+                tagOrder = iIns / (len(newTagList)-1) if len(newTagList) > 1 else 0.0
+                tagOrder += self.ORDER_OFFSET if iIns > iDel else -self.ORDER_OFFSET
+                movedTagOrder[tag] = tagOrder
 
             iExtra = min(len(deleteIndexes), len(insertIndexes))
 
@@ -376,10 +408,12 @@ class CaptionMultiEdit:
             print(f"    Additional inserts: {insertIndexes[iExtra:]}")
             for iIns in insertIndexes[iExtra:]:
                 assert newTagList[iIns] is None
-                newTagList[iIns] = self._createTagAllFiles(tagText)
+                newTagList[iIns] = self._createTag(tagText, self._files)
 
+        # Reorder tags in files
+        for file, movedTags in fileTagsNeedSorting.items():
+            file.sortFilesRel((tag, movedTagOrder[tag]) for tag in movedTags)
 
-        # TODO: Reorder tags in files
 
     def _opDelete(self, deletedTags: dict[str, list[int]]):
         for deleteIndexes in deletedTags.values():
@@ -390,65 +424,47 @@ class CaptionMultiEdit:
         for tagText, insertIndexes in insertedTags.items():
             for iIns in insertIndexes:
                 assert newTagList[iIns] is None
-                newTagList[iIns] = self._createTagAllFiles(tagText)
+                newTagList[iIns] = self._createTag(tagText, self._files)
 
 
-    def _createTagAllFiles(self, text: str) -> TagData:
-        tag = TagData(text.strip())
-        print(f">> Create Tag: '{tag}'")
-        for file in self._files:
+    def _createTag(self, tagText: str, files: Iterable[FileTags]) -> TagData:
+        print(f">> Create Tag: '{tagText}'")
+        assert len(tagText) == len(tagText.strip())
+
+        tag = TagData(tagText)
+        self._tagData[tagText].append(tag)
+
+        for file in files:
             tag.files[file.file] = file
             file.tags.append(tag)
+
         return tag
+
+    def _updateTag(self, tag: TagData, newText: str):
+        print(f">> Update Tag: '{tag.tag}' => '{newText}'")
+        assert len(newText) == len(newText.strip())
+
+        tagListOld = self._tagData[tag.tag]
+        tagListOld.remove(tag)
+        if not tagListOld:
+            del self._tagData[tag.tag]
+
+        tag.tag = newText
+        self._tagData[newText].append(tag)
 
     def _deleteTag(self, tag: TagData):
         print(f">> Delete Tag: '{tag}'")
+
         for file in tag.files.values():
             file.tags.remove(tag)
 
-    def _transferTagFiles(self, src: TagData, dest: TagData):
-        for file in src.files.values():
+        tagList = self._tagData[tag.tag]
+        tagList.remove(tag)
+        if not tagList:
+            del self._tagData[tag.tag]
+
+    def _appendTagFiles(self, files: Iterable[FileTags], dest: TagData):
+        for file in files:
             if file.file not in dest.files:
                 dest.files[file.file] = file
                 file.tags.append(dest)
-
-
-
-    # def _getEdit(self, textSplit: list[str]):
-    #     sepStrip = self.separator.strip()
-    #     cursorPos = self.textEdit.textCursor().position()
-
-    #     accumulatedLength = 0
-    #     for i, caption in enumerate(textSplit):
-    #         accumulatedLength += len(caption) + len(sepStrip)
-    #         if cursorPos < accumulatedLength:
-    #             return caption.strip(), i
-
-    #     return "", -1
-
-
-
-
-# Test Cases:
-
-
-#    'blue_eyes, blabla, red tree, monster, red tree'
-# => 'monster, red tree, blabla, monster, blue_eyes'
-
-#   Op: delete (i1=0, i2=3),  j1=0, j2=0
-#     [TagData('blue_eyes'), TagData('blabla'), TagData('red tree')]
-#   Op: equal (i1=3, i2=5),  j1=0, j2=2
-#   Op: insert (i1=5, i2=5),  j1=2, j2=5
-#     ['blabla', 'monster', 'blue_eyes']  between  [TagData('red tree')]
-#   Move: blabla(1) => (2)
-#     Additional deletes: []
-#     Additional inserts: []
-#   Move: blue_eyes(0) => (4)
-#     Additional deletes: []
-#     Additional inserts: []
-# >> Delete Tag: red tree
-# >> Create Tag: monster
-
-
-# TODO: Detect move, when a tag is replaced with another existing tag. And it's not a duplicate.
-#       'blabla, red tree, monster'  =>  'monster, red tree'

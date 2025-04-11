@@ -25,7 +25,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.txtCaption = self.ctx.text
         self.txtCaption.textChanged.connect(self._onCaptionEdited)
 
-        self.multiEdit = CaptionMultiEdit(self.ctx, self.txtCaption)
+        self.multiEdit = CaptionMultiEdit(self.filelist)
 
         self._menu = CaptionMenu(self, self.ctx)
         self._build(self.ctx)
@@ -119,12 +119,18 @@ class CaptionContainer(QtWidgets.QWidget):
         layout.setColumnStretch(col, 1)
 
         col += 1
-        self.btnClearSelection = qtlib.ToggleButton("")
-        self.btnClearSelection.setToolTip("Using multi-edit mode with captions of selected images.\nClick to clear selection and return to single-edit mode.")
-        self.btnClearSelection.setFixedWidth(30)
-        self.btnClearSelection.hide()
-        self.btnClearSelection.clicked.connect(lambda state: self.filelist.clearSelection())
-        layout.addWidget(self.btnClearSelection, 0, col)
+        self.btnMultiEdit = RightClickToggleButton("")
+        self.btnMultiEdit.setToolTip(
+            "Shows number of selected images. Left-click to toggle between:\n"  \
+            "- Multi-Edit mode with combined captions of all selected images.\n"  \
+            "- Single-Edit mode with caption of the currently displayed image only.\n"  \
+            "Right-click to clear image selection."
+        )
+        self.btnMultiEdit.setFixedWidth(30)
+        self.btnMultiEdit.hide()
+        self.btnMultiEdit.clicked.connect(self._multiEditToggle)
+        self.btnMultiEdit.rightClicked.connect(lambda: self.filelist.clearSelection())
+        layout.addWidget(self.btnMultiEdit, 0, col)
 
         col += 1
         self.btnReset = qtlib.SaveButton("Reload From:")
@@ -261,7 +267,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.bubbles.separator = separator
 
         if self.multiEdit.active:
-            loadFunc = self._multiEditLoadApplyRules if self.isAutoApplyRules else self._multiEditLoad
+            loadFunc = self._multiEditLoadApplyRules if self.isAutoApplyRules() else self._multiEditLoad
             text = self.multiEdit.changeSeparator(separator, loadFunc)
             self.txtCaption.setCaption(text)
         else:
@@ -357,18 +363,20 @@ class CaptionContainer(QtWidgets.QWidget):
             if self.multiEdit.saveCaptions(self.destSelector):
                 self.btnSave.setChanged(False)
                 return True
-            return False
+            else:
+                return False
 
-        text = self.txtCaption.getCaption()
-        currentFile = self.filelist.getCurrentFile()
+        else:
+            text = self.txtCaption.getCaption()
+            currentFile = self.filelist.getCurrentFile()
 
-        if self.destSelector.saveCaption(currentFile, text):
-            self.captionCache.remove()
-            self.captionCache.setState(DataKeys.IconStates.Saved)
-            self.btnSave.setChanged(False)
-            return True
-
-        return False
+            if self.destSelector.saveCaption(currentFile, text):
+                self.captionCache.remove()
+                self.captionCache.setState(DataKeys.IconStates.Saved)
+                self.btnSave.setChanged(False)
+                return True
+            else:
+                return False
 
 
     def loadCaption(self):
@@ -408,7 +416,7 @@ class CaptionContainer(QtWidgets.QWidget):
 
 
     def onFileChanged(self, currentFile: str):
-        if self.multiEdit.active and self.filelist.isSelected(currentFile):
+        if self.multiEdit.active:
             return
 
         self.loadCaption()
@@ -420,18 +428,21 @@ class CaptionContainer(QtWidgets.QWidget):
 
     def onFileSelectionChanged(self, selectedFiles: set[str]):
         if selectedFiles:
-            self.btnClearSelection.setText(str(len(selectedFiles)))
-            self.btnClearSelection.setChecked(True)
-            self.btnClearSelection.show()
+            self.btnMultiEdit.setText(str(len(selectedFiles)))
+            self.btnMultiEdit.setChecked(True)
+            self.btnMultiEdit.show()
 
-            loadFunc = self._multiEditLoadApplyRules if self.isAutoApplyRules else self._multiEditLoad
+            loadFunc = self._multiEditLoadApplyRules if self.isAutoApplyRules() else self._multiEditLoad
             text = self.multiEdit.loadCaptions(selectedFiles, loadFunc)
             self.txtCaption.setCaption(text)
 
-        elif self.multiEdit.active:
-            self.btnClearSelection.hide()
-            self.multiEdit.clear()
-            self.loadCaption()
+        else:
+            self.btnMultiEdit.hide()
+            self.btnMultiEdit.setChecked(False)
+
+            if self.multiEdit.active:
+                self.multiEdit.clear()
+                self.loadCaption()
 
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
@@ -454,6 +465,15 @@ class CaptionContainer(QtWidgets.QWidget):
             self.ctx.highlight.highlight(text, self.captionSeparator, self.txtCaption)
             self._updatePreview(text)
             self.bubbles.updateBubbles()
+
+    @Slot()
+    def _multiEditToggle(self, state: bool):
+        if state:
+            if not self.multiEdit.active:
+                self.onFileSelectionChanged(self.filelist.selectedFiles)
+        elif self.multiEdit.active:
+            self.multiEdit.clear()
+            self.loadCaption()
 
 
     # File load functions for CaptionMultiEdit.
@@ -552,3 +572,19 @@ class HoverTextEdit(QtWidgets.QPlainTextEdit):
     def leaveEvent(self, event):
         super().leaveEvent(event)
         self.setHoverText("")
+
+
+
+class RightClickToggleButton(qtlib.ToggleButton):
+    rightClicked = Signal()
+
+    def __init__(self, text: str):
+        super().__init__(text)
+
+    def mouseReleaseEvent(self, e: QtGui.QMouseEvent):
+        if e.button() == Qt.MouseButton.RightButton and self.rect().contains(e.position().toPoint()):
+            e.accept()
+            self.rightClicked.emit()
+            return
+
+        super().mouseReleaseEvent(e)
