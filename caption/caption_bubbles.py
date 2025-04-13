@@ -1,6 +1,9 @@
+from __future__ import annotations
+from typing import NamedTuple
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Signal, Slot
 import lib.qtlib as qtlib
+import lib.util as util
 from ui.flow_layout import FlowLayout, ReorderWidget
 from .caption_context import CaptionContext
 
@@ -11,6 +14,7 @@ class CaptionBubbles(ReorderWidget):
     remove = Signal(int)
     dropped = Signal(str)
     clicked = Signal(int)
+    doubleClicked = Signal(int)
 
     def __init__(self, context: CaptionContext, showWeights=True, showRemove=False, editable=True):
         super().__init__()
@@ -46,6 +50,7 @@ class CaptionBubbles(ReorderWidget):
 
     def updateBubbles(self):
         oldBubbles = list[Bubble](self.getBubbles())
+        colorMap = BubbleColorMap(self.ctx)
 
         i = -1
         for i, caption in enumerate(self.text.split(self.separator)):
@@ -59,30 +64,12 @@ class CaptionBubbles(ReorderWidget):
                 bubble.setFocusProxy(self)
                 self.layout().addWidget(bubble)
 
-            color = self._getBubbleColor(caption)
-            if color is None:
-                color = qtlib.COLOR_BUBBLE_HOVER if self.ctx.container.isHovered(caption) else qtlib.COLOR_BUBBLE_BLACK
-
             bubble.text = caption
-            bubble.setColor(color)
+            bubble.setColor( colorMap.getBubbleColor(i, caption) )
             bubble.forceUpdateWidth()
 
         for i in range(i+1, len(oldBubbles)):
             oldBubbles[i].deleteLater()
-
-    def _getBubbleColor(self, caption: str) -> str | None:
-        highlight = self.ctx.highlight
-        if color := highlight.colors.get(caption):
-            return color
-
-        captionWords = [word for word in caption.split(" ") if word]
-        matchFormats = highlight.matchNode.match(captionWords)
-        if len(matchFormats) != len(captionWords):
-            return None
-
-        colors = set(format.color for format in matchFormats.values())
-        return next(iter(colors)) if len(colors) == 1 else None
-
 
     def resizeEvent(self, event):
         self.layout().update()  # Weird: Needed for proper resize.
@@ -93,7 +80,12 @@ class CaptionBubbles(ReorderWidget):
 
 
 
-# TODO: Change background color according to weight (blue=low, red=high?)
+class BubbleColor(NamedTuple):
+    bg: str     = qtlib.COLOR_BUBBLE_BLACK
+    border: str = qtlib.COLOR_BUBBLE_BLACK
+    text: str   = "#fff"
+
+
 class Bubble(QtWidgets.QFrame):
     def __init__(self, bubbles: CaptionBubbles, index, showWeights=True, showRemove=False, editable=True):
         super().__init__()
@@ -101,7 +93,7 @@ class Bubble(QtWidgets.QFrame):
         self.bubbles = bubbles
         self.index = index
         self._text = ""
-        self.color = ""
+        self.colors = BubbleColor("", "", "")
         self.weight = 1.0
 
         if editable:
@@ -135,7 +127,7 @@ class Bubble(QtWidgets.QFrame):
 
         self.setLayout(layout)
 
-        self.setColor(qtlib.COLOR_BUBBLE_BLACK)
+        self.setColor(BubbleColor())
         self.setFrameShape(QtWidgets.QFrame.Shape.Box)
         self.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
 
@@ -150,17 +142,17 @@ class Bubble(QtWidgets.QFrame):
         self.textField.setText(text)
 
 
-    def setColor(self, color: str):
-        if color == self.color:
+    def setColor(self, colors: BubbleColor):
+        if colors == self.colors:
             return
-        self.color = color
+        self.colors = colors
 
-        self.setStyleSheet(qtlib.bubbleClass("Bubble", color))
-        self.textField.setStyleSheet(qtlib.bubbleStyleAux(color))
+        # TODO: Display presence (with border height? full height with top border -> full presence)
+        self.setStyleSheet(qtlib.bubbleClassAux("Bubble", "EllipsisLabel", colors.bg, colors.border, colors.text))
 
         if self.spinWeight:
             #self.spinWeight.setStyleSheet(".QDoubleSpinBox{background-color: " + color + "; border: 0; padding-right: 25px}")
-            self.spinWeight.lineEdit().setStyleSheet("color: #fff; background-color: " + color)
+            self.spinWeight.lineEdit().setStyleSheet("color: #fff; background-color: " + colors.bg)
 
     def forceUpdateWidth(self):
         if isinstance(self.textField, qtlib.DynamicLineEdit):
@@ -178,6 +170,58 @@ class Bubble(QtWidgets.QFrame):
             return
 
         super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent):
+        self.bubbles.doubleClicked.emit(self.index)
+        event.accept()
+
+
+
+class BubbleColorMap:
+    def __init__(self, context: CaptionContext):
+        self.ctx = context
+        self.highlight = context.highlight
+        self.presence = context.container.multiEdit.getTagPresence()
+        self.mutedColors: dict[str, str] = dict()
+
+    def getBubbleColor(self, index: int, caption: str) -> BubbleColor:
+        bg = self._getBubbleColor(caption)
+        if bg is None:
+            bg = qtlib.COLOR_BUBBLE_HOVER if self.ctx.container.isHovered(caption) else qtlib.COLOR_BUBBLE_BLACK
+
+        if not self.presence:
+            return BubbleColor(bg)
+
+        mutedColor = self.getMutedColor(bg)
+        if self.presence[index] == 1.0:
+            return BubbleColor(bg, border=mutedColor)
+        else:
+            return BubbleColor(bg, text=mutedColor)
+
+    def _getBubbleColor(self, caption: str) -> str | None:
+        if color := self.highlight.colors.get(caption):
+            return color
+
+        captionWords = [word for word in caption.split(" ") if word]
+        matchFormats = self.highlight.matchNode.match(captionWords)
+        if len(matchFormats) != len(captionWords):
+            return None
+
+        colors = set(format.color for format in matchFormats.values())
+        return next(iter(colors)) if len(colors) == 1 else None
+
+    def getMutedColor(self, color: str) -> str:
+        mutedColor = self.mutedColors.get(color)
+        if mutedColor is None:
+            self.mutedColors[color] = mutedColor = self._getMutedColor(color)
+
+        return mutedColor
+
+    def _getMutedColor(self, color: str) -> str:
+        h, s, v = util.get_hsv(color)
+        v = min(v*1.8, 1.0)
+        v = max(v, 0.7)
+        return util.hsv_to_rgb(h, s*0.7, v)
 
 
 

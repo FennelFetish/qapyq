@@ -127,32 +127,33 @@ class EllipsisLabel(QtWidgets.QLabel):
         super().__init__()
         self.maxLength = maxLength
 
-    def setText(self, text):
+    def setText(self, text: str):
         text = text.strip().replace("\n", "↩")
         if len(text) > self.maxLength:
-            partLength = max((self.maxLength - EllipsisLabel._ellipsisLength) // 2, 10)
+            partLength = max((self.maxLength - self._ellipsisLength) // 2, 10)
             wordsLeft  = text[:partLength].split(" ")
             wordsRight = text[-partLength:].split(" ")
 
-            left = ""
+            chosenWords = []
             lenLeft = 0
             for word in wordsLeft:
-                lenWord = len(word)
-                if lenLeft + 1 + lenWord > partLength:
+                if lenLeft + len(word) + 1 > partLength:
                     break
-                left += word + " "
-                lenLeft += lenWord + 1
+                lenLeft += len(word) + 1
+                chosenWords.append(word)
 
-            right = ""
+            chosenWordsRight = []
             lenRight = 0
             for word in reversed(wordsRight):
-                lenWord = len(word)
-                if lenRight + 1 + lenWord > partLength:
+                if lenRight + len(word) + 1 > partLength:
                     break
-                right = " " + word + right
-                lenRight += lenWord + 1
+                lenRight += len(word) + 1
+                chosenWordsRight.append(word)
 
-            text = left + EllipsisLabel._ellipsis + right
+            chosenWords.append(self._ellipsis)
+            chosenWords.extend(reversed(chosenWordsRight))
+            text = " ".join(chosenWords)
+
         super().setText(text)
 
 
@@ -388,11 +389,16 @@ def bubbleStyle(color: str, borderColor=COLOR_BUBBLE_BLACK) -> str:
 def bubbleStylePad(color: str, padding=2, borderColor=COLOR_BUBBLE_BLACK) -> str:
     return f"color: #fff; background-color: {color}; border: 1px solid {borderColor}; border-radius: 8px; padding: {padding}px"
 
-def bubbleStyleAux(color: str) -> str:
-    return f"color: #fff; background-color: {color}; border: 0px"
+def bubbleStyleAux(color: str, textColor="#fff") -> str:
+    return f"color: {textColor}; background-color: {color}; border: 0px"
 
 def bubbleClass(className: str, color: str, borderColor=COLOR_BUBBLE_BLACK) -> str:
     return f".{className}{{color: #fff; background-color: {color}; border: 1px solid {borderColor}; border-radius: 8px}}"
+
+def bubbleClassAux(className: str, auxClassName: str, colorBg: str, borderColor=COLOR_BUBBLE_BLACK, textColor="#fff") -> str:
+    return f".{className}{{background-color: {colorBg}; border: 1px solid {borderColor}; border-radius: 8px}}" \
+           f".{auxClassName}{{color: {textColor}}}"
+
 
 
 class BubbleRemoveButton(QtWidgets.QPushButton):
