@@ -88,12 +88,12 @@ class WildcardWindow(QtWidgets.QDialog):
 
 
 def expandWildcards(tag: str, wildcards: WildcardDict) -> list[str]:
-    wildcardPos = list[int]()
-    wildcardTags = list[list[str]]()
-
-    parts = PATTERN_WILDCARD.split(tag)
+    parts: list[str] = PATTERN_WILDCARD.split(tag)
     if len(parts) == 1:
         return parts
+
+    wildcardPos = list[int]()
+    wildcardTags = list[list[str]]()
 
     for i, part in enumerate(parts):
         if part.startswith("{{") and part.endswith("}}"):
@@ -107,7 +107,7 @@ def expandWildcards(tag: str, wildcards: WildcardDict) -> list[str]:
 
     tags = list[str]()
     for wildcardVals in product(*wildcardTags):
-        newParts = list[str](parts)
+        newParts = parts.copy()
         for i, val in enumerate(wildcardVals):
             newParts[wildcardPos[i]] = val
         tags.append("".join(newParts))
