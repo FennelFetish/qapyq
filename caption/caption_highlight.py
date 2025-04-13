@@ -1,7 +1,9 @@
 from __future__ import annotations
 from typing import Iterable, Generator, Generic, TypeVar, Optional
-from PySide6 import QtGui, QtWidgets
-from PySide6.QtCore import Slot, QSignalBlocker
+from itertools import zip_longest
+from PySide6 import QtWidgets
+from PySide6.QtCore import Slot
+from PySide6.QtGui import QColor, QTextCursor, QTextCharFormat
 from lib import qtlib, util, colors
 from lib.util import stripCountPadding
 
@@ -28,6 +30,12 @@ class HighlightDataSource:
     def isHovered(self, caption: str) -> bool:
         return False
 
+    def getPresence(self) -> list[float] | None:
+        return None
+
+    def getTotalPresence(self, tags: list[str]) -> list[float] | None:
+        return None
+
     def getFocusSet(self) -> set[str]:
         return set[str]()
 
@@ -40,9 +48,34 @@ class HighlightDataSource:
 
 # Payload for MatcherNode
 class CaptionFormat:
-    def __init__(self, charFormat: QtGui.QTextCharFormat, color: str):
+    def __init__(self, charFormat: QTextCharFormat, color: str):
         self.charFormat = charFormat
         self.color = color
+
+
+
+class HighlightState:
+    def __init__(self):
+        self.lastCaptions: list[str] = list()
+        self.lastPresence: list[float] = list()
+
+    @Slot()
+    def clearState(self):
+        self.lastCaptions.clear()
+        self.lastPresence.clear()
+
+    def getAndUpdate(self, captions: list[str], presence: list[float] | None) -> list[bool]:
+        if presence is None:
+            presence = list()
+
+        sameCaptions = [
+            (presNew == presOld) and (capNew == capOld)
+            for capNew, capOld, presNew, presOld in zip_longest(captions, self.lastCaptions, presence, self.lastPresence)
+        ]
+
+        self.lastCaptions = captions
+        self.lastPresence = presence
+        return sameCaptions
 
 
 
@@ -52,17 +85,14 @@ class CaptionHighlight:
         self.data.connectClearCache(self.clearCache)
 
         self._cachedColors: dict[str, str] | None = None
-        self._cachedCharFormats: dict[str, QtGui.QTextCharFormat] | None = None
+        self._cachedCharFormats: dict[str, QTextCharFormat] | None = None
         self._cachedMatcherNode: MatcherNode[CaptionFormat] | None = None
 
-        self._bannedFormat = QtGui.QTextCharFormat()
-        self._bannedFormat.setForeground(QtGui.QColor.fromHsvF(0, 0, 0.5))
+        self._bannedFormat = QTextCharFormat()
+        self._bannedFormat.setForeground(QColor.fromHsvF(0, 0, 0.5))
 
-        self._focusFormat = QtGui.QTextCharFormat()
+        self._focusFormat = QTextCharFormat()
         self._focusFormat.setForeground(qtlib.getHighlightColor(COLOR_FOCUS_DEFAULT))
-
-        self._hoverFormat = QtGui.QTextCharFormat()
-        self._hoverFormat.setFontUnderline(True)
 
 
     @property
@@ -72,7 +102,7 @@ class CaptionHighlight:
         return self._cachedColors
 
     @property
-    def charFormats(self) -> dict[str, QtGui.QTextCharFormat]:
+    def charFormats(self) -> dict[str, QTextCharFormat]:
         if not self._cachedCharFormats:
             self.update()
         return self._cachedCharFormats
@@ -84,49 +114,81 @@ class CaptionHighlight:
         return self._cachedMatcherNode
 
 
-    def highlight(self, text: str, separator: str, txtWidget: QtWidgets.QPlainTextEdit):
+    def highlight(self, text: str, separator: str, txtWidget: QtWidgets.QPlainTextEdit, state: HighlightState | None = None):
         separator = separator.strip()
+        splitCaptions = text.split(separator)
 
         formats = self.charFormats
         matchNode = self.matchNode
 
-        with QSignalBlocker(txtWidget):
-            cursor = txtWidget.textCursor()
-            cursor.setPosition(0)
-            cursor.movePosition(QtGui.QTextCursor.MoveOperation.End, QtGui.QTextCursor.MoveMode.KeepAnchor)
-            cursor.setCharFormat(QtGui.QTextCharFormat())
+        if state:
+            presenceList = self.data.getPresence()
+            sameCaptions = state.getAndUpdate(splitCaptions, presenceList)
+        else:
+            presenceList = self.data.getTotalPresence(splitCaptions)
+            sameCaptions = None
 
+        with HighlightContext(txtWidget) as HL:
             start = 0
 
-            for caption in text.split(separator):
+            for i, caption in enumerate(splitCaptions):
+                if sameCaptions and sameCaptions[i]:
+                    start += len(caption) + len(separator)
+                    continue
+
+                presence = presenceList[i] if presenceList else 1.0
                 captionStrip, padLeft, padRight = stripCountPadding(caption)
+
+                # Format left padding including left separator
+                sepStart = max(start - len(separator), 0)
+                HL.highlight(HL.clearFormat, sepStart, start-sepStart+padLeft)
                 start += padLeft
 
                 if format := formats.get(captionStrip):
-                    self._highlightPart(cursor, format, start, len(captionStrip))
+                    format = HL.checkPresence(format, presence)
+                    HL.highlight(format, start, len(captionStrip))
+
                 elif self.data.isHovered(captionStrip):
-                    self._highlightPart(cursor, self._hoverFormat, start, len(captionStrip))
+                    format = HL.checkPresence(HL.hoverFormat, presence)
+                    HL.highlight(format, start, len(captionStrip))
+
                 else:
                     # Try highlighting partial matches and combined tags
                     captionWords = captionStrip.split(" ")
                     if matcherFormats := matchNode.match(captionWords):
                         pos = start
                         for i, word in enumerate(captionWords):
-                            if format := matcherFormats.get(i):
-                                self._highlightPart(cursor, format.charFormat, pos, len(word))
-                            pos += len(word) + 1
+                            if matchFormat := matcherFormats.get(i):
+                                format = HL.checkPresence(matchFormat.charFormat, presence)
+                            else:
+                                format = HL.checkPresence(HL.clearFormat, presence)
 
-                start += len(captionStrip) + padRight + len(separator)
+                            # Format word
+                            HL.highlight(format, pos, len(word))
+                            pos += len(word)
 
-    def _highlightPart(self, cursor: QtGui.QTextCursor, format: QtGui.QTextCharFormat, start: int, length: int):
-        cursor.setPosition(start)
-        cursor.setPosition(start+length, QtGui.QTextCursor.MoveMode.KeepAnchor)
-        cursor.setCharFormat(format)
+                            # Format space
+                            if i < len(captionWords) - 1:
+                                HL.highlight(HL.clearFormat, pos, 1)
+                                pos += 1
+
+                    # No color specified
+                    else:
+                        format = HL.checkPresence(HL.clearFormat, presence)
+                        HL.highlight(format, start, len(captionStrip))
+
+                start += len(captionStrip)
+
+                # Format right padding
+                rightLen = min(padRight, len(text)-start)
+                HL.highlight(HL.clearFormat, start, rightLen)
+
+                start += padRight + len(separator)
 
 
     def update(self):
         colors: dict[str, str] = dict()
-        formats: dict[str, QtGui.QTextCharFormat] = dict()
+        formats: dict[str, QTextCharFormat] = dict()
 
         # First insert all focus tags. This is the default color if focus tags don't belong to groups.
         focusSet = self.data.getFocusSet()
@@ -174,9 +236,12 @@ class CaptionHighlight:
     def updateMatcherNode(self):
         root = MatcherNode()
 
+        colors = self.colors
+        formats = self.charFormats
+
         for group in self.data.getGroups():
-            payload = CaptionFormat(group.charFormat, group.color)
             for caption in group.captions:
+                payload = CaptionFormat(formats[caption], colors[caption])
                 root.add(caption, payload)
 
         self._cachedMatcherNode = root
@@ -191,7 +256,7 @@ class CaptionHighlight:
 
     def _getMuted(self, color: str, mixS=0.22, mixV=0.3):
         mutedColor = colors.mixBubbleColor(color, mixS, mixV)
-        mutedFormat = QtGui.QTextCharFormat()
+        mutedFormat = QTextCharFormat()
         mutedFormat.setForeground(qtlib.getHighlightColor(mutedColor))
         return mutedColor, mutedFormat
 
@@ -201,11 +266,63 @@ class CaptionHighlight:
         v = max(0.2, min(1.0, v*1.6))
         hoveredColor = util.hsv_to_rgb(h, s, v)
 
-        hoveredFormat = QtGui.QTextCharFormat()
+        hoveredFormat = QTextCharFormat()
         hoveredFormat.setForeground(qtlib.getHighlightColor(hoveredColor))
         hoveredFormat.setFontUnderline(True)
 
         return hoveredColor, hoveredFormat
+
+
+
+class HighlightContext:
+    def __init__(self, txtWidget: QtWidgets.QPlainTextEdit):
+        self.txtWidget = txtWidget
+        self.cursor = self.txtWidget.textCursor()
+        self.partialPresenceColors: dict[tuple[int, int, int, bool], QTextCharFormat] = dict()
+
+        textBrush = txtWidget.palette().text()
+
+        self.clearFormat = QTextCharFormat()
+        self.clearFormat.setForeground(textBrush)
+
+        self.hoverFormat = QTextCharFormat()
+        self.hoverFormat.setForeground(textBrush)
+        self.hoverFormat.setFontUnderline(True)
+
+    def __enter__(self):
+        self.txtWidget.blockSignals(True)
+        self.cursor.beginEditBlock()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.cursor.endEditBlock()
+        self.txtWidget.blockSignals(False)
+        return False
+
+
+    def checkPresence(self, format: QTextCharFormat, presence: float) -> QTextCharFormat:
+        if presence >= 1.0:
+            return format
+
+        color = format.foreground().color()
+        key = (color.red(), color.green(), color.blue(), format.fontUnderline())
+
+        mutedFormat = self.partialPresenceColors.get(key)
+        if not mutedFormat:
+            color.setAlphaF(0.5)
+            mutedFormat = QTextCharFormat(format)
+            mutedFormat.setForeground(color)
+            self.partialPresenceColors[key] = mutedFormat
+
+        return mutedFormat
+
+    def highlight(self, format: QTextCharFormat, start: int, length: int):
+        if length <= 0:
+            return
+
+        self.cursor.setPosition(start)
+        self.cursor.setPosition(start+length, QTextCursor.MoveMode.KeepAnchor)
+        self.cursor.setCharFormat(format)
 
 
 

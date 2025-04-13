@@ -8,7 +8,6 @@ from .caption_filter import CaptionRulesProcessor
 from .caption_settings import CaptionSettings
 from .caption_groups import CaptionGroups
 from .caption_list import CaptionList
-from .caption_multi_edit import TagPresence
 
 
 class CaptionContext(QtWidgets.QTabWidget):
@@ -23,7 +22,10 @@ class CaptionContext(QtWidgets.QTabWidget):
         self.tab = tab
 
         self._cachedRulesProcessor: CaptionRulesProcessor | None = None
-        self.controlUpdated.connect(self._invalidateRulesProcessor) # First Slot for controlUpdated
+
+        # First slots
+        self.controlUpdated.connect(self._invalidateRulesProcessor)
+        self.separatorChanged.connect(lambda sep: self._invalidateRulesProcessor())
 
         from .caption_container import CaptionContainer
         self.container: CaptionContainer = container
@@ -101,11 +103,11 @@ class CaptionContextDataSource(HighlightDataSource):
     def isHovered(self, caption: str) -> bool:
         return self.ctx.container.isHovered(caption)
 
-    def getPresence(self, caption: str) -> TagPresence:
-        multiEdit = self.ctx.container.multiEdit
-        if multiEdit.active:
-            return multiEdit.getPresence(caption)
-        return TagPresence.FullPresence
+    def getPresence(self) -> list[float] | None:
+        return self.ctx.container.multiEdit.getTagPresence()
+
+    def getTotalPresence(self, tags: list[str]) -> list[float] | None:
+        return self.ctx.container.multiEdit.getTotalTagPresence(tags)
 
     def getFocusSet(self) -> set[str]:
         return self.ctx.focus.getFocusSet()

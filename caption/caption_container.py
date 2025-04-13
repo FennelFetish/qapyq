@@ -9,6 +9,7 @@ from .caption_context import CaptionContext
 from .caption_menu import CaptionMenu, RulesLoadMode
 from .caption_bubbles import CaptionBubbles
 from .caption_text import CaptionTextEdit
+from .caption_highlight import HighlightState
 from .caption_multi_edit import CaptionMultiEdit
 
 
@@ -24,6 +25,10 @@ class CaptionContainer(QtWidgets.QWidget):
 
         self.txtCaption = self.ctx.text
         self.txtCaption.textChanged.connect(self._onCaptionEdited)
+
+        self.highlightState = HighlightState()
+        self.txtCaption.captionReplaced.connect(self.highlightState.clearState)
+        self.ctx.controlUpdated.connect(self.highlightState.clearState)
 
         self.multiEdit = CaptionMultiEdit(self.filelist)
 
@@ -222,7 +227,7 @@ class CaptionContainer(QtWidgets.QWidget):
             self.captionCache.put(text)
             self.captionCache.setState(DataKeys.IconStates.Changed)
 
-        self.ctx.highlight.highlight(text, self.captionSeparator, self.txtCaption)
+        self.ctx.highlight.highlight(text, self.captionSeparator, self.txtCaption, self.highlightState)
         self.bubbles.setText(text)
         self.updateSelectionState(text)
         self._updatePreview(text)
@@ -238,7 +243,7 @@ class CaptionContainer(QtWidgets.QWidget):
     @Slot()
     def _onControlUpdated(self):
         text = self.txtCaption.getCaption()
-        self.ctx.highlight.highlight(text, self.captionSeparator, self.txtCaption)
+        self.ctx.highlight.highlight(text, self.captionSeparator, self.txtCaption, self.highlightState)
         self.bubbles.updateBubbles()
         self.updateSelectionState(text)
         self._updatePreview(text)
@@ -460,11 +465,12 @@ class CaptionContainer(QtWidgets.QWidget):
         if self.multiEdit.active:
             self.multiEdit.ensureFullPresence(index)
 
-            # TODO: Only re-highlight changed index
             text = self.txtCaption.getCaption()
-            self.ctx.highlight.highlight(text, self.captionSeparator, self.txtCaption)
+            self.ctx.highlight.highlight(text, self.captionSeparator, self.txtCaption, self.highlightState)
             self._updatePreview(text)
             self.bubbles.updateBubbles()
+
+            self.btnSave.setChanged(True)
 
     @Slot()
     def _multiEditToggle(self, state: bool):

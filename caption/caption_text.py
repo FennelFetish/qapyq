@@ -1,11 +1,13 @@
 from __future__ import annotations
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Slot, QSignalBlocker, QTimer
+from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QTimer
 from lib.util import stripCountPadding
 from .caption_context import CaptionContext
 
 
 class CaptionTextEdit(QtWidgets.QPlainTextEdit):
+    captionReplaced = Signal()
+
     def __init__(self, context: CaptionContext):
         super().__init__()
         self.ctx = context
@@ -17,7 +19,8 @@ class CaptionTextEdit(QtWidgets.QPlainTextEdit):
     def getCaption(self) -> str:
         return self.toPlainText()
 
-    def setCaption(self, text):
+    def setCaption(self, text: str):
+        self.captionReplaced.emit()
         self.setPlainText(text)
         self.moveCursor(QtGui.QTextCursor.MoveOperation.End)
 

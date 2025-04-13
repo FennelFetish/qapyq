@@ -1,5 +1,4 @@
 from __future__ import annotations
-from enum import Enum
 from collections import defaultdict
 from typing import Iterable, Callable
 from lib.filelist import FileList, DataKeys, sortKey
@@ -8,17 +7,13 @@ from lib.captionfile import FileTypeSelector
 # https://docs.python.org/3/library/difflib.html
 from difflib import SequenceMatcher
 
+import logging
+logger = logging.getLogger("CaptionMultiEdit")
+
 
 # TODO: For complex changes when pasting text, ask with confirmation dialog?
 
 # NOTE: Also useful for copying tags from one image to another.
-
-
-class TagPresence(Enum):
-    NotPresent      = 0
-    PartialPresence = 1
-    FullPresence    = 2
-
 
 
 class FileTags:
@@ -197,17 +192,28 @@ class CaptionMultiEdit:
         return success
 
 
-    def getPresence(self, tagText: str) -> TagPresence:
+    def getTagPresence(self) -> list[float] | None:
+        if self.active:
+            return [len(tag.files) / len(self._files) for tag in self._tags]
+        return None
+
+    # TODO: Split tags from self._tags with MatcherNode for refined preview.
+    #       If two tags are combined in the preview, and both exist in all files, it should be correctly highlighted with full presence.
+    def getTotalTagPresence(self, tags: list[str]) -> list[float] | None:
         if not self.active:
-            return TagPresence.FullPresence # TODO: Return Disabled? NotPresent?
+            return None
 
-        if tagList := self._tagData.get(tagText):
-            if any(len(tag.files) >= len(self._files) for tag in tagList):
-                return TagPresence.FullPresence
+        presence = []
+        for tag in tags:
+            if tagDataList := self._tagData.get(tag.strip()):
+                tagFiles = set()
+                for tagData in tagDataList:
+                    tagFiles.update(tagData.files.keys())
+                pres = len(tagFiles) / len(self._files)
             else:
-                return TagPresence.PartialPresence
-
-        return TagPresence.NotPresent
+                pres = 0.0
+            presence.append(pres)
+        return presence
 
 
     def ensureFullPresence(self, index: int) -> bool:
@@ -227,8 +233,6 @@ class CaptionMultiEdit:
 
 
     def onCaptionEdited(self, captionText: str):
-        print()
-
         a = self._tags
         b = [tag.strip() for tag in captionText.split(self.separator.strip())] # Include empty, but always stripped
         matcher = SequenceMatcher(None, a, b, autojunk=False)
@@ -242,7 +246,7 @@ class CaptionMultiEdit:
         # NOTE: Big changes with more than one change means paste
         for op, i1, i2, j1, j2 in matcher.get_opcodes():
             if op == "equal":
-                print(f"Op Equal:   (i1={i1}, i2={i2}, lenA={i2-i1}),  (j1={j1}, j2={j2}, lenB={j2-j1})")
+                logger.debug("Op Equal:   (i1=%s, i2=%s, lenA=%s),  (j1=%s, j2=%s, lenB=%s)", i1, i2, i2-i1, j1, j2, j2-j1)
                 newTagList.extend(a[i1:i2])
                 continue
 
@@ -253,7 +257,7 @@ class CaptionMultiEdit:
                     oldTags = a[i1:i2]
                     newTags = b[j1:j2]
 
-                    print(f"Op Replace: {oldTags} => {newTags}")
+                    logger.debug("Op Replace: %s => %s", oldTags, newTags)
 
                     if len(oldTags) == 1 and len(newTags) == 2:
                         if self._opSplit(newTagList, oldTags, newTags, i1):
@@ -271,14 +275,15 @@ class CaptionMultiEdit:
                     self._opReplace(newTagList, oldTags, newTags)
 
                 case "delete":
-                    print(f"Op Delete:  {a[i1:i2]}")
+                    logger.debug("Op Delete:  %s", a[i1:i2])
                     for i in range(i1, i2):
                         tagText = self._tags[i].tag
                         deletedTags[tagText].append(i)
 
                 case "insert":
-                    print(f"Op Insert:  {b[j1:j2]}  between  {a[i1-1:i1+1]}")
-                    for tagText in b[j1:j2]:
+                    newTags = b[j1:j2]
+                    logger.debug("Op Insert:  %s  between  %s", newTags, a[i1-1:i1+1])
+                    for tagText in newTags:
                         tagIndex = len(newTagList)
                         insertedTags[tagText].append(tagIndex)
                         newTagList.append(None) # Add empty placeholder
@@ -293,14 +298,8 @@ class CaptionMultiEdit:
 
         self._tags = newTagList
 
-
-        print()
-        assert all(tag is not None for tag in newTagList)
-        assert all(tag.tag == tagText for tag, tagText in zip(newTagList, b))
         assert len(newTagList) == len(b)
-
-        newText = self.separator.join(tag.tag for tag in newTagList)
-        print(f">> Updated Tags:\n{newText}")
+        assert all(tag.tag == tagText for tag, tagText in zip(newTagList, b))
 
 
     # Handle insertion of separator (after writing in the middle of text) by splitting a tag.
@@ -315,7 +314,7 @@ class CaptionMultiEdit:
         if middle and not middle.isspace():
             return False
 
-        print(f"  Comma inserted, split: '{oldTag}' => '{newTextLeft}', '{newTextRight}'   -   middle: '{middle}'")
+        logger.debug("  Comma inserted, split: '%s' => '%s', '%s'   -   middle: '%s'", oldTag, newTextLeft, newTextRight, middle)
 
         # Add tag to same files as oldTag. When the comma is removed again, this operation is undone without further effects.
         tag = self._createTag(newTextLeft, oldTag.files.values())
@@ -345,7 +344,7 @@ class CaptionMultiEdit:
         if middle and not middle.isspace():
             return False
 
-        print(f"  Comma removed, merge: '{oldLeft.tag}', '{oldRight.tag}' => {newText}   -   middle: '{middle}'")
+        logger.debug(f"  Comma removed, merge: '%s', '%s => %s   -   middle: '%s'", oldLeft.tag, oldRight.tag, newText, middle)
 
         self._appendTagFiles(oldRight.files.values(), oldLeft)
         self._deleteTag(oldRight)
@@ -386,7 +385,7 @@ class CaptionMultiEdit:
 
             for iDel, iIns in zip(deleteIndexes, insertIndexes):
                 tag = self._tags[iDel]
-                print(f"  Move: {tag}({iDel}) => ({iIns})")
+                logger.debug("  Move: '%s' (%s) => (%s)", tag, iDel, iIns)
                 assert newTagList[iIns] is None
                 newTagList[iIns] = tag
 
@@ -400,13 +399,15 @@ class CaptionMultiEdit:
             iExtra = min(len(deleteIndexes), len(insertIndexes))
 
             # Handle additional deletes
-            print(f"    Additional deletes: {deleteIndexes[iExtra:]}")
-            for iDel in deleteIndexes[iExtra:]:
+            extraDeletes = deleteIndexes[iExtra:]
+            logger.debug("    Additional deletes: %s", extraDeletes)
+            for iDel in extraDeletes:
                 self._deleteTag(self._tags[iDel])
 
             # Handle additional inserts
-            print(f"    Additional inserts: {insertIndexes[iExtra:]}")
-            for iIns in insertIndexes[iExtra:]:
+            extraInserts = insertIndexes[iExtra:]
+            logger.debug("    Additional inserts: %s", extraInserts)
+            for iIns in extraInserts:
                 assert newTagList[iIns] is None
                 newTagList[iIns] = self._createTag(tagText, self._files)
 
@@ -428,7 +429,7 @@ class CaptionMultiEdit:
 
 
     def _createTag(self, tagText: str, files: Iterable[FileTags]) -> TagData:
-        print(f">> Create Tag: '{tagText}'")
+        logger.debug(">> Create Tag: '%s'", tagText)
         assert len(tagText) == len(tagText.strip())
 
         tag = TagData(tagText)
@@ -441,7 +442,7 @@ class CaptionMultiEdit:
         return tag
 
     def _updateTag(self, tag: TagData, newText: str):
-        print(f">> Update Tag: '{tag.tag}' => '{newText}'")
+        logger.debug(">> Update Tag: '%s' => '%s'", tag.tag, newText)
         assert len(newText) == len(newText.strip())
 
         tagListOld = self._tagData[tag.tag]
@@ -453,7 +454,7 @@ class CaptionMultiEdit:
         self._tagData[newText].append(tag)
 
     def _deleteTag(self, tag: TagData):
-        print(f">> Delete Tag: '{tag}'")
+        logger.debug(">> Delete Tag: '%s'", tag)
 
         for file in tag.files.values():
             file.tags.remove(tag)
