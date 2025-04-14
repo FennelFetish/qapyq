@@ -41,6 +41,7 @@
 
 - **Captioning**: Describe images with text
   - Edit captions manually with drag-and-drop support
+  - Edit captions of multiple images simultaneously
   - Tag grouping, merging, sorting, filtering and replacement rules
   - Colored text highlighting
   - Automated captioning with support for grounding
