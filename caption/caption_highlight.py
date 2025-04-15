@@ -454,26 +454,26 @@ class MatcherNode(Generic[TPayload]):
         'Splits captions but only if no extra words are present. No subsets.'
 
         splitCaptionWords = list[list[str]]()
-        remainingWords = set[str]()
+        usedWords = set[str]()
 
         for cap in captions:
             captionWords = cap.split(" ")
 
             if matchSplitWords := self.splitWords(captionWords):
                 splitCaptionWords.clear()
-                remainingWords.clear()
-                remainingWords.update(word for word in captionWords if word)
+                usedWords.clear()
 
                 # Don't split into subsets: Start with longest and only add captions if they have new words.
                 matchSplitWords.sort(key=len, reverse=True)
                 for matchWords in matchSplitWords:
-                    if not remainingWords.isdisjoint(matchWords):
-                        remainingWords.difference_update(matchWords)
+                    if not usedWords.issuperset(matchWords):
+                        usedWords.update(matchWords)
                         splitCaptionWords.append(matchWords)
 
-                # Don't use the split captions if there are extra words present.
-                if not remainingWords:
+                # Only use the split captions if all words are allowed to be combined (no extra words).
+                if usedWords.issuperset(word for word in captionWords if word):
                     yield from (" ".join(matchWords) for matchWords in splitCaptionWords)
                     continue
 
+            # Preserve original caption if extra words are present.
             yield cap

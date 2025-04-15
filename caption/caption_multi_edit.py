@@ -3,6 +3,7 @@ from collections import defaultdict
 from typing import Iterable, Callable
 from lib.filelist import FileList, DataKeys, sortKey
 from lib.captionfile import FileTypeSelector
+from .caption_highlight import MatcherNode
 
 # https://docs.python.org/3/library/difflib.html
 from difflib import SequenceMatcher
@@ -91,6 +92,8 @@ class CaptionMultiEdit:
         self._tags: list[TagData] = list()
         self._files: list[FileTags] = list()
 
+        self._splitTagFiles: dict[str, set[FileTags]] = defaultdict(set)
+
     def clear(self, cache=True):
         if not self.active:
             return
@@ -102,6 +105,7 @@ class CaptionMultiEdit:
         self._tagData.clear()
         self._tags.clear()
         self._files.clear()
+        self._splitTagFiles.clear()
         self.active = False
 
 
@@ -192,28 +196,36 @@ class CaptionMultiEdit:
         return success
 
 
+    # Used for input text and Bubbles (highlighting with HighlightState)
     def getTagPresence(self) -> list[float] | None:
         if self.active:
             return [len(tag.files) / len(self._files) for tag in self._tags]
         return None
 
-    # TODO: Split tags from self._tags with MatcherNode for refined preview.
-    #       If two tags are combined in the preview, and both exist in all files, it should be correctly highlighted with full presence.
-    def getTotalTagPresence(self, tags: list[str]) -> list[float] | None:
+    # Used for refined preview in Caption Window and preview in Batch Rules (highlighting without HighlightState)
+    def getTotalTagPresence(self, tags: list[str], matchNode: MatcherNode) -> list[float] | None:
         if not self.active:
             return None
 
-        presence = []
+        if not self._splitTagFiles:
+            self._updateSplitTagFiles(matchNode)
+
+        presence = list[float]()
         for tag in tags:
-            if tagDataList := self._tagData.get(tag.strip()):
-                tagFiles = set()
-                for tagData in tagDataList:
-                    tagFiles.update(tagData.files.keys())
-                pres = len(tagFiles) / len(self._files)
-            else:
-                pres = 0.0
-            presence.append(pres)
+            minPres = 2.0
+            for splitTag in matchNode.splitAllPreserveExtra( (tag.strip(),) ):
+                if files := self._splitTagFiles.get(splitTag):
+                    pres = len(files) / len(self._files)
+                    minPres = min(minPres, pres)
+
+            presence.append(minPres if minPres < 2.0 else 0.0)
+
         return presence
+
+    def _updateSplitTagFiles(self, matchNode: MatcherNode):
+        for tag in self._tags:
+            for splitTag in matchNode.splitAllPreserveExtra( (tag.tag,) ):
+                self._splitTagFiles[splitTag].update(tag.files.values())
 
 
     def ensureFullPresence(self, index: int) -> bool:
@@ -228,6 +240,7 @@ class CaptionMultiEdit:
                 file.tags.append(tagData)
                 edited = True
 
+        self._splitTagFiles.clear()
         self._edited |= edited
         return edited
 
@@ -296,7 +309,15 @@ class CaptionMultiEdit:
         self._opDelete(deletedTags)
         self._opInsert(newTagList, insertedTags)
 
+        # Handle empty caption: Ensure all files all have at least one empty tag.
+        # When writing text, this empty tag is modified in all files.
+        if len(newTagList) == 0:
+            newTagList.append(self._createTag("", self._files))
+        elif len(newTagList) == 1 and not newTagList[0].tag:
+            self._appendTagFiles(self._files, newTagList[0])
+
         self._tags = newTagList
+        self._splitTagFiles.clear()
 
         assert len(newTagList) == len(b)
         assert all(tag.tag == tagText for tag, tagText in zip(newTagList, b))

@@ -213,39 +213,9 @@ class BubbleColorMap:
     def getMutedColor(self, color: str) -> str:
         mutedColor = self.mutedColors.get(color)
         if mutedColor is None:
-            self.mutedColors[color] = mutedColor = self._getMutedColor(color)
+            h, s, v = util.get_hsv(color)
+            v = min(v*1.8, 1.0)
+            v = max(v, 0.7)
+            self.mutedColors[color] = mutedColor = util.hsv_to_rgb(h, s*0.7, v)
 
         return mutedColor
-
-    def _getMutedColor(self, color: str) -> str:
-        h, s, v = util.get_hsv(color)
-        v = min(v*1.8, 1.0)
-        v = max(v, 0.7)
-        return util.hsv_to_rgb(h, s*0.7, v)
-
-
-
-class TestWindow(QtWidgets.QMainWindow):
-    def __init__(self):
-        super().__init__()
-        import random
-
-        self.setWindowTitle("Caption Bubbles Test")
-        self.setAttribute(Qt.WA_QuitOnClose)
-
-        widget = CaptionBubbles()
-        self.setCentralWidget(widget)
-
-
-if __name__ == "__main__":
-    import sys
-    app = QtWidgets.QApplication([])
-
-    screenSize = app.primaryScreen().size()
-
-    win = TestWindow()
-    win.resize(screenSize.width()//2, screenSize.height()//2)
-    win.move(screenSize.width()//4, 300)
-    win.show()
-
-    sys.exit(app.exec())

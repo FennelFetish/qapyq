@@ -107,7 +107,8 @@ class CaptionContextDataSource(HighlightDataSource):
         return self.ctx.container.multiEdit.getTagPresence()
 
     def getTotalPresence(self, tags: list[str]) -> list[float] | None:
-        return self.ctx.container.multiEdit.getTotalTagPresence(tags)
+        matchNode = self.ctx.highlight.matchNode
+        return self.ctx.container.multiEdit.getTotalTagPresence(tags, matchNode)
 
     def getFocusSet(self) -> set[str]:
         return self.ctx.focus.getFocusSet()

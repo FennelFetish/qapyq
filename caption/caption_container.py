@@ -387,7 +387,7 @@ class CaptionContainer(QtWidgets.QWidget):
     def loadCaption(self):
         # Use cached caption if it exists in dictionary
         cachedCaption = self.captionCache.get()
-        if cachedCaption:
+        if cachedCaption is not None:
             self.txtCaption.setCaption(cachedCaption)
             self.captionCache.setState(DataKeys.IconStates.Changed)
         else:
