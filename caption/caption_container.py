@@ -25,6 +25,8 @@ class CaptionContainer(QtWidgets.QWidget):
 
         self.txtCaption = self.ctx.text
         self.txtCaption.textChanged.connect(self._onCaptionEdited)
+        self.txtCaption.cursorPositionChanged.connect(self._updateTextCursorHighlight)
+        self.txtCaption.focusChanged.connect(self._updateTextCursorHighlight)
 
         self.highlightState = HighlightState()
         self.txtCaption.captionReplaced.connect(self.highlightState.clearState)
@@ -81,6 +83,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.bubbles.dropped.connect(self.txtCaption.appendToCaption)
         self.bubbles.clicked.connect(self.txtCaption.selectCaption)
         self.bubbles.doubleClicked.connect(self._multiEditEnsureFullPresence)
+        self.bubbles.hovered.connect(self._updateBubbleHighlight)
         splitter.addWidget(self.bubbles)
         splitter.setStretchFactor(row, 1)
 
@@ -231,6 +234,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.bubbles.setText(text)
         self.updateSelectionState(text)
         self._updatePreview(text)
+        self._updateTextCursorHighlight()
 
         self.btnSave.setChanged(True)
         self.ctx.captionEdited.emit(text)
@@ -462,15 +466,18 @@ class CaptionContainer(QtWidgets.QWidget):
 
     @Slot()
     def _multiEditEnsureFullPresence(self, index: int):
-        if self.multiEdit.active:
-            self.multiEdit.ensureFullPresence(index)
+        if not self.multiEdit.active:
+            return
 
-            text = self.txtCaption.getCaption()
-            self.ctx.highlight.highlight(text, self.captionSeparator, self.txtCaption, self.highlightState)
-            self._updatePreview(text)
-            self.bubbles.updateBubbles()
+        self.multiEdit.ensureFullPresence(index)
 
-            self.btnSave.setChanged(True)
+        text = self.txtCaption.getCaption()
+        self.ctx.highlight.highlight(text, self.captionSeparator, self.txtCaption, self.highlightState)
+        self.bubbles.updateBubbles()
+        self._updatePreview(text)
+        self._multiEditHighlightImages(index)
+
+        self.btnSave.setChanged(True)
 
     @Slot()
     def _multiEditToggle(self, state: bool):
@@ -480,6 +487,38 @@ class CaptionContainer(QtWidgets.QWidget):
         elif self.multiEdit.active:
             self.multiEdit.clear()
             self.loadCaption()
+
+
+    @Slot()
+    def _multiEditHighlightImages(self, index: int):
+        if not self.multiEdit.active:
+            return
+
+        from gallery.gallery import Gallery
+        gallery: Gallery | None = self.ctx.tab.getWindowContent("gallery")
+        if gallery:
+            files = self.multiEdit.getTagFiles(index) # Empty list for index<0
+            gallery.highlightFiles(files)
+
+    @Slot()
+    def _updateTextCursorHighlight(self):
+        if not self.multiEdit.active:
+            return
+
+        index = -1
+        if self.txtCaption.hasFocus():
+            text = self.txtCaption.getCaption()
+            cursorPos = self.txtCaption.textCursor().position()
+            index = self.txtCaption.getCaptionAtCursor(text, self.captionSeparator, cursorPos)[1]
+
+        self._multiEditHighlightImages(index)
+
+    @Slot()
+    def _updateBubbleHighlight(self, index: int):
+        if index < 0:
+            self._updateTextCursorHighlight()
+        else:
+            self._multiEditHighlightImages(index)
 
 
     # File load functions for CaptionMultiEdit.

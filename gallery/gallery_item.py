@@ -2,7 +2,7 @@ from __future__ import annotations
 import os
 from typing_extensions import override
 from PySide6 import QtGui, QtWidgets
-from PySide6.QtCore import QSize, Qt, Slot
+from PySide6.QtCore import QSize, Qt, Slot, QPoint
 from lib.filelist import DataKeys
 from lib import qtlib
 from .thumbnail_cache import ThumbnailCache
@@ -34,6 +34,11 @@ class GalleryItem(QtWidgets.QWidget):
     PEN_PRIMARY: QtGui.QPen = None
     PEN_SECONDARY: QtGui.QPen = None
 
+    BRUSH_HIGHLIGHT: QtGui.QBrush = None
+
+    TEXT_FLAGS = Qt.AlignmentFlag.AlignHCenter | Qt.TextFlag.TextWrapAnywhere
+    TEXT_OPT: QtGui.QTextOption = None
+
 
     def __init__(self, galleryGrid: GalleryGrid, file: str):
         super().__init__()
@@ -43,6 +48,7 @@ class GalleryItem(QtWidgets.QWidget):
 
         self.filename = os.path.basename(file)
         self.selectionStyle: int = 0
+        self.highlight: bool = False
         self.icons = {}
 
         # Load initial state
@@ -73,6 +79,10 @@ class GalleryItem(QtWidgets.QWidget):
 
         cls.PEN_TEXT = QtGui.QPen(textColor)
 
+        cls.TEXT_OPT = QtGui.QTextOption()
+        cls.TEXT_OPT.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        cls.TEXT_OPT.setWrapMode(QtGui.QTextOption.WrapMode.WrapAnywhere)
+
         cls.PEN_PRIMARY = QtGui.QPen(selectionColor)
         cls.PEN_PRIMARY.setStyle(Qt.PenStyle.SolidLine)
         cls.PEN_PRIMARY.setWidth(cls.BORDER_SIZE)
@@ -83,6 +93,7 @@ class GalleryItem(QtWidgets.QWidget):
         cls.PEN_SECONDARY.setWidth(cls.BORDER_SIZE_SECONDARY)
         cls.PEN_SECONDARY.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
 
+        cls.BRUSH_HIGHLIGHT = QtGui.QBrush(selectionColor)
 
     def setIcon(self, key, state):
         icon = DATA_ICONS.get(key)
@@ -213,6 +224,25 @@ class GalleryItem(QtWidgets.QWidget):
                 self.gallery.filelist.selectFile(self.file)
 
 
+    def paintHighlight(self, painter: QtGui.QPainter, x: int, y: int, w: int, h: int, imgW: int, imgH: int, drawRect=True):
+        painter.save()
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(self.BRUSH_HIGHLIGHT)
+
+        if drawRect:
+            painter.drawRect(x, y+imgH-1, w, h-imgH+1)
+
+        w = imgW + x
+        h = imgH + y
+        s = 20
+        painter.drawConvexPolygon((QPoint(x, y), QPoint(x+s, y), QPoint(x, y+s))) # Top left
+        painter.drawConvexPolygon((QPoint(w, y), QPoint(w, y+s), QPoint(w-s, y))) # Top right
+        painter.drawConvexPolygon((QPoint(x, h), QPoint(x, h-s), QPoint(x+s, h))) # Bottom left
+        painter.drawConvexPolygon((QPoint(w, h), QPoint(w-s, h), QPoint(w, h-s))) # Bottom right
+
+        painter.restore()
+
     def paintBorder(self, painter: QtGui.QPainter, x: int, y: int, w: int, h: int):
         if self.selected:
             painter.setPen(self.PEN_PRIMARY)
@@ -240,7 +270,7 @@ class GalleryItem(QtWidgets.QWidget):
 
 class GalleryGridItem(GalleryItem):
     TEXT_SPACING = 3
-    TEXT_MAX_HEIGHT = 40
+    TEXT_MAX_HEIGHT = 200
 
     def __init__(self, gallery, file):
         super().__init__(gallery, file)
@@ -275,16 +305,19 @@ class GalleryGridItem(GalleryItem):
             ThumbnailCache.updateThumbnail(self.gallery.filelist, self, self.file)
             imgH = 0
 
+        if self.highlight:
+            self.paintHighlight(painter, x, y, w, h, w, imgH)
+
         self.paintIcons(painter, x+4, y+4)
         self.paintBorder(painter, x, y, w, h)
 
         # Draw filename
         textY = y + imgH + self.TEXT_SPACING
-        flags = Qt.AlignmentFlag.AlignHCenter | Qt.TextFlag.TextWordWrap
+        textRect = painter.fontMetrics().boundingRect(self.BORDER_SIZE, textY, w-self.BORDER_SIZE, self.TEXT_MAX_HEIGHT, self.TEXT_FLAGS, self.filename)
         painter.setPen(self.PEN_TEXT)
-        painter.drawText(x, textY, w, self.TEXT_MAX_HEIGHT, flags, self.filename)
+        painter.drawText(textRect, self.filename, self.TEXT_OPT)
 
-        self._height = y + imgH + self.BORDER_SIZE + self.TEXT_SPACING + self.TEXT_MAX_HEIGHT
+        self._height = y + imgH + self.BORDER_SIZE + self.TEXT_SPACING + textRect.height() + self.TEXT_SPACING
         self.setFixedHeight(self._height)
 
 
@@ -435,7 +468,10 @@ class GalleryListItem(GalleryItem):
             painter.drawPixmap(x, y, imgW, imgH, self._pixmap)
         else:
             ThumbnailCache.updateThumbnail(self.gallery.filelist, self, self.file)
-            imgH = 0
+            imgW = imgH = 0
+
+        if self.highlight:
+            self.paintHighlight(painter, x, y, w, h, imgW, imgH, False)
 
         self.paintIcons(painter, x+4, y+4)
         self.paintBorder(painter, x, y, w, h)
@@ -459,7 +495,7 @@ class GalleryItemMenu(QtWidgets.QMenu):
             actClearSelection.setEnabled(False)
             strFiles = "File"
 
-        actNewTab = self.addAction(f"Open {strFiles} in New Tab")
+        actNewTab = self.addAction(f"Open Selected {strFiles} in New Tab")
         actNewTab.triggered.connect(self._openFilesInNewTab)
 
         self.addSeparator()

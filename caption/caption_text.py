@@ -7,6 +7,7 @@ from .caption_context import CaptionContext
 
 class CaptionTextEdit(QtWidgets.QPlainTextEdit):
     captionReplaced = Signal()
+    focusChanged = Signal()
 
     def __init__(self, context: CaptionContext):
         super().__init__()
@@ -67,8 +68,7 @@ class CaptionTextEdit(QtWidgets.QPlainTextEdit):
     def removeCaption(self, index: int):
         text = self.toPlainText()
         sepStrip = self.separator.strip()
-        captions = [c.strip() for c in text.split(sepStrip)]
-        del captions[index]
+        captions = (c.strip() for i, c in enumerate(text.split(sepStrip)) if i != index)
         self.setCaption( self.separator.join(captions) )
 
 
@@ -93,27 +93,27 @@ class CaptionTextEdit(QtWidgets.QPlainTextEdit):
 
     @Slot()
     def selectCaption(self, index: int):
+        self.setFocus()
         text = self.toPlainText()
         sepStrip, sepSpaceL, sepSpaceR = stripCountPadding(self.separator)
 
-        accumulatedLength = 0
         splitCaptions = text.split(sepStrip)
-        for i, caption in enumerate(splitCaptions):
-            if i != index:
-                accumulatedLength += len(caption) + len(sepStrip)
-                continue
+        if index < 0 or index >= len(splitCaptions):
+            return
 
-            capStrip, capSpaceL, capSpaceR = stripCountPadding(caption)
-            offsetL = min(capSpaceL, sepSpaceR) if i > 0 else 0
-            offsetR = min(capSpaceR, sepSpaceL) if i < len(splitCaptions)-1 else 0
+        caption = splitCaptions[index]
+        capStrip, capSpaceL, capSpaceR = stripCountPadding(caption)
+        offsetL = min(capSpaceL, sepSpaceR) if index > 0 else 0
+        offsetR = min(capSpaceR, sepSpaceL) if index < len(splitCaptions)-1 else 0
 
-            start = accumulatedLength + offsetL
-            end   = accumulatedLength + len(caption) - offsetR
+        start = end = sum( len(splitCaptions[i])+len(sepStrip) for i in range(index) )
+        start += offsetL
+        end   += len(caption) - offsetR
 
-            cursor = self.textCursor()
-            cursor.setPosition(end, QtGui.QTextCursor.MoveMode.MoveAnchor)
-            cursor.setPosition(start, QtGui.QTextCursor.MoveMode.KeepAnchor)
-            self.setTextCursor(cursor)
+        cursor = self.textCursor()
+        cursor.setPosition(end, QtGui.QTextCursor.MoveMode.MoveAnchor)
+        cursor.setPosition(start, QtGui.QTextCursor.MoveMode.KeepAnchor)
+        self.setTextCursor(cursor)
 
     @Slot()
     def moveCaptionSelection(self, offset: int, offsetLine: int):
@@ -176,3 +176,12 @@ class CaptionTextEdit(QtWidgets.QPlainTextEdit):
         # Postpone updates when dropping so they don't interfere with ongoing drag operations in ReorderWidget.
         # But don't postpone normal updates to prevent flickering.
         QTimer.singleShot(0, self.textChanged.emit)
+
+
+    def focusInEvent(self, event: QtGui.QFocusEvent):
+        super().focusInEvent(event)
+        self.focusChanged.emit()
+
+    def focusOutEvent(self, event: QtGui.QFocusEvent):
+        super().focusOutEvent(event)
+        self.focusChanged.emit()

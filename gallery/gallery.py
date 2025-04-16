@@ -240,6 +240,10 @@ class Gallery(QtWidgets.QWidget):
         self.updateStatusBar(self.cboFolders.count())
 
 
+    def highlightFiles(self, files: list[str]):
+        self.galleryGrid.highlightFiles(files)
+
+
 
 class FastScrollArea(QtWidgets.QScrollArea):
     def __init__(self):

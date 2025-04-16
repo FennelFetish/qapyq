@@ -15,11 +15,13 @@ class CaptionBubbles(ReorderWidget):
     dropped = Signal(str)
     clicked = Signal(int)
     doubleClicked = Signal(int)
+    hovered = Signal(int)  # -1 as argument when unhovered
 
     def __init__(self, context: CaptionContext, showWeights=True, showRemove=False, editable=True):
         super().__init__()
         self.dataCallback = lambda widget: widget.text
         self.receivedDrop.connect(self._onDrop)
+        self.dragStartMinDistance = 6
 
         self.ctx = context
 
@@ -172,8 +174,14 @@ class Bubble(QtWidgets.QFrame):
         super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent):
-        self.bubbles.doubleClicked.emit(self.index)
         event.accept()
+        self.bubbles.doubleClicked.emit(self.index)
+
+    def enterEvent(self, event):
+        self.bubbles.hovered.emit(self.index)
+
+    def leaveEvent(self, event):
+        self.bubbles.hovered.emit(-1)
 
 
 

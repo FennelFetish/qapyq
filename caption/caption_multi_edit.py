@@ -120,11 +120,11 @@ class CaptionMultiEdit:
         for file in sorted(files, key=sortKey):
             captionText = loadFunc(file)
 
-            tags = [tag for t in captionText.split(sepStrip) if (tag := t.strip())]
             fileTags = FileTags(file)
             self._files.append(fileTags)
 
             tagCount.clear()
+            tags = [tag for t in captionText.split(sepStrip) if (tag := t.strip())]
 
             for i, tag in enumerate(tags):
                 # Allow duplicate tags. Map them across files:
@@ -243,6 +243,12 @@ class CaptionMultiEdit:
         self._splitTagFiles.clear()
         self._edited |= edited
         return edited
+
+    def getTagFiles(self, index: int) -> list[str]:
+        if 0 <= index < len(self._tags):
+            tagData = self._tags[index]
+            return list( tagData.files.keys() )
+        return []
 
 
     def onCaptionEdited(self, captionText: str):
