@@ -7,7 +7,7 @@
 <br clear="left"/>
 <br /><br />
 
-![Screenshot of qapyq with its 4 windows open.](https://www.alchemists.ch/qapyq/overview-2.jpg)
+![Screenshot of qapyq with its 5 windows open.](https://www.alchemists.ch/qapyq/overview-3.jpg)
 
 <a href="https://camo.githubusercontent.com/2cfe9d36a4920abfbe30172373048a8b6e23a796c18b11651c7cdd7105c0433c/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f647261672d6e2d64726f702e676966"><img alt="Edit captions quickly with drag-and-drop support" src="https://camo.githubusercontent.com/2cfe9d36a4920abfbe30172373048a8b6e23a796c18b11651c7cdd7105c0433c/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f647261672d6e2d64726f702e676966" width="30%"></img></a>
 <a href="https://camo.githubusercontent.com/5a27e2ae34499523dfba4d412409af0b7ae3ce7a81f8f966f2c3f9b154151715/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f7461675f6d75742d6578636c75736976652e676966"><img alt="Select one-of-many" src="https://camo.githubusercontent.com/5a27e2ae34499523dfba4d412409af0b7ae3ce7a81f8f966f2c3f9b154151715/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f7461675f6d75742d6578636c75736976652e676966" width="30%"></img></a>
@@ -28,7 +28,7 @@
   - Zoom/pan and fullscreen mode
   - Gallery with thumbnails and optionally captions
   - Compare two images
-  - Measure size and pixel distances
+  - Measure size, area and pixel distances
   - Slideshow
 
 - **Image/Mask Editor**: Prepare images for training
@@ -41,7 +41,8 @@
 
 - **Captioning**: Describe images with text
   - Edit captions manually with drag-and-drop support
-  - Edit captions of multiple images simultaneously
+  - *Multi-Edit Mode* for editing captions of multiple images simultaneously
+  - *Focus Mode* where one key stroke adds a tag, saves the file and skips to the next image
   - Tag grouping, merging, sorting, filtering and replacement rules
   - Colored text highlighting
   - Automated captioning with support for grounding
@@ -95,6 +96,7 @@
 - **Masking**
   - Box Detection
     - YOLO/Adetailer detection models
+      - Search for YOLO models on [huggingface.co](https://huggingface.co/models?pipeline_tag=object-detection).
     - [Florence-2](https://huggingface.co/collections/microsoft/florence-6669f44df0d87d9c3bfb76de)
     - [Qwen2.5-VL](https://huggingface.co/collections/Qwen/qwen25-vl-6795ffac22b334a837c0f9a5)
   - Segmentation / Background Removal
@@ -131,11 +133,16 @@ New dependencies may be added. If the program fails to start or crashes, run the
 
 ## User Guide
 
-More information is available in the [Wiki](https://github.com/FennelFetish/qapyq/wiki).
+More information is available in the [Wiki](https://github.com/FennelFetish/qapyq/wiki).<br>
+Use the page index on the right side to find topics and navigate the Wiki.
 
 How to setup AI models for automatic captioning and masking: [Model Setup](https://github.com/FennelFetish/qapyq/wiki/Setup#model-setup)
 
-How to use: [User Guide](https://github.com/FennelFetish/qapyq/wiki/User-Guide)
+How to use qapyq: [User Guide](https://github.com/FennelFetish/qapyq/wiki/User-Guide)
+
+How to caption with qapyq: [Captioning](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning)
+
+How to use qapyq's features in a workflow: [Tips and Workflows](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Tips-and-Workflows)
 
 
 ## Planned Features
@@ -144,7 +151,6 @@ How to use: [User Guide](https://github.com/FennelFetish/qapyq/wiki/User-Guide)
 - [x] Summary and stats of captions and tags
 - [ ] Shortcuts and improved ease-of-use
 - [x] AI-assisted mask editing
-- [ ] Auto-caption after crop
 - [ ] Overlays (difference image) for comparison tool
 - [x] Image resizing
 - [ ] Run inference on remote machines
@@ -152,7 +158,3 @@ How to use: [User Guide](https://github.com/FennelFetish/qapyq/wiki/User-Guide)
 - [ ] Possibly a plugin system for new tools
 - [ ] Integration with ComfyUI
 - [ ] Docs, Screenshots, Video Guides
-
-## Known Issues
-- Selection of second image for comparison in Gallery Window might be wrong (unfinished GUI).
-- Icons in Gallery can be inconsistent.
