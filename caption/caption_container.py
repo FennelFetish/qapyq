@@ -90,6 +90,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.bubbles.remove.connect(self.txtCaption.removeCaption)
         self.bubbles.dropped.connect(self.txtCaption.appendToCaption)
         self.bubbles.clicked.connect(self.txtCaption.selectCaption)
+        self.bubbles.ctrlClicked.connect(self._moveBubbleNext)
         self.bubbles.doubleClicked.connect(self._multiEditEnsureFullPresence)
         self.bubbles.hovered.connect(self._updateBubbleHighlight)
         splitter.addWidget(self.bubbles)
@@ -261,6 +262,14 @@ class CaptionContainer(QtWidgets.QWidget):
     def _onBubbleOrderChanged(self):
         text = self.captionSeparator.join(self.bubbles.getCaptions())
         self.txtCaption.setCaption(text)
+
+    @Slot()
+    def _moveBubbleNext(self, clickedIndex: int):
+        selectedIndex = self.txtCaption.getSelectedCaptionIndex()
+        if clickedIndex != selectedIndex:
+            targetIndex = selectedIndex + 1
+            targetIndex = self.bubbles.moveBubble(clickedIndex, targetIndex)
+            self.txtCaption.selectCaption(targetIndex)
 
     @Slot()
     def _onControlUpdated(self):
@@ -536,9 +545,7 @@ class CaptionContainer(QtWidgets.QWidget):
 
         index = -1
         if self.txtCaption.hasFocus():
-            text = self.txtCaption.getCaption()
-            cursorPos = self.txtCaption.textCursor().position()
-            index = self.txtCaption.getCaptionAtCursor(text, self.captionSeparator, cursorPos)[1]
+            index = self.txtCaption.getSelectedCaptionIndex()
 
         self._multiEditHighlightImages(index)
 
@@ -623,7 +630,7 @@ class HoverTextEdit(QtWidgets.QPlainTextEdit):
 
         newHoverText = ""
         if 0 < cursorPos < len(text):
-            newHoverText = CaptionTextEdit.getCaptionAtCursor(text, self.container.captionSeparator, cursorPos)[0]
+            newHoverText = CaptionTextEdit.getCaptionAtCharPos(text, self.container.captionSeparator, cursorPos)[0]
         self.setHoverText(newHoverText)
 
     def leaveEvent(self, event):

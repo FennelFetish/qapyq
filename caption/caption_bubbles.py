@@ -14,6 +14,7 @@ class CaptionBubbles(ReorderWidget):
     remove = Signal(int)
     dropped = Signal(str)
     clicked = Signal(int)
+    ctrlClicked = Signal(int)
     doubleClicked = Signal(int)
     hovered = Signal(int)  # -1 as argument when unhovered
 
@@ -72,6 +73,21 @@ class CaptionBubbles(ReorderWidget):
 
         for i in range(i+1, len(oldBubbles)):
             oldBubbles[i].deleteLater()
+
+
+    def moveBubble(self, srcIndex: int, destIndex: int) -> int:
+        if srcIndex < destIndex:
+            destIndex -= 1
+
+        layout: FlowLayout = self.layout()
+        item = layout.itemAt(srcIndex)
+        if item and (bubble := item.widget()) and isinstance(bubble, Bubble):
+            layout.insertWidget(destIndex, bubble)
+            self.orderChanged.emit()
+            return destIndex
+
+        return -1
+
 
     def resizeEvent(self, event):
         self.layout().update()  # Weird: Needed for proper resize.
@@ -168,7 +184,12 @@ class Bubble(QtWidgets.QFrame):
     def mousePressEvent(self, event: QtGui.QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
             event.accept()
-            self.bubbles.clicked.emit(self.index)
+
+            if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+                self.bubbles.ctrlClicked.emit(self.index)
+            else:
+                self.bubbles.clicked.emit(self.index)
+
             return
 
         super().mousePressEvent(event)

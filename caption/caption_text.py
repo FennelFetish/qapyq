@@ -73,23 +73,26 @@ class CaptionTextEdit(QtWidgets.QPlainTextEdit):
 
 
     def getSelectedCaption(self) -> str:
-        cursorPos = self.textCursor().position()
-        return self._getCaptionAtCursor(cursorPos)[0]
-
-    def _getCaptionAtCursor(self, cursorPos: int) -> tuple[str, int]:
         text = self.toPlainText()
-        return self.getCaptionAtCursor(text, self.separator, cursorPos)
+        cursorPos = self.textCursor().position()
+        return self.getCaptionAtCharPos(text, self.separator, cursorPos)[0]
+
+    def getSelectedCaptionIndex(self) -> int:
+        text = self.toPlainText()
+        cursorPos = self.textCursor().position()
+        return self.getCaptionAtCharPos(text, self.separator, cursorPos)[1]
 
     @staticmethod
-    def getCaptionAtCursor(text: str, separator: str, cursorPos: int) -> tuple[str, int]:
+    def getCaptionAtCharPos(text: str, separator: str, charPos: int) -> tuple[str, int]:
         sepStrip = separator.strip()
         accumulatedLength = 0
         for i, caption in enumerate(text.split(sepStrip)):
             accumulatedLength += len(caption) + len(sepStrip)
-            if cursorPos < accumulatedLength:
+            if charPos < accumulatedLength:
                 return caption.strip(), i
 
         return "", -1
+
 
     @Slot()
     def selectCaption(self, index: int):
@@ -122,14 +125,14 @@ class CaptionTextEdit(QtWidgets.QPlainTextEdit):
             moveLineDir = QtGui.QTextCursor.MoveOperation.Up if offsetLine < 0 else QtGui.QTextCursor.MoveOperation.Down
             cursor.movePosition(moveLineDir, QtGui.QTextCursor.MoveMode.MoveAnchor)
 
-        index = self._getCaptionAtCursor(cursor.position())[1]
+        index = self.getCaptionAtCharPos(self.toPlainText(), self.separator, cursor.position())[1]
         index = max(0, index+offset)
         self.selectCaption(index)
 
     @Slot()
     def removeSelectedCaption(self):
         cursor = self.textCursor()
-        index = self._getCaptionAtCursor(cursor.position())[1]
+        index = self.getCaptionAtCharPos(self.toPlainText(), self.separator, cursor.position())[1]
         self.removeCaption(index)
 
         # Set cursor to start of next caption
