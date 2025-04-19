@@ -16,7 +16,10 @@ from .caption_multi_edit import CaptionMultiEdit
 class CaptionContainer(QtWidgets.QWidget):
     def __init__(self, tab):
         super().__init__()
+
         self.filelist: FileList = tab.filelist
+        self.filelist.addListener(self)
+        self.filelist.addSelectionListener(self)
 
         self.captionCache = CaptionCache(self.filelist)
         self.captionSeparator = ', '
@@ -27,6 +30,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.txtCaption.textChanged.connect(self._onCaptionEdited)
         self.txtCaption.cursorPositionChanged.connect(self._updateTextCursorHighlight)
         self.txtCaption.focusChanged.connect(self._updateTextCursorHighlight)
+        self._setEditedOnChange = True
 
         self.highlightState = HighlightState()
         self.txtCaption.captionReplaced.connect(self.highlightState.clearState)
@@ -43,11 +47,15 @@ class CaptionContainer(QtWidgets.QWidget):
 
         self._menu.previewToggled.connect(self._onPreviewToggled)
 
-        self.filelist.addListener(self)
-        self.filelist.addSelectionListener(self)
+        self._loadRules()
+
+        # Initialize to Multi-Edit mode if required
+        if self.filelist.selectedFiles:
+            self.onFileSelectionChanged(self.filelist.selectedFiles)
+
+        # Initialize caption text and generate tab
         self.onFileChanged(self.filelist.getCurrentFile())
 
-        self._loadRules()
         QTimer.singleShot(1, self._forceUpdateGroupSelection) # Workaround for BUG
 
         if Config.captionShowPreview:
@@ -221,14 +229,25 @@ class CaptionContainer(QtWidgets.QWidget):
                 self.ctx.settings.applyPreset(prevPreset)
 
 
+    def _setCaptionUnedited(self, text: str, edited=False):
+        try:
+            self._setEditedOnChange = edited
+            self.txtCaption.setCaption(text) # Will callback self._onCaptionEdited()
+        finally:
+            self._setEditedOnChange = True
+
     @Slot()
     def _onCaptionEdited(self):
         text = self.txtCaption.getCaption()
-        if self.multiEdit.active:
-            self.multiEdit.onCaptionEdited(text)
-        else:
-            self.captionCache.put(text)
-            self.captionCache.setState(DataKeys.IconStates.Changed)
+
+        if self._setEditedOnChange:
+            if self.multiEdit.active:
+                self.multiEdit.onCaptionEdited(text)
+            else:
+                self.captionCache.put(text)
+                self.captionCache.setState(DataKeys.IconStates.Changed)
+
+            self.btnSave.setChanged(True)
 
         self.ctx.highlight.highlight(text, self.captionSeparator, self.txtCaption, self.highlightState)
         self.bubbles.setText(text)
@@ -236,7 +255,6 @@ class CaptionContainer(QtWidgets.QWidget):
         self._updatePreview(text)
         self._updateTextCursorHighlight()
 
-        self.btnSave.setChanged(True)
         self.ctx.captionEdited.emit(text)
 
     @Slot()
@@ -276,9 +294,10 @@ class CaptionContainer(QtWidgets.QWidget):
         self.bubbles.separator = separator
 
         if self.multiEdit.active:
-            loadFunc = self._multiEditLoadApplyRules if self.isAutoApplyRules() else self._multiEditLoad
+            edited = self.multiEdit.isEdited
+            loadFunc = self._multiEditLoadApplyRules if self.isAutoApplyRules() else self._loadCaption
             text = self.multiEdit.changeSeparator(separator, loadFunc)
-            self.txtCaption.setCaption(text)
+            self._setCaptionUnedited(text, edited)
         else:
             self.multiEdit.separator = separator
 
@@ -352,7 +371,7 @@ class CaptionContainer(QtWidgets.QWidget):
         text = self.txtCaption.getCaption()
 
         if self.multiEdit.active:
-            textNew = self.multiEdit.reloadCaptions(self._multiEditLoadApplyRules)
+            textNew = self.multiEdit.loadCaptions(self.filelist.selectedFiles, self._multiEditLoadApplyRules)
         else:
             textNew = rulesProcessor.process(text)
 
@@ -397,39 +416,48 @@ class CaptionContainer(QtWidgets.QWidget):
         else:
             self.resetCaption()
 
+    def _loadCaption(self, file: str) -> str:
+        captionText: str | None = self.filelist.getData(file, DataKeys.Caption)
+        if captionText is not None:
+            self.filelist.setData(file, DataKeys.CaptionState, DataKeys.IconStates.Changed)
+            return captionText
+
+        captionText = self.srcSelector.loadCaption(file)
+        if captionText is not None:
+            # NOTE: "Saved" icon state is lost when a caption is edited and then reloaded.
+            iconState = self.filelist.getData(file, DataKeys.CaptionState)
+            if (iconState is None) or (iconState == DataKeys.IconStates.Changed):
+                iconState = DataKeys.IconStates.Exists
+
+            self.filelist.setData(file, DataKeys.CaptionState, iconState)
+            return captionText
+
+        # Initialize missing caption with empty string
+        self.filelist.removeData(file, DataKeys.CaptionState)
+        return ""
+
     @Slot()
     def resetCaption(self):
         if self.multiEdit.active:
             for file in self.filelist.selectedFiles:
                 self.filelist.removeData(file, DataKeys.Caption)
-
-            text = self.multiEdit.loadCaptions(self.filelist.selectedFiles, self._multiEditLoad, cacheCurrent=False)
-            self.txtCaption.setCaption(text)
+            text = self.multiEdit.loadCaptions(self.filelist.selectedFiles, self._loadCaption, cacheCurrent=False)
 
         else:
-            currentFile = self.filelist.getCurrentFile()
-            text = self.srcSelector.loadCaption(currentFile)
-
-            if text is not None:
-                self.txtCaption.setCaption(text)
-                self.captionCache.setState(DataKeys.IconStates.Exists)
-            else:
-                self.txtCaption.setCaption("")
-                self.captionCache.setState(None)
-
-            # When setting the text, _onCaptionEdited() will make a cache entry and turn the save button red. So we revert that here.
             self.captionCache.remove()
+            text = self._loadCaption( self.filelist.getCurrentFile() )
 
+        self._setCaptionUnedited(text)
         self.btnSave.setChanged(False)
         self.btnReset.setChanged(False)
 
 
     def onFileChanged(self, currentFile: str):
-        if self.multiEdit.active:
-            return
+        if not self.multiEdit.active:
+            self.loadCaption()
+            self.applyRulesIfAuto()
 
-        self.loadCaption()
-        self.applyRulesIfAuto()
+        # The generate tab needs the caption text for variables, so initialize and update it here.
         self.ctx.generate.onFileChanged(currentFile)
 
     def onFileListChanged(self, currentFile: str):
@@ -441,9 +469,10 @@ class CaptionContainer(QtWidgets.QWidget):
             self.btnMultiEdit.setChecked(True)
             self.btnMultiEdit.show()
 
-            loadFunc = self._multiEditLoadApplyRules if self.isAutoApplyRules() else self._multiEditLoad
+            edited = self.multiEdit.isEdited
+            loadFunc = self._multiEditLoadApplyRules if self.isAutoApplyRules() else self._loadCaption
             text = self.multiEdit.loadCaptions(selectedFiles, loadFunc)
-            self.txtCaption.setCaption(text)
+            self._setCaptionUnedited(text, edited)
 
         else:
             self.btnMultiEdit.hide()
@@ -521,26 +550,9 @@ class CaptionContainer(QtWidgets.QWidget):
             self._multiEditHighlightImages(index)
 
 
-    # File load functions for CaptionMultiEdit.
     # Defined here to avoid circular dependency.
-
-    def _multiEditLoad(self, file: str) -> str:
-        captionText: str | None = self.filelist.getData(file, DataKeys.Caption)
-        if captionText is not None:
-            self.filelist.setData(file, DataKeys.CaptionState, DataKeys.IconStates.Changed)
-            return captionText
-
-        captionText = self.srcSelector.loadCaption(file)
-        if captionText is not None:
-            self.filelist.setData(file, DataKeys.CaptionState, DataKeys.IconStates.Exists)
-            return captionText
-
-        # Initialize missing caption with empty string
-        # TODO: Handle failure of loading so no files are overwritten (exception)
-        return ""
-
     def _multiEditLoadApplyRules(self, file: str) -> str:
-        caption = self._multiEditLoad(file)
+        caption = self._loadCaption(file)
         caption = self.ctx.rulesProcessor().process(caption)
 
         self.filelist.setData(file, DataKeys.Caption, caption)

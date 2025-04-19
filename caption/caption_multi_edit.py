@@ -14,51 +14,79 @@ logger = logging.getLogger("CaptionMultiEdit")
 
 # TODO: For complex changes when pasting text, ask with confirmation dialog?
 
-# NOTE: Also useful for copying tags from one image to another.
-
 
 class FileTags:
     def __init__(self, file: str):
-        self.file: str = file
-        self.tags: list[TagData] = list()
+        self._file: str = file
+        self._tags: list[TagData] = list()
+        self.edited = False
+
+    @property
+    def file(self) -> str:
+        return self._file
+
+    @property
+    def tags(self) -> Iterable[str]:
+        return (tag.tag for tag in self._tags)
+
+    def appendTag(self, tag: TagData):
+        self._tags.append(tag)
+        self.edited = True
+
+    def removeTag(self, tag: TagData):
+        self._tags.remove(tag)
+        self.edited = True
 
     def getOrderDictAbs(self) -> dict[TagData, float]:
-        return {tag: float(i) for i, tag in enumerate(self.tags)}
+        return {tag: float(i) for i, tag in enumerate(self._tags)}
 
     def getOrderDictRel(self) -> dict[TagData, float]:
-        if len(self.tags) == 1:
-            return {self.tags[0]: 0.0}
-        return {tag: i / (len(self.tags)-1) for i, tag in enumerate(self.tags)}
+        if len(self._tags) == 1:
+            return {self._tags[0]: 0.0}
+
+        maxIndex = len(self._tags) - 1
+        return {tag: i/maxIndex for i, tag in enumerate(self._tags)}
 
     def sortFilesRel(self, extraOrder: Iterable[tuple[TagData, float]]):
         # Keep order of other tags, which may be different from display order.
         # TODO: Make more accurate
         order = self.getOrderDictRel()
         order.update(extraOrder)
-        self.tags.sort(key=order.__getitem__)
+        self._tags.sort(key=order.__getitem__)
+        self.edited = True
 
 
 
 class TagData:
     def __init__(self, tag: str):
-        self.tag: str = tag
+        self._tag: str = tag
         self.files: dict[str, FileTags] = dict()
+
+    @property
+    def tag(self) -> str:
+        return self._tag
+
+    @tag.setter
+    def tag(self, text: str):
+        self._tag = text
+        for file in self.files.values():
+            file.edited = True
 
     def __eq__(self, other):
         if isinstance(other, str):
-            return self.tag == other
+            return self._tag == other
         if isinstance(other, TagData):
-            return self.tag == other.tag
+            return self._tag == other._tag
         return False
 
     def __hash__(self) -> int:
-        return hash(self.tag)
+        return hash(self._tag)
 
     def __str__(self) -> str:
-        return self.tag
+        return self._tag
 
     def __repr__(self) -> str:
-        return f"TagData('{self.tag}')"
+        return f"TagData('{self._tag}')"
 
 
 
@@ -93,6 +121,10 @@ class CaptionMultiEdit:
         self._files: list[FileTags] = list()
 
         self._splitTagFiles: dict[str, set[FileTags]] = defaultdict(set)
+
+    @property
+    def isEdited(self) -> bool:
+        return self._edited
 
     def clear(self, cache=True):
         if not self.active:
@@ -140,11 +172,13 @@ class CaptionMultiEdit:
                     tagList.append(tagData)
                     self._tags.append(tagData)
 
-                fileTags.tags.append(tagData)
+                fileTags.appendTag(tagData)
                 tagData.files[fileTags.file] = fileTags
 
                 tagOrder = i / (len(tags)-1) if len(tags) > 1 else 0.0
                 tagOrderMap[tagData].append(tagOrder)
+
+            fileTags.edited = False
 
         if self._files:
             self.active = True
@@ -162,22 +196,19 @@ class CaptionMultiEdit:
         return sum(values) / len(values)
 
 
-    def reloadCaptions(self, loadFunc: Callable[[str], str]) -> str:
-        self._cacheCaptions()
-        files = [file.file for file in self._files]
-        return self.loadCaptions(files, loadFunc, False)
-
     def changeSeparator(self, separator: str, loadFunc: Callable[[str], str]) -> str:
-        self._cacheCaptions()
+        if self._edited:
+            self._cacheCaptions()
         self.separator = separator
         files = [file.file for file in self._files]
         return self.loadCaptions(files, loadFunc, False)
 
     def _cacheCaptions(self):
         for file in self._files:
-            caption = self.separator.join(tag.tag for tag in file.tags)
-            self.filelist.setData(file.file, DataKeys.Caption, caption)
-            self.filelist.setData(file.file, DataKeys.CaptionState, DataKeys.IconStates.Changed)
+            if file.edited:
+                caption = self.separator.join(file.tags)
+                self.filelist.setData(file.file, DataKeys.Caption, caption)
+                self.filelist.setData(file.file, DataKeys.CaptionState, DataKeys.IconStates.Changed)
 
     def saveCaptions(self, captionDest: FileTypeSelector) -> bool:
         if not self._files:
@@ -185,11 +216,13 @@ class CaptionMultiEdit:
 
         success = True
         for file in self._files:
-            caption = self.separator.join(tag.tag for tag in file.tags)
-            success &= captionDest.saveCaption(file.file, caption)
-
-            self.filelist.removeData(file.file, DataKeys.Caption)
-            self.filelist.setData(file.file, DataKeys.CaptionState, DataKeys.IconStates.Saved)
+            caption = self.separator.join(file.tags)
+            if captionDest.saveCaption(file.file, caption):
+                self.filelist.removeData(file.file, DataKeys.Caption)
+                self.filelist.setData(file.file, DataKeys.CaptionState, DataKeys.IconStates.Saved)
+                file.edited = False
+            else:
+                success = False
 
         if success:
             self._edited = False
@@ -237,7 +270,7 @@ class CaptionMultiEdit:
         for file in self._files:
             if file.file not in tagData.files:
                 tagData.files[file.file] = file
-                file.tags.append(tagData)
+                file.appendTag(tagData)
                 edited = True
 
         self._splitTagFiles.clear()
@@ -464,7 +497,7 @@ class CaptionMultiEdit:
 
         for file in files:
             tag.files[file.file] = file
-            file.tags.append(tag)
+            file.appendTag(tag)
 
         return tag
 
@@ -484,7 +517,7 @@ class CaptionMultiEdit:
         logger.debug(">> Delete Tag: '%s'", tag)
 
         for file in tag.files.values():
-            file.tags.remove(tag)
+            file.removeTag(tag)
 
         tagList = self._tagData[tag.tag]
         tagList.remove(tag)
@@ -495,4 +528,4 @@ class CaptionMultiEdit:
         for file in files:
             if file.file not in dest.files:
                 dest.files[file.file] = file
-                file.tags.append(dest)
+                file.appendTag(dest)
