@@ -1,6 +1,6 @@
 from __future__ import annotations
 from collections import defaultdict
-from typing import Iterable, Callable
+from typing import Iterable, Callable, Generator
 from lib.filelist import FileList, DataKeys, sortKey
 from lib.captionfile import FileTypeSelector
 from .caption_highlight import MatcherNode
@@ -34,7 +34,13 @@ class FileTags:
         self.edited = True
 
     def removeTag(self, tag: TagData):
-        self._tags.remove(tag)
+        for i, t in enumerate(self._tags):
+            if t is tag:
+                del self._tags[i]
+                break
+        else:
+            logger.warning(f"FileTags.removeTag: Tag '{tag.tag}' not found")
+
         self.edited = True
 
     def getOrderDictAbs(self) -> dict[TagData, float]:
@@ -148,6 +154,7 @@ class CaptionMultiEdit:
         tagCount = TagCounter()
         tagOrderMap = defaultdict[TagData, list[float]](list)
 
+        # TODO: Set self._edited to True if any captions have an entry in cache. (for turning Save button red)
         # Sort files for consistent tag order. FileList.selectedFiles is an unordered set.
         for file in sorted(files, key=sortKey):
             captionText = loadFunc(file)
@@ -284,10 +291,47 @@ class CaptionMultiEdit:
         return []
 
 
+    def _getOpCodes(self, a: list[TagData], b: list[str]) -> Generator[tuple[str, int, int, int, int]]:
+        # SequenceMatcher can't handle duplicates which are next to each other.
+        # It may detect edits to neighboring duplicate tags as insert+delete, which would break file association.
+        # Use simple string comparison to catch simple edits. It's probably faster, too.
+        op: tuple[str, int, int, int, int] | None = None
+
+        tagCountChange = len(b) - len(a)
+        if abs(tagCountChange) <= 1:
+            iFirstDiff = next((i for i, (oldTag, newTag) in enumerate(zip(a, b)) if oldTag != newTag), -1)
+            if iFirstDiff < 0:
+                if tagCountChange > 0:
+                    op = ("insert", len(a), len(a), len(a), len(b))  # Insert at end
+                elif tagCountChange < 0:
+                    op = ("delete", len(b), len(a), len(b), len(b))  # Remove last tag
+                else:
+                    yield ("equal", 0, len(a), 0, len(b))
+                    return
+
+            else:
+                # Check if the two changed tags are neighbors (or check if same index when tagCountChange is 0).
+                iLastDiff = next((i for i, (oldTag, newTag) in enumerate(zip(reversed(a), reversed(b))) if oldTag != newTag), -1)
+                if iFirstDiff + iLastDiff == min(len(a), len(b)) - 1:
+                    op = ("replace", iFirstDiff, len(a)-iLastDiff, iFirstDiff, len(b)-iLastDiff)
+
+                # TODO: Check for deletion of neighboring duplicate tags: "tag, tag, tag" -> delete any via bubbles, and SequenceMatcher will always delete last one.
+                #       When there are more tags around, it may delete any duplicate.
+                #       It's impossible to determine through string processing which duplicate tag was deleted from a sequence.
+                #       It only matters for duplicates that were manually entered next to another duplicate.
+                #       Generally, deleting the last duplicate is the right thing to do, because it's the one with the fewest files.
+
+        if op is not None:
+            yield ("equal", 0, op[1], 0, op[3])
+            yield op
+            yield ("equal", op[2], len(a), op[4], len(b))
+        else:
+            matcher = SequenceMatcher(None, a, b, autojunk=False)
+            yield from matcher.get_opcodes()
+
     def onCaptionEdited(self, captionText: str):
         a = self._tags
         b = [tag.strip() for tag in captionText.split(self.separator.strip())] # Include empty, but always stripped
-        matcher = SequenceMatcher(None, a, b, autojunk=False)
 
         # Detect pairs of delete+insert as moves
         deletedTags: dict[str, list[int]] = defaultdict(list)  # References items in 'a'
@@ -296,10 +340,10 @@ class CaptionMultiEdit:
         newTagList: list[TagData | None] = list()
 
         # NOTE: Big changes with more than one change means paste
-        for op, i1, i2, j1, j2 in matcher.get_opcodes():
+        for op, i1, i2, j1, j2 in self._getOpCodes(a, b):
             if op == "equal":
                 logger.debug("Op Equal:   (i1=%s, i2=%s, lenA=%s),  (j1=%s, j2=%s, lenB=%s)", i1, i2, i2-i1, j1, j2, j2-j1)
-                newTagList.extend(a[i1:i2])
+                newTagList.extend(a[i1:i2]) # Can be empty list
                 continue
 
             self._edited = True
@@ -334,7 +378,7 @@ class CaptionMultiEdit:
 
                 case "insert":
                     newTags = b[j1:j2]
-                    logger.debug("Op Insert:  %s  between  %s", newTags, a[i1-1:i1+1])
+                    logger.debug("Op Insert:  %s  between  %s  (i1 = %s)", newTags, a[i1-1:i1+1], i1)
                     for tagText in newTags:
                         tagIndex = len(newTagList)
                         insertedTags[tagText].append(tagIndex)
@@ -348,7 +392,7 @@ class CaptionMultiEdit:
         self._opDelete(deletedTags)
         self._opInsert(newTagList, insertedTags)
 
-        # Handle empty caption: Ensure all files all have at least one empty tag.
+        # Handle empty caption: Ensure all files have at least one empty tag.
         # When writing text, this empty tag is modified in all files.
         if len(newTagList) == 0:
             newTagList.append(self._createTag("", self._files))
@@ -505,10 +549,7 @@ class CaptionMultiEdit:
         logger.debug(">> Update Tag: '%s' => '%s'", tag.tag, newText)
         assert len(newText) == len(newText.strip())
 
-        tagListOld = self._tagData[tag.tag]
-        tagListOld.remove(tag)
-        if not tagListOld:
-            del self._tagData[tag.tag]
+        self._removeTagFromMap(tag)
 
         tag.tag = newText
         self._tagData[newText].append(tag)
@@ -519,10 +560,28 @@ class CaptionMultiEdit:
         for file in tag.files.values():
             file.removeTag(tag)
 
-        tagList = self._tagData[tag.tag]
-        tagList.remove(tag)
+        self._removeTagFromMap(tag)
+
+    def _removeTagFromMap(self, tag: TagData):
+        tagText = tag.tag
+        tagList = self._tagData.get(tagText)
+
+        if tagList is None:
+            logger.warning(f"_removeTagFromMap: No mapping for tag '{tagText}'")
+            return
         if not tagList:
-            del self._tagData[tag.tag]
+            logger.warning(f"_removeTagFromMap: Tag '{tagText}' mapped to empty list")
+            return
+
+        for i, t in enumerate(tagList):
+            if t is tag:
+                del tagList[i]
+                break
+        else:
+            logger.warning(f"_removeTagFromMap: Tag '{tagText}' not found in list")
+
+        if not tagList:
+            del self._tagData[tagText]
 
     def _appendTagFiles(self, files: Iterable[FileTags], dest: TagData):
         for file in files:
