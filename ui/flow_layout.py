@@ -322,6 +322,9 @@ class ReorderDragHandle(qtlib.VerticalSeparator):
 
 
 class StringFlowBubble(QtWidgets.QFrame):
+    COLOR_TEXT = "#fff"
+    COLOR_TEXT_DISABLED = "#777"
+
     removeClicked = Signal(object)
 
     def __init__(self, text: str):
@@ -341,7 +344,7 @@ class StringFlowBubble(QtWidgets.QFrame):
 
         self.setLayout(layout)
 
-        self.setColor(qtlib.COLOR_BUBBLE_BLACK)
+        self.setColor(qtlib.COLOR_BUBBLE_BLACK, self.COLOR_TEXT)
         self.setFrameShape(QtWidgets.QFrame.Shape.Box)
         self.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
 
@@ -357,9 +360,14 @@ class StringFlowBubble(QtWidgets.QFrame):
     def text(self, text: str):
         self.button.text = text
 
-    def setColor(self, color):
-        self.setStyleSheet(qtlib.bubbleClass("StringFlowBubble", color))
-        self.button.setStyleSheet(qtlib.bubbleStyleAux(color))
+    def setColor(self, colorBg: str, colorText: str):
+        self.setStyleSheet(qtlib.bubbleClass("StringFlowBubble", colorBg))
+        self.button.setStyleSheet(qtlib.bubbleStyleAux(colorBg, colorText))
+
+    def setEnabled(self, enabled: bool) -> None:
+        super().setEnabled(enabled)
+        textColor = self.COLOR_TEXT if enabled else self.COLOR_TEXT_DISABLED
+        self.setColor(qtlib.COLOR_BUBBLE_BLACK, textColor)
 
 
 
@@ -375,6 +383,11 @@ class SortedStringFlowWidget(QtWidgets.QWidget):
         self.flowLayout.setContentsMargins(4, 4, 4, 4)
         self.setLayout(self.flowLayout)
 
+    def bubbles(self) -> Iterable[StringFlowBubble]:
+        for i in range(self.flowLayout.count()):
+            item = self.flowLayout.itemAt(i)
+            if item and (widget := item.widget()) and isinstance(widget, StringFlowBubble):
+                yield widget
 
     def addItem(self, label: str) -> bool:
         if self.hasItem(label):
@@ -387,13 +400,13 @@ class SortedStringFlowWidget(QtWidgets.QWidget):
         return True
 
     def hasItem(self, label: str) -> bool:
-        for i in range(self.flowLayout.count()):
-            if label == self.flowLayout.itemAt(i).widget().text:
-                return True
-        return False
+        return any(bubble.text == label for bubble in self.bubbles())
 
     def _createBubble(self, label: str):
         bubble = StringFlowBubble(label)
+        if not self.isEnabled():
+            bubble.setEnabled(False)
+
         bubble.removeClicked.connect(self._onRemoveClicked)
         return bubble
 
@@ -409,11 +422,7 @@ class SortedStringFlowWidget(QtWidgets.QWidget):
         self.changed.emit()
 
     def getItems(self) -> list[str]:
-        values = list()
-        for i in range(self.flowLayout.count()):
-            widget: StringFlowBubble = self.flowLayout.itemAt(i).widget()
-            values.append(widget.text)
-        return values
+        return [bubble.text for bubble in self.bubbles()]
 
     def _onRemoveClicked(self, bubble: StringFlowBubble):
         index = self.flowLayout.indexOf(bubble)
@@ -445,3 +454,9 @@ class SortedStringFlowWidget(QtWidgets.QWidget):
 
         event.setDropAction(Qt.DropAction.CopyAction)
         event.accept()
+
+
+    def setEnabled(self, enabled: bool) -> None:
+        super().setEnabled(enabled)
+        for bubble in self.bubbles():
+            bubble.setEnabled(enabled)

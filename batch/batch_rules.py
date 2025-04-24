@@ -96,9 +96,10 @@ class BatchRules(QtWidgets.QWidget):
         layout.setColumnStretch(0, 0)
         layout.setColumnStretch(1, 0)
         layout.setColumnStretch(2, 0)
-        layout.setColumnStretch(3, 1)
-        layout.setColumnStretch(4, 0)
+        layout.setColumnStretch(3, 0)
+        layout.setColumnStretch(4, 1)
         layout.setColumnStretch(5, 0)
+        layout.setColumnStretch(6, 0)
 
         row = 0
         self.txtSeparator = QtWidgets.QLineEdit(", ")
@@ -115,7 +116,7 @@ class BatchRules(QtWidgets.QWidget):
         self.chkSortCaptions = QtWidgets.QCheckBox("Sort Captions")
         self.chkSortCaptions.setChecked(False)
         self.chkSortCaptions.checkStateChanged.connect(self.updatePreview)
-        layout.addWidget(self.chkSortCaptions, row, 3)
+        layout.addWidget(self.chkSortCaptions, row, 3, 1, 2)
 
         row += 1
         self.txtPrefix = QtWidgets.QPlainTextEdit()
@@ -124,12 +125,12 @@ class BatchRules(QtWidgets.QWidget):
         qtlib.setTextEditHeight(self.txtPrefix, 2)
         qtlib.setShowWhitespace(self.txtPrefix)
         layout.addWidget(QtWidgets.QLabel("Prefix:"), row, 0, Qt.AlignmentFlag.AlignTop)
-        layout.addWidget(self.txtPrefix, row, 1, 1, 4)
+        layout.addWidget(self.txtPrefix, row, 1, 1, 5)
 
         self.chkPrefixSeparator = QtWidgets.QCheckBox("Append Separator")
         self.chkPrefixSeparator.setChecked(True)
         self.chkPrefixSeparator.checkStateChanged.connect(self.updatePreview)
-        layout.addWidget(self.chkPrefixSeparator, row, 5, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.chkPrefixSeparator, row, 6, Qt.AlignmentFlag.AlignTop)
 
         row += 1
         self.txtSuffix = QtWidgets.QPlainTextEdit()
@@ -138,29 +139,37 @@ class BatchRules(QtWidgets.QWidget):
         qtlib.setTextEditHeight(self.txtSuffix, 2)
         qtlib.setShowWhitespace(self.txtSuffix)
         layout.addWidget(QtWidgets.QLabel("Suffix:"), row, 0, Qt.AlignmentFlag.AlignTop)
-        layout.addWidget(self.txtSuffix, row, 1, 1, 4)
+        layout.addWidget(self.txtSuffix, row, 1, 1, 5)
 
         self.chkSuffixSeparator = QtWidgets.QCheckBox("Prepend Separator")
         self.chkSuffixSeparator.setChecked(True)
         self.chkSuffixSeparator.checkStateChanged.connect(self.updatePreview)
-        layout.addWidget(self.chkSuffixSeparator, row, 5, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.chkSuffixSeparator, row, 6, Qt.AlignmentFlag.AlignTop)
 
         row += 1
         layout.setRowMinimumHeight(row, 8)
 
         row += 1
         layout.addWidget(QtWidgets.QLabel("Replace:"), row, 0)
-        layout.addWidget(QtWidgets.QLabel("Banned:"), row, 3)
+
+        lblBanned = QtWidgets.QLabel("Banned:")
+        lblBanned.setMinimumWidth(lblBanned.sizeHint().width() + 12)
+        layout.addWidget(lblBanned, row, 3)
+
+        self.chkWhitelistGroups = QtWidgets.QCheckBox("Groups are Whitelists (Ban all other tags)")
+        self.chkWhitelistGroups.toggled.connect(lambda checked: self.banWidget.setEnabled(not checked))
+        self.chkWhitelistGroups.toggled.connect(self.updatePreview)
+        layout.addWidget(self.chkWhitelistGroups, row, 4)
 
         self.txtBanAdd = QtWidgets.QLineEdit()
         self.txtBanAdd.setMinimumWidth(200)
         self.txtBanAdd.returnPressed.connect(self._addBanned)
         qtlib.setMonospace(self.txtBanAdd)
-        layout.addWidget(self.txtBanAdd, row, 4)
+        layout.addWidget(self.txtBanAdd, row, 5)
 
         btnBanAdd = QtWidgets.QPushButton("Add Banned")
         btnBanAdd.clicked.connect(self._addBanned)
-        layout.addWidget(btnBanAdd, row, 5)
+        layout.addWidget(btnBanAdd, row, 6)
 
         row += 1
         self.tableReplace = EditableTable(2)
@@ -333,6 +342,7 @@ class BatchRules(QtWidgets.QWidget):
             self.chkSuffixSeparator.setChecked(preset.suffixSeparator)
             self.chkRemoveDup.setChecked(preset.removeDuplicates)
             self.chkSortCaptions.setChecked(preset.sortCaptions)
+            self.chkWhitelistGroups.setChecked(preset.whitelistGroups)
             self.tableReplace.setContent(preset.searchReplace)
             self.banWidget.setItems(preset.banned)
             self.wildcards = preset.wildcards
@@ -396,7 +406,7 @@ class BatchRules(QtWidgets.QWidget):
             suffix = separator + suffix
 
         rulesProcessor = CaptionRulesProcessor()
-        rulesProcessor.setup(prefix, suffix, separator, self.chkRemoveDup.isChecked(), self.chkSortCaptions.isChecked())
+        rulesProcessor.setup(prefix, suffix, separator, self.chkRemoveDup.isChecked(), self.chkSortCaptions.isChecked(), self.chkWhitelistGroups.isChecked())
         rulesProcessor.setSearchReplacePairs(self.tableReplace.getContent())
         rulesProcessor.setBannedCaptions(self.bannedCaptions)
         rulesProcessor.setCaptionGroups( (group.captionsExpandWildcards(self.wildcards), group.exclusivity, group.combineTags) for group in self.groups )

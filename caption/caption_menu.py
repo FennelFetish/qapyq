@@ -1,8 +1,9 @@
 from enum import Enum
 from PySide6 import QtWidgets
-from PySide6.QtCore import Signal, Slot
+from PySide6.QtCore import Signal, Slot, QSignalBlocker
 from config import Config
 from .caption_context import CaptionContext
+from .caption_filter import CaptionRulesSettings
 
 
 class RulesLoadMode(Enum):
@@ -13,6 +14,7 @@ class RulesLoadMode(Enum):
 
 class CaptionMenu(QtWidgets.QMenu):
     previewToggled = Signal(bool)
+    rulesSettingsUpdated = Signal()
 
 
     def __init__(self, parent, context: CaptionContext):
@@ -48,6 +50,8 @@ class CaptionMenu(QtWidgets.QMenu):
 
         self.addSeparator()
 
+        self._buildApplyRulesSubmenu()
+
         actPreview = self.addAction("Show refined preview")
         actPreview.setCheckable(True)
         actPreview.setChecked(Config.captionShowPreview)
@@ -78,6 +82,87 @@ class CaptionMenu(QtWidgets.QMenu):
         action = QtWidgets.QWidgetAction(menuOnNewTab)
         action.setDefaultWidget(radioGroup)
         menuOnNewTab.addAction(action)
+
+
+    def _buildApplyRulesSubmenu(self):
+        self.chkRulesReplace = QtWidgets.QCheckBox("Search and replace")
+        self.chkRulesBan = QtWidgets.QCheckBox("Remove banned tags")
+        self.chkRulesRemoveDuplicates = QtWidgets.QCheckBox("Remove duplicates and subsets")
+        self.chkRulesMutuallyExclusive = QtWidgets.QCheckBox("Remove mutually exclusive tags")
+        self.chkRulesSort = QtWidgets.QCheckBox("Sort tags")
+        self.chkRulesCombine = QtWidgets.QCheckBox("Combine tags")
+        self.chkRulesConditionals = QtWidgets.QCheckBox("Conditional rules")
+        self.chkRulesPrefixSuffix = QtWidgets.QCheckBox("Add prefix and suffix")
+
+        self.allRulesCheckboxes = [
+            self.chkRulesReplace,
+            self.chkRulesBan,
+            self.chkRulesRemoveDuplicates,
+            self.chkRulesMutuallyExclusive,
+            self.chkRulesSort,
+            self.chkRulesCombine,
+            self.chkRulesConditionals,
+            self.chkRulesPrefixSuffix
+        ]
+
+        menuApplyRules = self.addMenu("Apply Rules")
+
+        # Two buttons for selecting All/None
+        selectLayout = QtWidgets.QHBoxLayout()
+        selectLayout.setContentsMargins(4, 4, 4, 4)
+        selectLayout.setSpacing(4)
+
+        lblSelectAll = QtWidgets.QPushButton("Select All")
+        lblSelectAll.clicked.connect(lambda: self._setRulesChecked(True))
+        selectLayout.addWidget(lblSelectAll)
+
+        lblSelectNone = QtWidgets.QPushButton("Unselect All")
+        lblSelectNone.clicked.connect(lambda: self._setRulesChecked(False))
+        selectLayout.addWidget(lblSelectNone)
+
+        selectWidget = QtWidgets.QWidget()
+        selectWidget.setLayout(selectLayout)
+
+        actSelectWidget = QtWidgets.QWidgetAction(menuApplyRules)
+        actSelectWidget.setDefaultWidget(selectWidget)
+        menuApplyRules.addAction(actSelectWidget)
+
+        # Checkboxes for rules
+        rulesLayout = QtWidgets.QVBoxLayout()
+        rulesLayout.setContentsMargins(6, 2, 2, 2)
+        rulesLayout.setSpacing(0)
+
+        toggleFunc = lambda: self.rulesSettingsUpdated.emit()
+        for chk in self.allRulesCheckboxes:
+            chk.toggled.connect(toggleFunc)
+            rulesLayout.addWidget(chk)
+
+        rulesWidget = QtWidgets.QWidget()
+        rulesWidget.setLayout(rulesLayout)
+
+        actRulesWidget = QtWidgets.QWidgetAction(menuApplyRules)
+        actRulesWidget.setDefaultWidget(rulesWidget)
+        menuApplyRules.addAction(actRulesWidget)
+
+        self._setRulesChecked(True)
+
+    def _setRulesChecked(self, checked: bool):
+        with QSignalBlocker(self):
+            for chk in self.allRulesCheckboxes:
+                chk.setChecked(checked)
+        self.rulesSettingsUpdated.emit()
+
+    def getCaptionRulesSettings(self):
+        settings = CaptionRulesSettings()
+        settings.searchReplace              = self.chkRulesReplace.isChecked()
+        settings.ban                        = self.chkRulesBan.isChecked()
+        settings.removeDuplicates           = self.chkRulesRemoveDuplicates.isChecked()
+        settings.removeMutuallyExclusive    = self.chkRulesMutuallyExclusive.isChecked()
+        settings.sort                       = self.chkRulesSort.isChecked()
+        settings.combineTags                = self.chkRulesCombine.isChecked()
+        settings.conditionals               = self.chkRulesConditionals.isChecked()
+        settings.prefixSuffix               = self.chkRulesPrefixSuffix.isChecked()
+        return settings
 
 
     @Slot()

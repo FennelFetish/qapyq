@@ -38,14 +38,16 @@ class CaptionContainer(QtWidgets.QWidget):
 
         self.multiEdit = CaptionMultiEdit(self.filelist)
 
-        self._menu = CaptionMenu(self, self.ctx)
+        self.captionMenu = CaptionMenu(self, self.ctx)
+        self.captionMenu.rulesSettingsUpdated.connect(self._onRulesSettingsUpdated)
+
         self._build(self.ctx)
 
         self.ctx.separatorChanged.connect(self._onSeparatorChanged)
         self.ctx.controlUpdated.connect(self._onControlUpdated)
         self.ctx.needsRulesApplied.connect(self.applyRulesIfAuto)
 
-        self._menu.previewToggled.connect(self._onPreviewToggled)
+        self.captionMenu.previewToggled.connect(self._onPreviewToggled)
 
         self._loadRules()
 
@@ -116,7 +118,7 @@ class CaptionContainer(QtWidgets.QWidget):
         col = 0
         btnMenu = QtWidgets.QPushButton("☰")
         btnMenu.setFixedWidth(40)
-        btnMenu.setMenu(self._menu)
+        btnMenu.setMenu(self.captionMenu)
         layout.addWidget(btnMenu, 0, col)
         layout.setColumnStretch(col, 0)
 
@@ -382,11 +384,20 @@ class CaptionContainer(QtWidgets.QWidget):
         if self.multiEdit.active:
             textNew = self.multiEdit.loadCaptions(self.filelist.selectedFiles, self._multiEditLoadApplyRules)
         else:
-            textNew = rulesProcessor.process(text)
+            rulesSettings = self.captionMenu.getCaptionRulesSettings()
+            textNew = rulesProcessor.process(text, rulesSettings)
 
         # Only set when text has changed to prevent save button turning red
         if textNew != text:
             self.txtCaption.setCaption(textNew)
+
+    @Slot()
+    def _onRulesSettingsUpdated(self):
+        activeRules, numRules = self.captionMenu.getCaptionRulesSettings().getNumActiveRules()
+        if activeRules == numRules:
+            self.btnApplyRules.setText("Apply Rules")
+        else:
+            self.btnApplyRules.setText(f"Apply Rules ({activeRules}/{numRules})")
 
 
     @Slot()
@@ -559,8 +570,9 @@ class CaptionContainer(QtWidgets.QWidget):
 
     # Defined here to avoid circular dependency.
     def _multiEditLoadApplyRules(self, file: str) -> str:
+        rulesSettings = self.captionMenu.getCaptionRulesSettings()
         caption = self._loadCaption(file)
-        caption = self.ctx.rulesProcessor().process(caption)
+        caption = self.ctx.rulesProcessor().process(caption, rulesSettings)
 
         self.filelist.setData(file, DataKeys.Caption, caption)
         self.filelist.setData(file, DataKeys.CaptionState, DataKeys.IconStates.Changed)

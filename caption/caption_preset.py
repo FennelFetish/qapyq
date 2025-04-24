@@ -22,6 +22,7 @@ class CaptionPreset:
         self.autoApplyRules: bool   = False
         self.removeDuplicates: bool = True
         self.sortCaptions: bool     = True
+        self.whitelistGroups: bool  = False
 
         self.groups         = list[CaptionPresetGroup]()
         self.wildcards      = dict[str, list[str]]()
@@ -51,6 +52,7 @@ class CaptionPreset:
             "auto_apply_rules": self.autoApplyRules,
             "remove_duplicates": self.removeDuplicates,
             "sort_captions": self.sortCaptions,
+            "whitelist_groups": self.whitelistGroups,
             "groups": groupData,
             "wildcards": self.wildcards,
             "conditionals": conditionals,
@@ -75,6 +77,7 @@ class CaptionPreset:
         self.autoApplyRules     = data.get("auto_apply_rules", False)
         self.removeDuplicates   = data.get("remove_duplicates", True)
         self.sortCaptions       = data.get("sort_captions", True)
+        self.whitelistGroups    = data.get("whitelist_groups", False)
         self.searchReplace      = data.get("search_replace", [])
         self.banned             = data.get("banned", [])
         self.wildcards          = data.get("wildcards", {})

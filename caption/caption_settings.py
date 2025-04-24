@@ -85,7 +85,7 @@ class CaptionSettings(CaptionTab):
         self.tableReplace.setHorizontalHeaderLabels(["Search Pattern", "Replacement"])
         self.tableReplace.contentChanged.connect(lambda: self.ctx.controlUpdated.emit())
         layout.addWidget(QtWidgets.QLabel("Replace:"), row, 0, Qt.AlignmentFlag.AlignTop)
-        layout.addWidget(self.tableReplace, row, 1, 2, 2)
+        layout.addWidget(self.tableReplace, row, 1, 3, 2)
 
     def _buildRightColumn(self, layout: QtWidgets.QGridLayout):
         row = 0
@@ -110,9 +110,16 @@ class CaptionSettings(CaptionTab):
         # spacing
 
         row += 1
+        self.chkWhitelistGroups = QtWidgets.QCheckBox("Groups are Whitelists (Ban all other tags)")
+        self.chkWhitelistGroups.toggled.connect(lambda checked: self.banWidget.setEnabled(not checked))
+        self.chkWhitelistGroups.toggled.connect(lambda: self.ctx.controlUpdated.emit())
+        layout.addWidget(self.chkWhitelistGroups, row, 5, Qt.AlignmentFlag.AlignTop)
+
+        row += 1
+        layout.addWidget(QtWidgets.QLabel("Banned:"), row, 4, Qt.AlignmentFlag.AlignTop)
+
         self.banWidget = SortedStringFlowWidget()
         self.banWidget.changed.connect(self.ctx.controlUpdated.emit)
-        layout.addWidget(QtWidgets.QLabel("Banned:"), row, 4, Qt.AlignmentFlag.AlignTop)
         layout.addWidget(qtlib.BaseColorScrollArea(self.banWidget), row, 5, 2, 1)
 
         row += 1
@@ -149,6 +156,10 @@ class CaptionSettings(CaptionTab):
     @property
     def isSortCaptions(self) -> bool:
         return self.chkSortCaptions.isChecked()
+
+    @property
+    def isWhitelistGroups(self) -> bool:
+        return self.chkWhitelistGroups.isChecked()
 
 
     @property
@@ -189,6 +200,7 @@ class CaptionSettings(CaptionTab):
         preset.suffixSeparator  = self.chkSuffixSeparator.isChecked()
         preset.removeDuplicates = self.chkRemoveDup.isChecked()
         preset.sortCaptions     = self.chkSortCaptions.isChecked()
+        preset.whitelistGroups  = self.chkWhitelistGroups.isChecked()
         preset.searchReplace    = self.searchReplacePairs
         preset.banned           = self.bannedCaptions
 
@@ -277,6 +289,7 @@ class CaptionSettings(CaptionTab):
         self.chkSuffixSeparator.setChecked(preset.suffixSeparator)
         self.chkRemoveDup.setChecked(preset.removeDuplicates)
         self.chkSortCaptions.setChecked(preset.sortCaptions)
+        self.chkWhitelistGroups.setChecked(preset.whitelistGroups)
 
         self.ctx.container.setAutoApplyRules(preset.autoApplyRules)
 

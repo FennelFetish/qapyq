@@ -39,6 +39,36 @@ class BannedCaptionFilter(CaptionFilter):
 
 
 
+class WhitelistGroupsFilter(CaptionFilter):
+    def __init__(self):
+        self.matcherNode: MatcherNode[bool] = None
+
+    def setup(self, captionGroups: Iterable[list[str]]) -> None:
+        self.matcherNode = MatcherNode[bool]()
+        for group in captionGroups:
+            for caption in group:
+                self.matcherNode.add(caption, True)
+
+    def filterCaptions(self, captions: list[str]) -> list[str]:
+        newCaptions: list[str] = list()
+        validWords: set[str] = set()
+
+        for cap in captions:
+            words = [word for word in cap.split(" ") if word]
+            validWords.clear()
+            for matchWords in self.matcherNode.splitWords(words):
+                validWords.update(matchWords)
+
+            # Extra words in combined tags are not allowed:
+            # When group-tags are subsets of other tags, there's no guarantee that extra words can safely be removed,
+            # without introducing a new tag that is not present in the original caption.
+            if validWords.issuperset(words):
+                newCaptions.append(cap)
+
+        return newCaptions
+
+
+
 class SortCaptionFilter(CaptionFilter):
     ORDER_PREFIX_MAX = -1
     ORDER_SUFFIX_MIN = 1_000_000
@@ -369,6 +399,34 @@ class PrefixSuffixFilter:
 
 
 
+class CaptionRulesSettings:
+    def __init__(self):
+        self.searchReplace: bool            = True
+        self.ban: bool                      = True
+        self.removeDuplicates: bool         = True
+        self.removeMutuallyExclusive: bool  = True
+        self.sort: bool                     = True
+        self.combineTags: bool              = True
+        self.conditionals: bool             = True
+        self.prefixSuffix: bool             = True
+
+    def getNumActiveRules(self) -> tuple[int, int]:
+        rules = [
+            self.searchReplace,
+            self.ban,
+            self.removeDuplicates,
+            self.removeMutuallyExclusive,
+            self.sort,
+            self.combineTags,
+            self.conditionals,
+            self.prefixSuffix
+        ]
+
+        activeRules = list(filter(None, rules))
+        return len(activeRules), len(rules)
+
+
+
 class CaptionRulesProcessor:
     def __init__(self):
         self.prefix = ""
@@ -376,6 +434,7 @@ class CaptionRulesProcessor:
         self.separator = ", "
         self.removeDup = True
         self.sortCaptions = True
+        self.whitelistGroups = False
 
         self.replaceFilter = SearchReplaceFilter()
         self.exclusiveFilterLast = MutuallyExclusiveFilter(MutualExclusivity.KeepLast)
@@ -383,6 +442,7 @@ class CaptionRulesProcessor:
         self.exclusiveFilterPriority = PriorityFilter()
         self.dupFilter = DuplicateCaptionFilter()
         self.banFilter = BannedCaptionFilter()
+        self.whitelistFilter = WhitelistGroupsFilter()
         self.conditionalsFilter = ConditionalsFilter()
         self.sortFilter = SortCaptionFilter()
         self.combineFilter = TagCombineFilter()
@@ -390,13 +450,14 @@ class CaptionRulesProcessor:
         self.prefixSuffixFilter = PrefixSuffixFilter()
 
 
-    def setup(self, prefix: str, suffix: str, separator: str, removeDup: bool, sortCaptions: bool) -> None:
+    def setup(self, prefix: str, suffix: str, separator: str, removeDup: bool, sortCaptions: bool, whitelistGroups: bool) -> None:
         self.prefix = prefix
         self.suffix = suffix
         self.separator = separator
         self.removeDup = removeDup
         self.sortCaptions = sortCaptions
         self.combineFilter.sort = sortCaptions
+        self.whitelistGroups = whitelistGroups
 
         self.prefixSuffixFilter.setup(prefix, suffix)
 
@@ -410,8 +471,10 @@ class CaptionRulesProcessor:
         'Takes iterable with tuples of `captions: list[str]`, `MutualExclusivity`, `combine: bool`'
         captionGroups = list(captionGroups)
 
-        allGroups = (group[0] for group in captionGroups)
-        self.sortFilter.setup(allGroups, self.prefix, self.suffix, self.separator)
+        self.sortFilter.setup((group[0] for group in captionGroups), self.prefix, self.suffix, self.separator)
+
+        if self.whitelistGroups:
+            self.whitelistFilter.setup(group[0] for group in captionGroups)
 
         self.exclusiveFilterLast.setup(tags for tags, ex, _ in captionGroups if ex==MutualExclusivity.KeepLast)
         self.exclusiveFilterFirst.setup(tags for tags, ex, _ in captionGroups if ex==MutualExclusivity.KeepFirst)
@@ -423,8 +486,10 @@ class CaptionRulesProcessor:
         self.conditionalsFilter.setup(rules, self.separator)
 
 
-    def process(self, text: str) -> str:
-        text = self.replaceFilter.filterText(text)
+    def process(self, text: str, settings: CaptionRulesSettings = CaptionRulesSettings()) -> str:
+        if settings.searchReplace:
+            text = self.replaceFilter.filterText(text)
+
         captions = [c.strip() for c in text.split(self.separator.strip())]
 
         # In the original order, tags that come first have higher confidence score.
@@ -433,23 +498,30 @@ class CaptionRulesProcessor:
         # --> No. NOTE: Sorting before the exclusive filter breaks replacement of tags when Auto Apply Rules and Mutually Exclusive are enabled.
 
         # Filter mutually exclusive captions before removing duplicates: This will keep the last inserted caption
-        captions = self.exclusiveFilterLast.filterCaptions(captions)
-        captions = self.exclusiveFilterFirst.filterCaptions(captions)
-        captions = self.exclusiveFilterPriority.filterCaptions(captions)
+        if settings.removeMutuallyExclusive:
+            captions = self.exclusiveFilterLast.filterCaptions(captions)
+            captions = self.exclusiveFilterFirst.filterCaptions(captions)
+            captions = self.exclusiveFilterPriority.filterCaptions(captions)
 
-        captions = self.banFilter.filterCaptions(captions)
+        if settings.ban:
+            if self.whitelistGroups:
+                captions = self.whitelistFilter.filterCaptions(captions)
+            else:
+                captions = self.banFilter.filterCaptions(captions)
 
-        captions = self.conditionalsFilter.filterCaptions(captions)
+        if settings.conditionals:
+            captions = self.conditionalsFilter.filterCaptions(captions)
 
         # Sort before combine filter so order inside group will define order of words inside combined tag
-        if self.sortCaptions:
+        if self.sortCaptions and settings.sort:
             captions = self.sortFilter.filterCaptions(captions)
 
         # Combine tags before removing subsets: When the same tag (or subsets of that tag's words) are in multiple groups,
         # the subset filter might remove them before they had the chance to combine with others.
-        captions = self.combineFilter.filterCaptions(captions)
+        if settings.combineTags:
+            captions = self.combineFilter.filterCaptions(captions)
 
-        if self.removeDup:
+        if self.removeDup and settings.removeDuplicates:
             # Remove subsets after banning, so no tags are wrongly merged and removed with banned tags.
             captions = self.subsetFilter.filterCaptions(captions)
             captions = self.dupFilter.filterCaptions(captions) # SubsetFilter won't remove exact duplicates
@@ -460,5 +532,8 @@ class CaptionRulesProcessor:
         # If the caption already contains prefix or suffix as a tag in another place, and sorting is enabled,
         # that tag is sorted to front/back instead of prepending prefix/appending suffix.
         text = self.separator.join(captions)
-        text = self.prefixSuffixFilter.filterText(text)
+
+        if settings.prefixSuffix:
+            text = self.prefixSuffixFilter.filterText(text)
+
         return text
