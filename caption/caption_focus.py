@@ -277,7 +277,7 @@ class FocusBubble(QtWidgets.QFrame):
         return self.lblText.text()
 
     def setColor(self, color: str):
-        self.setStyleSheet(qtlib.bubbleClass("FocusBubble", color))
+        self.setStyleSheet(qtlib.bubbleClassAux("FocusBubble", "QLabel", color))
 
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
