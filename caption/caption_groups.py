@@ -549,14 +549,21 @@ class GroupMenu(QtWidgets.QMenu):
     def _build(self):
         groups = self.group.groups
 
-        actNewGroupAbove = self.addAction("Create Group Above")
-        actNewGroupAbove.triggered.connect(lambda: groups.addGroupAt(self.group.index))
+        actFocus = self.addAction("Append Tags to Focus")
+        actFocus.triggered.connect(self._addToFocus)
 
         self.addSeparator()
+
+        actNewGroupAbove = self.addAction("Create Group Above")
+        actNewGroupAbove.triggered.connect(lambda: groups.addGroupAt(self.group.index))
 
         actRemoveGroup = self.addAction("Remove Group")
         actRemoveGroup.triggered.connect(lambda: groups.removeGroup(self.group))
 
+    @Slot()
+    def _addToFocus(self):
+        focusTab = self.group.groups.ctx.focus
+        focusTab.appendFocusTag(*self.group.captionsExpandWildcards)
 
 
 class Trash(QtWidgets.QLabel):

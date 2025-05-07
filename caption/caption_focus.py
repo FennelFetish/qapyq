@@ -126,10 +126,12 @@ class CaptionFocus(CaptionTab):
         text = self.separator.join(tags)
         self.txtFocusTags.setText(text)
 
-    def appendFocusTag(self, newTag: str):
+    def appendFocusTag(self, *newTags: str):
         focusTags = [tag for t in self.txtFocusTags.text().split(self.separator.strip()) if (tag := t.strip())]
-        if newTag not in focusTags:
-            focusTags.append(newTag)
+        numFocusTags = len(focusTags)
+        focusTags.extend(tag for t in newTags if (tag := t.strip()) and (tag not in focusTags))
+
+        if len(focusTags) != numFocusTags:
             text = self.separator.join(focusTags)
             self.txtFocusTags.setText(text)
 
