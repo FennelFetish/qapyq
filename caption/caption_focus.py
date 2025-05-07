@@ -1,3 +1,4 @@
+from typing import Iterable
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QEvent, QTimer
 import lib.qtlib as qtlib
@@ -126,7 +127,7 @@ class CaptionFocus(CaptionTab):
         text = self.separator.join(tags)
         self.txtFocusTags.setText(text)
 
-    def appendFocusTag(self, *newTags: str):
+    def appendFocusTags(self, newTags: Iterable[str]):
         focusTags = [tag for t in self.txtFocusTags.text().split(self.separator.strip()) if (tag := t.strip())]
         numFocusTags = len(focusTags)
         focusTags.extend(tag for t in newTags if (tag := t.strip()) and (tag not in focusTags))
@@ -239,7 +240,7 @@ class CaptionFocus(CaptionTab):
     def dropEvent(self, event: QtGui.QDropEvent):
         text = event.mimeData().text()
         if text:
-            QTimer.singleShot(0, lambda text=text: self.appendFocusTag(text))
+            QTimer.singleShot(0, lambda text=text: self.appendFocusTags( (text,) ))
 
         event.setDropAction(Qt.DropAction.CopyAction)
         event.accept()

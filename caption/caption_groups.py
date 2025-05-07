@@ -563,7 +563,7 @@ class GroupMenu(QtWidgets.QMenu):
     @Slot()
     def _addToFocus(self):
         focusTab = self.group.groups.ctx.focus
-        focusTab.appendFocusTag(*self.group.captionsExpandWildcards)
+        focusTab.appendFocusTags(self.group.captionsExpandWildcards)
 
 
 class Trash(QtWidgets.QLabel):

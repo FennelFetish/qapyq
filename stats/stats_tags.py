@@ -407,8 +407,7 @@ class TagTableView(QtWidgets.QTableView):
     @Slot()
     def _focusTags(self):
         if captionWin := getCaptionWindow(self.tab, self):
-            for tag in self.selectedTags():
-                captionWin.ctx.focus.appendFocusTag(tag)
+            captionWin.ctx.focus.appendFocusTags(self.selectedTags())
             self.captionRulesChanged.emit()
 
     @Slot()
