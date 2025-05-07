@@ -17,6 +17,9 @@ from .batch_task import BatchSignalHandler, BatchTask, BatchUtil
 
 # TODO: Store detections in json (or separate batch detect?)
 
+# TODO: Black out masked regions: Instead of writing mask to alpha, blend color with for example black
+
+
 class MaskSrcMode(Enum):
     NewBlack       = "new-black"
     NewWhite       = "new-white"
@@ -161,6 +164,7 @@ class BatchMask(QtWidgets.QWidget):
     def onFileChanged(self, file: str):
         self.parser.setup(file)
         self.parser.setImageDimension(self.tab.imgview.image.pixmap())
+        self.srcPathSettings.updatePreview()
         self.destPathSettings.updatePreview()
 
 
