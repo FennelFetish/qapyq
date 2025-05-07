@@ -3,6 +3,7 @@ class Config:
     windowTitle             = "qapyq"
     windowIcon              = "res/qapyq.png"
     guiScale                = 1.0
+    qtStyle                 = "Fusion"
 
     # Font
     fontMonospace           = "res/font/DejaVuSansMono.ttf"
@@ -142,6 +143,7 @@ class Config:
     @classmethod
     def _load(cls, data: dict):
         cls.guiScale              = float(data.get("gui_scale", cls.guiScale))
+        cls.qtStyle               = data.get("qt_style", cls.qtStyle)
         cls.fontMonospace         = data.get("font_monospace", cls.fontMonospace)
 
         cls.pathExport            = data.get("path_export", cls.pathExport)
@@ -196,6 +198,7 @@ class Config:
         data["version"]                     = cls.version
 
         data["gui_scale"]                   = cls.guiScale
+        data["qt_style"]                    = cls.qtStyle
         data["font_monospace"]              = cls.fontMonospace
 
         data["path_export"]                 = cls.pathExport

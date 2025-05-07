@@ -1,3 +1,6 @@
+import logging
+logging.basicConfig(level=logging.INFO)
+
 import sys, os
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Slot, QPoint, QThreadPool
@@ -460,7 +463,9 @@ def main() -> int:
     os.environ["QT_SCALE_FACTOR"] = str(Config.guiScale)
 
     app = QtWidgets.QApplication([])
-    app.setStyle("Fusion")
+
+    if Config.qtStyle:
+        app.setStyle(Config.qtStyle)
 
     threadCount = QThreadPool.globalInstance().maxThreadCount()
     threadCount = max(threadCount // 2, 4)
