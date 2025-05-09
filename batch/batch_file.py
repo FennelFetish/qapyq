@@ -1,20 +1,24 @@
-import os, shutil
+import os, shutil, re
 from datetime import datetime
 from enum import Enum
 from typing import Callable
+from typing_extensions import override
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
+from PySide6.QtGui import QImageReader
 from config import Config
 from infer import Inference
 from ui.tab import ImgTab
 from lib import qtlib
+from lib.filelist import FileList
 from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
 import ui.export_settings as export
 
 
 # TODO: Multiple IO threads?
 
-# TODO: Add checkbox to mask sections: "Rename to match image filename" (only enabled when "Include images" is disabled)
+
+LEGEND_WIDTH = 80
 
 
 class Mode(Enum):
@@ -24,6 +28,8 @@ class Mode(Enum):
 
 
 class BatchFile(QtWidgets.QWidget):
+    BASEPATH_VAR_PATTERN = re.compile(r'{{.*basepath.*}}')
+
     def __init__(self, tab: ImgTab, logSlot, progressBar, statusBar):
         super().__init__()
         self.tab = tab
@@ -37,122 +43,47 @@ class BatchFile(QtWidgets.QWidget):
         self.btnStart = QtWidgets.QPushButton("Start Batch File")
         self.btnStart.clicked.connect(self.startStop)
 
+        self.destinationSettings = FileDestinationSettings(tab)
         self.imageSettings = FileImageSettings()
         self.captionSettings = FileCaptionSettings()
         self.maskSettings = FileMaskSettings(tab)
 
+        self.imageSettings.toggled.connect(self.maskSettings.onImageToggled)
+
         layout = QtWidgets.QGridLayout()
-        layout.addWidget(self._buildDestination(), 0, 0, 1, 2)
+        layout.addWidget(self.destinationSettings, 0, 0, 1, 2)
         layout.addWidget(self.imageSettings, 1, 0)
         layout.addWidget(self.captionSettings, 1, 1)
         layout.addWidget(self.maskSettings, 2, 0, 1, 2)
-        # TODO: Preview of resulting folder structure, with target path, base path, +archive file
         layout.setRowStretch(3, 1)
         layout.addWidget(self.btnStart, 4, 0, 1, 2)
 
         self.setLayout(layout)
 
-    def _buildDestination(self):
-        layout = QtWidgets.QGridLayout()
-        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        layout.setColumnStretch(0, 0)
-        layout.setColumnStretch(1, 0)
-        layout.setColumnStretch(2, 0)
-        layout.setColumnStretch(3, 1)
-        layout.setColumnStretch(4, 0)
-        layout.setColumnMinimumWidth(2, 8)
-
-        row = 0
-        layout.addWidget(QtWidgets.QLabel("Target Folder:"), row, 0)
-
-        self.txtTargetPath = QtWidgets.QLineEdit(Config.pathExport)
-        qtlib.setMonospace(self.txtTargetPath)
-        layout.addWidget(self.txtTargetPath, row, 1, 1, 3)
-
-        btnChooseTargetPath = QtWidgets.QPushButton("Choose Folder...")
-        btnChooseTargetPath.setMinimumWidth(110)
-        btnChooseTargetPath.clicked.connect(self._chooseTargetFolder)
-        layout.addWidget(btnChooseTargetPath, row, 4)
-
-        row += 1
-        layout.addWidget(QtWidgets.QLabel("Mode:"), row, 0)
-
-        self.cboMode = QtWidgets.QComboBox()
-        self.cboMode.addItem("Copy Files", Mode.Copy)
-        self.cboMode.addItem("Move Files", Mode.Move)
-        self.cboMode.addItem("Create Symlinks", Mode.Symlink)
-        layout.addWidget(self.cboMode, row, 1)
-
-        self.chkFlatFolders = QtWidgets.QCheckBox("Flatten folder structure")
-        self.chkFlatFolders.toggled.connect(self._onFlatFoldersToggled)
-        layout.addWidget(self.chkFlatFolders, row, 3)
-
-        row += 1
-        self.lblBasePath = QtWidgets.QLabel("Base Path:")
-        layout.addWidget(self.lblBasePath, row, 0)
-
-        self.txtBasePath = QtWidgets.QLineEdit("")
-        qtlib.setMonospace(self.txtBasePath)
-        layout.addWidget(self.txtBasePath, row, 1, 1, 3)
-
-        btnChooseBasePath = QtWidgets.QPushButton("Choose Folder...")
-        btnChooseBasePath.setMinimumWidth(110)
-        btnChooseBasePath.clicked.connect(self._chooseBasePath)
-        layout.addWidget(btnChooseBasePath, row, 4)
-
-        groupBox = QtWidgets.QGroupBox("Destination")
-        groupBox.setLayout(layout)
-        return groupBox
-
-
-    @Slot()
-    def _chooseTargetFolder(self):
-        path = self.txtTargetPath.text()
-        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose target directory", path)
-        if path:
-            path = os.path.abspath(path)
-            self.txtTargetPath.setText(path)
-
-    @Slot()
-    def _chooseBasePath(self):
-        path = self.txtBasePath.text()
-        if not path:
-            path = self.tab.filelist.commonRoot
-        if not path:
-            # commonRoot may be empty if folder wasn't lazy loaded yet
-            path = self.txtTargetPath.text()
-
-        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose base directory", path)
-        if path:
-            path = os.path.abspath(path)
-            self.txtBasePath.setText(path)
-
-    @Slot()
-    def _onFlatFoldersToggled(self, state: bool):
-        enabled = not state
-        self.lblBasePath.setEnabled(enabled)
-        self.txtBasePath.setEnabled(enabled)
-
 
     def onFileChanged(self, currentFile):
+        self.destinationSettings.onFileChanged(currentFile)
         self.maskSettings.onFileChanged(currentFile)
-        self.txtBasePath.setPlaceholderText(f"If empty, will use common root of current files: {self.tab.filelist.commonRoot}")
 
 
     def _confirmStart(self) -> bool:
+        pathTemplate = self.destinationSettings.destinationPathTemplate
         ops = []
 
-        match self.cboMode.currentData():
+        match self.destinationSettings.mode:
             case Mode.Copy: modeText = "Copy the files to"
             case Mode.Move: modeText = "Move the files to"
-            case Mode.Symlink: modeText = "Create symlinks to the files in"
+            case Mode.Symlink: modeText = "Create symlinks in"
             case _: raise ValueError("Invalid mode")
-        ops.append(f"{modeText} '{os.path.abspath(self.txtTargetPath.text())}'")
 
-        if self.chkFlatFolders.isChecked():
+        ops.append(f"{modeText}:")
+        ops.append(f"<tab><code>{pathTemplate}</code>")
+        ops.append("<tab>and evaluate the path template for each image.")
+
+        if self.destinationSettings.flatFolders or (self.BASEPATH_VAR_PATTERN.search(pathTemplate) is None):
             ops.append("Discard the folder hierarchy and write all files directly into the target folder")
         else:
-            basePath = self.txtBasePath.text()
+            basePath = self.destinationSettings.basePath
             if not basePath:
                 self.tab.filelist._lazyLoadFolder()
                 basePath = self.tab.filelist.commonRoot
@@ -171,6 +102,10 @@ class BatchFile(QtWidgets.QWidget):
                 ops.append(qtlib.htmlRed(f"Include masks and overwrite existing files!"))
             else:
                 ops.append(f"Include masks and skip existing files")
+
+            if self.maskSettings.chkRenameToImgName.isChecked():
+                ops.append("Rename the mask to the exact filename of the image")
+                ops.append("<tab>(but keep extension of mask).")
         else:
             ops.append(f"Skip masks")
 
@@ -213,17 +148,20 @@ class BatchFile(QtWidgets.QWidget):
         if not self._confirmStart():
             return
 
+        self.destinationSettings.saveExportPreset()
+        self.maskSettings.saveExportPreset()
         self.btnStart.setText("Abort")
 
-        basePath = self.txtBasePath.text()
+        basePath = self.destinationSettings.basePath
         if not basePath:
             basePath = self.tab.filelist.commonRoot
 
         self._task = BatchFileTask(self.log, self.tab.filelist)
-        self._task.mode         = self.cboMode.currentData()
-        self._task.targetFolder = os.path.abspath(self.txtTargetPath.text())
-        self._task.basePath     = os.path.abspath(basePath)
-        self._task.flatFolders  = self.chkFlatFolders.isChecked()
+        self._task.destPathTemplate = self.destinationSettings.destinationPathTemplate
+
+        self._task.mode        = self.destinationSettings.mode
+        self._task.basePath    = os.path.abspath(basePath)
+        self._task.flatFolders = self.destinationSettings.flatFolders
 
         if self.imageSettings.isChecked():
             self._task.includeImages     = True
@@ -231,6 +169,7 @@ class BatchFile(QtWidgets.QWidget):
 
         if self.maskSettings.isChecked():
             self._task.includeMasks      = True
+            self._task.renameMasks       = self.maskSettings.chkRenameToImgName.isChecked()
             self._task.overwriteMasks    = self.maskSettings.maskPathSettings.overwriteFiles
             self._task.maskPathTemplate  = self.maskSettings.maskPathSettings.pathTemplate
 
@@ -239,11 +178,7 @@ class BatchFile(QtWidgets.QWidget):
             self._task.includeTxt        = self.captionSettings.chkIncludeTxt.isChecked()
             self._task.overwriteCaptions = self.captionSettings.overwriteFiles
             self._task.createArchive     = self.captionSettings.chkArchiveTextFiles.isChecked()
-
-            archivePath = self.captionSettings.txtArchivePath.text()
-            if not archivePath:
-                archivePath = os.path.join(self.txtTargetPath.text(), "captions.zip")
-            self._task.archivePath = archivePath
+            self._task.archivePath       = self.captionSettings.txtArchivePath.text()
 
         self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
         self._taskSignalHandler.finished.connect(self.taskDone)
@@ -257,7 +192,173 @@ class BatchFile(QtWidgets.QWidget):
 
 
 
-class FileSettings(QtWidgets.QGroupBox):
+class FileDestinationSettings(QtWidgets.QGroupBox):
+    EXPORT_PRESET_KEY = "batch-file-dest"
+
+    def __init__(self, tab: ImgTab):
+        super().__init__("Destination Path")
+        self.tab = tab
+
+        self.destPathParser = DestinationPathVariableParser(tab.filelist)
+        self.destPathParser.setup(tab.filelist.getCurrentFile(), None)
+
+        config = Config.exportPresets.get(self.EXPORT_PRESET_KEY, {})
+        defaultPathTemplate = os.path.join(Config.pathExport, "{{basepath}}", "{{name.ext}}")
+
+        self.destPathSettings = export.PathSettings(self.destPathParser, showInfo=False)
+        self.destPathSettings.setAsInput()
+        self.destPathSettings.layout().setColumnMinimumWidth(0, LEGEND_WIDTH)
+        self.destPathSettings.btnChoosePath.setMinimumWidth(110)
+        self.destPathSettings.pathTemplate = config.get("path_template", defaultPathTemplate)
+
+        layout = QtWidgets.QGridLayout()
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 0)
+        layout.setColumnStretch(2, 0)
+        layout.setColumnStretch(3, 1)
+        layout.setColumnStretch(4, 0)
+        layout.setColumnMinimumWidth(0, LEGEND_WIDTH)
+        layout.setColumnMinimumWidth(2, 8)
+
+        row = 0
+        infoText = "This template defines the destination path and must include a filename for the image. " \
+                   "If the filename is changed, all included files will be saved with the new name."
+        layout.addWidget(QtWidgets.QLabel(infoText), row, 0, 1, 5)
+
+        row += 1
+        layout.addWidget(QtWidgets.QLabel("Use the {{basepath}} variable to keep the folder structure."), row, 0, 1, 5)
+
+        row += 1
+        layout.setRowMinimumHeight(row, 8)
+
+        row += 1
+        layout.addWidget(self.destPathSettings, row, 0, 1, 5)
+
+        row += 1
+        layout.setRowMinimumHeight(row, 8)
+
+        row += 1
+        layout.addWidget(QtWidgets.QLabel("Mode:"), row, 0)
+
+        self.cboMode = QtWidgets.QComboBox()
+        self.cboMode.addItem("Copy Files", Mode.Copy)
+        self.cboMode.addItem("Move Files", Mode.Move)
+        self.cboMode.addItem("Create Symlinks", Mode.Symlink)
+        layout.addWidget(self.cboMode, row, 1)
+
+        self.chkFlatFolders = QtWidgets.QCheckBox("Flatten folder structure")
+        self.chkFlatFolders.setToolTip("This will empty the {{basepath}} variable.")
+        self.chkFlatFolders.toggled.connect(self._onFlatFoldersToggled)
+        layout.addWidget(self.chkFlatFolders, row, 3)
+
+        row += 1
+        self.lblBasePath = QtWidgets.QLabel("Base Path:")
+        layout.addWidget(self.lblBasePath, row, 0)
+
+        self.txtBasePath = QtWidgets.QLineEdit("")
+        self.txtBasePath.textChanged.connect(self._onBasePathChanged)
+        qtlib.setMonospace(self.txtBasePath)
+        layout.addWidget(self.txtBasePath, row, 1, 1, 3)
+
+        btnChooseBasePath = QtWidgets.QPushButton("Choose Folder...")
+        btnChooseBasePath.setMinimumWidth(110)
+        btnChooseBasePath.clicked.connect(self._chooseBasePath)
+        layout.addWidget(btnChooseBasePath, row, 4)
+
+        self.setLayout(layout)
+
+    @property
+    def destinationPathTemplate(self) -> str:
+        return self.destPathSettings.pathTemplate
+
+    @property
+    def mode(self) -> Mode:
+        return self.cboMode.currentData()
+
+    @property
+    def basePath(self) -> str:
+        return self.txtBasePath.text()
+
+    @property
+    def flatFolders(self) -> bool:
+        return self.chkFlatFolders.isChecked()
+
+
+    def onFileChanged(self, currentFile):
+        commonRoot = self.tab.filelist.commonRoot
+        if not commonRoot:
+            self.tab.filelist._lazyLoadFolder()
+            commonRoot = self.tab.filelist.commonRoot
+
+        self.txtBasePath.setPlaceholderText(f"If empty, will use common root of current files: {commonRoot}")
+
+        self.destPathParser.setup(currentFile, None)
+        self.destPathParser.setImageDimension(self.tab.imgview.image.pixmap())
+        self.destPathSettings.updatePreview()
+
+    @Slot()
+    def _chooseBasePath(self):
+        path = self.txtBasePath.text()
+        if not path:
+            path = self.tab.filelist.commonRoot
+
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose base directory", path)
+        if path:
+            path = os.path.abspath(path)
+            self.txtBasePath.setText(path)
+
+    @Slot()
+    def _onBasePathChanged(self, basePath: str):
+        self.destPathParser.basePath = basePath
+        self.destPathSettings.updatePreview()
+
+    @Slot()
+    def _onFlatFoldersToggled(self, state: bool):
+        enabled = not state
+        self.lblBasePath.setEnabled(enabled)
+        self.txtBasePath.setEnabled(enabled)
+
+        self.destPathParser.flatFolders = state
+        self.destPathSettings.updatePreview()
+
+    def saveExportPreset(self):
+        Config.exportPresets[self.EXPORT_PRESET_KEY] = {
+            "path_template": self.destPathSettings.pathTemplate
+        }
+
+
+class DestinationPathVariableParser(export.ExportVariableParser):
+    def __init__(self, filelist: FileList | None):
+        super().__init__()
+        self.filelist = filelist
+        self.basePath: str = ""
+        self.flatFolders: bool = False
+
+    @override
+    def _getImgProperties(self, var: str) -> str | None:
+        if var != "basepath":
+            return super()._getImgProperties(var)
+
+        if self.flatFolders:
+            return None
+
+        basePath = self.basePath
+        if not basePath:
+            if self.filelist:
+                basePath = self.filelist.commonRoot
+            else:
+                return None
+
+        try:
+            path = os.path.dirname(self.imgPath)
+            return self.makeRelPath(path, basePath)
+        except ValueError:
+            return None
+
+
+
+class BaseFileSettings(QtWidgets.QGroupBox):
     def __init__(self, title: str):
         super().__init__(title)
         self.setCheckable(True)
@@ -285,19 +386,16 @@ class FileSettings(QtWidgets.QGroupBox):
             self.chkOverwriteFiles.setStyleSheet("")
 
 
-class FileImageSettings(FileSettings):
+class FileImageSettings(BaseFileSettings):
     def __init__(self):
         super().__init__("Include Images")
-
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
         layout.addWidget(self.chkOverwriteFiles, 0, 0)
-
         self.setLayout(layout)
 
 
-class FileCaptionSettings(FileSettings):
+class FileCaptionSettings(BaseFileSettings):
     def __init__(self):
         super().__init__("Include Captions")
 
@@ -313,13 +411,11 @@ class FileCaptionSettings(FileSettings):
         self.chkIncludeTxt.setChecked(True)
         layout.addWidget(self.chkIncludeTxt, 1, 0)
 
-        # TODO: When "Overwrite Files" is disabled, this will append a timestamp (and counter) to the archive's filename. Saved in selected base folder.
         self.chkArchiveTextFiles = QtWidgets.QCheckBox("Write to ZIP archive:")
         self.chkArchiveTextFiles.toggled.connect(self._onArchiveToggled)
         layout.addWidget(self.chkArchiveTextFiles, 0, 1)
 
         self.txtArchivePath = QtWidgets.QLineEdit("")
-        self.txtArchivePath.setPlaceholderText("If empty, will create archive file inside target folder")
         qtlib.setMonospace(self.txtArchivePath)
         layout.addWidget(self.txtArchivePath, 0, 2)
 
@@ -353,6 +449,8 @@ class FileCaptionSettings(FileSettings):
 
 
 class FileMaskSettings(QtWidgets.QGroupBox):
+    EXPORT_PRESET_KEY = "batch-file-mask"
+
     def __init__(self, tab: ImgTab):
         super().__init__("Include Masks from:")
         self.tab = tab
@@ -360,12 +458,19 @@ class FileMaskSettings(QtWidgets.QGroupBox):
         self.maskPathParser = export.ExportVariableParser()
         self.maskPathParser.setup(tab.filelist.getCurrentFile(), None)
 
+        self.chkRenameToImgName = QtWidgets.QCheckBox("Rename to filename of image")
+        self.chkRenameToImgName.setToolTip("Only available when not including images.\nWill keep the file extension of the mask.")
+        self.chkRenameToImgName.setEnabled(False)
+
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
+        config = Config.exportPresets.get(self.EXPORT_PRESET_KEY, {})
         self.maskPathSettings = export.PathSettings(self.maskPathParser, showInfo=False)
+        self.maskPathSettings.layout().addWidget(self.chkRenameToImgName, 2, 2)
+        self.maskPathSettings.layout().setColumnMinimumWidth(0, LEGEND_WIDTH)
         self.maskPathSettings.btnChoosePath.setMinimumWidth(110)
-        self.maskPathSettings.pathTemplate   = "{{path}}-masklabel.png"
+        self.maskPathSettings.pathTemplate   = config.get("path_template", "{{path}}-masklabel.png")
         self.maskPathSettings.overwriteFiles = False
 
         layout.addWidget(self.maskPathSettings, 0, 0)
@@ -378,11 +483,22 @@ class FileMaskSettings(QtWidgets.QGroupBox):
 
     def onFileChanged(self, currentFile):
         self.maskPathParser.setup(currentFile, None)
-        #self.maskPathParser.setImageDimension(self.tab.imgview.image.pixmap())
+        self.maskPathParser.setImageDimension(self.tab.imgview.image.pixmap())
         self.maskPathSettings.updatePreview()
+
+    @Slot()
+    def onImageToggled(self, state: bool):
+        self.chkRenameToImgName.setEnabled(not state)
+        if state:
+            self.chkRenameToImgName.setChecked(False)
 
     def _onToggled(self, state: bool):
         self.maskPathSettings.setEnabled(state)
+
+    def saveExportPreset(self):
+        Config.exportPresets[self.EXPORT_PRESET_KEY] = {
+            "path_template": self.maskPathSettings.pathTemplate
+        }
 
 
 
@@ -391,7 +507,7 @@ class BatchFileTask(BatchTask):
         super().__init__("file", log, filelist)
 
         self.mode              = Mode.Move
-        self.targetFolder      = ""
+        self.destPathTemplate  = ""
         self.basePath          = ""
         self.flatFolders       = False
 
@@ -399,6 +515,7 @@ class BatchFileTask(BatchTask):
         self.overwriteImages   = False
 
         self.includeMasks      = False
+        self.renameMasks       = False
         self.overwriteMasks    = False
         self.maskPathTemplate  = ""
 
@@ -414,10 +531,14 @@ class BatchFileTask(BatchTask):
 
 
     def runPrepare(self):
-        if not os.path.isdir(self.targetFolder):
-            raise ValueError("Target folder doesn't exist")
+        self.destinationPathParser = DestinationPathVariableParser(None)
+        self.destinationPathParser.basePath = self.basePath
+        self.destinationPathParser.flatFolders = self.flatFolders
 
         self.maskPathParser = export.ExportVariableParser()
+
+        if self.renameMasks and self.includeImages:
+            raise ValueError("Cannot rename masks when images are included")
 
         match self.mode:
             case Mode.Copy: self.fileDest = self.copyFile
@@ -426,55 +547,76 @@ class BatchFileTask(BatchTask):
             case _: raise ValueError("Invalid mode")
 
         if self.createArchive and (self.includeJson or self.includeTxt):
+            if not self.archivePath:
+                raise ValueError("Archive path is empty")
             if not self.archivePath.endswith(".zip"):
                 raise ValueError("Archive path must end with '.zip'")
+
             self.captionDest, self.captionCleanup = self.createArchiveDest(self.archivePath)
         else:
             self.captionDest = self.processFile
 
 
     def runCleanup(self):
+        # TODO: Copy the archive before the task ends.
         if self.captionCleanup:
             self.captionCleanup()
 
 
     def runProcessFile(self, imgPath: str) -> str | None:
-        imgFolder, imgFileName = os.path.split(imgPath)
+        self.setupPathParsers(imgPath)
+        targetPath = self.destinationPathParser.parsePath(self.destPathTemplate, overwriteFiles=True)
+        targetFolder, targetFileName = os.path.split(targetPath)
 
-        if self.flatFolders:
-            targetFolder = self.targetFolder
-        else:
-            relPath = os.path.relpath(imgFolder, self.basePath)
-            targetFolder = os.path.join(self.targetFolder, relPath)
-            targetFolder = os.path.normpath(targetFolder)
+        targetFileNameNoExt, targetFileExt = os.path.splitext(targetFileName)
+        if not targetFileExt.lstrip("."):
+            self.log(f"WARNING: Missing file extension: {targetPath}")
+            return None
 
         writtenFile = None
 
         if self.includeImages:
-            wrote = self.processFile(imgPath, targetFolder, imgFileName, self.overwriteImages)
+            wrote = self.processFile(imgPath, targetFolder, targetFileName, self.overwriteImages)
             writtenFile = writtenFile or wrote
 
         if self.includeMasks:
-            wrote = self.processMask(imgPath, targetFolder)
+            wrote = self.processMask(imgPath, targetFolder, targetFileName)
             writtenFile = writtenFile or wrote
 
         srcPathNoExt  = os.path.splitext(imgPath)[0]
-        fileNameNoExt = os.path.splitext(imgFileName)[0]
 
         if self.includeJson:
-            wrote = self.processCaption(f"{srcPathNoExt}.json", targetFolder, f"{fileNameNoExt}.json", self.overwriteCaptions)
+            wrote = self.processCaption(f"{srcPathNoExt}.json", targetFolder, f"{targetFileNameNoExt}.json", self.overwriteCaptions)
             writtenFile = writtenFile or wrote
 
         if self.includeTxt:
-            wrote = self.processCaption(f"{srcPathNoExt}.txt", targetFolder, f"{fileNameNoExt}.txt", self.overwriteCaptions)
+            wrote = self.processCaption(f"{srcPathNoExt}.txt", targetFolder, f"{targetFileNameNoExt}.txt", self.overwriteCaptions)
             writtenFile = writtenFile or wrote
 
         return writtenFile
 
 
+    def setupPathParsers(self, imgPath: str):
+        self.destinationPathParser.setup(imgPath)
+        self.maskPathParser.setup(imgPath)
+
+        imgReader = QImageReader(imgPath)
+        imgSize = imgReader.size()
+
+        self.destinationPathParser.width = imgSize.width()
+        self.destinationPathParser.height = imgSize.height()
+
+        self.maskPathParser.width = imgSize.width()
+        self.maskPathParser.height = imgSize.height()
+
+
     def processFile(self, srcPath: str, targetFolder: str, targetFileName: str, overwrite: bool) -> str | None:
         destPath = os.path.join(targetFolder, targetFileName)
         if (not overwrite) and os.path.exists(destPath):
+            return None
+
+        if os.path.isdir(destPath):
+            self.log(f"WARNING: Target path is a folder (missing filename?): {destPath}")
             return None
 
         if not os.path.exists(targetFolder):
@@ -484,19 +626,23 @@ class BatchFileTask(BatchTask):
         self.fileDest(srcPath, destPath)
         return destPath
 
-    def processMask(self, imgPath: str, targetFolder: str) -> str | None:
-        self.maskPathParser.setup(imgPath)
+    def processMask(self, imgPath: str, targetFolder: str, targetFileName: str) -> str | None:
+        maskSrcPath = self.maskPathParser.parsePath(self.maskPathTemplate, overwriteFiles=True)
+        if not os.path.exists(maskSrcPath):
+            return None
 
-        # Really necessary?
-        # imgReader = QImageReader(imgPath)
-        # imgSize = imgReader.size()
-        # self.maskPathParser.width = imgSize.width()
-        # self.maskPathParser.height = imgSize.height()
+        targetNameNoExt = os.path.splitext(targetFileName)[0]
 
-        maskSrcPath = self.maskPathParser.parsePath(self.maskPathTemplate, True)
-        if os.path.exists(maskSrcPath):
-            return self.processFile(maskSrcPath, targetFolder, os.path.basename(maskSrcPath), self.overwriteMasks)
-        return None
+        if self.renameMasks:
+            maskExt = os.path.splitext(maskSrcPath)[1]
+            targetMaskName = targetNameNoExt + maskExt
+        else:
+            srcNameNoExt = os.path.splitext(os.path.basename(imgPath))[0]
+            targetMaskName = os.path.basename(maskSrcPath)
+            if srcNameNoExt != targetNameNoExt:
+                targetMaskName = targetMaskName.replace(srcNameNoExt, targetNameNoExt, 1)
+
+        return self.processFile(maskSrcPath, targetFolder, targetMaskName, self.overwriteMasks)
 
     def processCaption(self, srcPath: str, targetFolder: str, targetFileName: str, overwrite: bool) -> str | None:
         if os.path.exists(srcPath):
@@ -506,13 +652,16 @@ class BatchFileTask(BatchTask):
 
 
     def copyFile(self, srcPath: str, destPath: str):
+        self.log(f"Copy file '{srcPath}' => '{destPath}'")
         shutil.copy2(srcPath, destPath)
 
     def moveFile(self, srcPath: str, destPath: str):
+        self.log(f"Move file '{srcPath}' => '{destPath}'")
         shutil.move(srcPath, destPath)
 
     def createSymlink(self, srcPath: str, destPath: str):
         # This will fail if destPath exists
+        self.log(f"Symlink '{srcPath}' <= '{destPath}'")
         os.symlink(srcPath, destPath)
 
 
@@ -521,18 +670,25 @@ class BatchFileTask(BatchTask):
         fd, tempArchivePath = tempfile.mkstemp(suffix=".zip")
         self.log(f"Creating temporary ZIP archive: {tempArchivePath}")
         tempFile = os.fdopen(fd, 'wb')
-        archive = zipfile.ZipFile(tempFile, 'w')
+        archive = zipfile.ZipFile(tempFile, 'w', self.getCompressionMethod())
+
+        # Strip leading components without variables
+        head, tail = export.ExportVariableParser.splitPathByVars(self.destPathTemplate)
+        archivePathTemplate = tail or head
+        del head, tail
+
         numFilesAdded = 0
 
         def archiveFile(srcPath: str, targetFolder: str, targetFileName: str, overwrite: bool) -> str:
-            if self.flatFolders:
-                arcPath = os.path.basename(srcPath)
-            else:
-                arcPath = os.path.relpath(srcPath, self.basePath)
+            arcPath = self.destinationPathParser.parse(archivePathTemplate)
+            arcPath = os.path.normpath(os.path.dirname(arcPath))
+            arcPath = self.removeUpLevel(arcPath)
+            arcPath = os.path.join(arcPath, targetFileName)
 
             nonlocal numFilesAdded
             numFilesAdded += 1
 
+            self.log(f"Archive file '{srcPath}' => '{arcPath}'")
             archive.write(srcPath, arcname=arcPath)
             return archivePath
 
@@ -566,3 +722,17 @@ class BatchFileTask(BatchTask):
             os.makedirs(archiveFolder)
 
         return archivePath
+
+    def getCompressionMethod(self) -> int:
+        import zipfile
+        try:
+            import zlib
+            return zipfile.ZIP_DEFLATED
+        except:
+            return zipfile.ZIP_STORED
+
+    def removeUpLevel(self, path: str) -> str:
+        while path.startswith(".."):
+            prefixLen = 3 if (len(path) > 2 and path[2] == os.sep) else 2
+            path = path[prefixLen:]
+        return path

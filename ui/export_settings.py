@@ -1,4 +1,5 @@
 import os, superqt
+from difflib import SequenceMatcher
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QRunnable, QObject
@@ -249,13 +250,16 @@ class PathSettings(QtWidgets.QWidget):
     {{date}}      Date yyyymmdd
     {{time}}      Time hhmmss
 
+    Functions and values from json/txt file.
+
 An increasing counter is appended when a file exists and overwriting is disabled.
 The template must include a file extension.
 
 Examples:
     {{name}}_{{w}}x{{h}}.webp
     {{path}}-masklabel.png
-    /home/user/Pictures/{{folder}}/{{date}}_{{time}}_{{w}}x{{h}}.jpg"""
+    /home/user/Pictures/{{w}}x{{h}}/{{folder}}/{{name}}_{{date}}.jpg
+    {{name}}_{{tags.tags#replace:, :_}}.{{ext}}"""
 
 
     def __init__(self, parser, showInfo=True, showSkip=False) -> None:
@@ -398,17 +402,14 @@ Examples:
     def _choosePath(self):
         path = self.txtPathTemplate.toPlainText()
         path = path.replace("{{path}}", "{{name}}")
+        path = path.replace("{{path.ext}}", "{{name.ext}}")
 
         # Keep dynamic path elements with variables
-        head, tail = os.path.split(path)
-        while head:
-            head, tempTail = os.path.split(head)
-            if "{{" not in tempTail:
-                break
-            tail = os.path.join(tempTail, tail)
+        head, tail = self.parser.splitPathByVars(path)
+        path = head or Config.pathExport
 
         opts = QtWidgets.QFileDialog.Option.ShowDirsOnly
-        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose save folder", head, opts)
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose save folder", path, opts)
         if path:
             path = os.path.normpath(path)
             self.txtPathTemplate.setPlainText(os.path.join(path, tail))
@@ -434,7 +435,7 @@ class PathSettingsWindow(QtWidgets.QDialog):
 
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.setWindowTitle("Setup Export Path")
-        self.resize(800, 500)
+        self.resize(800, 600)
 
     def _build(self, exportSettings):
         layout = QtWidgets.QGridLayout(self)
@@ -503,7 +504,7 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
             # Normalize part of path before the first variable
             pathHead = pathTemplate[:firstVarIdx] + "@" # The added character prevents removal of trailing slashes.
             pathHead = os.path.normpath(os.path.join(Config.pathExport, pathHead))
-            pathHead = pathHead[:-1] # Cut '@'
+            pathHead = pathHead.removesuffix("@")
             lenHead = len(pathHead)
 
             pathTail = pathTemplate[firstVarIdx:]
@@ -519,10 +520,65 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
         pathNorm = path.translate(INVALID_CHARS)
         pathNorm = os.path.normpath(os.path.join(Config.pathExport, pathNorm))
 
-        # Highlighting will be wrong if path elements were removed in normpath().
         if len(pathNorm) != len(path):
-            return pathNorm, []
+            # Fix positions: Highlighting will be wrong if path elements were removed in normpath()
+            varPositions = self._fixVarPositions(varPositions, path, pathNorm)
+
         return pathNorm, varPositions
+
+    def _fixVarPositions(self, varPositions: list[list[int]], path: str, pathNorm: str) -> list[list[int]]:
+        pathSplit = path.split(os.sep)
+        pathNormSplit = pathNorm.split(os.sep)
+        seqMatcher = SequenceMatcher(None, pathSplit, pathNormSplit, autojunk=False)
+
+        # Accumulate shifts for variable positions.
+        # Can't update variable positions in one loop: Need original positions for comparison.
+        shifts = [[0, 0] for _ in varPositions]
+
+        for op, i1, i2, j1, j2 in seqMatcher.get_opcodes():
+            if op == "equal":
+                continue
+            if op != "delete":
+                # No fix, don't highlight
+                return []
+
+            # Most cases work, but there are some where the detections of SequenceMatcher will mess with the highlighting.
+            # Test template: /mnt/ai/Datasets/{{basepath}}/../../{{folder}}/./{{name.ext}}
+            # Here, when both {{basepath}} and {{folder}} contain the same word ('Pictures') -> wrong color
+            # Wrong highlighting is worse than no highlighting. So disable highlighting when there are up-references.
+            if ".." in pathSplit[i1:i2]:
+                return []
+
+            # Start: Index of first char of removed parts
+            # End:   Index of last char of removed parts (including slash)
+            removedStart = sum(len(p)+1 for p in pathSplit[:i1])
+            removedEnd   = sum(len(p)+1 for p in pathSplit[i1:i2]) + removedStart
+            if i2 == len(pathSplit):
+                removedEnd -= 1  # Last path component has no slash
+
+            borderLeft  = removedStart - 1
+            borderRight = removedEnd - 1
+
+            # Iterate back to front. Break when variable lies completely before deletion: These don't need shifting.
+            for i in range(len(varPositions)-1, -1, -1):
+                pos = varPositions[i]
+                if pos[3] <= borderLeft:
+                    break
+
+                # Shift end
+                shifts[i][1] += min(pos[3], borderRight) - borderLeft
+
+                # Shift start
+                if pos[2] > borderLeft:
+                    shifts[i][0] += min(pos[2], borderRight) - borderLeft
+
+        for pos, shift in zip(varPositions, shifts):
+            # Check length to account for templates with unset variables in last component
+            pos[2] = min(pos[2]-shift[0], len(pathNorm))
+            pos[3] = min(pos[3]-shift[1], len(pathNorm))
+
+        return varPositions
+
 
     @override
     def _getImgProperties(self, var: str) -> str | None:

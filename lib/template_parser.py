@@ -217,11 +217,7 @@ class TemplateVariableParser:
 
                 if rest.startswith(":"):
                     basePath = rest[1:]
-                    path = os.path.relpath(path, basePath)
-                    # Don't allow moving up.
-                    if f"..{os.sep}" in path:
-                        return os.path.dirname(self.imgPath).lstrip("/\\")
-                    return os.path.normpath(path)
+                    return self.makeRelPath(path, basePath)
             except ValueError:
                 return None
 
@@ -359,6 +355,39 @@ class TemplateVariableParser:
         return funcRemoveSubsets
 
 
+    # === Utility Functions ===
+
+    @staticmethod
+    def makeRelPath(path: str, basePath: str) -> str:
+        '''
+        Creates the normalized relative path from `basePath` to `path`.\n
+        Returns `path` without leading slashes when the relative path had `..` components.
+        '''
+
+        relativePath = os.path.relpath(path, basePath)
+
+        # Don't allow moving up.
+        if ".." in relativePath.split(os.sep):
+            return path.lstrip("/\\")
+
+        return os.path.normpath(relativePath)
+
+
+    @staticmethod
+    def splitPathByVars(pathTemplate: str) -> tuple[str, str]:
+        '''
+        Splits the path into components without and with variables.\n
+        Returns `(head, tail)` where `head` is the part without variables.
+        '''
+
+        varIndex = pathTemplate.find("{{")
+        if varIndex < 0:
+            return pathTemplate, ""
+
+        sepIndex = pathTemplate.rfind(os.sep, 0, varIndex) + 1
+        return pathTemplate[:sepIndex], pathTemplate[sepIndex:]
+
+
 
 class VariableHighlighter:
     def __init__(self):
@@ -367,9 +396,11 @@ class VariableHighlighter:
     def highlight(self, source: QtWidgets.QPlainTextEdit, target: QtWidgets.QPlainTextEdit, positions, disabled=False) -> None:
         sourceCursor = source.textCursor()
         sourceCursor.setPosition(0)
+        sourceCursor.beginEditBlock()
 
         targetCursor = target.textCursor()
         targetCursor.setPosition(0)
+        targetCursor.beginEditBlock()
 
         defaultFormat = self.formats.defaultFormat
         varIndex = 0
@@ -402,10 +433,11 @@ class VariableHighlighter:
 
         sourceCursor.movePosition(QtGui.QTextCursor.MoveOperation.End, QtGui.QTextCursor.MoveMode.KeepAnchor)
         sourceCursor.setCharFormat(defaultFormat)
+        sourceCursor.endEditBlock()
 
         targetCursor.movePosition(QtGui.QTextCursor.MoveOperation.End, QtGui.QTextCursor.MoveMode.KeepAnchor)
         targetCursor.setCharFormat(defaultFormat)
-
+        targetCursor.endEditBlock()
 
 
 

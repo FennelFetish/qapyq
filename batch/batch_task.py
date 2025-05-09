@@ -247,8 +247,10 @@ class BatchUtil:
     @staticmethod
     def confirmStart(name: str, numFiles: int, operations: list[str], parent: QtWidgets.QWidget | None = None) -> bool:
         opText = ""
-        for op in operations:
-            if op:
+        for op in filter(None, operations):
+            if op.startswith("<tab>"):
+                opText += f"&nbsp;&nbsp;&nbsp;&nbsp; {op[5:]}<br>"
+            else:
                 opText += f"• {op}<br>"
 
         text = f"This Batch will:<br><br>" \
