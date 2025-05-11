@@ -89,8 +89,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @Slot()
     def closeTab(self, index):
-        # TODO: Proper cleanup, something's hanging there
-        tab = self.tabWidget.widget(index)
+        tab: ImgTab = self.tabWidget.widget(index)
         tab.onTabClosed()
 
         self.tabWidget.removeTab(index)
@@ -185,6 +184,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
     def closeEvent(self, event):
+        from gallery.thumbnail_cache import ThumbnailCache
+        ThumbnailCache.shutdown()
+
         aux_window.saveWindowPos(self, "main")
         if self._fullscreenTab:
             self._fullscreenTab.close()
@@ -463,6 +465,7 @@ def main() -> int:
     os.environ["QT_SCALE_FACTOR"] = str(Config.guiScale)
 
     app = QtWidgets.QApplication([])
+    QtGui.QPixmapCache.setCacheLimit(24)
 
     if Config.qtStyle:
         app.setStyle(Config.qtStyle)
@@ -470,6 +473,7 @@ def main() -> int:
     threadCount = QThreadPool.globalInstance().maxThreadCount()
     threadCount = max(threadCount // 2, 4)
     QThreadPool.globalInstance().setMaxThreadCount(threadCount)
+    del threadCount
 
     win = MainWindow(app)
     win.show()
@@ -478,6 +482,8 @@ def main() -> int:
     return app.exec()
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(line_buffering=True)
+
     if not Config.load():
         sys.exit(1)
 

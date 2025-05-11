@@ -20,8 +20,17 @@ fi
 # Set path to preferred Python version within the virtual environment
 python_exec="${venv_path}/bin/python"
 
-# Run main.py using the specified Python version and command-line arguments
-# Write output to terminal and last.log
+# Options for glibc's malloc:
+#   https://www.gnu.org/software/libc/manual/html_node/Malloc-Tunable-Parameters.html
+# Ensure MMAP threshold is low enough so memory allocated by thumbnails can be released.
+# Fix glibc's malloc trim threshold at 64MB to release more memory back to the OS.
+export MALLOC_MMAP_THRESHOLD_=32768     # 32 KB
+export MALLOC_TRIM_THRESHOLD_=67108864  # 64 MB
+export MALLOC_TOP_PAD_=2097152          # 2 MB
+
+# Set working directory and run main.py using the specified Python version.
+# Replace current process so it appears correctly in process monitors.
+# Write output to terminal and logfile.
 cd "$script_dir"
 exec ${python_exec} "./main.py" "$1" > >(tee "./last.log") 2>&1
 

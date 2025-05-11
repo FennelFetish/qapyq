@@ -1,11 +1,17 @@
 import os
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtCore import Qt, Signal, Slot, QTimer
 from PySide6.QtGui import QPixmap
 from config import Config
 from lib.filelist import FileList
 from lib.qtlib import ColoredMessageStatusBar
-from .imgview import ImgView
+
+
+@Slot()
+def queueGC():
+    import gc
+    QTimer.singleShot(2000, lambda: gc.collect())
+
 
 
 class ImgTab(QtWidgets.QMainWindow):
@@ -26,6 +32,7 @@ class ImgTab(QtWidgets.QMainWindow):
         self.filelist = FileList()
         self.filelist.addListener(self)
 
+        from .imgview import ImgView
         self.imgview = ImgView(self.filelist)
         self._windowContent: dict[str, QtWidgets.QWidget] = dict()
 
@@ -35,6 +42,8 @@ class ImgTab(QtWidgets.QMainWindow):
         self.setTool("view")
 
         self.setCentralWidget(self.imgview)
+
+        self.destroyed.connect(queueGC)
 
 
     def onFileChanged(self, currentFile):
@@ -140,6 +149,7 @@ class ImgTab(QtWidgets.QMainWindow):
 
     def onTabClosed(self):
         self.imgview.tool.onDisabled(self.imgview)
+        self.filelist.reset()
 
         for winContent in self._windowContent.values():
             winContent.deleteLater()
@@ -187,7 +197,7 @@ class TabStatusBar(ColoredMessageStatusBar):
 
 
 class TakeFocus:
-    def __init__(self, imgview: ImgView):
+    def __init__(self, imgview):
         self.imgview = imgview
 
     def __enter__(self) -> FileList:

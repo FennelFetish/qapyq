@@ -5,10 +5,10 @@ from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import QSize, Qt, Slot, QPoint
 from lib.filelist import DataKeys
 from lib import qtlib
-from .thumbnail_cache import ThumbnailCache
 
 # Imported at the bottom because of circular dependency
 # from .gallery_grid import GalleryGrid
+# from .thumbnail_cache import ThumbnailCache
 
 
 class ImageIcon:
@@ -39,6 +39,8 @@ class GalleryItem(QtWidgets.QWidget):
     TEXT_FLAGS = Qt.AlignmentFlag.AlignHCenter | Qt.TextFlag.TextWrapAnywhere
     TEXT_OPT: QtGui.QTextOption = None
 
+    MIN_HEIGHT = 200
+
 
     def __init__(self, galleryGrid: GalleryGrid, file: str):
         super().__init__()
@@ -57,12 +59,8 @@ class GalleryItem(QtWidgets.QWidget):
             if state := filelist.getData(file, key):
                 self.setIcon(key, state)
 
-        if pixmap := filelist.getData(file, DataKeys.Thumbnail):
-            self._pixmap = pixmap
-            self._height = pixmap.height()
-        else:
-            self._pixmap = None
-            self._height = self.gallery.thumbnailSize
+        self._pixmap: QtGui.QPixmap | None = filelist.getData(file, DataKeys.Thumbnail)
+        self._height = self._pixmap.height() if self._pixmap else self.MIN_HEIGHT
 
         if imgSize := filelist.getData(file, DataKeys.ImageSize):
             self.setImageSize(imgSize[0], imgSize[1])
@@ -129,7 +127,7 @@ class GalleryItem(QtWidgets.QWidget):
         return self._pixmap
 
     @pixmap.setter
-    def pixmap(self, pixmap):
+    def pixmap(self, pixmap: QtGui.QPixmap):
         self._pixmap = pixmap
         self._height = pixmap.height()
         self.update()
@@ -303,7 +301,7 @@ class GalleryGridItem(GalleryItem):
             painter.drawPixmap(x, y, w, imgH, self._pixmap)
         else:
             ThumbnailCache.updateThumbnail(self.gallery.filelist, self, self.file)
-            imgH = 0
+            imgH = self.MIN_HEIGHT
 
         if self.highlight:
             self.paintHighlight(painter, x, y, w, h, w, imgH)
@@ -316,9 +314,10 @@ class GalleryGridItem(GalleryItem):
         textRect = painter.fontMetrics().boundingRect(self.BORDER_SIZE, textY, w-self.BORDER_SIZE, self.TEXT_MAX_HEIGHT, self.TEXT_FLAGS, self.filename)
         painter.setPen(self.PEN_TEXT)
         painter.drawText(textRect, self.filename, self.TEXT_OPT)
+        painter.end()
 
         self._height = y + imgH + self.BORDER_SIZE + self.TEXT_SPACING + textRect.height() + self.TEXT_SPACING
-        self.setFixedHeight(self._height)
+        self.setFixedHeight(int(self._height + 0.5))
 
 
 
@@ -468,17 +467,19 @@ class GalleryListItem(GalleryItem):
             painter.drawPixmap(x, y, imgW, imgH, self._pixmap)
         else:
             ThumbnailCache.updateThumbnail(self.gallery.filelist, self, self.file)
-            imgW = imgH = 0
+            imgW = self.gallery.thumbnailSize
+            imgH = self.MIN_HEIGHT
 
         if self.highlight:
             self.paintHighlight(painter, x, y, w, h, imgW, imgH, False)
 
         self.paintIcons(painter, x+4, y+4)
         self.paintBorder(painter, x, y, w, h)
+        painter.end()
 
         self._height = y + imgH + self.BORDER_SIZE
         self._height = max(self._height, 100)
-        self.setMinimumHeight(self._height)
+        self.setMinimumHeight(int(self._height + 0.5))
 
 
 
@@ -522,3 +523,4 @@ class GalleryItemMenu(QtWidgets.QMenu):
 
 
 from .gallery_grid import GalleryGrid
+from .thumbnail_cache import ThumbnailCache

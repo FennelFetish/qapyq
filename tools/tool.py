@@ -58,7 +58,7 @@ class Tool:
 
     def onMouseWheel(self, event) -> bool:
         return False
-    
+
     def onTablet(self, event) -> bool:
         return False
 
@@ -66,6 +66,6 @@ class Tool:
     def onKeyPress(self, event):
         pass
 
-    
+
     def onGalleryRightClick(self, file):
         pass

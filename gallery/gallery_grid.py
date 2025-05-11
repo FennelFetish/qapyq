@@ -67,8 +67,19 @@ class GalleryGrid(QtWidgets.QWidget):
         self.filelist.addSelectionListener(self)
         self.filelist.addDataListener(self)
 
-        self._eventFilter = GalleryDragEventFilter(self)
+        self._eventFilter = GalleryDragEventFilter()
         self.installEventFilter(self._eventFilter)
+
+    def deleteLater(self):
+        if self._loadTask:
+            self._loadTask.aborted = True
+
+        self.removeEventFilter(self._eventFilter)
+        self.clearLayout()
+
+        self._selectedItem = None
+        self.fileItems = dict()
+        super().deleteLater()
 
 
     def setViewMode(self, mode: str):
@@ -103,7 +114,7 @@ class GalleryGrid(QtWidgets.QWidget):
     def clearLayout(self) -> None:
         for i in reversed(range(self._layout.count())):
             item = self._layout.takeAt(i)
-            if item and (widget := item.widget()):
+            if widget := item.widget():
                 widget.deleteLater()
 
 
@@ -285,12 +296,11 @@ class GalleryGrid(QtWidgets.QWidget):
 class GalleryDragEventFilter(QObject):
     MIN_DIST2 = 40 ** 2
 
-    def __init__(self, gallery: GalleryGrid):
+    def __init__(self):
         super().__init__()
-        self.gallery = gallery
         self._startPos: QPoint | None = None
 
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+    def eventFilter(self, watchedGallery: GalleryGrid, event: QEvent) -> bool:
         if event.type() != QEvent.Type.MouseMove:
             self._startPos = None
             return False
@@ -298,7 +308,7 @@ class GalleryDragEventFilter(QObject):
         mouseEvent: QtGui.QMouseEvent = event
         if mouseEvent.buttons() & Qt.MouseButton.LeftButton:
             pos = mouseEvent.position().toPoint()
-            if self._checkDist(pos) and (item := self.gallery.getItemAtPos(pos)):
+            if self._checkDist(pos) and (item := watchedGallery.getItemAtPos(pos)):
                 item.onDragOver(mouseEvent)
                 self._startPos = pos # Optimization: Only call onDragOver at intervals
                 return True

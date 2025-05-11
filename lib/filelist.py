@@ -51,13 +51,25 @@ class FileList:
         self.files: list[str] = []
         self.selectedFiles: set[str] = set()  # Min 2 selected files, always includes current file
         self.fileData: dict[str, dict[str, Any]] = dict()
-        self.currentFile = ""
-        self.currentIndex = -1  # Index < 0 means: File set, but folder not yet scanned
-        self.commonRoot = ""
+        self.currentFile: str = ""
+        self.currentIndex: int = -1  # Index < 0 means: File set, but folder not yet scanned
+        self.commonRoot: str = ""
 
-        self.listeners = []
-        self.selectionListeners = []
-        self.dataListeners = []
+        self.listeners: list = []
+        self.selectionListeners: list = []
+        self.dataListeners: list = []
+
+
+    def reset(self):
+        self.files = list()
+        self.selectedFiles = set()
+        self.fileData = dict()
+        self.currentFile = ""
+        self.currentIndex = -1
+        self.commonRoot = ""
+        self.listeners.clear()
+        self.selectionListeners.clear()
+        self.dataListeners.clear()
 
 
     def loadAll(self, paths: Iterable[str]):

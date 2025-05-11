@@ -43,6 +43,14 @@ class Gallery(QtWidgets.QWidget):
         self._build()
         tab.filelist.addSelectionListener(self)
 
+    def deleteLater(self):
+        if self.galleryGrid:
+            self.galleryGrid.deleteLater()
+            self.galleryGrid = None
+
+        return super().deleteLater()
+
+
     def _buildThumbnailSize(self):
         layout = QtWidgets.QHBoxLayout()
         layout.setContentsMargins(6, 0, 6, 0)
@@ -155,6 +163,8 @@ class Gallery(QtWidgets.QWidget):
         numSelectedFiles = len(filelist.selectedFiles)
         if numSelectedFiles > 0:
             selectionText = f"  ({numSelectedFiles} Selected)"
+
+        # TODO: Show number of highlighted files
 
         loadText = ""
         loadPercent = self.galleryGrid.getLoadPercent()

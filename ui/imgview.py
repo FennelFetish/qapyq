@@ -1,7 +1,11 @@
+from __future__ import annotations
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QTransform
 from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsView
 from .dropview import DropView
+
+# Imported at the bottom because of circular dependency
+# from tools.tool import Tool
 
 
 class ImgView(DropView):
@@ -20,7 +24,7 @@ class ImgView(DropView):
         self.setFrameStyle(0)
 
         self.rotation = 0.0
-        self._tool = None
+        self._tool: Tool = None
         self.filelist = filelist
         filelist.addListener(self)
 
@@ -67,11 +71,11 @@ class ImgView(DropView):
 
 
     @property
-    def tool(self):
+    def tool(self) -> Tool:
         return self._tool
 
     @tool.setter
-    def tool(self, tool):
+    def tool(self, tool: Tool):
         if tool is self._tool:
             return
 
@@ -176,3 +180,7 @@ class ImgItem(QGraphicsPixmapItem):
         mode = Qt.TransformationMode.SmoothTransformation if enabled else Qt.TransformationMode.FastTransformation
         if mode != self.transformationMode():
             self.setTransformationMode(mode)
+
+
+
+from tools.tool import Tool
