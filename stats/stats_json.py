@@ -1,9 +1,11 @@
+from __future__ import annotations
 from typing_extensions import override
 import json, os
-from PySide6 import QtWidgets, QtGui
+from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
+import lib.qtlib as qtlib
 from ui.tab import ImgTab
-from .stats_base import StatsLayout, StatsBaseProxyModel, ExportCsv
+from .stats_base import StatsLayout, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
 
 
 class JsonStats(QtWidgets.QWidget):
@@ -24,40 +26,27 @@ class JsonStats(QtWidgets.QWidget):
 
 
     def _buildStats(self):
-        layout = QtWidgets.QFormLayout()
-        layout.setHorizontalSpacing(12)
+        loadBox = StatsLoadGroupBox(self._createTask)
+        loadBox.dataLoaded.connect(self._onDataLoaded)
 
-        btnReloadCaptions = QtWidgets.QPushButton("Reload")
-        btnReloadCaptions.clicked.connect(self.reload)
-        layout.addRow(btnReloadCaptions)
+        self.lblNumFiles = loadBox.addLabel("JSON Files:")
+        self.lblTotalKeys = loadBox.addLabel("Total Keys:")
+        self.lblUniqueKeys = loadBox.addLabel("Unique Keys:")
+        self.lblKeysPerFile = loadBox.addLabel("Per File:")
+        self.lblAvgKeysPerImage = loadBox.addLabel("Average:")
 
-        self.lblNumFiles = QtWidgets.QLabel("0")
-        layout.addRow("JSON Files:", self.lblNumFiles)
+        self._loadBox = loadBox
+        return loadBox
 
-        self.lblTotalKeys = QtWidgets.QLabel("0")
-        layout.addRow("Total Keys:", self.lblTotalKeys)
-
-        self.lblUniqueKeys = QtWidgets.QLabel("0")
-        layout.addRow("Unique Keys:", self.lblUniqueKeys)
-
-        self.lblKeysPerFile = QtWidgets.QLabel("0")
-        layout.addRow("Per File:", self.lblKeysPerFile)
-
-        self.lblAvgKeysPerImage = QtWidgets.QLabel("0")
-        layout.addRow("Average:", self.lblAvgKeysPerImage)
-
-        group = QtWidgets.QGroupBox("Stats")
-        group.setLayout(layout)
-        return group
-
+    def _createTask(self):
+        return JsonStatsLoadTask(self.tab.filelist.getFiles().copy())
 
     @Slot()
-    def reload(self):
-        self.model.reload(self.tab.filelist.getFiles())
+    def _onDataLoaded(self, keys: list[JsonKeyData], summary: JsonKeySummary):
+        self.model.reload(keys, summary)
         self.table.sortByColumn(1, Qt.SortOrder.AscendingOrder)
         self.table.resizeColumnsToContents()
 
-        summary = self.model.summary
         self.lblNumFiles.setText(str(summary.numFiles))
         self.lblTotalKeys.setText(str(summary.totalNumKeys))
         self.lblUniqueKeys.setText(str(summary.uniqueKeys))
@@ -65,7 +54,57 @@ class JsonStats(QtWidgets.QWidget):
         self.lblAvgKeysPerImage.setText(f"{summary.getAvgNumKeys():.1f}")
 
     def clearData(self):
-        self.model.clear()
+        self._loadBox.terminateTask()
+        self._loadBox.progressBar.reset()
+        self._onDataLoaded([], JsonKeySummary().finalize(0))
+
+
+
+class JsonStatsLoadTask(StatsLoadTask):
+    def __init__(self, files: list[str]):
+        super().__init__("JSON Keys")
+        self.files = files
+
+    def runLoad(self) -> tuple[list[JsonKeyData], JsonKeySummary]:
+        summary = JsonKeySummary()
+
+        keyData: dict[str, JsonKeyData] = dict()
+        for file, keys in self.map_auto(self.files, self.loadJsonKeys):
+            if keys is None:
+                continue
+
+            summary.addFile(len(keys))
+            for key in keys:
+                data = keyData.get(key)
+                if not data:
+                    keyData[key] = data = JsonKeyData(key)
+                data.addFile(file)
+
+        summary.finalize(len(keyData))
+        return list(keyData.values()), summary
+
+    @classmethod
+    def loadJsonKeys(cls, imgFile: str) -> tuple[str, list[str] | None]:
+        jsonFile = os.path.splitext(imgFile)[0] + ".json"
+        if not os.path.exists(jsonFile):
+            return imgFile, None
+
+        with open(jsonFile, 'r') as file:
+            data = json.load(file)
+
+        keys: list[str] = list()
+        if isinstance(data, dict):
+            cls.walkJsonData(keys, "", data)
+        return imgFile, keys
+
+    @classmethod
+    def walkJsonData(cls, keys: list[str], keyPath: str, data: dict) -> None:
+        for k, v in data.items():
+            key = f"{keyPath}.{k}" if keyPath else k
+            if isinstance(v, dict):
+                cls.walkJsonData(keys, key, v)
+            else:
+                keys.append(key)
 
 
 
@@ -97,10 +136,11 @@ class JsonKeySummary:
         self.maxNumKeys = max(self.maxNumKeys, numKeys)
         self.numFiles += 1
 
-    def finalize(self, numUniqueKeys: int):
+    def finalize(self, numUniqueKeys: int) -> JsonKeySummary:
         self.uniqueKeys = numUniqueKeys
         if self.numFiles == 0:
             self.minNumKeys = 0
+        return self
 
     def getAvgNumKeys(self):
         if self.numFiles == 0:
@@ -114,64 +154,15 @@ class JsonModel(QAbstractItemModel):
 
     def __init__(self):
         super().__init__()
-        self.separator = ","
-        self.font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.SystemFont.FixedFont)
+        self.font = qtlib.getMonospaceFont()
 
         self.keys: list[JsonKeyData] = list()
         self.summary = JsonKeySummary()
 
-    def reload(self, files: list[str]):
+    def reload(self, keys: list[JsonKeyData], summary: JsonKeySummary):
         self.beginResetModel()
-
-        self.keys.clear()
-        self.summary.reset()
-
-        keyData: dict[str, JsonKeyData] = dict()
-        for file in files:
-            keys = self.loadJsonKeys(file)
-            if keys is None:
-                continue
-
-            self.summary.addFile(len(keys))
-            for key in keys:
-                data = keyData.get(key)
-                if not data:
-                    keyData[key] = data = JsonKeyData(key)
-                data.addFile(file)
-
-        self.keys.extend(keyData.values())
-        self.summary.finalize(len(self.keys))
-        self.endResetModel()
-
-    @classmethod
-    def loadJsonKeys(cls, path: str) -> list[str] | None:
-        path, ext = os.path.splitext(path)
-        path = f"{path}.json"
-        if not os.path.exists(path):
-            return None
-
-        with open(path, 'r') as file:
-            data = json.load(file)
-
-        keys: list[str] = list()
-        if isinstance(data, dict):
-            cls.walkJsonData(keys, "", data)
-        return keys
-
-    @classmethod
-    def walkJsonData(cls, keys: list[str], keyPath: str, data: dict) -> None:
-        for k, v in data.items():
-            key = f"{keyPath}.{k}" if keyPath else k
-            if isinstance(v, dict):
-                cls.walkJsonData(keys, key, v)
-            else:
-                keys.append(key)
-
-    def clear(self):
-        self.beginResetModel()
-        self.keys.clear()
-        self.summary.reset()
-        self.summary.finalize(0)
+        self.keys = keys
+        self.summary = summary
         self.endResetModel()
 
 

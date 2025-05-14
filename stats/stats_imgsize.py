@@ -1,9 +1,11 @@
+from __future__ import annotations
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
 from PySide6.QtGui import QImageReader
+import lib.qtlib as qtlib
 from ui.tab import ImgTab
-from .stats_base import StatsLayout, StatsBaseProxyModel, ExportCsv
+from .stats_base import StatsLayout, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
 
 
 class ImageSizeStats(QtWidgets.QWidget):
@@ -24,48 +26,74 @@ class ImageSizeStats(QtWidgets.QWidget):
 
 
     def _buildStats(self):
-        layout = QtWidgets.QFormLayout()
-        layout.setHorizontalSpacing(12)
+        loadBox = StatsLoadGroupBox(self._createTask)
+        loadBox.dataLoaded.connect(self._onDataLoaded)
 
-        btnReload = QtWidgets.QPushButton("Reload")
-        btnReload.clicked.connect(self.reload)
-        layout.addRow(btnReload)
+        self.lblNumFiles = loadBox.addLabel("Images:")
+        self.lblNumUnreadable = loadBox.addLabel("Unreadable:")
+        self.lblNumBuckets = loadBox.addLabel("Size Buckets:")
+        self.lblWidth = loadBox.addLabel("Width:")
+        self.lblHeight = loadBox.addLabel("Height:")
+        self.lblPixels = loadBox.addLabel("Mpx:")
 
-        self.lblNumFiles = QtWidgets.QLabel("0")
-        layout.addRow("Images:", self.lblNumFiles)
+        self._loadBox = loadBox
+        return loadBox
 
-        self.lblNumBuckets = QtWidgets.QLabel("0")
-        layout.addRow("Size Buckets:", self.lblNumBuckets)
-
-        self.lblWidth = QtWidgets.QLabel("0")
-        layout.addRow("Width:", self.lblWidth)
-
-        self.lblHeight = QtWidgets.QLabel("0")
-        layout.addRow("Height:", self.lblHeight)
-
-        self.lblPixels = QtWidgets.QLabel("0")
-        layout.addRow("Megapixels:", self.lblPixels)
-
-        group = QtWidgets.QGroupBox("Stats")
-        group.setLayout(layout)
-        return group
-
+    def _createTask(self):
+        return SizeBucketStatsLoadTask(self.tab.filelist.getFiles().copy())
 
     @Slot()
-    def reload(self):
-        self.model.reload(self.tab.filelist.getFiles())
+    def _onDataLoaded(self, buckets: list[SizeBucketData], summary: SizeBucketSummary):
+        self.model.reload(buckets, summary)
         self.table.sortByColumn(3, Qt.SortOrder.AscendingOrder)
         self.table.resizeColumnsToContents()
 
-        summary = self.model.summary
         self.lblNumFiles.setText(str(summary.numFiles))
+        self.lblNumUnreadable.setText(str(summary.numUnreadable))
         self.lblNumBuckets.setText(str(summary.numBuckets))
         self.lblWidth.setText(f"{summary.minWidth} - {summary.maxWidth}")
         self.lblHeight.setText(f"{summary.minHeight} - {summary.maxHeight}")
-        self.lblPixels.setText(f"{summary.minPixels:.2f} - {summary.maxPixels:.2f}")
+        self.lblPixels.setText(f"{summary.minPixels:.1f} - {summary.maxPixels:.1f}")
+
+        unreadableStyle = ""
+        if summary.numUnreadable > 0:
+            unreadableStyle = f"color: {qtlib.COLOR_RED}"
+        self.lblNumUnreadable.setStyleSheet(unreadableStyle)
 
     def clearData(self):
-        self.model.clear()
+        self._loadBox.terminateTask()
+        self._loadBox.progressBar.reset()
+        self._onDataLoaded([], SizeBucketSummary().finalize(0))
+
+
+
+class SizeBucketStatsLoadTask(StatsLoadTask):
+    def __init__(self, files: list[str]):
+        super().__init__("Image Size", 10)
+        self.files = files
+
+    def runLoad(self) -> tuple[list[SizeBucketData], SizeBucketSummary]:
+        summary = SizeBucketSummary()
+        buckets: dict[tuple[int, int], SizeBucketData] = dict()
+
+        for file, size in self.map_auto(self.files, self.readSize, chunkSize=16):
+            summary.addFile(size)
+            bucket = buckets.get(size)
+            if not bucket:
+                buckets[size] = bucket = SizeBucketData(size)
+            bucket.addFile(file)
+
+        summary.finalize(len(buckets))
+        return list(buckets.values()), summary
+
+    @staticmethod
+    def readSize(file: str) -> tuple[str, tuple[int, int]]:
+        try:
+            reader = QImageReader(file)
+            size = reader.size()
+            return file, (size.width(), size.height())
+        except:
+            return file, (-1, -1)
 
 
 
@@ -100,8 +128,19 @@ class SizeBucketSummary:
 
         self.numFiles   = 0
         self.numBuckets = 0
+        self.numUnreadable = 0
+
+        self._empty = True
 
     def addFile(self, size: tuple[int, int]):
+        self.numFiles += 1
+
+        if size[0] < 0 or size[1] < 0:
+            self.numUnreadable += 1
+            return
+
+        self._empty = False
+
         self.minWidth = min(self.minWidth, size[0])
         self.maxWidth = max(self.maxWidth, size[0])
 
@@ -112,14 +151,14 @@ class SizeBucketSummary:
         self.minPixels = min(self.minPixels, pixels)
         self.maxPixels = max(self.maxPixels, pixels)
 
-        self.numFiles += 1
-
-    def finalize(self, numBuckets: int):
+    def finalize(self, numBuckets: int) -> SizeBucketSummary:
         self.numBuckets = numBuckets
-        if self.numFiles == 0:
+        if self._empty:
             self.minWidth  = 0
             self.minHeight = 0
             self.minPixels = 0
+
+        return self
 
 
 class SizeBucketModel(QAbstractItemModel):
@@ -127,39 +166,16 @@ class SizeBucketModel(QAbstractItemModel):
 
     def __init__(self):
         super().__init__()
-        self.font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.SystemFont.FixedFont)
+        self.font = qtlib.getMonospaceFont()
+        self.colorRed = QtGui.QColor(qtlib.COLOR_RED)
 
         self.buckets: list[SizeBucketData] = list()
         self.summary = SizeBucketSummary()
 
-    def reload(self, files: list[str]):
+    def reload(self, buckets: list[SizeBucketData], summary: SizeBucketSummary):
         self.beginResetModel()
-
-        self.buckets.clear()
-        self.summary.reset()
-        buckets: dict[tuple[int, int], SizeBucketData] = dict()
-
-        reader = QImageReader()
-        for file in files:
-            reader.setFileName(file)
-            size = reader.size()
-            size = (size.width(), size.height())
-
-            self.summary.addFile(size)
-            bucket = buckets.get(size)
-            if not bucket:
-                buckets[size] = bucket = SizeBucketData(size)
-            bucket.addFile(file)
-
-        self.buckets.extend(buckets.values())
-        self.summary.finalize(len(self.buckets))
-        self.endResetModel()
-
-    def clear(self):
-        self.beginResetModel()
-        self.buckets.clear()
-        self.summary.reset()
-        self.summary.finalize(0)
+        self.buckets = buckets
+        self.summary = summary
         self.endResetModel()
 
 
@@ -189,6 +205,10 @@ class SizeBucketModel(QAbstractItemModel):
                         if self.summary.numFiles > 0:
                             presence = len(bucketData.files) / self.summary.numFiles
                         return f"{presence*100:.2f} %"
+
+            case Qt.ItemDataRole.ForegroundRole:
+                if bucketData.width < 0 or bucketData.height < 0:
+                    return self.colorRed
 
             case Qt.ItemDataRole.FontRole: return self.font
             case self.ROLE_DATA: return bucketData

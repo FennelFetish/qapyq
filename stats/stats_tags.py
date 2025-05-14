@@ -1,4 +1,5 @@
-from typing import Iterable
+from __future__ import annotations
+from typing import Iterable, Callable
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QAbstractItemModel, QModelIndex
@@ -12,7 +13,7 @@ from caption.caption_container import CaptionContainer
 from caption.caption_groups import CaptionControlGroup
 from caption.caption_preset import CaptionPreset, CaptionPresetConditional, MutualExclusivity
 from caption.caption_highlight import MatcherNode
-from .stats_base import StatsLayout, StatsBaseProxyModel, ExportCsv
+from .stats_base import StatsLayout, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
 
 
 class TagStats(QtWidgets.QWidget):
@@ -56,55 +57,47 @@ class TagStats(QtWidgets.QWidget):
         return layout
 
     def _buildStats(self):
-        layout = QtWidgets.QFormLayout()
-        layout.setHorizontalSpacing(12)
+        loadBox = StatsLoadGroupBox(self._createTask)
+        loadBox.dataLoaded.connect(self._onDataLoaded)
 
-        btnReloadCaptions = QtWidgets.QPushButton("Reload")
-        btnReloadCaptions.clicked.connect(self.reload)
-        layout.addRow(btnReloadCaptions)
+        self.lblNumFiles = loadBox.addLabel("Tagged Files:")
+        self.lblTotalTags = loadBox.addLabel("Total Tags:")
+        self.lblUniqueTags = loadBox.addLabel("Unique Tags:")
+        self.lblTagsPerImage = loadBox.addLabel("Per Image:")
+        self.lblAvgTagsPerImage = loadBox.addLabel("Average:")
 
-        self.lblNumFiles = QtWidgets.QLabel("0")
-        layout.addRow("Tagged Files:", self.lblNumFiles)
+        self._loadBox = loadBox
+        return loadBox
 
-        self.lblTotalTags = QtWidgets.QLabel("0")
-        layout.addRow("Total Tags:", self.lblTotalTags)
-
-        self.lblUniqueTags = QtWidgets.QLabel("0")
-        layout.addRow("Unique Tags:", self.lblUniqueTags)
-
-        self.lblTagsPerImage = QtWidgets.QLabel("0")
-        layout.addRow("Per Image:", self.lblTagsPerImage)
-
-        self.lblAvgTagsPerImage = QtWidgets.QLabel("0")
-        layout.addRow("Average:", self.lblAvgTagsPerImage)
-
-        group = QtWidgets.QGroupBox("Stats")
-        group.setLayout(layout)
-        return group
-
-
-    def _getMatcherNode(self) -> MatcherNode:
-        captionWin: CaptionContainer | None = self.tab.getWindowContent("caption")
-        if captionWin:
-            return captionWin.ctx.highlight.matchNode
-
-        msgText = 'Splitting combined tags needs the group definitions from the Caption Window, which is not open.\n\n' \
-                  'Please uncheck "Split Combined Tags" or open the Caption Window and load a preset.'
-        QtWidgets.QMessageBox.information(self, "Caption Window not open", msgText)
-        raise ValueError()
-
-    @Slot()
-    def reload(self):
+    def _createTask(self):
         try:
             matchNode = self._getMatcherNode() if self.chkSplitCombined.isChecked() else None
         except ValueError:
-            return
+            return None
 
-        self.model.reload(self.tab.filelist.getFiles(), self.captionSrc, self.txtSepChars.text(), matchNode)
+        files = self.tab.filelist.getFiles().copy()
+        return TagStatsLoadTask(files, self.captionSrc.createLoadFunc(), self.txtSepChars.text(), matchNode)
+
+    def _getMatcherNode(self) -> MatcherNode:
+        captionWin: CaptionContainer | None = self.tab.getWindowContent("caption")
+        if not captionWin:
+            msgText = 'Splitting combined tags needs the group definitions from the Caption Window, which is not open.\n\n' \
+                    'Please uncheck "Split Combined Tags" or open the Caption Window and load a preset.'
+            QtWidgets.QMessageBox.information(self, "Caption Window not open", msgText)
+            raise ValueError()
+
+        matchNode = MatcherNode[bool]()
+        for group in captionWin.ctx.groups.groups:
+            for caption in group.captionsExpandWildcards:
+                matchNode.add(caption, True)
+        return matchNode
+
+    @Slot()
+    def _onDataLoaded(self, tags: list[TagData], summary: TagSummary):
+        self.model.reload(tags, summary)
         self.table.sortByColumn(1, Qt.SortOrder.AscendingOrder)
         self.table.resizeColumnsToContents()
 
-        summary = self.model.summary
         self.lblNumFiles.setText(str(summary.numFiles))
         self.lblTotalTags.setText(str(summary.totalNumTags))
         self.lblUniqueTags.setText(str(summary.uniqueTags))
@@ -112,6 +105,7 @@ class TagStats(QtWidgets.QWidget):
         self.lblAvgTagsPerImage.setText(f"{summary.getAvgNumTags():.1f}")
 
         self.reloadColors()
+
 
     @Slot()
     def reloadColors(self):
@@ -125,7 +119,53 @@ class TagStats(QtWidgets.QWidget):
             self._captionSlotConnected = True
 
     def clearData(self):
-        self.model.clear()
+        self._loadBox.terminateTask()
+        self._loadBox.progressBar.reset()
+        self._onDataLoaded([], TagSummary().finalize(0))
+
+
+
+class TagStatsLoadTask(StatsLoadTask):
+    def __init__(self, files: list[str], loadCaption: Callable[[str], str | None], sepChars: str, matchNode: MatcherNode | None):
+        super().__init__("Tag Count")
+        self.files = files
+        self.loadTags = TagsLoadFunctor(loadCaption, sepChars, matchNode)
+
+    def runLoad(self) -> tuple[list[TagData], TagSummary]:
+        summary = TagSummary()
+
+        tagData: dict[str, TagData] = dict()
+        for file, tags in self.map_auto(self.files, self.loadTags):
+            if not tags:
+                continue
+
+            summary.addFile(tags)
+
+            for tag in tags:
+                data = tagData.get(tag)
+                if not data:
+                    tagData[tag] = data = TagData(tag)
+                data.addFile(file)
+
+        summary.finalize(len(tagData))
+        return list(tagData.values()), summary
+
+
+class TagsLoadFunctor:
+    def __init__(self, loadCaption: Callable[[str], str | None], sepChars: str, matchNode: MatcherNode | None):
+        self.loadCaption = loadCaption
+        self.splitter = CaptionSplitter(sepChars)
+        self.matchNode = matchNode
+
+    def __call__(self, file: str) -> tuple[str, list[str] | None]:
+        caption = self.loadCaption(file)
+        if not caption:
+            return file, None
+
+        tags = self.splitter.split(caption)
+        if self.matchNode:
+            tags = list(self.matchNode.splitAllPreserveExtra(tags))
+        return file, tags
 
 
 
@@ -159,10 +199,11 @@ class TagSummary:
         self.maxNumTags = max(self.maxNumTags, numTags)
         self.numFiles += 1
 
-    def finalize(self, numUniqueTags: int):
+    def finalize(self, numUniqueTags: int) -> TagSummary:
         self.uniqueTags = numUniqueTags
         if self.numFiles == 0:
             self.minNumTags = 0
+        return self
 
     def getAvgNumTags(self):
         if self.numFiles == 0:
@@ -176,38 +217,15 @@ class TagModel(QAbstractItemModel):
 
     def __init__(self):
         super().__init__()
-        self.font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.SystemFont.FixedFont)
+        self.font = qtlib.getMonospaceFont()
 
         self.tags: list[TagData] = list()
         self.summary = TagSummary()
 
-    def reload(self, files: list[str], captionSrc: FileTypeSelector, sepChars: str, matchNode: MatcherNode | None):
-        splitter = CaptionSplitter(sepChars)
+    def reload(self, tags: list[TagData], summary: TagSummary):
         self.beginResetModel()
-
-        self.tags.clear()
-        self.summary.reset()
-
-        tagData: dict[str, TagData] = dict()
-        for file in files:
-            caption = captionSrc.loadCaption(file)
-            if not caption:
-                continue
-
-            tags = splitter.split(caption)
-            if matchNode:
-                tags = list(matchNode.splitAllPreserveExtra(tags))
-
-            self.summary.addFile(tags)
-
-            for tag in tags:
-                data = tagData.get(tag)
-                if not data:
-                    tagData[tag] = data = TagData(tag)
-                data.addFile(file)
-
-        self.tags.extend(tagData.values())
-        self.summary.finalize(len(self.tags))
+        self.tags = tags
+        self.summary = summary
         self.endResetModel()
 
     def updateColors(self, groupCharFormats: dict[str, QtGui.QTextCharFormat]):
@@ -218,13 +236,6 @@ class TagModel(QAbstractItemModel):
             if tag.color != color:
                 tag.color = color
                 self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount()-1), changedRoles)
-
-    def clear(self):
-        self.beginResetModel()
-        self.tags.clear()
-        self.summary.reset()
-        self.summary.finalize(0)
-        self.endResetModel()
 
 
     # QAbstractItemModel Interface

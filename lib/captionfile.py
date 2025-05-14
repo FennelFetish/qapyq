@@ -1,5 +1,5 @@
 import json, os
-from typing import Dict
+from typing import Callable
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QSignalBlocker
 import lib.qtlib as qtlib
@@ -17,18 +17,17 @@ class CaptionFile:
     VERSION = "1.0"
 
 
-    def __init__(self, file):
+    def __init__(self, file: str):
         '''
         Don't pass 'file' with extension already removed.
         If the filename has multiple dots, another part of the filename will be removed to append ".json".
         '''
 
-        self.captions: Dict[str, str] = dict()
-        self.prompts: Dict[str, str] = dict()
-        self.tags: Dict[str, str] = dict()
+        self.captions: dict[str, str] = dict()
+        self.prompts: dict[str, str] = dict()
+        self.tags: dict[str, str] = dict()
 
-        path, ext = os.path.splitext(file)
-        self.jsonPath = f"{path}.json"
+        self.jsonPath = os.path.splitext(file)[0] + ".json"
 
 
     def addCaption(self, name: str, caption: str):
@@ -203,23 +202,32 @@ class FileTypeSelector(QtWidgets.QHBoxLayout):
     def loadCaption(self, imgPath: str) -> str | None:
         if self.type == self.TYPE_TXT:
             return self.loadCaptionTxt(imgPath)
-
-        captionFile = CaptionFile(imgPath)
-        if not captionFile.loadFromJson():
-            return None
-
-        if self.type == FileTypeSelector.TYPE_CAPTIONS:
-            return captionFile.getCaption(self.name)
         else:
-            return captionFile.getTags(self.name)
+            return self.loadCaptionJson(self.type, self.name, imgPath)
 
-    @classmethod
-    def loadCaptionTxt(cls, imgPath: str) -> str | None:
-        path = os.path.splitext(imgPath)[0] + cls.CAPTION_FILE_EXT
+    @staticmethod
+    def loadCaptionTxt(imgPath: str) -> str | None:
+        path = os.path.splitext(imgPath)[0] + FileTypeSelector.CAPTION_FILE_EXT
         if os.path.exists(path):
             with open(path, 'r') as file:
                 return file.read()
         return None
+
+    @staticmethod
+    def loadCaptionJson(keyType: str, key: str, imgPath: str) -> str | None:
+        captionFile = CaptionFile(imgPath)
+        if not captionFile.loadFromJson():
+            return None
+
+        if keyType == FileTypeSelector.TYPE_CAPTIONS:
+            return captionFile.getCaption(key)
+        else:
+            return captionFile.getTags(key)
+
+    def createLoadFunc(self) -> Callable[[str], str | None]:
+        if self.type == self.TYPE_TXT:
+            return self.loadCaptionTxt
+        return JsonCaptionLoadFunctor(self.type, self.name)
 
 
     def saveCaption(self, imgPath: str, text: str) -> bool:
@@ -252,6 +260,25 @@ class FileTypeSelector(QtWidgets.QHBoxLayout):
         with open(path, 'w') as file:
             file.write(text)
         print("Saved caption to file:", path)
+
+
+
+# Pickleable
+class JsonCaptionLoadFunctor:
+    def __init__(self, keyType: str, key: str):
+        self.key = key
+
+        if keyType == FileTypeSelector.TYPE_CAPTIONS:
+            self.getCaptionFunc = CaptionFile.getCaption
+        else:
+            self.getCaptionFunc = CaptionFile.getTags
+
+    def __call__(self, imgPath: str) -> str | None:
+        captionFile = CaptionFile(imgPath)
+        if captionFile.loadFromJson():
+            return self.getCaptionFunc(captionFile, self.key)
+        return None
+
 
 
 class CaptionKeyComboBox(qtlib.MenuComboBox):

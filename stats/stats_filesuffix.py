@@ -1,10 +1,13 @@
+from __future__ import annotations
 import os
+from typing import Generator
 from typing_extensions import override
-from PySide6 import QtWidgets, QtGui
+from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
 from ui.tab import ImgTab
-from lib.filelist import FileList
-from .stats_base import StatsLayout, StatsBaseProxyModel, ExportCsv
+import lib.qtlib as qtlib
+from lib.filelist import removeCommonRoot
+from .stats_base import StatsLayout, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
 
 
 class FileSuffixStats(QtWidgets.QWidget):
@@ -25,36 +28,170 @@ class FileSuffixStats(QtWidgets.QWidget):
 
 
     def _buildStats(self):
-        layout = QtWidgets.QFormLayout()
-        layout.setHorizontalSpacing(12)
+        loadBox = StatsLoadGroupBox(self._createTask)
+        loadBox.dataLoaded.connect(self._onDataLoaded)
 
-        btnReload = QtWidgets.QPushButton("Reload")
-        btnReload.clicked.connect(self.reload)
-        layout.addRow(btnReload)
+        self.lblNumFiles = loadBox.addLabel("Images:")
+        self.lblNumSuffixes = loadBox.addLabel("Suffixes:")
 
-        self.lblNumFiles = QtWidgets.QLabel("0")
-        layout.addRow("Images:", self.lblNumFiles)
+        self._loadBox = loadBox
+        return loadBox
 
-        self.lblNumSuffixes = QtWidgets.QLabel("0")
-        layout.addRow("Suffixes:", self.lblNumSuffixes)
-
-        group = QtWidgets.QGroupBox("Stats")
-        group.setLayout(layout)
-        return group
-
+    def _createTask(self):
+        filelist = self.tab.filelist
+        return SuffixStatsLoadTask(filelist.getFiles().copy(), filelist.commonRoot)
 
     @Slot()
-    def reload(self):
-        self.model.reload(self.tab.filelist)
+    def _onDataLoaded(self, suffixes: list[SuffixData], summary: SuffixSummary):
+        self.model.reload(suffixes, summary)
         self.table.sortByColumn(3, Qt.SortOrder.AscendingOrder)
         self.table.resizeColumnsToContents()
 
-        summary = self.model.summary
         self.lblNumFiles.setText(str(summary.numFiles))
         self.lblNumSuffixes.setText(str(summary.numSuffixes))
 
     def clearData(self):
-        self.model.clear()
+        self._loadBox.terminateTask()
+        self._loadBox.progressBar.reset()
+        self._onDataLoaded([], SuffixSummary().finalize(0))
+
+
+
+class SuffixStatsLoadTask(StatsLoadTask):
+    def __init__(self, files: list[str], commonRoot: str):
+        super().__init__("File Suffix")
+        self.files = files
+        self.commonRoot = commonRoot
+
+
+    def runLoad(self) -> tuple[list[SuffixData], SuffixSummary]:
+        summary = SuffixSummary()
+
+        self.suffixes: dict[str, SuffixData] = dict()
+        self.fileSet = set(removeCommonRoot(file, self.commonRoot) for file in self.files)
+
+        self.signals.progress.emit(0, len(self.fileSet))
+        fileNr = self._process(summary)
+        self.signals.progress.emit(fileNr, len(self.fileSet))
+
+        summary.finalize(len(self.suffixes))
+        return list(self.suffixes.values()), summary
+
+    def _process(self, summary: SuffixSummary):
+        fileNr = 0
+
+        for folderFiles in self._walkSortedFolders():
+            minSearchIndex = 0
+            i = 0
+            while i < len(folderFiles):
+                if self.isAborted():
+                    return fileNr
+
+                imgFile = folderFiles[i]
+                if imgFile not in self.fileSet:
+                    i += 1
+                    continue
+
+                i, groupFiles = self._getFileGroup(folderFiles, i, minSearchIndex)
+                minSearchIndex = i
+                numImages = self._trySplitGroup(imgFile, groupFiles)
+                summary.addFiles(numImages)
+
+                fileNr += numImages
+                self.notifyProgress(fileNr, len(self.fileSet))
+
+        return fileNr
+
+    def _walkSortedFolders(self) -> Generator[list[str]]:
+        folders: set[str] = set()
+        for file in self.files:
+            folders.add(os.path.dirname(file))
+
+        for folder in folders:
+            for (root, subdirs, files) in os.walk(folder, topdown=True):
+                subdirs.clear() # Do not descend into subdirs
+
+                root = os.path.normpath(root)
+                root = removeCommonRoot(root, self.commonRoot, allowEmpty=True)
+
+                files.sort()
+                files = [os.path.join(root, f) for f in files]
+                yield files
+
+    def _getFileGroup(self, files: list[str], index: int, minSearchIndex: int) -> tuple[int, list[str]]:
+        file = files[index]
+        groupFiles = [file]
+        fileNoExt = os.path.splitext(file)[0]
+
+        # Search first file with same prefix
+        i = index-1
+        while i>=minSearchIndex and files[i].startswith(fileNoExt):
+            groupFiles.append(files[i])
+            i -= 1
+
+        # Search last file with same prefix
+        i = index+1
+        while i<len(files) and files[i].startswith(fileNoExt):
+            groupFiles.append(files[i])
+            i += 1
+
+        return i, groupFiles
+
+    def _trySplitGroup(self, imgFile: str, groupFiles: list[str]) -> int:
+        # Detect and split groups that contain multiple images.
+        # This can happen if a filename is contained in another filename, like when images are saved with a counter suffix (img.png / img_001.png).
+        # Deduplicate prefixes with a set. Duplicates can appear when images have the same name but different extensions.
+        prefixes: set[str] = set()
+        prefix = ""
+        for file in groupFiles:
+            if file in self.fileSet:
+                fileNoExt = os.path.splitext(file)[0]
+                prefixes.add(fileNoExt)
+                prefix = fileNoExt
+
+        numImages = len(prefixes)
+        if numImages < 2:
+            # Images with identical filenames but different extension:
+            # Only the first one is added (imgFile), but with both suffixes.
+            # Using the intersection of multiple extensions will show this file, and the summary's file count will be off.
+            self._addToSuffixDict(imgFile, groupFiles, prefix)
+            return numImages
+
+        # Sort by prefix length, longest first.
+        sortedPrefixes = sorted(prefixes, key=lambda prefix: len(prefix), reverse=True)
+        for prefix in sortedPrefixes[:-1]: # Skip last element
+            group: list[str] = list()
+            imgFile = ""
+
+            # Move elements of 'groupFiles' to new list for current prefix
+            for i in range(len(groupFiles)-1, -1, -1):
+                file = groupFiles[i]
+                if file.startswith(prefix):
+                    if file in self.fileSet:
+                        imgFile = file
+                    group.append(file)
+                    del groupFiles[i]
+
+            self._addToSuffixDict(imgFile, group, prefix)
+
+        # The remaining files belong to the skipped prefix
+        imgFile = ""
+        for file in groupFiles:
+            if file in self.fileSet:
+                imgFile = file
+
+        self._addToSuffixDict(imgFile, groupFiles, sortedPrefixes[-1])
+        return numImages
+
+    def _addToSuffixDict(self, imgFile: str, files: list[str], prefix: str) -> None:
+        for file in files:
+            suffix = file[len(prefix):]
+
+            data = self.suffixes.get(suffix)
+            if not data:
+                self.suffixes[suffix] = data = SuffixData(suffix)
+
+            data.addFile(os.path.join(self.commonRoot, imgFile))
 
 
 
@@ -80,8 +217,9 @@ class SuffixSummary:
     def addFiles(self, count: int):
         self.numFiles += count
 
-    def finalize(self, numSuffixes: int):
+    def finalize(self, numSuffixes: int) -> SuffixSummary:
         self.numSuffixes = numSuffixes
+        return self
 
 
 
@@ -90,137 +228,15 @@ class SuffixModel(QAbstractItemModel):
 
     def __init__(self):
         super().__init__()
-        self.font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.SystemFont.FixedFont)
+        self.font = qtlib.getMonospaceFont()
 
         self.suffixes: list[SuffixData] = list()
         self.summary = SuffixSummary()
 
-    def reload(self, filelist: FileList):
-        fileSet = set(filelist.removeCommonRoot(file) for file in filelist.getFiles())
-
+    def reload(self, suffixes: list[SuffixData], summary: SuffixSummary):
         self.beginResetModel()
-
-        self.suffixes.clear()
-        self.summary.reset()
-        suffixes: dict[str, SuffixData] = dict()
-
-        for files in self._walkSortedFolders(filelist):
-            minSearchIndex = 0
-            i = 0
-            while i < len(files):
-                imgFile = files[i]
-                if imgFile not in fileSet:
-                    i += 1
-                    continue
-
-                i, groupFiles = self._getFileGroup(files, i, minSearchIndex)
-                minSearchIndex = i
-                numImages = self._trySplitGroup(imgFile, fileSet, groupFiles, filelist.commonRoot, suffixes)
-                self.summary.addFiles(numImages)
-
-        self.suffixes.extend(suffixes.values())
-        self.summary.finalize(len(self.suffixes))
-        self.endResetModel()
-
-
-    def _walkSortedFolders(self, filelist: FileList):
-        folders: set[str] = set()
-        for file in filelist.getFiles():
-            folders.add(os.path.dirname(file))
-
-        for folder in folders:
-            for (root, subdirs, files) in os.walk(folder, topdown=True):
-                subdirs.clear() # Do not descend into subdirs
-
-                root = os.path.normpath(root)
-                root = filelist.removeCommonRoot(root, allowEmpty=True)
-
-                files.sort()
-                files = [os.path.join(root, f) for f in files]
-                yield files
-
-    def _getFileGroup(self, files: list[str], index: int, minSearchIndex: int) -> tuple[int, list[str]]:
-        file = files[index]
-        groupFiles = [file]
-        fileNoExt = os.path.splitext(file)[0]
-
-        # Search first file with same prefix
-        i = index-1
-        while i>=minSearchIndex and files[i].startswith(fileNoExt):
-            groupFiles.append(files[i])
-            i -= 1
-
-        # Search last file with same prefix
-        i = index+1
-        while i<len(files) and files[i].startswith(fileNoExt):
-            groupFiles.append(files[i])
-            i += 1
-
-        return i, groupFiles
-
-    def _trySplitGroup(self, imgFile: str, fileSet: set[str], groupFiles: list[str], root: str, suffixes: dict[str, SuffixData]) -> int:
-        # Detect and split groups that contain multiple images.
-        # This can happen if a filename is contained in another filename, like when images are saved with a counter suffix (img.png / img_001.png).
-        # Deduplicate prefixes with a set. Duplicates can appear when images have the same name but different extensions.
-        prefixes: set[str] = set()
-        prefix = ""
-        for file in groupFiles:
-            if file in fileSet:
-                fileNoExt = os.path.splitext(file)[0]
-                prefixes.add(fileNoExt)
-                prefix = fileNoExt
-
-        numImages = len(prefixes)
-        if numImages < 2:
-            # Images with identical filenames but different extension:
-            # Only the first one is added (imgFile), but with both suffixes.
-            # Using the intersection of multiple extensions will show this file, and the summary's file count will be off.
-            self._addToSuffixDict(imgFile, groupFiles, prefix, root, suffixes)
-            return numImages
-
-        # Sort by prefix length, longest first.
-        sortedPrefixes = sorted(prefixes, key=lambda prefix: len(prefix), reverse=True)
-        for prefix in sortedPrefixes[:-1]: # Skip last element
-            group: list[str] = list()
-            imgFile = ""
-
-            # Move elements of 'groupFiles' to new list for current prefix
-            for i in range(len(groupFiles)-1, -1, -1):
-                file = groupFiles[i]
-                if file.startswith(prefix):
-                    if file in fileSet:
-                        imgFile = file
-                    group.append(file)
-                    del groupFiles[i]
-
-            self._addToSuffixDict(imgFile, group, prefix, root, suffixes)
-
-        # The remaining files belong to the skipped prefix
-        imgFile = ""
-        for file in groupFiles:
-            if file in fileSet:
-                imgFile = file
-
-        self._addToSuffixDict(imgFile, groupFiles, sortedPrefixes[-1], root, suffixes)
-        return numImages
-
-    @staticmethod
-    def _addToSuffixDict(imgFile: str, files: list[str], prefix: str, root: str, suffixes: dict[str, SuffixData]) -> None:
-        for file in files:
-            suffix = file[len(prefix):]
-
-            data = suffixes.get(suffix)
-            if not data:
-                suffixes[suffix] = data = SuffixData(suffix)
-
-            data.addFile(os.path.join(root, imgFile))
-
-
-    def clear(self):
-        self.beginResetModel()
-        self.suffixes.clear()
-        self.summary.reset()
-        self.summary.finalize(0)
+        self.suffixes = suffixes
+        self.summary = summary
         self.endResetModel()
 
 

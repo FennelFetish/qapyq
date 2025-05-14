@@ -46,6 +46,16 @@ def fileFilter(path) -> bool:
     return ext.lower() in VALID_EXTENSION
 
 
+def removeCommonRoot(path: str, commonRoot: str, allowEmpty=False) -> str:
+    if not (commonRoot and path.startswith(commonRoot)):
+        return path
+
+    if (path := path[len(commonRoot):]) or allowEmpty:
+        return path.lstrip("/\\")
+    return "."
+
+
+
 class FileList:
     def __init__(self):
         self.files: list[str] = []
@@ -325,12 +335,7 @@ class FileList:
             self.commonRoot = ""
 
     def removeCommonRoot(self, path: str, allowEmpty=False) -> str:
-        if not (self.commonRoot and path.startswith(self.commonRoot)):
-            return path
-
-        if (path := path[len(self.commonRoot):]) or allowEmpty:
-            return path.lstrip("/\\")
-        return "."
+        return removeCommonRoot(path, self.commonRoot, allowEmpty)
 
 
     def addListener(self, listener):

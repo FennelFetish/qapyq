@@ -31,12 +31,15 @@ def loadFont(path: str, fallback: QtGui.QFontDatabase.SystemFont) -> QtGui.QFont
     font.setFamily(fontFamily)
     return font
 
-def setMonospace(textWidget, fontSizeFactor=1.0, bold=False):
+def getMonospaceFont():
     global _fontMonospace
     if not _fontMonospace:
         _fontMonospace = loadFont(Config.fontMonospace, QtGui.QFontDatabase.SystemFont.FixedFont)
 
-    font = QtGui.QFont(_fontMonospace)
+    return QtGui.QFont(_fontMonospace)
+
+def setMonospace(textWidget, fontSizeFactor=1.0, bold=False):
+    font = getMonospaceFont()
     font.setBold(bold)
     if fontSizeFactor != 1.0:
         font.setPointSizeF(font.pointSizeF() * fontSizeFactor)

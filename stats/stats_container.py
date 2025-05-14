@@ -21,12 +21,6 @@ from .stats_folders import FolderStats
 # In the context of your image dataset, entropy can help you understand how evenly distributed your tags are across images.
 
 
-# Apply filter to FileList (Gallery):
-#   - Contains tag/string
-#   - Tag/string is missing
-#   - Caption/Tag property is empty
-
-
 class StatsContainer(QtWidgets.QTabWidget):
     def __init__(self, tab: ImgTab):
         super().__init__()
@@ -48,11 +42,14 @@ class StatsContainer(QtWidgets.QTabWidget):
 
         tab.filelist.addListener(self)
 
+    def deleteLater(self):
+        self.onFileListChanged("")
+        super().deleteLater()
 
-    def onFileChanged(self, currentFile):
+    def onFileChanged(self, currentFile: str):
         for widget in self.statWidgets.values():
             widget._layout.clearFileSelection()
 
-    def onFileListChanged(self, currentFile):
+    def onFileListChanged(self, currentFile: str):
         for widget in self.statWidgets.values():
             widget.clearData()

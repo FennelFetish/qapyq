@@ -1,8 +1,12 @@
-import os
-from typing import Iterable, Generator
+from __future__ import annotations
+import os, traceback, time
+from typing import Iterable, Generator, Callable, Any, TypeVar
 from collections import Counter
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, QSortFilterProxyModel, QModelIndex, QItemSelection, QRegularExpression, QSignalBlocker
+from PySide6.QtCore import (
+    Qt, Slot, Signal, QSignalBlocker, QSortFilterProxyModel, QModelIndex, QItemSelection, QRegularExpression,
+    QRunnable, QObject, QMutex, QMutexLocker, QThreadPool, QTimer
+)
 from ui.tab import ImgTab
 import lib.qtlib as qtlib
 from lib.filelist import FileList, sortKey
@@ -10,6 +14,9 @@ from config import Config
 
 
 # TODO: Context menu "copy cell content" for all tabs
+
+# TODO: Add menu entry: With Files -> Add to Selection
+# TODO: Highlight images in gallery for selected rows
 
 
 class StatsBaseProxyModel(QSortFilterProxyModel):
@@ -382,3 +389,221 @@ class ExportCsv:
             child = model.index(row, 0, parent)
             if model.hasChildren(child):
                 cls.writeRows(writer, model, child)
+
+
+
+
+class StatsLoadGroupBox(QtWidgets.QGroupBox):
+    dataLoaded = Signal(object, object)
+
+    def __init__(self, taskFactory: Callable[[], StatsLoadTask | None]):
+        super().__init__("Stats")
+        self._taskFactory = taskFactory
+        self._task: StatsLoadTask | None = None
+
+        self.btnReload = QtWidgets.QPushButton("Reload")
+        self.btnReload.clicked.connect(self._onReloadClicked)
+
+        self.progressBar = StatsProgressBar()
+
+        self._layout = QtWidgets.QVBoxLayout()
+        self._layout.setSpacing(4)
+        self._layout.addWidget(self.btnReload)
+        self._layout.addWidget(self.progressBar)
+        self._layout.addSpacing(6)
+        self.setLayout(self._layout)
+
+    def addLabel(self, name: str, defaultValue: str = "0") -> QtWidgets.QLabel:
+        rowLayout = QtWidgets.QHBoxLayout()
+        rowLayout.addWidget(QtWidgets.QLabel(name))
+        rowLayout.addSpacing(6)
+
+        lblVal = QtWidgets.QLabel(defaultValue, alignment=Qt.AlignmentFlag.AlignRight)
+        qtlib.setMonospace(lblVal)
+        rowLayout.addWidget(lblVal)
+
+        rowLayout.setStretch(0, 0)
+        rowLayout.setStretch(1, 1)
+        self._layout.addLayout(rowLayout)
+        return lblVal
+
+    @Slot()
+    def _onReloadClicked(self):
+        self.btnReload.setEnabled(False)
+        QTimer.singleShot(500, lambda: self.btnReload.setEnabled(True))
+
+        if self._task:
+            self._task.abort()
+            return
+
+        self._task = self._taskFactory()
+        if not self._task:
+            return
+
+        self.btnReload.setText("Abort")
+
+        self._task.signals.progress.connect(self.progressBar.setProgress, Qt.ConnectionType.QueuedConnection)
+        self._task.signals.done.connect(self.dataLoaded.emit, Qt.ConnectionType.QueuedConnection)
+        self._task.signals.end.connect(self._onTaskEnded, Qt.ConnectionType.QueuedConnection)
+        QThreadPool.globalInstance().start(self._task)
+
+
+    @Slot()
+    def _onTaskEnded(self):
+        self.btnReload.setText("Reload")
+        self._task = None
+
+    def abortTask(self):
+        if self._task:
+            self._task.abort()
+
+    def terminateTask(self):
+        if self._task:
+            self._task.terminate()
+
+
+
+class StatsProgressBar(QtWidgets.QProgressBar):
+    def __init__(self):
+        super().__init__()
+        self.setFixedHeight(20)
+
+        font = self.font()
+        font.setPointSizeF(font.pointSizeF() * 0.9)
+        self.setFont(font)
+
+        self.current: int = 0
+        self.total: int = 0
+
+    @Slot()
+    def setProgress(self, current: int, total: int):
+        if total != self.total:
+            self.total = max(total, 0)
+            self.setRange(0, self.total)
+
+        self.current = current
+        self.setValue(current)
+
+    def text(self) -> str:
+        return f"{self.current} / {self.total} Files"
+
+    def reset(self):
+        self.current = self.total = 0
+        super().reset()
+
+
+
+class StatsLoadTask(QRunnable):
+    TIn  = TypeVar("TIn")
+    TOut = TypeVar("TOut")
+
+    class TerminatedException(Exception): pass
+
+    MP_CONTEXT = "fork"  # "spawn"
+    NOTIFY_INTERVAL_NS  = 1_000_000_000 // 20
+
+    class Signals(QObject):
+        progress = Signal(int, int)
+        done = Signal(object, object)
+        end = Signal()
+
+
+    def __init__(self, name: str, notifyDelay=50):
+        super().__init__()
+        self.setAutoDelete(False)
+        self.name = name
+        self.signals = self.Signals()
+
+        self._mutex   = QMutex()
+        self._aborted = False
+        self._terminated = False
+
+        self._nextNotify = notifyDelay
+        self._tStart = 0
+
+
+    def abort(self):
+        with QMutexLocker(self._mutex):
+            self._aborted = True
+
+    def terminate(self):
+        with QMutexLocker(self._mutex):
+            self._terminated = True
+
+    def isAborted(self) -> bool:
+        with QMutexLocker(self._mutex):
+            if self._terminated:
+                raise self.TerminatedException()
+            return self._aborted
+
+
+    @Slot()
+    def run(self):
+        try:
+            self.signals.progress.emit(0, 0)
+            self._tStart = time.monotonic_ns()
+
+            data, summary = self.runLoad()
+            self.signals.done.emit(data, summary)
+        except self.TerminatedException:
+            pass
+        except:
+            print(f"Error while loading stats for {self.name}:")
+            traceback.print_exc()
+        finally:
+            self.signals.end.emit()
+
+
+    def runLoad(self) -> tuple[Any, Any]:
+        raise NotImplementedError()
+
+
+    def notifyProgress(self, current: int, total: int):
+        if current < self._nextNotify:
+            return
+
+        self.signals.progress.emit(current, total)
+
+        # Adjust check interval
+        now = time.monotonic_ns()
+        nsPerItem = (now - self._tStart) / current
+        checkInterval = self.NOTIFY_INTERVAL_NS / nsPerItem
+
+        if checkInterval < 5:
+            checkInterval = 5
+        elif checkInterval > 2000:
+            checkInterval = 2000
+
+        self._nextNotify += int(checkInterval)
+
+
+    def map(self, items: Iterable[TIn], count: int, func: Callable[[TIn], TOut]) -> Generator[TOut]:
+        self.signals.progress.emit(0, count)
+
+        nr = 0
+        for nr, item in enumerate(items, 1):
+            yield func(item)
+            self.notifyProgress(nr, count)
+
+            if self.isAborted():
+                break
+
+        self.signals.progress.emit(nr, count)
+
+    def map_multiproc(self, items: Iterable[TIn], count: int, func: Callable[[TIn], TOut], chunkSize: int, numProcesses: int) -> Generator[TOut]:
+        from multiprocessing import get_context
+        with get_context(self.MP_CONTEXT).Pool(numProcesses) as pool:
+            yield from self.map(pool.imap_unordered(func, items, chunkSize), count, lambda x: x)
+
+    def map_auto(self, items: list[TIn], func: Callable[[TIn], TOut], chunkSize: int = 128) -> Generator[TOut]:
+        count   = len(items)
+        numProc = 1 + (count // (chunkSize*4))
+        numProc = min(numProc, Config.galleryThumbnailThreads)
+
+        if numProc > 1:
+            return self.map_multiproc(items, count, func, chunkSize, numProc)
+        else:
+            return self.map(items, count, func)
+
+    def iterate(self, items: list[TIn]) -> Generator[TIn]:
+        return self.map(items, len(items), lambda x: x)

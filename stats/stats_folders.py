@@ -1,11 +1,12 @@
 from __future__ import annotations
 import os
 from typing_extensions import override
-from PySide6 import QtWidgets, QtGui
+from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
-from lib.filelist import FileList, sortKey
+from lib.filelist import sortKey, removeCommonRoot
 from ui.tab import ImgTab
-from .stats_base import StatsLayout, StatsBaseProxyModel, ExportCsv
+import lib.qtlib as qtlib
+from .stats_base import StatsLayout, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
 
 
 # TODO: export folders as concepts in onetrainer config
@@ -32,29 +33,37 @@ class FolderStats(QtWidgets.QWidget):
 
 
     def _buildStats(self):
-        layout = QtWidgets.QFormLayout()
-        layout.setHorizontalSpacing(12)
+        loadBox = StatsLoadGroupBox(self._createTask)
+        loadBox.dataLoaded.connect(self._onDataLoaded)
 
-        btnReload = QtWidgets.QPushButton("Reload")
-        btnReload.clicked.connect(self.reload)
-        layout.addRow(btnReload)
+        self.lblNumFiles = loadBox.addLabel("Total Files:")
+        self.lblNumFolders = loadBox.addLabel("Folders:")
+        self.lblFolderSize = loadBox.addLabel("Folder Size:")
+        self.lblAvgFolderSize = loadBox.addLabel("Average Size:")
 
-        self.lblNumFiles = QtWidgets.QLabel("0")
-        layout.addRow("Total Files:", self.lblNumFiles)
+        self._loadBox = loadBox
+        return loadBox
 
-        self.lblNumFolders = QtWidgets.QLabel("0")
-        layout.addRow("Folders:", self.lblNumFolders)
+    def _createTask(self):
+        filelist = self.tab.filelist
+        return FolderStatsLoadTask(filelist.getFiles().copy(), filelist.commonRoot)
 
-        self.lblFolderSize = QtWidgets.QLabel("0")
-        layout.addRow("Folder Size:", self.lblFolderSize)
+    @Slot()
+    def _onDataLoaded(self, rootFolder: FolderData, summary: FolderSummary):
+        self.model.reload(rootFolder, summary)
+        self.tree.expandToDepth(0)
+        self.tree.sortByColumn(0, Qt.SortOrder.AscendingOrder)
+        self._adjustFolderColumns()
 
-        self.lblAvgFolderSize = QtWidgets.QLabel("0")
-        layout.addRow("Average Size:", self.lblAvgFolderSize)
+        self.lblNumFiles.setText(str(summary.numFiles))
+        self.lblNumFolders.setText(str(summary.numFolders))
+        self.lblFolderSize.setText(f"{summary.minFolderSize} - {summary.maxFolderSize}")
+        self.lblAvgFolderSize.setText(f"{summary.avgFolderSize:.1f}")
 
-        group = QtWidgets.QGroupBox("Stats")
-        group.setLayout(layout)
-        return group
-
+    def clearData(self):
+        self._loadBox.terminateTask()
+        self._loadBox.progressBar.reset()
+        self._onDataLoaded(None, FolderSummary().finalize())
 
     @Slot()
     def _adjustFolderColumns(self):
@@ -65,21 +74,57 @@ class FolderStats(QtWidgets.QWidget):
         self.tree.setColumnWidth(0, colWidth)
 
 
-    @Slot()
-    def reload(self):
-        self.model.reload(self.tab.filelist)
-        self.tree.expandToDepth(0)
-        self.tree.sortByColumn(0, Qt.SortOrder.AscendingOrder)
-        self._adjustFolderColumns()
 
-        summary = self.model.summary
-        self.lblNumFiles.setText(str(summary.numFiles))
-        self.lblNumFolders.setText(str(summary.numFolders))
-        self.lblFolderSize.setText(f"{summary.minFolderSize} - {summary.maxFolderSize}")
-        self.lblAvgFolderSize.setText(f"{summary.avgFolderSize:.1f}")
+class FolderStatsLoadTask(StatsLoadTask):
+    def __init__(self, files: list[str], commonRoot: str):
+        super().__init__("Folders")
+        self.files = files
+        self.commonRoot = commonRoot
 
-    def clearData(self):
-        self.model.clear()
+    def runLoad(self) -> tuple[FolderData, FolderSummary]:
+        summary = FolderSummary()
+
+        rootName = os.path.basename(self.commonRoot) if self.commonRoot else "/"
+        self.rootFolder = FolderData(self.commonRoot, rootName)
+        self.rootFolder.indexInParent = 0
+
+        folders: dict[str, FolderData] = dict()
+        folders[""] = self.rootFolder
+
+        for file in self.iterate(self.files):
+            relFile = removeCommonRoot(file, self.commonRoot)
+            folderPath = os.path.dirname(relFile)
+            folderData = self._getFolderData(folders, folderPath)
+            folderData.addFile(file)
+
+        for folder in folders.values():
+            summary.addFolder(folder)
+        summary.finalize()
+
+        self.rootFolder.updateTree(summary.numFiles, summary.avgFolderSize)
+        return self.rootFolder, summary
+
+    def _getFolderData(self, folders: dict[str, FolderData], folderPath: str) -> FolderData:
+        if folderData := folders.get(folderPath):
+            return folderData
+
+        entryName = os.path.basename(folderPath)
+        folderData = FolderData(folderPath, entryName)
+        folders[folderPath] = folderData
+
+        parentFolderData = self._getParentFolderData(folders, folderPath)
+        parentFolderData.addSubfolder(folderData)
+
+        return folderData
+
+    def _getParentFolderData(self, folders: dict[str, FolderData], folderPath: str) -> FolderData:
+        parentPath = os.path.dirname(folderPath)
+
+        # Check if toplevel
+        if os.path.dirname(parentPath) == parentPath:
+            return self.rootFolder
+
+        return self._getFolderData(folders, parentPath)
 
 
 
@@ -162,12 +207,14 @@ class FolderSummary:
         self.minFolderSize = min(self.minFolderSize, numFolderFiles)
         self.maxFolderSize = max(self.maxFolderSize, numFolderFiles)
 
-    def finalize(self):
+    def finalize(self) -> FolderSummary:
         if self.numFolders == 0:
             self.minFolderSize = 0
             self.avgFolderSize = 0
         else:
             self.avgFolderSize = self.numFiles / self.numFolders
+
+        return self
 
 
 class FolderModel(QAbstractItemModel):
@@ -175,64 +222,15 @@ class FolderModel(QAbstractItemModel):
 
     def __init__(self):
         super().__init__()
-        self.font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.SystemFont.FixedFont)
+        self.font = qtlib.getMonospaceFont()
 
         self.rootFolder: FolderData | None = None
         self.summary = FolderSummary()
 
-    def reload(self, filelist: FileList):
-        files = filelist.getFiles() # Lazy load folder
-
+    def reload(self, rootFolder: FolderData | None, summary: FolderSummary):
         self.beginResetModel()
-        self.summary.reset()
-
-        rootName = os.path.basename(filelist.commonRoot) if filelist.commonRoot else "/"
-        self.rootFolder = FolderData(filelist.commonRoot, rootName)
-        self.rootFolder.indexInParent = 0
-
-        folders: dict[str, FolderData] = dict()
-        folders[""] = self.rootFolder
-
-        for file in files:
-            relFile = filelist.removeCommonRoot(file)
-            folderPath = os.path.dirname(relFile)
-            folderData = self._getFolderData(folders, folderPath)
-            folderData.addFile(file)
-
-        for folder in folders.values():
-            self.summary.addFolder(folder)
-        self.summary.finalize()
-
-        self.rootFolder.updateTree(self.summary.numFiles, self.summary.avgFolderSize)
-        self.endResetModel()
-
-    def _getFolderData(self, folders: dict[str, FolderData], folderPath: str) -> FolderData:
-        if folderData := folders.get(folderPath):
-            return folderData
-
-        entryName = os.path.basename(folderPath)
-        folderData = FolderData(folderPath, entryName)
-        folders[folderPath] = folderData
-
-        parentFolderData = self._getParentFolderData(folders, folderPath)
-        parentFolderData.addSubfolder(folderData)
-
-        return folderData
-
-    def _getParentFolderData(self, folders: dict[str, FolderData], folderPath: str) -> FolderData:
-        parentPath = os.path.dirname(folderPath)
-
-        # Check if toplevel
-        if os.path.dirname(parentPath) == parentPath:
-            return self.rootFolder
-
-        return self._getFolderData(folders, parentPath)
-
-    def clear(self):
-        self.beginResetModel()
-        self.rootFolder = None
-        self.summary.reset()
-        self.summary.finalize()
+        self.rootFolder = rootFolder
+        self.summary = summary
         self.endResetModel()
 
 
