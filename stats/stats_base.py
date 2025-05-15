@@ -499,7 +499,6 @@ class StatsLoadTask(QRunnable):
 
     class TerminatedException(Exception): pass
 
-    MP_CONTEXT = "fork"  # "spawn"
     NOTIFY_INTERVAL_NS  = 1_000_000_000 // 20
 
     class Signals(QObject):
@@ -591,8 +590,8 @@ class StatsLoadTask(QRunnable):
         self.signals.progress.emit(nr, count)
 
     def map_multiproc(self, items: Iterable[TIn], count: int, func: Callable[[TIn], TOut], chunkSize: int, numProcesses: int) -> Generator[TOut]:
-        from multiprocessing import get_context
-        with get_context(self.MP_CONTEXT).Pool(numProcesses) as pool:
+        from multiprocessing import Pool
+        with Pool(numProcesses) as pool:
             yield from self.map(pool.imap_unordered(func, items, chunkSize), count, lambda x: x)
 
     def map_auto(self, items: list[TIn], func: Callable[[TIn], TOut], chunkSize: int = 128) -> Generator[TOut]:
