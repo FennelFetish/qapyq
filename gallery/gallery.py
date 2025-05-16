@@ -48,7 +48,7 @@ class Gallery(QtWidgets.QWidget):
             self.galleryGrid.deleteLater()
             self.galleryGrid = None
 
-        return super().deleteLater()
+        super().deleteLater()
 
 
     def _buildThumbnailSize(self):

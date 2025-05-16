@@ -583,14 +583,14 @@ class BatchFileTask(BatchTask):
             wrote = self.processMask(imgPath, targetFolder, targetFileName)
             writtenFile = writtenFile or wrote
 
-        srcPathNoExt  = os.path.splitext(imgPath)[0]
+        srcPathNoExt = os.path.splitext(imgPath)[0]
 
         if self.includeJson:
-            wrote = self.processCaption(f"{srcPathNoExt}.json", targetFolder, f"{targetFileNameNoExt}.json", self.overwriteCaptions)
+            wrote = self.processCaption(f"{srcPathNoExt}.json", targetFolder, f"{targetFileNameNoExt}.json")
             writtenFile = writtenFile or wrote
 
         if self.includeTxt:
-            wrote = self.processCaption(f"{srcPathNoExt}.txt", targetFolder, f"{targetFileNameNoExt}.txt", self.overwriteCaptions)
+            wrote = self.processCaption(f"{srcPathNoExt}.txt", targetFolder, f"{targetFileNameNoExt}.txt")
             writtenFile = writtenFile or wrote
 
         return writtenFile
@@ -644,9 +644,9 @@ class BatchFileTask(BatchTask):
 
         return self.processFile(maskSrcPath, targetFolder, targetMaskName, self.overwriteMasks)
 
-    def processCaption(self, srcPath: str, targetFolder: str, targetFileName: str, overwrite: bool) -> str | None:
+    def processCaption(self, srcPath: str, targetFolder: str, targetFileName: str) -> str | None:
         if os.path.exists(srcPath):
-            return self.captionDest(srcPath, targetFolder, targetFileName, overwrite)
+            return self.captionDest(srcPath, targetFolder, targetFileName, self.overwriteCaptions)
         else:
             return None
 
@@ -733,6 +733,11 @@ class BatchFileTask(BatchTask):
 
     def removeUpLevel(self, path: str) -> str:
         while path.startswith(".."):
-            prefixLen = 3 if (len(path) > 2 and path[2] == os.sep) else 2
-            path = path[prefixLen:]
+            if len(path) == 2:
+                return ""
+            if len(path) > 2 and path[2] == os.sep:
+                path = path[3:]
+            else:
+                break
+
         return path

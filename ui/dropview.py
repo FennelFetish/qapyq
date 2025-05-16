@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsRectItem
-from PySide6.QtGui import QPen, QBrush, QColor, QDropEvent
-from PySide6.QtCore import QRectF
+from PySide6.QtGui import QPen, QBrush, QColor, QDropEvent, QDragEnterEvent
+from PySide6.QtCore import Qt, QRectF
 from .zoompan_view import ZoomPanView
 
 
@@ -20,12 +20,12 @@ class DropView(ZoomPanView):
         super().__init__(None)
         self.setScene(DropScene())
         self.setAcceptDrops(True)
-        self._dropZones = []
+        self._dropZones: list[DropZone] = []
 
     def addDropZone(self, dropZone: DropZone):
         self._dropZones.append(dropZone)
         self._guiScene.addItem(dropZone)
-    
+
     def clearDropZones(self):
         for dz in self._dropZones:
             self._guiScene.removeItem(dz)
@@ -45,11 +45,11 @@ class DropView(ZoomPanView):
     def checkDrop(self, event: QDropEvent) -> bool:
         return event.mimeData().hasUrls()
 
-    def onDrop(self, event: QDropEvent, zoneIndex) -> None:
+    def onDrop(self, event: QDropEvent, zoneIndex: int) -> None:
         pass
 
 
-    def dragEnterEvent(self, event):
+    def dragEnterEvent(self, event: QDragEnterEvent):
         if self.checkDrop(event):
             event.acceptProposedAction()
 
@@ -69,13 +69,16 @@ class DropView(ZoomPanView):
             zone.setVisible(False)
         self.scene().update()
 
-    def dropEvent(self, event):
+    def dropEvent(self, event: QDropEvent):
         for zone in self._dropZones:
             zone.setVisible(False)
         self.scene().update()
 
         if self.checkDrop(event):
-            event.acceptProposedAction()
+            # On Windows, dropping with SHIFT key from Explorer will create a MoveAction,
+            # and the files will be moved to Trash! Manually set CopyAction instead.
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
 
             cursor = event.position()
             for i, zone in enumerate(self._dropZones):

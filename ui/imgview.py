@@ -4,9 +4,6 @@ from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QTransform
 from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsView
 from .dropview import DropView
 
-# Imported at the bottom because of circular dependency
-# from tools.tool import Tool
-
 
 class ImgView(DropView):
     SHOW_PIXEL_SIZE_SQUARED = 8**2
@@ -24,11 +21,13 @@ class ImgView(DropView):
         self.setFrameStyle(0)
 
         self.rotation = 0.0
+        self.takeFocusOnFilechange = False
+
+        from tools.tool import Tool
         self._tool: Tool = None
+
         self.filelist = filelist
         filelist.addListener(self)
-
-        self.takeFocusOnFilechange = False
 
         self.image = ImgItem()
         self.scene().addItem(self.image)
@@ -41,6 +40,7 @@ class ImgView(DropView):
             self.updateView()
 
         if self.takeFocusOnFilechange:
+            # TODO: On Windows, this delays the re-painting of selection borders
             self.setFocus()
             self.activateWindow()
 
@@ -71,11 +71,11 @@ class ImgView(DropView):
 
 
     @property
-    def tool(self) -> Tool:
+    def tool(self):
         return self._tool
 
     @tool.setter
-    def tool(self, tool: Tool):
+    def tool(self, tool):
         if tool is self._tool:
             return
 
@@ -180,7 +180,3 @@ class ImgItem(QGraphicsPixmapItem):
         mode = Qt.TransformationMode.SmoothTransformation if enabled else Qt.TransformationMode.FastTransformation
         if mode != self.transformationMode():
             self.setTransformationMode(mode)
-
-
-
-from tools.tool import Tool

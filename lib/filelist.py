@@ -128,6 +128,10 @@ class FileList:
 
 
     def loadAppend(self, paths: Iterable[str]):
+        if not self.files:
+            self.loadAll(paths)
+            return
+
         for path in paths:
             if os.path.isdir(path):
                 self._walkPath(path, True)
