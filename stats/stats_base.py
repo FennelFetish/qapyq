@@ -18,6 +18,8 @@ from config import Config
 # TODO: Add menu entry: With Files -> Add to Selection
 # TODO: Highlight images in gallery for selected rows
 
+# TODO: Own QThread for StatsLoadGroupBox?
+
 
 class StatsBaseProxyModel(QSortFilterProxyModel):
     def __init__(self):
@@ -459,7 +461,12 @@ class StatsLoadGroupBox(QtWidgets.QGroupBox):
 
     def terminateTask(self):
         if self._task:
+            self._task.signals.progress.disconnect()
+            self._task.signals.done.disconnect()
+            self._task.signals.end.disconnect()
             self._task.terminate()
+            self._onTaskEnded()
+
 
 
 
@@ -566,6 +573,7 @@ class StatsLoadTask(QRunnable):
         # Adjust check interval
         now = time.monotonic_ns()
         nsPerItem = (now - self._tStart) / current
+        nsPerItem += 1 # Avoid div/0
         checkInterval = self.NOTIFY_INTERVAL_NS / nsPerItem
 
         if checkInterval < 5:
