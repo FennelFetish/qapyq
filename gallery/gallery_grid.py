@@ -71,9 +71,6 @@ class GalleryGrid(QtWidgets.QWidget):
         self.installEventFilter(self._eventFilter)
 
     def deleteLater(self):
-        if self._loadTask:
-            self._loadTask.aborted = True
-
         self.removeEventFilter(self._eventFilter)
         self.clearLayout()
 
@@ -112,6 +109,10 @@ class GalleryGrid(QtWidgets.QWidget):
 
 
     def clearLayout(self) -> None:
+        if self._loadTask:
+            self._loadTask.aborted = True
+            self._loadTask = None
+
         for i in reversed(range(self._layout.count())):
             item = self._layout.takeAt(i)
             if widget := item.widget():
@@ -343,6 +344,7 @@ class GalleryLoadTask(QObject):
 
         self.files = galleryGrid.filelist.getFiles()
         self.index = 0
+        self.readyIndex = 0
         self.batchSize = 50
 
         self.headers: list[GalleryHeader] = list()
@@ -409,11 +411,24 @@ class GalleryLoadTask(QObject):
         # Queue next batch
         self.index += 1
         if self.index < len(self.files):
+            self.setReady(self.index // 80)
+
             if self.run == 2:
                 self.timer.setInterval(self.INTERVAL_SHORT)
             self.timer.start()
         else:
+            self.setReady(self.index)
             self.finalize()
+
+    def setReady(self, toIndex: int):
+        toIndex = max(toIndex, 0)
+        toIndex = min(toIndex, len(self.files))
+        for index in range(self.readyIndex, toIndex):
+            file = self.files[index]
+            item = self.galleryGrid.fileItems[file]
+            item.ready = True
+
+        self.readyIndex = toIndex
 
 
     def finalize(self):

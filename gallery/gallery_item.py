@@ -62,12 +62,15 @@ class GalleryItem(QtWidgets.QWidget):
         self._pixmap: QtGui.QPixmap | None = filelist.getData(file, DataKeys.Thumbnail)
         self._height = self._pixmap.height() if self._pixmap else self.MIN_HEIGHT
 
+        self.ready = self._pixmap is not None
+
         if imgSize := filelist.getData(file, DataKeys.ImageSize):
             self.setImageSize(imgSize[0], imgSize[1])
         else:
             self.setImageSize(0, 0)
 
         self.onThumbnailSizeUpdated()
+        self.setFixedHeight(self.MIN_HEIGHT)
 
     @classmethod
     def _initPens(cls):
@@ -284,6 +287,9 @@ class GalleryGridItem(GalleryItem):
             self._initPens()
 
         painter = QtGui.QPainter(self)
+        if not painter.isActive():
+            return
+
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
 
@@ -300,7 +306,8 @@ class GalleryGridItem(GalleryItem):
             imgH = w * aspect
             painter.drawPixmap(x, y, w, imgH, self._pixmap)
         else:
-            ThumbnailCache.updateThumbnail(self.gallery.filelist, self, self.file)
+            if self.ready:
+                ThumbnailCache.updateThumbnail(self.gallery.filelist, self, self.file)
             imgH = self.MIN_HEIGHT
 
         if self.highlight:
@@ -449,6 +456,9 @@ class GalleryListItem(GalleryItem):
             self.loadCaption()
 
         painter = QtGui.QPainter(self)
+        if not painter.isActive():
+            return
+
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
 
@@ -466,7 +476,8 @@ class GalleryListItem(GalleryItem):
             imgH = imgW * aspect
             painter.drawPixmap(x, y, imgW, imgH, self._pixmap)
         else:
-            ThumbnailCache.updateThumbnail(self.gallery.filelist, self, self.file)
+            if self.ready:
+                ThumbnailCache.updateThumbnail(self.gallery.filelist, self, self.file)
             imgW = self.gallery.thumbnailSize
             imgH = self.MIN_HEIGHT
 
