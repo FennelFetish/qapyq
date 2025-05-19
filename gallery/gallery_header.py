@@ -41,7 +41,7 @@ class GalleryHeader(QtWidgets.QFrame):
 
     @Slot()
     def selectFiles(self):
-        self.tab.filelist.setSelection(self.folderFiles)
+        self.tab.filelist.setSelection(self.folderFiles, updateCurrent=True)
 
     @Slot()
     def openFilesInNewTab(self):

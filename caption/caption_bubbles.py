@@ -51,6 +51,13 @@ class CaptionBubbles(ReorderWidget):
             if (widget := item.widget()) and isinstance(widget, Bubble): # Why is there other stuff in there? -> It's the ReorderWidget's drag target
                 yield widget
 
+    def getBubbleAt(self, index: int) -> Bubble | None:
+        layout: FlowLayout = self.layout()
+        item = layout.itemAt(index)
+        if item and (bubble := item.widget()) and isinstance(bubble, Bubble):
+            return bubble
+        return None
+
     def updateBubbles(self):
         oldBubbles = list[Bubble](self.getBubbles())
         colorMap = BubbleColorMap(self.ctx)
@@ -79,14 +86,27 @@ class CaptionBubbles(ReorderWidget):
         if srcIndex < destIndex:
             destIndex -= 1
 
-        layout: FlowLayout = self.layout()
-        item = layout.itemAt(srcIndex)
-        if item and (bubble := item.widget()) and isinstance(bubble, Bubble):
+        if bubble := self.getBubbleAt(srcIndex):
+            layout: FlowLayout = self.layout()
             layout.insertWidget(destIndex, bubble)
             self.orderChanged.emit()
             return destIndex
 
         return -1
+
+    def showBubbleMenu(self, index: int):
+        if not self.ctx.tab.filelist.selectedFiles:
+            return
+
+        bubble = self.getBubbleAt(index)
+        if not bubble:
+            return
+
+        # Select tag to highlight images
+        self.clicked.emit(index)
+
+        menu = BubbleMenu(bubble, self.ctx)
+        menu.exec( bubble.mapToGlobal(bubble.rect().bottomLeft()) )
 
 
     def resizeEvent(self, event):
@@ -182,21 +202,27 @@ class Bubble(QtWidgets.QFrame):
             self.spinWeight.lineEdit().setCursorPosition(0) # Clear text selection
 
     def mousePressEvent(self, event: QtGui.QMouseEvent):
-        if event.button() == Qt.MouseButton.LeftButton:
-            event.accept()
+        match event.button():
+            case Qt.MouseButton.LeftButton:
+                if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+                    self.bubbles.ctrlClicked.emit(self.index)
+                else:
+                    self.bubbles.clicked.emit(self.index)
 
-            if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-                self.bubbles.ctrlClicked.emit(self.index)
-            else:
-                self.bubbles.clicked.emit(self.index)
+                event.accept()
+                return
 
-            return
+            case Qt.MouseButton.RightButton:
+                self.bubbles.showBubbleMenu(self.index)
+                event.accept()
+                return
 
         super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent):
-        event.accept()
-        self.bubbles.doubleClicked.emit(self.index)
+        if event.button() == Qt.MouseButton.LeftButton:
+            event.accept()
+            self.bubbles.doubleClicked.emit(self.index)
 
     def enterEvent(self, event):
         self.bubbles.hovered.emit(self.index)
@@ -248,3 +274,43 @@ class BubbleColorMap:
             self.mutedColors[color] = mutedColor = util.hsv_to_rgb(h, s*0.7, v)
 
         return mutedColor
+
+
+
+class BubbleMenu(QtWidgets.QMenu):
+    def __init__(self, bubble: Bubble, ctx: CaptionContext):
+        super().__init__("Bubble Menu")
+        self.bubble = bubble
+        self.ctx = ctx
+
+        multiEdit = self.ctx.container.multiEdit
+        if not multiEdit.active:
+            return
+
+        self.tagFiles = multiEdit.getTagFiles(self.bubble.index)
+        if not self.tagFiles:
+            return
+
+        self._build()
+
+    def _build(self):
+        numWithout = len(self.ctx.tab.filelist.selectedFiles) - len(self.tagFiles)
+        enabled = numWithout > 0
+
+        actSelect = self.addAction("Select Files with Tag")
+        actSelect.setEnabled(enabled)
+        actSelect.triggered.connect(self._selectFilesWith)
+
+        actSelectOthers = self.addAction("Select Files without Tag")
+        actSelectOthers.setEnabled(enabled)
+        actSelectOthers.triggered.connect(self._selectFilesWithout)
+
+    @Slot()
+    def _selectFilesWith(self):
+        self.ctx.tab.filelist.setSelection(self.tagFiles, updateCurrent=True)
+
+    @Slot()
+    def _selectFilesWithout(self):
+        filelist = self.ctx.tab.filelist
+        files = filelist.selectedFiles.difference(self.tagFiles)
+        filelist.setSelection(files, updateCurrent=True)

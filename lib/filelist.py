@@ -380,10 +380,16 @@ class FileList:
         if len(self.selectedFiles) != numSelected:
             self.notifySelectionChanged()
 
-    def setSelection(self, files: Iterable[str]):
+    def setSelection(self, files: Iterable[str], updateCurrent=False):
         self.selectedFiles.clear()
         self.selectedFiles.update(files)
-        self.selectedFiles.add(self.currentFile)
+
+        if updateCurrent:
+            if self.selectedFiles and (self.currentFile not in self.selectedFiles):
+                self.setCurrentFile(min(self.selectedFiles, key=sortKey))
+        else:
+            self.selectedFiles.add(self.currentFile)
+
         if len(self.selectedFiles) < 2:
             self.selectedFiles.clear()
         self.notifySelectionChanged()
