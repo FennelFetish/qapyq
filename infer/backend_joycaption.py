@@ -12,7 +12,7 @@ class JoyCaptionBackend(InferenceBackend):
         self.generationConfig = GenerationConfig.from_pretrained(modelPath)
 
         super().__init__(config)
-        
+
         devmap = self.makeDeviceMap(modelPath, config.get("gpu_layers"), config.get("vis_gpu_layers"))
         quant = Quantization.getQuantConfig(config.get("quantization"), devmap.hasCpuLayers)
 
@@ -41,6 +41,9 @@ class JoyCaptionBackend(InferenceBackend):
         self.generationConfig.typical_p          = self.config.get("typical_p")
         self.generationConfig.repetition_penalty = self.config.get("repeat_penalty")
 
+        if self.generationConfig.pad_token_id is None:
+            self.generationConfig.pad_token_id = 128001
+
 
     def caption(self, imgPath: str, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
         image = Image.open(imgPath)
@@ -57,7 +60,7 @@ class JoyCaptionBackend(InferenceBackend):
                 messages.append( {"role": "user", "content": prompt.strip()} )
                 inputText = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
-                inputs = self.processor(text=[inputText], images=[image], padding=True, return_tensors="pt")
+                inputs = self.processor(text=[inputText], images=[image], return_tensors="pt")
                 inputs = inputs.to("cuda")
                 inputs['pixel_values'] = inputs['pixel_values'].to(torch.bfloat16)
 
@@ -76,7 +79,7 @@ class JoyCaptionBackend(InferenceBackend):
     @staticmethod
     def makeDeviceMap(modelPath, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
         devmap = DevMap.fromConfig(
-            modelPath, 
+            modelPath,
             "-",
             "vision_config.num_hidden_layers"
         )
