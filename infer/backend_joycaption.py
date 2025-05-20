@@ -13,8 +13,9 @@ class JoyCaptionBackend(InferenceBackend):
 
         super().__init__(config)
 
+        skipModules = ["vision_tower", "multi_modal_projector"]
         devmap = self.makeDeviceMap(modelPath, config.get("gpu_layers"), config.get("vis_gpu_layers"))
-        quant = Quantization.getQuantConfig(config.get("quantization"), devmap.hasCpuLayers)
+        quant = Quantization.getQuantConfig(config.get("quantization"), devmap.hasCpuLayers, skipModules)
 
         self.model = LlavaForConditionalGeneration.from_pretrained(
             modelPath,
