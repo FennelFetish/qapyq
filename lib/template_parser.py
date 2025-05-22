@@ -246,6 +246,8 @@ class TemplateVariableParser:
                 return value.lower()
             case "upper":
                 return value.upper()
+            case "capitalize":
+                return value.capitalize()
             case "strip":
                 return value.strip()
             case "oneline":
@@ -302,7 +304,8 @@ class TemplateVariableParser:
                     val2 = self._getValue(args[0])
                     sep = self._getFuncArg(args, 1, ", ")
                     sepsOther = self._getFuncArg(args, 2, ",.:;")
-                    return self._funcSplitProcess(value, sep, self._createFuncRemoveSubsets(val2, sepsOther))
+                    sepsWord = self._getFuncArg(args, 3, " -")
+                    return self._funcSplitProcess(value, sep, self._createFuncRemoveSubsets(val2, sepsOther, sepsWord))
 
             case "noprefix":
                 for prefix in self._getFuncArg(args, 0, "A ,a ,The ,the ").split(","):
@@ -333,21 +336,26 @@ class TemplateVariableParser:
         keepElements.extend(shuffleElements)
         return keepElements
 
-    def _createFuncRemoveSubsets(self, otherValue: str, otherSeps: str):
+    def _createFuncRemoveSubsets(self, otherValue: str, otherSeps: str, wordSeps: str):
         sep = otherSeps[0]
         otherValue = otherValue.translate(str.maketrans({
             sepChar: sep for sepChar in otherSeps[1:]
         }))
 
+        wordSep = wordSeps[0]
+        wordSepTrans = str.maketrans({
+            sepChar: wordSep for sepChar in wordSeps[1:]
+        })
+
         otherEleWords = [
-            {word.lower() for w in ele.split(" ") if (word := w.strip())}
+            {word.lower() for w in ele.translate(wordSepTrans).split(wordSep) if (word := w.strip())}
             for e in otherValue.split(sep) if (ele := e.strip())
         ]
 
         def funcRemoveSubsets(elements: list[str]):
             newElements = list[str]()
             for ele in elements:
-                words = [word.lower() for w in ele.split(" ") if (word := w.strip())]
+                words = [word.lower() for w in ele.translate(wordSepTrans).split(wordSep) if (word := w.strip())]
                 if not any(otherWords.issuperset(words) for otherWords in otherEleWords):
                     newElements.append(ele)
             return newElements
