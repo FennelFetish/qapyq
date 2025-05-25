@@ -1043,6 +1043,93 @@ class BlurMaskOperation(MaskOperation):
 
 
 
+class CentroidRectMaskOperation(MaskOperation):
+    def __init__(self, maskTool):
+        super().__init__(maskTool)
+
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
+
+        row = 0
+        self.spinAspect = QtWidgets.QDoubleSpinBox()
+        self.spinAspect.setDecimals(4)
+        self.spinAspect.setRange(0.0, 1024.0)
+        self.spinAspect.setSingleStep(0.05)
+        self.spinAspect.setValue(1.0)
+        layout.addWidget(QtWidgets.QLabel("Aspect:"), row, 0)
+        layout.addWidget(self.spinAspect, row, 1)
+
+        row += 1
+        self.spinColor = QtWidgets.QDoubleSpinBox()
+        self.spinColor.setRange(0.0, 1.0)
+        self.spinColor.setSingleStep(0.1)
+        self.spinColor.setValue(1.0)
+        layout.addWidget(QtWidgets.QLabel("Fill Color:"), row, 0)
+        layout.addWidget(self.spinColor, row, 1)
+
+        self.setLayout(layout)
+
+    @staticmethod
+    def operate(mat: np.ndarray, aspectRatio: float, color: int) -> np.ndarray:
+        if aspectRatio <= 0.0:
+            raise ValueError("CentroidRectMaskOperation: Aspect ratio must be larger than 0")
+
+        h, w = mat.shape[:2]
+
+        mom = cv.moments(mat, binaryImage=True)
+        m00 = mom["m00"] # sum (white pixel count)
+        if m00 > 0.9:
+            cx = int(mom["m10"] / m00)
+            cy = int(mom["m01"] / m00)
+        else:
+            cx = (w-1) // 2
+            cy = (h-1) // 2
+
+        if h > w:
+            rectW = w
+            rectH = min(round(w * aspectRatio), h)
+        else:
+            rectW = min(round(h * aspectRatio), w)
+            rectH = h
+
+        x0 = cx - int(rectW / 2)
+        x0 = max(x0, 0)
+        x1 = x0 + rectW
+        if x1 > w:
+            x1 = w
+            x0 = w - rectW
+
+        y0 = cy - int(rectH / 2)
+        y0 = max(y0, 0)
+        y1 = y0 + rectH
+        if y1 > h:
+            y1 = h
+            y0 = h - rectH
+
+        mat[y0:y1, x0:x1] = color
+        return mat
+
+    @override
+    def onMousePress(self, pos, pressure: float, alt=False):
+        aspectRatio = self.spinAspect.value()
+
+        color = self.spinColor.value()
+        color8Bit = round(color*255)
+
+        mat = self.maskItem.toNumpy()
+        mat = self.operate(mat, aspectRatio, color8Bit)
+        self.maskItem.fromNumpy(mat)
+
+        self.maskTool.setEdited()
+        macroItem = self.maskTool.macro.addOperation(
+            mask_macro.MacroOp.CentroidRect, aspectRatio=aspectRatio, color=color8Bit
+        )
+        self.maskTool._toolbar.addHistory(f"Centroid Rect ({aspectRatio:.4f})", mat, macroItem)
+
+
+
 class DetectPadMaskOperation(MaskOperation):
     def __init__(self, maskTool):
         super().__init__(maskTool)

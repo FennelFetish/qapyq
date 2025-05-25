@@ -29,8 +29,10 @@ class MacroOp(Enum):
     Quantize        = auto()    # mode, gridSize
     Morph           = auto()    # mode, radius
     GaussBlur       = auto()    # mode, radius
-    DetectPad       = auto()    # minColor, maxColor, tolerance, fillColor
     BlendLayers     = auto()    # mode, srcLayer
+
+    DetectPad       = auto()    # minColor, maxColor, tolerance, fillColor
+    CentroidRect    = auto()    # aspectRatio (float), color
 
     CondColor       = auto()    # minColor, maxColor (float)
     CondArea        = auto()    # minArea, maxArea (float)
@@ -93,18 +95,19 @@ class MaskingMacro:
         self.recording = False
 
         self.opFunc = {
-            MacroOp.Rectangle:  mask_ops.DrawRectangleMaskOperation.operate,
-            MacroOp.Clear:      mask_ops.ClearMaskOperation.operate,
-            MacroOp.Invert:     mask_ops.InvertMaskOperation.operate,
-            MacroOp.Threshold:  mask_ops.ThresholdMaskOperation.operate,
-            MacroOp.Normalize:  mask_ops.NormalizeMaskOperation.operate,
-            MacroOp.Quantize:   mask_ops.QuantizeMaskOperation.operate,
-            MacroOp.Morph:      mask_ops.MorphologyMaskOperation.operate,
-            MacroOp.GaussBlur:  mask_ops.BlurMaskOperation.operate,
+            MacroOp.Rectangle:      mask_ops.DrawRectangleMaskOperation.operate,
+            MacroOp.Clear:          mask_ops.ClearMaskOperation.operate,
+            MacroOp.Invert:         mask_ops.InvertMaskOperation.operate,
+            MacroOp.Threshold:      mask_ops.ThresholdMaskOperation.operate,
+            MacroOp.Normalize:      mask_ops.NormalizeMaskOperation.operate,
+            MacroOp.Quantize:       mask_ops.QuantizeMaskOperation.operate,
+            MacroOp.Morph:          mask_ops.MorphologyMaskOperation.operate,
+            MacroOp.GaussBlur:      mask_ops.BlurMaskOperation.operate,
+            MacroOp.CentroidRect:   mask_ops.CentroidRectMaskOperation.operate,
 
-            MacroOp.CondColor:   mask_ops.ColorConditionMaskOperation.operate,
-            MacroOp.CondArea:    mask_ops.AreaConditionMaskOperation.operate,
-            MacroOp.CondRegions: mask_ops.RegionConditionMaskOperation.operate
+            MacroOp.CondColor:      mask_ops.ColorConditionMaskOperation.operate,
+            MacroOp.CondArea:       mask_ops.AreaConditionMaskOperation.operate,
+            MacroOp.CondRegions:    mask_ops.RegionConditionMaskOperation.operate
         }
 
 
