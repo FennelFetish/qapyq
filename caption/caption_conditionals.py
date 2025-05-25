@@ -703,6 +703,9 @@ class ConditionVariableParser:
 def splitParams(paramText: str) -> list[str]:
     return [p for p in paramText.split(SEP)]
 
+def splitParamsNonEmpty(paramText: str) -> list[str]:
+    return [p for p in paramText.split(SEP) if p]
+
 def splitParamsStrip(paramText: str) -> list[str]:
     return [p for param in paramText.split(SEP) if (p := param.strip())]
 
@@ -714,6 +717,15 @@ def getIntParam(paramText: str, default: int) -> int:
         return int(paramText)
     except ValueError:
         return default
+
+
+def parseSearchReplace(varParser: ConditionVariableParser, search: list[str], replace: list[str]):
+    parsedPairs = {
+        varParser.parse(s): varParser.parse(r)
+        for s, r in zip(search, replace)
+    }
+    parsedPairs.pop("", None)
+    return parsedPairs
 
 
 # (?:^|\s)(search)(?:$|\s)
@@ -728,10 +740,16 @@ def findWord(text: str, search: str) -> Generator[int]:
 
 # ===== Conditions =====
 
+def falseCondition(tags: list[str]) -> ConditionResult:
+    return False, None
+
+
 # TODO: Split using matcher node (separate Cond)
 def createCondAllTagsPresent(params: list[str]) -> ConditionFunc:
-    searchTags = splitParamsStrip(params[0])
-    searchSet  = set(searchTags)
+    searchSet = splitParamsStripSet(params[0])
+
+    if not searchSet:
+        return falseCondition
 
     def condAllTagsPresent(tags: list[str]) -> ConditionResult:
         foundTags: list[str] = []
@@ -788,6 +806,19 @@ def createCondAnyWordsPresent(params: list[str]) -> ConditionFunc:
     return condAnyWordsPresent
 
 
+def createCondAnyStringsPresent(params: list[str]) -> ConditionFunc:
+    search = splitParamsNonEmpty(params[0])
+
+    def condAnyStringsPresent(tags: list[str]) -> ConditionResult:
+        for tag in tags:
+            if any(True for s in search if (s in tag)):
+                return True, [tag]
+
+        return False, None
+
+    return condAnyStringsPresent
+
+
 
 class ConditionDef:
     def __init__(self, name: str, factory: Callable, params: list[str]):
@@ -804,9 +835,11 @@ CONDITIONS = {
     "AllTagsPresent":       ConditionDef("All tags present", createCondAllTagsPresent, ["tags"]),
     "AnyTagsPresent":       ConditionDef("Any tags present", createCondAnyTagsPresent, ["tags"]),
     "NumTagsPresent":       ConditionDef("Some tags present", createCondNumTagsPresent, ["tags", "min", "max"]),
-    "AnyWordsPresent":      ConditionDef("Any words present", createCondAnyWordsPresent, ["words"])
+    "AnyWordsPresent":      ConditionDef("Any words present", createCondAnyWordsPresent, ["words"]),
+    "AnyStringsPresent":    ConditionDef("Any strings present", createCondAnyStringsPresent, ["strings"])
 }
 
+# TODO: Any superset present (words checked as subsets)
 
 
 # ===== Actions =====
@@ -849,11 +882,7 @@ def createActionReplaceTags(params: list[str]) -> ActionFunc:
     replace = splitParams(params[1])
 
     def actReplaceTags(varParser: ConditionVariableParser, tags: list[str]) -> list[str]:
-        parsedPairs = {
-            varParser.parse(s): varParser.parse(r)
-            for s, r in zip(search, replace)
-        }
-        parsedPairs.pop("", None)
+        parsedPairs = parseSearchReplace(varParser, search, replace)
 
         newTags = list[str]()
         for tag in tags:
@@ -873,11 +902,7 @@ def createActionReplaceWords(params: list[str]) -> ActionFunc:
     replace = splitParams(params[1])
 
     def actReplaceWords(varParser: ConditionVariableParser, tags: list[str]) -> list[str]:
-        parsedPairs = {
-            varParser.parse(s): varParser.parse(r)
-            for s, r in zip(search, replace)
-        }
-        parsedPairs.pop("", None)
+        parsedPairs = parseSearchReplace(varParser, search, replace)
 
         newTags = list[str]()
         tagParts = list[str]()
@@ -901,6 +926,24 @@ def createActionReplaceWords(params: list[str]) -> ActionFunc:
     return actReplaceWords
 
 
+def createActionReplaceStrings(params: list[str]) -> ActionFunc:
+    search  = splitParams(params[0])
+    replace = splitParams(params[1])
+
+    def actReplaceStrings(varParser: ConditionVariableParser, tags: list[str]) -> list[str]:
+        parsedPairs = parseSearchReplace(varParser, search, replace)
+
+        newTags = list[str]()
+        for tag in tags:
+            for s, r in parsedPairs.items():
+                tag = tag.replace(s, r)
+            newTags.append(tag)
+
+        return newTags
+
+    return actReplaceStrings
+
+
 
 class ActionDef:
     def __init__(self, name: str, factory: Callable, params: list[str]):
@@ -918,7 +961,8 @@ ACTIONS = {
     "RemoveTags":           ActionDef("Remove tags", createActionRemoveTags, ["tags"]),
     "RemoveTagsContaining": ActionDef("Remove tags containing", createActionRemoveTagsContaining, ["words"]),
     "ReplaceTags":          ActionDef("Replace tags", createActionReplaceTags, ["search", "replace"]),
-    "ReplaceWords":         ActionDef("Replace words", createActionReplaceWords, ["search", "replace"])
+    "ReplaceWords":         ActionDef("Replace words", createActionReplaceWords, ["search", "replace"]),
+    "ReplaceStrings":       ActionDef("Replace strings", createActionReplaceStrings, ["search", "replace"])
 
     # Add tag to different key?
 }
