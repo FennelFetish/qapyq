@@ -13,8 +13,6 @@ from .caption_preset import CaptionPreset, CaptionPresetConditional
 #       For example: All present: "tag1, tag2"
 #                    Replace tag: {{A}} -> {{B}} should replace tag1 and tag2 with B
 
-# TODO: Highlight conditions which are True with current caption
-
 
 ConditionVariableParser = ForwardRef("ConditionVariableParser")
 
@@ -52,7 +50,7 @@ class CaptionConditionals(CaptionTab):
         reorderWidget = ManualStartReorderWidget()
         reorderWidget.setLayout(self._layout)
         reorderWidget.orderChanged.connect(lambda: self.ctx.controlUpdated.emit())
-        scrollArea = qtlib.BaseColorScrollArea(reorderWidget)
+        scrollArea = qtlib.RowScrollArea(reorderWidget)
         scrollArea.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
 
         layout = QtWidgets.QVBoxLayout()
@@ -516,6 +514,7 @@ class RuleParams(QtWidgets.QHBoxLayout):
         numParams = self._definition.numParams
         params = self._definition.params
 
+        # Update existing text fields
         for i, txt in enumerate(self.txtParams[0:numParams]):
             txt.setToolTip(params[i])
             txt.show()
@@ -523,6 +522,7 @@ class RuleParams(QtWidgets.QHBoxLayout):
             txt.setToolTip("")
             txt.hide()
 
+        # Add missing text fields
         startIndex = max(0, len(self.txtParams))
         for i in range(startIndex, numParams):
             txt = QtWidgets.QLineEdit()
@@ -534,6 +534,11 @@ class RuleParams(QtWidgets.QHBoxLayout):
             self.txtParams.append(txt)
             stretch = self.firstStretch if i==0 else 1
             self.addWidget(txt, stretch)
+
+        # Set tab order
+        if parentWidget := self.parentWidget():
+            for i, txt in enumerate(self.txtParams[:-1]):
+                parentWidget.setTabOrder(txt, self.txtParams[i+1])
 
         self.signalUpdate.emit()
 
@@ -711,22 +716,38 @@ def getIntParam(paramText: str, default: int) -> int:
         return default
 
 
+# (?:^|\s)(search)(?:$|\s)
+def findWord(text: str, search: str) -> Generator[int]:
+    start = 0
+    while (index := text.find(search, start)) >= 0:
+        if (index == 0 or text[index-1].isspace()) and (index+len(search) >= len(text) or text[index+len(search)].isspace()):
+            yield index
+        start = index + len(search) + 1  # Add one for space
+
+
 
 # ===== Conditions =====
 
+# TODO: Split using matcher node (separate Cond)
 def createCondAllTagsPresent(params: list[str]) -> ConditionFunc:
     searchTags = splitParamsStrip(params[0])
     searchSet  = set(searchTags)
 
     def condAllTagsPresent(tags: list[str]) -> ConditionResult:
-        if searchSet and searchSet.issubset(tags):
-            return True, list(searchTags)
+        foundTags: list[str] = []
+        for tag in tags:
+            if (tag in searchSet) and (tag not in foundTags):
+                foundTags.append(tag)
+
+        if len(foundTags) >= len(searchSet):
+            return True, foundTags
         else:
             return False, None
 
     return condAllTagsPresent
 
 
+# TODO: Split using matcher node (separate Cond)
 def createCondAnyTagsPresent(params: list[str]) -> ConditionFunc:
     searchSet = splitParamsStripSet(params[0])
 
@@ -754,14 +775,14 @@ def createCondNumTagsPresent(params: list[str]) -> ConditionFunc:
 
 
 def createCondAnyWordsPresent(params: list[str]) -> ConditionFunc:
-    searchSet = set(word for w in params[0].split(SEP) if (word := w.strip()))
+    search = splitParamsStrip(params[0])
 
     def condAnyWordsPresent(tags: list[str]) -> ConditionResult:
         for tag in tags:
-            words = [word for w in tag.split(" ") if (word := w.strip())]
-            for word in words:
-                if word in searchSet:
-                    return True, [word]
+            for s in search:
+                if any(True for _ in findWord(tag, s)):
+                    return True, [s]
+
         return False, None
 
     return condAnyWordsPresent
@@ -811,7 +832,7 @@ def createActionRemoveTags(params: list[str]) -> ActionFunc:
 
 
 def createActionRemoveTagsContaining(params: list[str]) -> ActionFunc:
-    search = splitParams(params[0])
+    search = [param for param in splitParams(params[0]) if param]
 
     def actRemoveTagsContaining(varParser: ConditionVariableParser, tags: list[str]) -> list[str]:
         parsedSearch = [varParser.parse(s) for s in search]
@@ -832,6 +853,7 @@ def createActionReplaceTags(params: list[str]) -> ActionFunc:
             varParser.parse(s): varParser.parse(r)
             for s, r in zip(search, replace)
         }
+        parsedPairs.pop("", None)
 
         newTags = list[str]()
         for tag in tags:
@@ -855,19 +877,29 @@ def createActionReplaceWords(params: list[str]) -> ActionFunc:
             varParser.parse(s): varParser.parse(r)
             for s, r in zip(search, replace)
         }
+        parsedPairs.pop("", None)
 
         newTags = list[str]()
+        tagParts = list[str]()
         for tag in tags:
-            words = [word for w in tag.split(" ") if (word := w.strip())]
-            for i in range(len(words)):
-                replacement = parsedPairs.get(words[i])
-                if replacement is not None:
-                    words[i] = replacement
-            newTags.append(" ".join(words))
+            for s, r in parsedPairs.items():
+                tagParts.clear()
+                start = 0
+                for index in findWord(tag, s):
+                    tagParts.append(tag[start:index])
+                    tagParts.append(r)
+                    start = index + len(s)
+
+                if start > 0:
+                    tagParts.append(tag[start:])
+                    tag = "".join(tagParts)
+
+            newTags.append(tag)
 
         return newTags
 
     return actReplaceWords
+
 
 
 class ActionDef:
