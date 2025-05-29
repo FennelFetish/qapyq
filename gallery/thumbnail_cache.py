@@ -86,13 +86,14 @@ class ThumbnailTask(QRunnable):
         # QPixmap is not threadsafe, loading as QImage instead
         reader = QImageReader(self.file)
         reader.setQuality(100)
-        imgSize = reader.size()
 
-        targetWidth = ThumbnailCache.THUMBNAIL_SIZE
-        targetWidth = min(targetWidth, imgSize.width())
-        targetHeight = targetWidth * (imgSize.height() / imgSize.width())
-        targetHeight = int(targetHeight + 0.5)
-        reader.setScaledSize(QSize(targetWidth, targetHeight))
+        imgSize = reader.size()
+        if imgSize.width() >= 0:
+            targetWidth = ThumbnailCache.THUMBNAIL_SIZE
+            targetWidth = min(targetWidth, imgSize.width())
+            targetHeight = targetWidth * (imgSize.height() / imgSize.width())
+            targetHeight = int(targetHeight + 0.5)
+            reader.setScaledSize(QSize(targetWidth, targetHeight))
 
         img = reader.read()
         self.checkIcons()
@@ -109,10 +110,17 @@ class ThumbnailTask(QRunnable):
         if self.icons[DataKeys.CaptionState] is None:
             captionFile = filenameNoExt + ".txt"
             jsonFile    = filenameNoExt + ".json"
-            if os.path.exists(captionFile) or os.path.exists(jsonFile):
+            if self._fileExists(captionFile) or self._fileExists(jsonFile):
                 self.icons[DataKeys.CaptionState] = DataKeys.IconStates.Exists
 
         if self.icons[DataKeys.MaskState] is None:
             maskFile = f"{filenameNoExt}{Config.maskSuffix}.png"
             if os.path.exists(maskFile):
                 self.icons[DataKeys.MaskState] = DataKeys.IconStates.Exists
+
+    @staticmethod
+    def _fileExists(path: str) -> bool:
+        try:
+            return os.path.getsize(path) > 0
+        except FileNotFoundError:
+            return False

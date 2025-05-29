@@ -31,6 +31,7 @@ class GalleryItem(QtWidgets.QWidget):
     BORDER_SIZE_SECONDARY = 3
 
     PEN_TEXT: QtGui.QPen = None
+    PEN_TEXT_ERROR: QtGui.QPen = None
     PEN_PRIMARY: QtGui.QPen = None
     PEN_SECONDARY: QtGui.QPen = None
 
@@ -79,6 +80,7 @@ class GalleryItem(QtWidgets.QWidget):
         selectionColor = palette.color(QtGui.QPalette.ColorRole.Highlight)
 
         cls.PEN_TEXT = QtGui.QPen(textColor)
+        cls.PEN_TEXT_ERROR = QtGui.QPen(qtlib.COLOR_RED)
 
         cls.TEXT_OPT = QtGui.QTextOption()
         cls.TEXT_OPT.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -111,7 +113,8 @@ class GalleryItem(QtWidgets.QWidget):
         self.update()
 
     def setImageSize(self, w: int, h: int):
-        self.imgWidth, self.imgHeight = w, h
+        self.imgWidth  = max(w, 0)
+        self.imgHeight = max(h, 0)
 
     def onThumbnailSizeUpdated(self):
         size = self.gallery.thumbnailSize
@@ -298,13 +301,17 @@ class GalleryGridItem(GalleryItem):
         w = self.width() - self.BORDER_SIZE
         h = self.height() - self.BORDER_SIZE
 
+        pen = self.PEN_TEXT
+
         # Draw image
-        if self._pixmap:
-            imgW = self._pixmap.width()
-            imgH = self._pixmap.height()
-            aspect = imgH / imgW
-            imgH = w * aspect
-            painter.drawPixmap(x, y, w, imgH, self._pixmap)
+        if self._pixmap is not None:
+            if self._pixmap.isNull():
+                pen = self.PEN_TEXT_ERROR
+                imgH = 0
+            else:
+                aspect = self._pixmap.height() / self._pixmap.width()
+                imgH = w * aspect
+                painter.drawPixmap(x, y, w, imgH, self._pixmap)
         else:
             if self.ready:
                 ThumbnailCache.updateThumbnail(self.gallery.filelist, self, self.file)
@@ -319,7 +326,7 @@ class GalleryGridItem(GalleryItem):
         # Draw filename
         textY = y + imgH + self.TEXT_SPACING
         textRect = painter.fontMetrics().boundingRect(self.BORDER_SIZE, textY, w-self.BORDER_SIZE, self.TEXT_MAX_HEIGHT, self.TEXT_FLAGS, self.filename)
-        painter.setPen(self.PEN_TEXT)
+        painter.setPen(pen)
         painter.drawText(textRect, self.filename, self.TEXT_OPT)
         painter.end()
 
@@ -386,6 +393,8 @@ class GalleryListItem(GalleryItem):
     def setImageSize(self, w: int, h: int):
         super().setImageSize(w, h)
         if self._built:
+            if w < 1 or h < 1:
+                self.lblFilename.setStyleSheet(f"color: {qtlib.COLOR_RED}")
             self.lblFilename.setText(f"{self.filename} ({self.imgWidth}x{self.imgHeight})")
 
     @override
@@ -467,19 +476,17 @@ class GalleryListItem(GalleryItem):
         w = self.width() - self.BORDER_SIZE
         h = self.height() - self.BORDER_SIZE
 
+        imgW = self.gallery.thumbnailSize
+        imgH = self.MIN_HEIGHT
+
         # Draw image
-        if self._pixmap:
-            imgW = self._pixmap.width()
-            imgH = self._pixmap.height()
-            aspect = imgH / imgW
-            imgW = self.gallery.thumbnailSize
-            imgH = imgW * aspect
-            painter.drawPixmap(x, y, imgW, imgH, self._pixmap)
-        else:
-            if self.ready:
-                ThumbnailCache.updateThumbnail(self.gallery.filelist, self, self.file)
-            imgW = self.gallery.thumbnailSize
-            imgH = self.MIN_HEIGHT
+        if self._pixmap is not None:
+            if not self._pixmap.isNull():
+                aspect = self._pixmap.height() / self._pixmap.width()
+                imgH = imgW * aspect
+                painter.drawPixmap(x, y, imgW, imgH, self._pixmap)
+        elif self.ready:
+            ThumbnailCache.updateThumbnail(self.gallery.filelist, self, self.file)
 
         if self.highlight:
             self.paintHighlight(painter, x, y, w, h, imgW, imgH, False)
