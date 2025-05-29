@@ -18,8 +18,6 @@ from config import Config
 # TODO: Add menu entry: With Files -> Add to Selection
 # TODO: Highlight images in gallery for selected rows
 
-# TODO: Own QThread for StatsLoadGroupBox?
-
 
 class StatsBaseProxyModel(QSortFilterProxyModel):
     def __init__(self):
@@ -431,11 +429,12 @@ class StatsLoadGroupBox(QtWidgets.QGroupBox):
 
     @Slot()
     def _onReloadClicked(self):
+        self.progressBar.setStyleSheet("")
         self.btnReload.setEnabled(False)
         QTimer.singleShot(500, lambda: self.btnReload.setEnabled(True))
 
         if self._task:
-            self._task.abort()
+            self.abortTask()
             return
 
         self._task = self._taskFactory()
@@ -446,6 +445,7 @@ class StatsLoadGroupBox(QtWidgets.QGroupBox):
 
         self._task.signals.progress.connect(self.progressBar.setProgress, Qt.ConnectionType.QueuedConnection)
         self._task.signals.done.connect(self.dataLoaded.emit, Qt.ConnectionType.QueuedConnection)
+        self._task.signals.fail.connect(self._onFail, Qt.ConnectionType.QueuedConnection)
         self._task.signals.end.connect(self._onTaskEnded, Qt.ConnectionType.QueuedConnection)
         QThreadPool.globalInstance().start(self._task)
 
@@ -455,18 +455,23 @@ class StatsLoadGroupBox(QtWidgets.QGroupBox):
         self.btnReload.setText("Reload")
         self._task = None
 
+    @Slot()
+    def _onFail(self):
+        self.progressBar.setStyleSheet(f"color: {qtlib.COLOR_RED}")
+
     def abortTask(self):
         if self._task:
+            self.btnReload.setText("Aborting...")
             self._task.abort()
 
     def terminateTask(self):
         if self._task:
             self._task.signals.progress.disconnect()
             self._task.signals.done.disconnect()
+            self._task.signals.fail.disconnect()
             self._task.signals.end.disconnect()
             self._task.terminate()
             self._onTaskEnded()
-
 
 
 
@@ -506,11 +511,13 @@ class StatsLoadTask(QRunnable):
 
     class TerminatedException(Exception): pass
 
-    NOTIFY_INTERVAL_NS  = 1_000_000_000 // 20
+    NOTIFY_INTERVAL_NS = 1_000_000_000 // 20
+    MULTIPROC_TIMEOUT = 15.0
 
     class Signals(QObject):
         progress = Signal(int, int)
         done = Signal(object, object)
+        fail = Signal()
         end = Signal()
 
 
@@ -556,6 +563,7 @@ class StatsLoadTask(QRunnable):
         except:
             print(f"Error while loading stats for {self.name}:")
             traceback.print_exc()
+            self.signals.fail.emit()
         finally:
             self.signals.end.emit()
 
@@ -586,6 +594,7 @@ class StatsLoadTask(QRunnable):
 
     def map(self, items: Iterable[TIn], count: int, func: Callable[[TIn], TOut]) -> Generator[TOut]:
         self.signals.progress.emit(0, count)
+        tStart = time.monotonic_ns()
 
         nr = 0
         for nr, item in enumerate(items, 1):
@@ -595,12 +604,32 @@ class StatsLoadTask(QRunnable):
             if self.isAborted():
                 break
 
+        tDiff = (time.monotonic_ns() - tStart) / 1_000_000
+        print(f"Stats {self.name}: Read {nr}/{count} items in {tDiff:.2f} ms")
         self.signals.progress.emit(nr, count)
 
     def map_multiproc(self, items: Iterable[TIn], count: int, func: Callable[[TIn], TOut], chunkSize: int, numProcesses: int) -> Generator[TOut]:
-        from multiprocessing import Pool
+        from multiprocessing.pool import Pool
+        from multiprocessing.context import TimeoutError
+        from itertools import chain
+
+        # Sometimes the subprocesses freeze which also leaves the thread waiting and the application lingering even after closing.
+        # Use timeout to prevent that.
+        def imap(pool: Pool, func: Callable, items: Iterable):
+            it = pool.imap_unordered(func, items, 1)  # Returns IMapIterator only when chunk size is 1, needed for timeout
+            try:
+                while True:
+                    yield it.next(self.MULTIPROC_TIMEOUT)
+            except TimeoutError:
+                print(f"Error while loading stats for {self.name}: Timeout")
+                self.signals.fail.emit()
+            except StopIteration:
+                pass
+
         with Pool(numProcesses) as pool:
-            yield from self.map(pool.imap_unordered(func, items, chunkSize), count, lambda x: x)
+            chunkGen = self.iterChunks(items, chunkSize)
+            imapGen = imap(pool, ChunkFunctor(func), chunkGen)
+            yield from self.map(chain.from_iterable(imapGen), count, lambda x: x)
 
     def map_auto(self, items: list[TIn], func: Callable[[TIn], TOut], chunkSize: int = 128) -> Generator[TOut]:
         count   = len(items)
@@ -614,3 +643,19 @@ class StatsLoadTask(QRunnable):
 
     def iterate(self, items: list[TIn]) -> Generator[TIn]:
         return self.map(items, len(items), lambda x: x)
+
+    @staticmethod
+    def iterChunks(items: Iterable[TIn], chunkSize) -> Generator[list[TIn]]:
+        from itertools import islice  # Python 3.12 has 'batched'
+        it = iter(items)
+        while chunk := list(islice(it, chunkSize)):
+            yield chunk
+
+
+
+class ChunkFunctor:
+    def __init__(self, func: Callable):
+        self.func = func
+
+    def __call__(self, items: Iterable) -> list:
+        return [self.func(x) for x in items]

@@ -76,7 +76,7 @@ class SizeBucketStatsLoadTask(StatsLoadTask):
         summary = SizeBucketSummary()
         buckets: dict[tuple[int, int], SizeBucketData] = dict()
 
-        for file, size in self.map_auto(self.files, self.readSize, chunkSize=16):
+        for file, size in self.map_auto(self.files, self.readSize, chunkSize=32):
             summary.addFile(size)
             bucket = buckets.get(size)
             if not bucket:

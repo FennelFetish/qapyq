@@ -1,5 +1,5 @@
 from __future__ import annotations
-import os
+import os, time
 from typing import Generator
 from typing_extensions import override
 from PySide6 import QtWidgets
@@ -69,10 +69,14 @@ class SuffixStatsLoadTask(StatsLoadTask):
 
         self.suffixes: dict[str, SuffixData] = dict()
         self.fileSet = set(removeCommonRoot(file, self.commonRoot) for file in self.files)
+        count = len(self.fileSet)
 
-        self.signals.progress.emit(0, len(self.fileSet))
+        self.signals.progress.emit(0, count)
+        tStart = time.monotonic_ns()
         fileNr = self._process(summary)
-        self.signals.progress.emit(fileNr, len(self.fileSet))
+        tDiff = (time.monotonic_ns() - tStart) / 1_000_000
+        print(f"Stats {self.name}: Read {fileNr}/{count} items in {tDiff:.2f} ms")
+        self.signals.progress.emit(fileNr, count)
 
         summary.finalize(len(self.suffixes))
         return list(self.suffixes.values()), summary
@@ -103,10 +107,7 @@ class SuffixStatsLoadTask(StatsLoadTask):
         return fileNr
 
     def _walkSortedFolders(self) -> Generator[list[str]]:
-        folders: set[str] = set()
-        for file in self.files:
-            folders.add(os.path.dirname(file))
-
+        folders: set[str] = set(os.path.dirname(file) for file in self.files)
         for folder in folders:
             for (root, subdirs, files) in os.walk(folder, topdown=True):
                 subdirs.clear() # Do not descend into subdirs

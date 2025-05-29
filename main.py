@@ -184,6 +184,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
     def closeEvent(self, event):
+        QThreadPool.globalInstance().clear()
+
         from gallery.thumbnail_cache import ThumbnailCache
         ThumbnailCache.shutdown()
 
