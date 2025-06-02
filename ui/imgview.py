@@ -144,18 +144,18 @@ class ImgItem(QGraphicsPixmapItem):
         self.filepath = ""
 
     def loadImage(self, path) -> bool:
+        self.filepath = path
         if not path:
             print("Failed to load image: Path is empty")
             self.setPixmap(QPixmap())
             return False
 
         pixmap = QPixmap(path)
-        if pixmap.isNull():
-            print("Failed to load image:", path)
-            return False
-
-        self.filepath = path
         self.setPixmap(pixmap)
+
+        if pixmap.isNull():
+            print(f"Failed to load image: {path}")
+            return False
         return True
 
     def updateTransform(self, vpRect: QRectF, rotation):
