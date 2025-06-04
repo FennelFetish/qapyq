@@ -3,9 +3,9 @@ from typing import Callable
 from enum import Enum, auto
 from typing_extensions import override
 from PySide6 import QtWidgets
-from PySide6.QtCore import QSignalBlocker, Qt, Slot
+from PySide6.QtCore import Qt, Slot, QSignalBlocker, QThreadPool
 from config import Config
-from infer import Inference, PromptWidget
+from infer.prompt import PromptWidget
 from lib import qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
@@ -335,7 +335,7 @@ class BatchApply(QtWidgets.QWidget):
 
         self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
         self._taskSignalHandler.finished.connect(self.taskDone)
-        Inference().queueTask(self._task)
+        QThreadPool.globalInstance().start(self._task)
 
     def taskDone(self):
         self.btnStart.setText("Start Batch Apply")

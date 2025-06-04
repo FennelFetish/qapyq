@@ -1,9 +1,8 @@
 from PySide6 import QtWidgets
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Slot, QThreadPool
 from PIL import Image
 from config import Config
 from lib import qtlib
-from infer import Inference
 from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
 import tools.scale as scale
 import ui.export_settings as export
@@ -193,7 +192,7 @@ class BatchScale(QtWidgets.QWidget):
 
         self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
         self._taskSignalHandler.finished.connect(self.taskDone)
-        Inference().queueTask(self._task)
+        QThreadPool.globalInstance().start(self._task)
 
     def taskDone(self):
         self.btnStart.setText("Start Batch Scale")

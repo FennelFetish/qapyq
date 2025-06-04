@@ -1549,7 +1549,7 @@ class MacroMaskOperation(MaskOperation):
         task.signals.done.connect(self.onDone)
         task.signals.fail.connect(self.onFail)
 
-        from infer import Inference
+        from infer.inference import Inference
         Inference().queueTask(task)
         self.maskTool.tab.statusBar().showMessage("Running macro...", 0)
 
@@ -1665,7 +1665,7 @@ class DetectMaskOperation(MaskOperation):
         task.signals.done.connect(self.onRetrieveClassesDone)
         task.signals.fail.connect(self.onRetrieveClassesFail)
 
-        from infer import Inference
+        from infer.inference import Inference
         Inference().queueTask(task)
         self.maskTool.tab.statusBar().showMessage("Loading detection model...", 0)
 
@@ -1709,7 +1709,7 @@ class DetectMaskOperation(MaskOperation):
         task.signals.done.connect(self.onDone)
         task.signals.fail.connect(self.onFail)
 
-        from infer import Inference
+        from infer.inference import Inference
         Inference().queueTask(task)
         self.maskTool.tab.statusBar().showMessage("Loading detection model...", 0)
 
@@ -1840,7 +1840,7 @@ class SegmentMaskOperation(MaskOperation):
         task.signals.done.connect(self.onDone)
         task.signals.fail.connect(self.onFail)
 
-        from infer import Inference
+        from infer.inference import Inference
         Inference().queueTask(task)
         self.maskTool.tab.statusBar().showMessage("Loading segmentation model...", 0)
 
@@ -1898,7 +1898,7 @@ class MaskTask(QRunnable):
     @Slot()
     def run(self):
         try:
-            from infer import Inference
+            from infer.inference import Inference
             inferProc = Inference().proc
             inferProc.start()
 
@@ -1961,7 +1961,7 @@ class RetrieveDetectionClassesTask(QRunnable):
     @Slot()
     def run(self):
         try:
-            from infer import Inference
+            from infer.inference import Inference
             inferProc = Inference().proc
             inferProc.start()
 

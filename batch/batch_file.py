@@ -4,10 +4,9 @@ from enum import Enum
 from typing import Callable
 from typing_extensions import override
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, QThreadPool
 from PySide6.QtGui import QImageReader
 from config import Config
-from infer import Inference
 from ui.tab import ImgTab
 from lib import qtlib
 from lib.filelist import FileList
@@ -182,7 +181,7 @@ class BatchFile(QtWidgets.QWidget):
 
         self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
         self._taskSignalHandler.finished.connect(self.taskDone)
-        Inference().queueTask(self._task)
+        QThreadPool.globalInstance().start(self._task)
 
     @Slot()
     def taskDone(self):
