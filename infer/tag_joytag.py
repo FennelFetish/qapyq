@@ -15,7 +15,7 @@ class JoyTag(TagBackend):
 
         modelDir = config.get("model_path")
         self.model = VisionModel.load_model(modelDir).eval().to("cuda")
-        
+
         with open(os.path.join(modelDir, "top_tags.txt"), 'r') as f:
             lines = (self.removeUnderscore(line.strip()) for line in f.readlines())
             self.topTags = [line for line in lines if line]
@@ -31,8 +31,8 @@ class JoyTag(TagBackend):
         self.threshold = float(config.get("threshold", 0.4))
 
 
-    def tag(self, imgPath):
-        img = self.loadImageSquare(imgPath, self.model.image_size)
+    def tag(self, imgFile):
+        img = self.loadImageSquare(imgFile, self.model.image_size)
         img = cv.cvtColor(img, cv.COLOR_BGR2RGB) / 255.0
 
         imgTensor = transforms.ToTensor()(img)
@@ -49,7 +49,7 @@ class JoyTag(TagBackend):
         with torch.amp.autocast_mode.autocast('cuda', enabled=True):
             predictions = self.model(batch)
             tagPredictions = predictions['tags'].sigmoid().cpu()
-        
+
         scores = {self.topTags[i]: tagPredictions[0][i] for i in range(len(self.topTags))}
         tags = [tag for tag, score in scores.items() if score > self.threshold]
         return ', '.join(tags), scores

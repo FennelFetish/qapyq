@@ -1,17 +1,16 @@
-from typing import Any
-from PySide6.QtCore import QProcess, QByteArray, QMutex, QMutexLocker, QThread, QProcessEnvironment
 import sys, struct, msgpack, copy, traceback
-from lib.util import Singleton
+from typing import Any
+from threading import Condition
+from PySide6.QtCore import Qt, Slot, Signal, QObject, QProcess, QProcessEnvironment, QByteArray, QMutex, QMutexLocker
+from host.protocol import Protocol, Service
 from config import Config
 
 
 class InferenceSetupException(Exception):
     def __init__(self, cmd: str, message: str, errorType: str = None):
         modelType = cmd.split("_")[-1]
-        msg = f"Couldn't load {modelType} model: {message}"
-        if errorType:
-            msg += f" ({errorType})"
-
+        errorType = f" ({errorType})" if errorType else ""
+        msg = f"Couldn't load {modelType} model: {message}{errorType}"
         super().__init__(msg)
 
 class InferenceException(Exception):
@@ -23,111 +22,193 @@ class InferenceException(Exception):
         super().__init__(msg)
 
 
-class InferenceProcess(metaclass=Singleton):
+
+class ProcFuture:
     def __init__(self):
+        self._cond = Condition()
+        self._result: dict | None = None
+        self._exception = None
+
+    def setResult(self, result: dict):
+        with self._cond:
+            self._result = result
+            self._cond.notify_all()
+
+    def setException(self, exception):
+        with self._cond:
+            if not self._exception:
+                self._exception = exception
+                self._cond.notify_all()
+
+    def result(self) -> dict:
+        with self._cond:
+            while True:
+                if self._exception is not None:
+                    raise self._exception
+                if self._result is not None:
+                    return self._result
+                self._cond.wait()
+
+
+
+class InferenceProcess(QObject):
+    queueStart = Signal()
+    queueWrite = Signal(int, dict, object)
+
+
+    def __init__(self, remote=True):
+        super().__init__()
+
+        self.remote = remote
         self.proc: QProcess = None
-        self.mutex = QMutex()
 
         self.currentLLMConfig = dict()
         self.currentTagConfig = dict()
 
+        # Mutex protects proc and config
+        self._mutex = QMutex()
+
         self._readBuffer: QByteArray = None
+        self._readReq = 0
         self._readLength = 0
+
+        self._futures: dict[int, ProcFuture] = dict()
+        self._nextReqId = 1  # reqId 0 for messages with no associated Future
+
+        self.queueStart.connect(self._start, Qt.ConnectionType.QueuedConnection)
+        self.queueWrite.connect(self._writeMessage, Qt.ConnectionType.QueuedConnection)
 
 
     def start(self):
-        with QMutexLocker(self.mutex):
+        self.queueStart.emit()
+
+    @Slot()
+    def _start(self):
+        with QMutexLocker(self._mutex):
             if self.proc:
                 return
 
             env = QProcessEnvironment.systemEnvironment()
             env.insert("NO_ALBUMENTATIONS_UPDATE", "1")
+            #env.insert("VLLM_USE_V1", "1") # RuntimeError: Cannot re-initialize CUDA in forked subprocess. To use CUDA with multiprocessing, you must use the 'spawn' start method
+            #env.insert("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
+            env.insert("VLLM_NO_USAGE_STATS", "1")
+            env.insert("VLLM_DO_NOT_TRACK", "1")
 
             self.proc = QProcess()
-            self.proc.setProgram(sys.executable)
-            self.proc.setArguments(["-u", "main_inference.py"]) # Unbuffered pipes
-            #self.proc.setArguments(["main_inference.py"])
+            if self.remote:
+                # TODO: Textfield for this command and arguments
+                with open("./ssh-command.txt", "r") as file:
+                    command = file.readline().split(" ")
+
+                self.proc.setProgram(command[0])
+                self.proc.setArguments(command[1:])
+
+                # self.proc.setProgram(sys.executable)
+                # self.proc.setArguments(["-u", "main_host.py"]) # Unbuffered pipes
+            else:
+                self.proc.setProgram(sys.executable)
+                self.proc.setArguments(["-u", "main_inference.py"]) # Unbuffered pipes
+
             self.proc.setProcessEnvironment(env)
             self.proc.setProcessChannelMode(QProcess.ProcessChannelMode.ForwardedErrorChannel)
+            self.proc.setReadChannel(QProcess.ProcessChannel.StandardOutput)
+            self.proc.readyReadStandardOutput.connect(self._onReadyRead)
             self.proc.finished.connect(self._onProcessEnded)
             self.proc.start()
 
-            while True:
-                QThread.msleep(30)
-                if self.proc.waitForStarted(0):
-                    break
+            self.proc.waitForStarted()
 
 
     def stop(self):
-        self.currentLLMConfig = dict()
-        self.currentTagConfig = dict()
+        with QMutexLocker(self._mutex):
+            self.currentLLMConfig = dict()
+            self.currentTagConfig = dict()
 
-        with QMutexLocker(self.mutex):
             if self.proc:
-                self._writeMessage({"cmd": "quit"})
-                # There isn't any answer coming. Child process doesn't send anything while quitting.
-                # But for some reason, to flush the message, we have to read from the pipe
-                self._blockReadMessage()
+                serviceId = Service.ID.HOST if self.remote else Service.ID.INFERENCE
+                self.queueWrite.emit(serviceId, {"cmd": "quit"}, None)
+
 
     def kill(self):
         try:
-            if self.proc:
-                self.proc.kill()
-        except Exception as ex:
-            print(ex)
+            with QMutexLocker(self._mutex):
+                if self.proc:
+                    self.proc.kill()
+        except:
+            traceback.print_exc()
 
 
     def setupCaption(self, config: dict):
         self._setup(config, "setup_caption", "currentLLMConfig")
-        
+
     def setupTag(self, config: dict):
         self._setup(config, "setup_tag", "currentTagConfig")
 
     def setupLLM(self, config: dict):
         self._setup(config, "setup_llm", "currentLLMConfig")
-    
+
     def setupMasking(self, config: dict):
-        self._queryKey("cmd", {
+        self._query({
             "cmd": "setup_masking",
             "config": config
         })
-    
+
     def setupUpscale(self, config: dict):
-        self._queryKey("cmd", {
+        self._query({
             "cmd": "setup_upscale",
             "config": config
         })
 
+
     def _setup(self, config: dict, cmd: str, configAttr: str):
+        msg = {
+            "cmd": cmd,
+            "config": config
+        }
+
         try:
             self._updateBackend(config, configAttr)
-            with QMutexLocker(self.mutex):
-                self._writeMessage({
-                    "cmd": cmd,
-                    "config": config
-                })
+            future = ProcFuture()
+            self.queueWrite.emit(Service.ID.INFERENCE, msg, future)
 
-                if answer := self._blockReadMessage():
-                    if error := answer.get("error"):
-                        raise InferenceSetupException(cmd, error, answer.get("error_type"))
-                else:
-                    raise InferenceSetupException(cmd, "Unknown error")
+            answer = future.result()
+            if not answer:
+                raise InferenceSetupException(cmd, "Unknown error")
+            if error := answer.get("error"):
+                raise InferenceSetupException(cmd, error, answer.get("error_type"))
         except:
             self.stop()
             raise
 
     def _updateBackend(self, config: dict, configAttr: str) -> None:
-        currentConfig: dict = getattr(self, configAttr)
-        diff = ( True for k, v in currentConfig.items() if config.get(k) != v )
-        if any(diff):
-            self.stop()
-            self.start()
+        with QMutexLocker(self._mutex):
+            currentConfig: dict = getattr(self, configAttr)
+            diff = ( True for k, v in currentConfig.items() if config.get(k) != v )
+            if any(diff):
+                self.stop()
+                self.start()
 
-        # Remove sampling settings so they are not included in the check above
-        currentConfig = copy.deepcopy(config)
-        if Config.INFER_PRESET_SAMPLECFG_KEY in currentConfig:
-            del currentConfig[Config.INFER_PRESET_SAMPLECFG_KEY]
-        setattr(self, configAttr, currentConfig)
+            # Remove sampling settings so they are not included in the check above
+            currentConfig = copy.deepcopy(config)
+            if Config.INFER_PRESET_SAMPLECFG_KEY in currentConfig:
+                del currentConfig[Config.INFER_PRESET_SAMPLECFG_KEY]
+            setattr(self, configAttr, currentConfig)
+
+
+    def cacheImage(self, imgPath: str, imgData: bytes, totalSize: int):
+        self.queueWrite.emit(Service.ID.HOST, {
+            "cmd": "cache_img",
+            "img": imgPath,
+            "img_data": imgData,
+            "size": totalSize
+        }, None)
+
+    def uncacheImage(self, imgPath: str):
+        self.queueWrite.emit(Service.ID.HOST, {
+            "cmd": "uncache_img",
+            "img": imgPath
+        }, None)
 
 
     def caption(self, imgPath, prompts: list[dict[str, str]], sysPrompt=None) -> dict[str, str]:
@@ -193,79 +274,97 @@ class InferenceProcess(metaclass=Singleton):
 
 
     def _query(self, msg: dict) -> dict[str, Any]:
-        with QMutexLocker(self.mutex):
-            self._writeMessage(msg)
-            answer = self._blockReadMessage()
+        future = ProcFuture()
+        self.queueWrite.emit(Service.ID.INFERENCE, msg, future)
 
-            if not answer:
-                raise InferenceException("Unknown error")
-            if error := answer.get("error"):
-                raise InferenceException(error, answer.get("error_type"))
-            
-            return answer
+        answer = future.result()
+        if not answer:
+            raise InferenceException("Unknown error")
+        if error := answer.get("error"):
+            raise InferenceException(error, answer.get("error_type"))
+
+        return answer
 
     def _queryKey(self, returnKey: str, msg: dict) -> Any:
         return self._query(msg).get(returnKey)
 
 
+    @Slot()
     def _onProcessEnded(self, exitCode, exitStatus):
-        # FIXME: Not printed anymore in linux?
         print(f"Inference process ended. Exit code: {exitCode}, {exitStatus}")
+
+        exception = InferenceException("Process terminated")
+        for future in self._futures.values():
+            future.setException(exception)
+        self._futures = dict()
+
         # Buffers still intact
         self.proc.readAllStandardOutput()
         self.proc.readAllStandardError()
         self.proc = None
 
 
-    def _writeMessage(self, msg) -> None:
-        try:
-            data = msgpack.packb(msg)
-            buffer = QByteArray()
-            buffer.append( struct.pack("!I", len(data)) )
-            buffer.append(data)
-            self.proc.write(buffer)
-        except:
-            print(traceback.format_exc())
+    @Slot()
+    def _writeMessage(self, serviceId: int, msg: dict, future: ProcFuture | None):
+        reqId = self._nextReqId
+        self._nextReqId += 1
 
-    def _readMessage(self) -> dict | None:
+        try:
+            data: bytes = msgpack.packb(msg)
+            header = struct.pack("!HII", serviceId, len(data), reqId)
+            self.proc.write(header)
+            self.proc.write(data)
+            self.proc.waitForBytesWritten(0) # Flush
+
+            if future:
+                self._futures[reqId] = future
+        except Exception as ex:
+            if future:
+                future.setException(ex)
+
+
+    @Slot()
+    def _onReadyRead(self):
+        while self.proc.bytesAvailable() > Protocol.HEADER_LENGTH:
+            reqId, msg = self._readMessage()
+            if reqId > 0 and msg is not None:
+                if future := self._futures.pop(reqId, None):
+                    future.setResult(msg)
+                else:
+                    print("WARNING: Message from inference process has no Future")
+
+
+    def _readMessage(self) -> tuple[int, dict | None]:
         # Handling of incomplete messages could also utilize QIODevice transactions
         try:
             # Start reading
             if self._readLength == 0:
-                headerBuffer = self.proc.read(4)
-                length = struct.unpack("!I", headerBuffer.data())[0]
+                headerBuffer = self.proc.read(Protocol.HEADER_LENGTH)
+                srv, length, reqId = struct.unpack("!HII", headerBuffer.data())
                 buffer = self.proc.read(length)
 
                 if buffer.length() < length:
                     self._readBuffer = buffer
+                    self._readReq = reqId
                     self._readLength = length
-                    return None
-            
+                    return 0, None
+
             # Continue reading
             else:
                 buffer = self.proc.read(self._readLength - self._readBuffer.length())
                 self._readBuffer.append(buffer)
 
                 if self._readBuffer.length() < self._readLength:
-                    return None
-                
+                    return 0, None
+
                 buffer = self._readBuffer
+                reqId = self._readReq
+
                 self._readBuffer = None
+                self._readReq = 0
                 self._readLength = 0
 
-            return msgpack.unpackb(buffer.data())
+            return reqId, msgpack.unpackb(buffer.data())
         except:
-            print(traceback.format_exc())
-            return {}
-
-    def _blockReadMessage(self) -> dict | None:
-        try:
-            # waitForReadyRead blocks the UI, therefore wait manually using QThread.msleep
-            while not self.proc.waitForReadyRead(0):
-                QThread.msleep(30)
-            while not (msg := self._readMessage()):
-                self.proc.waitForReadyRead(-1)
-            return msg
-        except:
-            # Process ended while waiting
-            return None
+            traceback.print_exc()
+            return 0, None

@@ -241,7 +241,7 @@ class BatchCaption(QtWidgets.QWidget):
 
 class BatchCaptionTask(BatchTask):
     def __init__(self, log, filelist):
-        super().__init__("caption", log, filelist)
+        super().__init__("caption", log, filelist, uploadImages=True)
         self.prompts      = None
         self.systemPrompt = None
         self.config       = None

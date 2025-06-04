@@ -1,0 +1,120 @@
+from host.protocol import Protocol, Service, MessageLoop, msghandler
+from host.imagecache import ImageFile
+from infer.backend_config import BackendLoader, LastBackendLoader
+
+
+class InferenceService(Service):
+    def __init__(self, protocol: Protocol):
+        super().__init__(protocol)
+        self.backendLoader = BackendLoader()
+        self.llmBackend = LastBackendLoader(self.backendLoader)
+        self.tagBackend = LastBackendLoader(self.backendLoader)
+
+        self.loop = MessageLoop(protocol)
+
+
+    @msghandler("quit")
+    def handleQuit(self, msg):
+        self.loop.stop()
+
+
+    @msghandler("setup_caption", "setup_llm")
+    def setupLLM(self, msg: dict):
+        self.llmBackend.getBackend(msg.get("config", {}))
+        return {"cmd": msg["cmd"]}
+
+    @msghandler("setup_tag")
+    def setupTag(self, msg: dict):
+        self.tagBackend.getBackend(msg.get("config", {}))
+        return {"cmd": msg["cmd"]}
+
+    @msghandler("setup_masking", "setup_upscale")
+    def setupMasking(self, msg: dict):
+        self.backendLoader.getBackend(msg.get("config", {}), setup=True)
+        return {"cmd": msg["cmd"]}
+
+
+    @msghandler("caption")
+    def caption(self, msg: dict):
+        img = msg["img"]
+        captions = self.llmBackend.getBackend().caption(img, msg["prompts"], msg["sysPrompt"])
+        return {
+            "cmd": msg["cmd"],
+            "img": img,
+            "captions": captions
+        }
+
+    @msghandler("tag")
+    def tag(self, msg: dict):
+        imgFile = ImageFile.fromMsg(msg)
+        tags = self.tagBackend.getBackend().tag(imgFile)
+        return {
+            "cmd": msg["cmd"],
+            "img": msg["img"],
+            "tags": tags
+        }
+
+    @msghandler("answer")
+    def llm(self, msg: dict):
+        answers = self.llmBackend.getBackend().answer(msg["prompts"], msg["sysPrompt"])
+        return {
+            "cmd": msg["cmd"],
+            "answers": answers
+        }
+
+
+    @msghandler("mask")
+    def mask(self, msg: dict):
+        img = msg["img"]
+        classes = msg["classes"]
+        mask = self.backendLoader.getBackend(msg["config"]).mask(img, classes)
+        return {
+            "cmd": msg["cmd"],
+            "img": img,
+            "mask": mask
+        }
+
+    @msghandler("mask_boxes")
+    def maskBoxes(self, msg: dict):
+        img = msg["img"]
+        classes = msg["classes"]
+        boxes = self.backendLoader.getBackend(msg["config"]).detectBoxes(img, classes)
+        return {
+            "cmd": msg["cmd"],
+            "img": img,
+            "boxes": boxes
+        }
+
+    @msghandler("get_detect_classes")
+    def getDetectClasses(self, msg: dict):
+        classes = self.backendLoader.getBackend(msg["config"]).getClassNames()
+        return {
+            "cmd": msg["cmd"],
+            "classes": classes
+        }
+
+
+    @msghandler("imgfile_upscale")
+    def upscaleImgFile(self, msg: dict):
+        img = msg["img"]
+        backend = self.backendLoader.getBackend(msg["config"])
+        w, h, imgUpscaled = backend.upscaleImage(img)
+        return {
+            "cmd": msg["cmd"],
+            "w": w,
+            "h": h,
+            "img": imgUpscaled
+        }
+
+    @msghandler("img_upscale")
+    def upscaleImgData(self, msg: dict):
+        imgData = msg["img_data"]
+        w, h = msg["w"], msg["h"]
+        backend = self.backendLoader.getBackend(msg["config"])
+        w, h, imgUpscaled = backend.upscaleImageData(imgData, w, h)
+        return {
+            "cmd": msg["cmd"],
+            "w": w,
+            "h": h,
+            "img": imgUpscaled
+        }
