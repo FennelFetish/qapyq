@@ -1,14 +1,13 @@
 import os
 from typing import Callable, Iterable
 from PySide6 import QtGui, QtWidgets
-from PySide6.QtCore import Qt, Slot, Signal, QTimer
+from PySide6.QtCore import Qt, Slot, Signal, QTimer, QThreadPool
 from caption.caption_preset import CaptionPreset, CaptionPresetConditional, MutualExclusivity
 from caption.caption_filter import CaptionRulesProcessor
 from caption.caption_conditionals import ConditionalRule
 from caption.caption_wildcard import expandWildcards
 from caption.caption_highlight import CaptionHighlight, HighlightDataSource, CaptionGroupData
 from config import Config
-from infer import Inference
 from ui.edit_table import EditableTable
 from ui.flow_layout import FlowLayout, SortedStringFlowWidget, ManualStartReorderWidget
 from lib import qtlib
@@ -475,7 +474,7 @@ class BatchRules(QtWidgets.QWidget):
 
         self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
         self._taskSignalHandler.finished.connect(self.taskDone)
-        Inference().queueTask(self._task)
+        QThreadPool.globalInstance().start(self._task)
 
     def taskDone(self):
         self.btnStart.setText("Start Batch Rules")

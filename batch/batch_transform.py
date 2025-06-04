@@ -1,7 +1,9 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import QSignalBlocker, Qt, Slot
 from config import Config
-from infer import Inference, InferencePresetWidget, PromptWidget, PromptsHighlighter
+from infer.inference import Inference
+from infer.inference_settings import InferencePresetWidget
+from infer.prompt import PromptWidget, PromptsHighlighter
 from lib import qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser, VariableHighlighter

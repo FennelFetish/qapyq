@@ -2,7 +2,11 @@ import os, re, traceback
 from enum import Enum
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject, QSignalBlocker
-from infer import Inference, InferencePresetWidget, TagPresetWidget, PromptWidget, PromptsHighlighter, InferenceProcess
+from infer.inference import Inference
+from infer.inference_proc import InferenceProcess
+from infer.inference_settings import InferencePresetWidget
+from infer.tag_settings import TagPresetWidget
+from infer.prompt import PromptWidget, PromptsHighlighter
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
 from lib.filelist import DataKeys
 import lib.qtlib as qtlib

@@ -777,7 +777,7 @@ class ImageExportTask(QRunnable):
             del self.img
 
     def inferUpscale(self, mat: np.ndarray) -> np.ndarray:
-        from infer import Inference
+        from infer.inference import Inference
         inferProc = Inference().proc
         inferProc.start()
 

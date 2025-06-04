@@ -7,7 +7,7 @@ from PySide6.QtGui import QImageReader
 import cv2 as cv
 import numpy as np
 from config import Config
-from infer import Inference
+from infer.inference import Inference
 from lib import qtlib
 from lib.mask_macro import MaskingMacro
 from lib.mask_macro_vis import MacroVisualization

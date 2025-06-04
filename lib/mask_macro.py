@@ -258,7 +258,7 @@ class MaskingMacro:
 
     def opDetect(self, mat: np.ndarray, imgPath: str, args: dict) -> np.ndarray:
         # TODO: Don't start on every call?
-        from infer import Inference
+        from infer.inference import Inference
         inferProc = Inference().proc
         inferProc.start()
 
@@ -278,7 +278,7 @@ class MaskingMacro:
 
     def opSegment(self, mat: np.ndarray, imgPath: str, args: dict) -> np.ndarray:
         # TODO: Don't start on every call?
-        from infer import Inference
+        from infer.inference import Inference
         inferProc = Inference().proc
         inferProc.start()
 

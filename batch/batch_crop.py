@@ -8,7 +8,7 @@ import numpy as np
 from config import Config
 from lib import qtlib
 from lib.mask_macro import MaskingMacro
-from infer import Inference
+from infer.inference import Inference
 from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
 import ui.export_settings as export
 from ui.size_preset import SizeBucket, SizePresetWidget

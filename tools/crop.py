@@ -245,7 +245,7 @@ class CropTool(ViewTool):
         task.signals.fail.connect(self.onExportFailed, Qt.ConnectionType.BlockingQueuedConnection)
 
         if scaleConfig.useUpscaleModel:
-            from infer import Inference
+            from infer.inference import Inference
             Inference().queueTask(task)
         else:
             QThreadPool.globalInstance().start(task)
