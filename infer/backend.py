@@ -1,7 +1,7 @@
 from typing import Any
 import base64, random
-from PySide6.QtGui import QImage
-from PySide6.QtCore import QBuffer
+from io import BytesIO
+from PIL import Image
 from config import Config
 
 
@@ -43,12 +43,11 @@ class InferenceBackend:
             with open(imgPath, "rb") as img:
                 imgData = img.read()
         else:
-            buffer = QBuffer()
-            buffer.open(QBuffer.ReadWrite)
-            img = QImage(imgPath)
-            img.save(buffer, "PNG", 100)
-            imgData = buffer.data()
-            del img
+            buffer = BytesIO()
+            img = Image.open(imgPath)
+            img.save(buffer, format='PNG')
+            imgData = buffer.getvalue()
+            del img, buffer
 
         base64Data = base64.b64encode(imgData).decode('utf-8')
         return f"data:image/png;base64,{base64Data}"

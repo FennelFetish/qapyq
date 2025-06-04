@@ -147,6 +147,8 @@ class CaptionGenerate(CaptionTab):
 
     @Slot()
     def generate(self):
+        # TODO: Multi-Edit: Generate for all selected images? Or abort with warning?
+
         file = self.ctx.tab.imgview.image.filepath
         if not file:
             QtWidgets.QMessageBox.information(self, "No Image Loaded", "Please load an image into the Main Window first.")
@@ -268,6 +270,8 @@ class InferenceTask(QRunnable):
 
     def __init__(self, imgPath, content: list[str]):
         super().__init__()
+        self.setAutoDelete(False)
+
         self.signals = InferenceTask.Signals()
         self.imgPath = imgPath
         self.content = content
@@ -277,12 +281,18 @@ class InferenceTask(QRunnable):
         self.config: dict      = None
         self.tagConfig: dict   = None
 
+        self.imgUploader = None
+
 
     @Slot()
     def run(self):
         try:
             inferProc = Inference().proc
             inferProc.start()
+
+            if inferProc.remote:
+                from infer.inference import ImageUploader
+                self.imgUploader = ImageUploader([self.imgPath])
 
             results = []
             for c in self.content:
@@ -296,6 +306,9 @@ class InferenceTask(QRunnable):
         except Exception as ex:
             traceback.print_exc()
             self.signals.fail.emit(str(ex))
+        finally:
+            if self.imgUploader:
+                self.imgUploader.imageDone.emit(self.imgPath)
 
     def runCaption(self, inferProc: InferenceProcess) -> str:
         self.signals.progress.emit("Loading caption model ...")

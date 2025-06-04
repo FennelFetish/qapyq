@@ -44,9 +44,9 @@ class WDTag(TagBackend):
         self.character_thresh = float(config.get("character_thresh", 0.85))
         self.character_mcut   = bool(config.get("character_mcut_enabled", False))
 
-    
-    def tag(self, imgPath) -> str:
-        img = self.loadImageSquare(imgPath, self.modelTargetSize)
+
+    def tag(self, imgFile) -> str:
+        img = self.loadImageSquare(imgFile, self.modelTargetSize)
         img = np.expand_dims(img, axis=0)
 
         tags, characterResults = self.predict(img)

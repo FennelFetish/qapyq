@@ -13,13 +13,18 @@ class BatchTask(QRunnable):
         fail = Signal(str, object)      # error message, TimeUpdate
 
 
-    def __init__(self, name: str, log: Callable, filelist: FileList):
+    def __init__(self, name: str, log: Callable, filelist: FileList, uploadImages=False):
         super().__init__()
+        self.setAutoDelete(False)
+
         self._mutex   = QMutex()
         self._aborted = False
 
         self.signals  = BatchTask.Signals()
         self.name     = name
+
+        self.uploadImages = uploadImages
+        self.imageUploader = None
 
         self._indentLogs = False
         self.log = self._wrapLogFunc(log)
@@ -27,7 +32,6 @@ class BatchTask(QRunnable):
         self.files = list(filelist.getFiles())
         if len(self.files) == 0 and filelist.currentFile:
             self.files.append(filelist.currentFile)
-
 
     def _wrapLogFunc(self, log: Callable):
         def logIndent(line: str):
@@ -55,6 +59,11 @@ class BatchTask(QRunnable):
             self.signals.progress.emit(None, None)
 
             self.runPrepare()
+
+            if self.uploadImages:
+                from infer.inference import ImageUploader
+                self.imageUploader = ImageUploader(self.files)
+
             self.signals.progressMessage.emit("Processing ...")
             self.processAll()
         except Exception as ex:
@@ -86,6 +95,7 @@ class BatchTask(QRunnable):
                 return
 
             self.log(f"Processing: {imgFile}")
+            outputFile = None
 
             try:
                 self._indentLogs = True
@@ -98,6 +108,9 @@ class BatchTask(QRunnable):
                 self.log(f"WARNING: {str(ex)}")
                 traceback.print_exc()
             finally:
+                if self.imageUploader:
+                    self.imageUploader.imageDone.emit(imgFile)
+
                 self._indentLogs = False
                 numFilesDone += 1
                 timeAvg.update()
