@@ -36,11 +36,11 @@ class InferenceService(Service):
 
     @msghandler("caption")
     def caption(self, msg: dict):
-        img = msg["img"]
-        captions = self.llmBackend.getBackend().caption(img, msg["prompts"], msg["sysPrompt"])
+        imgFile = ImageFile.fromMsg(msg)
+        captions = self.llmBackend.getBackend().caption(imgFile, msg["prompts"], msg["sysPrompt"])
         return {
             "cmd": msg["cmd"],
-            "img": img,
+            "img": msg["img"],
             "captions": captions
         }
 
@@ -65,23 +65,23 @@ class InferenceService(Service):
 
     @msghandler("mask")
     def mask(self, msg: dict):
-        img = msg["img"]
+        imgFile = ImageFile.fromMsg(msg)
         classes = msg["classes"]
-        mask = self.backendLoader.getBackend(msg["config"]).mask(img, classes)
+        mask = self.backendLoader.getBackend(msg["config"]).mask(imgFile, classes)
         return {
             "cmd": msg["cmd"],
-            "img": img,
+            "img": msg["img"],
             "mask": mask
         }
 
     @msghandler("mask_boxes")
     def maskBoxes(self, msg: dict):
-        img = msg["img"]
+        imgFile = ImageFile.fromMsg(msg)
         classes = msg["classes"]
-        boxes = self.backendLoader.getBackend(msg["config"]).detectBoxes(img, classes)
+        boxes = self.backendLoader.getBackend(msg["config"]).detectBoxes(imgFile, classes)
         return {
             "cmd": msg["cmd"],
-            "img": img,
+            "img": msg["img"],
             "boxes": boxes
         }
 
@@ -96,9 +96,9 @@ class InferenceService(Service):
 
     @msghandler("imgfile_upscale")
     def upscaleImgFile(self, msg: dict):
-        img = msg["img"]
+        imgFile = ImageFile.fromMsg(msg)
         backend = self.backendLoader.getBackend(msg["config"])
-        w, h, imgUpscaled = backend.upscaleImage(img)
+        w, h, imgUpscaled = backend.upscaleImage(imgFile)
         return {
             "cmd": msg["cmd"],
             "w": w,
@@ -106,6 +106,7 @@ class InferenceService(Service):
             "img": imgUpscaled
         }
 
+    # TODO: Use ImageCache for async upload
     @msghandler("img_upscale")
     def upscaleImgData(self, msg: dict):
         imgData = msg["img_data"]

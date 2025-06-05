@@ -1,11 +1,14 @@
 from __future__ import annotations
 from typing import Callable
+from io import BytesIO
 
 
 # TODO: Upload Session, for ensuring cache is cleared on inference error
 
 
 class ImageFile:
+    MIME_TYPES = ["image/png", "image/jpeg"]
+
     def __init__(self, file: str, data: bytearray | None = None):
         self.file = file
         self.data = data
@@ -20,12 +23,10 @@ class ImageFile:
     def fromMsg(msg: dict):
         file = msg["img"]
         if data := msg.get("img_data"):
-            print(f"{file}: Using data from buffer")
             imgFile = ImageFile(file, data)
             imgFile.size = len(data)
             return imgFile
 
-        print(f"{file}: Loading from file")
         return ImageFile(file)
 
 
@@ -40,7 +41,6 @@ class ImageFile:
         self.size = end
 
         if end >= len(self.data):
-            print(f">>> Upload complete: '{self.file}'")
             self._notifyComplete()
 
 
@@ -71,9 +71,27 @@ class ImageFile:
     def openPIL(self):
         from PIL import Image
         if self.data:
-            import io
-            return Image.open(io.BytesIO(self.data))
+            return Image.open(BytesIO(self.data))
         return Image.open(self.file)
+
+    def getURI(self) -> str:
+        import base64, mimetypes
+        mimetype = mimetypes.guess_type(self.file)[0]
+        if mimetype in self.MIME_TYPES:
+            if self.data:
+                imgData = self.data
+            else:
+                return f"file://{self.file}"
+
+        else:
+            buffer = BytesIO()
+            img = self.openPIL()
+            img.save(buffer, format='PNG', optimize=False, compress_level=0)
+            imgData = buffer.getvalue()
+            mimetype = "image/png"
+
+        base64Data = base64.b64encode(imgData).decode('utf-8')
+        return "".join(("data:", mimetype, ";base64,", base64Data))
 
 
 
@@ -89,7 +107,6 @@ class ImageCache:
 
         imgFile.addData(data)
         self.totalSize += len(data)
-        #print(f"Received image data for '{file}', total cache size: {self.totalSize}")
 
     def getImage(self, file: str) -> ImageFile | None:
         return self.images.get(file)
@@ -98,4 +115,3 @@ class ImageCache:
         if imgFile := self.images.pop(file, None):
             assert imgFile.data is not None
             self.totalSize -= imgFile.size
-            #print(f"Released from ImageCache: {file} (total chache size down to: {self.totalSize})")

@@ -1,9 +1,10 @@
 # https://github.com/plemeri/transparent-background
 # Models: https://github.com/plemeri/InSPyReNet/blob/main/docs/model_zoo.md
 
-import cv2 as cv
 import numpy as np
 from transparent_background import Remover
+from host.imagecache import ImageFile
+
 
 class InspyrenetMask:
     def __init__(self, config: dict):
@@ -20,8 +21,8 @@ class InspyrenetMask:
         pass
 
 
-    def mask(self, imgPath: str, classes: list[str]) -> bytes:
-        image = cv.imread(imgPath, cv.IMREAD_UNCHANGED)
+    def mask(self, imgFile: ImageFile, classes: list[str]) -> bytes:
+        image = imgFile.openCvMat()
 
         channels = image.shape[2] if len(image.shape)>2 else 1
         if channels == 1:

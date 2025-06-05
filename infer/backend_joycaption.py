@@ -1,12 +1,12 @@
 from transformers import LlavaForConditionalGeneration, AutoProcessor, GenerationConfig, set_seed
 import torch
-from PIL import Image
-from .backend import InferenceBackend
+from host.imagecache import ImageFile
+from .backend import CaptionBackend
 from .devmap import DevMap
 from .quant import Quantization
 
 
-class JoyCaptionBackend(InferenceBackend):
+class JoyCaptionBackend(CaptionBackend):
     def __init__(self, config: dict):
         modelPath = config.get("model_path")
         self.generationConfig = GenerationConfig.from_pretrained(modelPath)
@@ -46,8 +46,8 @@ class JoyCaptionBackend(InferenceBackend):
             self.generationConfig.pad_token_id = 128001
 
 
-    def caption(self, imgPath: str, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
-        image = Image.open(imgPath)
+    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
+        image = imgFile.openPIL()
         answers = dict()
 
         set_seed(self.randomSeed())

@@ -1,18 +1,18 @@
 from transformers import AutoModelForCausalLM, AutoProcessor, GenerationConfig, set_seed
-from PIL import Image
 import torch
-from typing import List, Dict
-from .backend import InferenceBackend
+from host.imagecache import ImageFile
+from .backend import CaptionBackend
 from .devmap import DevMap
 from .quant import Quantization
 
 
-class MolmoBackend(InferenceBackend):
-    def __init__(self, config: dict):
-        modelPath = config.get("model_path")
+class MolmoBackend(CaptionBackend):
+    def __init__(self, config):
+        modelPath: str = config["model_path"]
+        self.generationConfig = GenerationConfig.from_pretrained(modelPath)
 
-        devmap = self.makeDeviceMap(modelPath, config.get("gpu_layers"), config.get("vis_gpu_layers"))
-        quant = Quantization.getQuantConfig(config.get("quantization"), devmap.hasCpuLayers)
+        devmap = self.makeDeviceMap(modelPath, config["gpu_layers"], config["vis_gpu_layers"])
+        quant = Quantization.getQuantConfig(config["quantization"], devmap.hasCpuLayers)
 
         self.model = AutoModelForCausalLM.from_pretrained(
             modelPath,
@@ -30,6 +30,9 @@ class MolmoBackend(InferenceBackend):
             trust_remote_code=True
         )
 
+        # https://huggingface.co/docs/transformers/main/perf_torch_compile
+        # https://pytorch.org/get-started/pytorch-2.0/#user-experience
+        #self.model = torch.compile(self.model, mode="max-autotune") # modes: max-autotune, reduce-overhead
         super().__init__(config)
 
 
@@ -37,26 +40,33 @@ class MolmoBackend(InferenceBackend):
         super().setConfig(config)
         self.stop = ["<|endoftext|>"]
 
+        self.generationConfig.max_new_tokens    = self.config.get("max_tokens")
+        self.generationConfig.stop_strings      = (self.stop if self.stop else None)
+        self.generationConfig.use_cache         = True
+
+        # Enabling sampling causes RuntimeError: CUDA error: device-side assert triggered
+        self.generationConfig.do_sample         = False
+
         # https://huggingface.co/docs/transformers/main_classes/text_generation
-        self.generationConfig = GenerationConfig(
-            max_new_tokens=self.config.get("max_tokens"),
-            stop_strings=self.stop,
-
-            # Enabling sampling causes RuntimeError: CUDA error: device-side assert triggered
-            do_sample=False,
-            # temperature=self.config.get("temperature"),
-            # top_k=self.config.get("top_k"),
-            # top_p=self.config.get("top_p"),
-            # min_p=self.config.get("min_p"),
-            # typical_p=self.config.get("typical_p"),
-            # repetition_penalty=self.config.get("repeat_penalty"),
-
-            use_cache=True
-        )
+        # self.generationConfig = GenerationConfig(
+        #     max_new_tokens=self.config.get("max_tokens"),
+        #     stop_strings=self.stop,
 
 
-    def caption(self, imgPath: str, prompts: List[Dict[str, str]], systemPrompt: str = None) -> Dict[str, str]:
-        image = Image.open(imgPath)
+        #     do_sample=False,
+        #     # temperature=self.config.get("temperature"),
+        #     # top_k=self.config.get("top_k"),
+        #     # top_p=self.config.get("top_p"),
+        #     # min_p=self.config.get("min_p"),
+        #     # typical_p=self.config.get("typical_p"),
+        #     # repetition_penalty=self.config.get("repeat_penalty"),
+
+        #     use_cache=True
+        # )
+
+
+    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
+        image = imgFile.openPIL()
         answers = dict()
 
         set_seed(self.randomSeed())
@@ -107,7 +117,7 @@ class MolmoBackend(InferenceBackend):
     @staticmethod
     def makeDeviceMap(modelPath, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
         devmap = DevMap.fromConfig(
-            modelPath, 
+            modelPath,
             "num_hidden_layers"
         )
         devmap.maxLayerVis = 22
@@ -117,7 +127,7 @@ class MolmoBackend(InferenceBackend):
         devmap.setCudaLayer("model.transformer.ln_f")
         devmap.setCudaLayer("model.transformer.wte")
         devmap.setLLMLayers("model.transformer.blocks", llmGpuLayers)
-        
+
         # devmap.setCudaLayer("model.vision_backbone")
         # devmap.setCudaLayer("model.vision_backbone.image_pooling_2d")
         # devmap.setCudaLayer("model.vision_backbone.image_projector")

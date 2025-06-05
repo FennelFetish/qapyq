@@ -1,13 +1,12 @@
 from transformers import AutoModelForCausalLM, AutoConfig, set_seed #, AutoTokenizer, AutoModel
-from PIL import Image
 import torch
-from typing import List, Dict
-from .backend import InferenceBackend
+from host.imagecache import ImageFile
+from .backend import CaptionBackend
 from .devmap import DevMap
 #from .quant import Quantization
 
 
-class Ovis2Backend(InferenceBackend):
+class Ovis2Backend(CaptionBackend):
     def __init__(self, config: dict):
         modelPath = config.get("model_path")
 
@@ -71,8 +70,8 @@ class Ovis2Backend(InferenceBackend):
         }
 
 
-    def caption(self, imgPath: str, prompts: List[Dict[str, str]], systemPrompt: str = None) -> Dict[str, str]:
-        image = Image.open(imgPath)
+    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
+        image = imgFile.openPIL()
         answers = dict()
 
         set_seed(self.randomSeed())

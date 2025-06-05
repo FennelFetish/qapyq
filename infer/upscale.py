@@ -3,7 +3,7 @@ import spandrel_extra_arches
 import torch
 import torchvision.transforms as transforms
 import numpy as np
-from PIL import Image
+from host.imagecache import ImageFile
 
 # add extra architectures before `ModelLoader` is used
 spandrel_extra_arches.install()
@@ -38,8 +38,8 @@ class UpscaleBackend:
         result = result.astype(np.uint8).transpose(1, 2, 0)
         return result
 
-    def upscaleImage(self, imgPath: str) -> tuple[int, int, bytes]:
-        image = Image.open(imgPath)
+    def upscaleImage(self, imgFile: ImageFile) -> tuple[int, int, bytes]:
+        image = imgFile.openPIL()
         tensor = self.toTensor(image)
         result = self._upscaleImage(tensor)
         h, w = result.shape[:2]

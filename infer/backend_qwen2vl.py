@@ -1,13 +1,13 @@
 from transformers import Qwen2VLForConditionalGeneration, AutoProcessor, GenerationConfig, set_seed
 import torch, math
 from PIL import Image
-from typing import List, Dict
-from .backend import InferenceBackend
+from host.imagecache import ImageFile
+from .backend import CaptionBackend
 from .devmap import DevMap
 from .quant import Quantization
 
 
-class Qwen2VLBackend(InferenceBackend):
+class Qwen2VLBackend(CaptionBackend):
     def __init__(self, config: dict):
         super().__init__(config)
         modelPath = config.get("model_path")
@@ -26,7 +26,7 @@ class Qwen2VLBackend(InferenceBackend):
 
         self.processor = AutoProcessor.from_pretrained(modelPath)
 
-    
+
     def setConfig(self, config: dict):
         super().setConfig(config)
 
@@ -45,8 +45,8 @@ class Qwen2VLBackend(InferenceBackend):
         )
 
 
-    def caption(self, imgPath: str, prompts: List[Dict[str, str]], systemPrompt: str = None) -> Dict[str, str]:
-        image = Image.open(imgPath)
+    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
+        image = imgFile.openPIL()
         image = self.downscaleImage(image)
         answers = dict()
 
@@ -79,7 +79,7 @@ class Qwen2VLBackend(InferenceBackend):
 
         return answers
 
-    
+
     def _getUserContent(self, prompt: str, index: int):
         if index == 0:
             return [
@@ -98,7 +98,7 @@ class Qwen2VLBackend(InferenceBackend):
         scale = math.sqrt(maxPixels / pixels)
         if scale >= 1.0:
             return image
-        
+
         newWidth  = round(width * scale)
         newHeight = round(height * scale)
         return image.resize((newWidth, newHeight), resample=Image.Resampling.BOX)
@@ -107,7 +107,7 @@ class Qwen2VLBackend(InferenceBackend):
     @staticmethod
     def makeDeviceMap(modelPath, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
         devmap = DevMap.fromConfig(
-            modelPath, 
+            modelPath,
             "num_hidden_layers",
             "vision_config.depth"
         )
@@ -116,7 +116,7 @@ class Qwen2VLBackend(InferenceBackend):
         devmap.setCudaLayer("model.embed_tokens")
         devmap.setCudaLayer("model.norm")
         devmap.setLLMLayers("model.layers", llmGpuLayers)
-        
+
         # FIXME: Offloading the visual layers to CPU causes OOM errors during inference for non-square images?
         if visGpuLayers == 0:
             devmap.setCpuLayer("visual")

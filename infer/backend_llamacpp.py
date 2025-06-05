@@ -1,6 +1,7 @@
-from typing import Callable, List, Dict
+from typing import Callable
 import math
 from llama_cpp import Llama
+from host.imagecache import ImageFile
 from .backend import InferenceBackend
 
 
@@ -31,7 +32,7 @@ class LlamaCppBackend(InferenceBackend):
         if numLayers == 0:
             print("Failed to read number of layers from GGUF file. Loading all layers to GPU.")
             return -1
-        
+
         numGpuLayers = math.ceil((gpuLayersPercent / 100) * numLayers)
         print(f"Total GGUF layers: {numLayers}, GPU: {numGpuLayers} ({gpuLayersPercent}%), CPU: {numLayers-numGpuLayers}")
         return numGpuLayers
@@ -43,13 +44,13 @@ class LlamaCppBackend(InferenceBackend):
             data = file.read(8192)
         if not data.startswith(b'GGUF'):
             return 0
-        
+
         key = b'.block_count'
         pos = data.find(key)
         if pos < 0:
             return 0
         pos += len(key)
-        
+
         fieldType = int.from_bytes(data[pos:pos+4], "little")
         match fieldType:
             case 0: fieldLen, fieldSigned = 1, False
@@ -66,14 +67,18 @@ class LlamaCppBackend(InferenceBackend):
         return int.from_bytes(data[pos:pos+fieldLen], "little", signed=fieldSigned)
 
 
-    def answer(self, prompts: List[Dict[str, str]], systemPrompt=None) -> Dict[str, str]:
+    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt=None) -> dict[str, str]:
+        raise NotImplementedError()
+
+
+    def answer(self, prompts: list[dict[str, str]], systemPrompt=None) -> dict[str, str]:
         def getUserContent(prompt: str, index: int):
             return prompt.strip()
 
         return self._tryAnswer(getUserContent, prompts, systemPrompt)
 
 
-    def _tryAnswer(self, userContentFunc: Callable, prompts: List[Dict[str, str]], systemPrompt) -> Dict[str, str]:
+    def _tryAnswer(self, userContentFunc: Callable, prompts: list[dict[str, str]], systemPrompt) -> dict[str, str]:
         try:
             return self._answer(userContentFunc, prompts, systemPrompt)
         except ValueError as ex:
@@ -85,7 +90,7 @@ class LlamaCppBackend(InferenceBackend):
                 raise ex
 
 
-    def _answer(self, userContentFunc: Callable, prompts: List[Dict[str, str]], systemPrompt: str | None) -> Dict[str, str]:
+    def _answer(self, userContentFunc: Callable, prompts: list[dict[str, str]], systemPrompt: str | None) -> dict[str, str]:
         answers = {}
 
         for conversation in prompts:
@@ -107,7 +112,7 @@ class LlamaCppBackend(InferenceBackend):
                 answer = msg["content"].strip()
                 messages.append( {"role": msg["role"], "content": answer} )
                 answers[name] = answer
-        
+
         return answers
 
 
@@ -124,8 +129,9 @@ class LlamaCppVisionBackend(LlamaCppBackend):
         self.stop.append("ASSISTANT:")
 
 
-    def caption(self, imgPath, prompts: List[Dict[str, str]], systemPrompt=None) -> Dict[str, str]:
-        imgURI = self.imageToBase64(imgPath)
+    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt=None) -> dict[str, str]:
+        imgURI = imgFile.getURI()
+
         def getUserContent(prompt: str, index: int):
             if index == 0:
                 return [

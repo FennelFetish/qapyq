@@ -1,13 +1,12 @@
 from transformers import AutoModelForCausalLM, set_seed
-from PIL import Image
 import torch
-from typing import List, Dict
-from .backend import InferenceBackend
+from host.imagecache import ImageFile
+from .backend import CaptionBackend
 from .devmap import DevMap
 from .quant import Quantization
 
 
-class Ovis16Backend(InferenceBackend):
+class Ovis16Backend(CaptionBackend):
     def __init__(self, config: dict):
         modelPath = config.get("model_path")
 
@@ -58,9 +57,9 @@ class Ovis16Backend(InferenceBackend):
         }
 
 
-    def caption(self, imgPath: str, prompts: List[Dict[str, str]], systemPrompt: str = None) -> Dict[str, str]:
+    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
         prompts = self.preparePrompts(prompts, systemPrompt)
-        image = Image.open(imgPath)
+        image = imgFile.openPIL()
         answers = dict()
 
         set_seed(self.randomSeed())
@@ -92,10 +91,10 @@ class Ovis16Backend(InferenceBackend):
             return self.text_tokenizer.decode(output_ids, skip_special_tokens=True)
 
 
-    def preparePrompts(self, prompts: List[Dict[str, str]], systemPrompt: str) -> List[Dict[str, str]]:
+    def preparePrompts(self, prompts: list[dict[str, str]], systemPrompt: str) -> list[dict[str, str]]:
         if systemPrompt:
             prompts = self.mergeSystemPrompt(prompts, systemPrompt)
-        
+
         for conv in prompts:
             name, prompt  = next(iter(conv.items())) # First entry
             conv[name] = f'<image>\n{prompt}'
@@ -105,7 +104,7 @@ class Ovis16Backend(InferenceBackend):
     @staticmethod
     def makeDeviceMap(modelPath, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
         devmap = DevMap.fromConfig(
-            modelPath, 
+            modelPath,
             "llm_config.num_hidden_layers",
             "visual_tokenizer_config.backbone_config.num_hidden_layers"
         )
@@ -115,7 +114,7 @@ class Ovis16Backend(InferenceBackend):
         devmap.setCudaLayer("llm.model.embed_tokens")
         devmap.setCudaLayer("llm.model.norm")
         devmap.setLLMLayers("llm.model.layers", llmGpuLayers)
-        
+
         devmap.setCudaLayer("visual_tokenizer")
         devmap.setCudaLayer("visual_tokenizer.head")
         devmap.setCudaLayer("visual_tokenizer.backbone.vision_model.embeddings")
