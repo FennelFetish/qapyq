@@ -2,12 +2,13 @@ from typing import Any
 from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, GenerationConfig, set_seed
 import torch, json, math
 from PIL import Image
-from .backend import InferenceBackend
+from host.imagecache import ImageFile
+from .backend import CaptionBackend
 from .devmap import DevMap
 from .quant import Quantization
 
 
-class Qwen25VLBackend(InferenceBackend):
+class Qwen25VLBackend(CaptionBackend):
     DETECT_SYSPROMPT = "You are a helpful assistant"
     DETECT_PROMPT    = "Outline the position of the requested elements and output coordinates in JSON format.\nRequested elements: "
 
@@ -85,8 +86,8 @@ class Qwen25VLBackend(InferenceBackend):
         return outputText[0].strip()
 
 
-    def caption(self, imgPath: str, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
-        image = Image.open(imgPath)
+    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
+        image = imgFile.openPIL()
         image = self.downscaleImage(image)
 
         answers = dict()
@@ -98,7 +99,7 @@ class Qwen25VLBackend(InferenceBackend):
                 messages.append( {"role": "system", "content": systemPrompt.strip()} )
 
             for i, (name, prompt) in enumerate(conversation.items()):
-                messages.append( {"role": "user", "content": self._getUserContent(prompt, i, imgPath)} )
+                messages.append( {"role": "user", "content": self._getUserContent(prompt, i, imgFile)} )
                 answer = self._runTask(image, messages)
                 messages.append( {"role": "assistant", "content": answer} )
                 answers[name] = answer
@@ -106,15 +107,15 @@ class Qwen25VLBackend(InferenceBackend):
         return answers
 
 
-    def detectBoxes(self, imgPath: str, classes: list[str]):
-        image = Image.open(imgPath)
+    def detectBoxes(self, imgFile: ImageFile, classes: list[str]):
+        image = imgFile.openPIL()
         image = self.downscaleImage(image)
         w, h = image.size
 
         prompt = self.DETECT_PROMPT + ", ".join(classes)
         messages = [
             {"role": "system", "content": self.DETECT_SYSPROMPT},
-            {"role": "user", "content": self._getUserContent(prompt, 0, imgPath)}
+            {"role": "user", "content": self._getUserContent(prompt, 0, imgFile)}
         ]
 
         results = []
@@ -141,12 +142,12 @@ class Qwen25VLBackend(InferenceBackend):
         return results
 
 
-    def _getUserContent(self, prompt: str, index: int, imgPath: str):
+    def _getUserContent(self, prompt: str, index: int, imgFile: ImageFile):
         if index == 0:
             return [
                 {
                     "type": "image",
-                    "image": f"file://{imgPath}"
+                    "image": imgFile.getURI()
                 },
                 {
                     "type": "text",

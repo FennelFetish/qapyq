@@ -1,9 +1,10 @@
-from PIL import Image
 import torch
 from torchvision import transforms
 from transformers import AutoModelForImageSegmentation
 import numpy as np
 import cv2 as cv
+from PIL import Image
+from host.imagecache import ImageFile
 
 
 class BriaRmbgMask:
@@ -30,8 +31,8 @@ class BriaRmbgMask:
 
 
     @torch.inference_mode()
-    def mask(self, imgPath: str, classes: list[str]) -> bytes:
-        image = Image.open(imgPath)
+    def mask(self, imgFile: ImageFile, classes: list[str]) -> bytes:
+        image = imgFile.openPIL()
         wOrig, hOrig = image.size
 
         if image.mode != "RGB":

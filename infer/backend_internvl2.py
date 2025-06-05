@@ -3,10 +3,9 @@ import torchvision.transforms as T
 from torchvision.transforms.functional import InterpolationMode
 from transformers import AutoModel, AutoTokenizer, set_seed
 #from decord import VideoReader, cpu
-from PIL import Image
 #from accelerate import infer_auto_device_map, init_empty_weights
-from typing import List, Dict
-from .backend import InferenceBackend
+from host.imagecache import ImageFile
+from .backend import CaptionBackend
 from .devmap import DevMap
 from .quant import Quantization
 
@@ -77,8 +76,8 @@ def dynamic_preprocess(image, min_num=1, max_num=12, image_size=448, use_thumbna
         processed_images.append(thumbnail_img)
     return processed_images
 
-def load_image(image_file, input_size=448, max_num=12):
-    image = Image.open(image_file).convert('RGB')
+def load_image(imgFile: ImageFile, input_size=448, max_num=12):
+    image = imgFile.openPIL().convert('RGB')
     transform = build_transform(input_size=input_size)
     images = dynamic_preprocess(image, image_size=input_size, use_thumbnail=True, max_num=max_num)
     pixel_values = [transform(image) for image in images]
@@ -93,13 +92,15 @@ def load_image(image_file, input_size=448, max_num=12):
 #     return tensor.to(device, non_blocking=non_blocking)
 # NotImplementedError: Cannot copy out of meta tensor; no data!
 
-class InternVL2Backend(InferenceBackend):
+class InternVL2Backend(CaptionBackend):
     def __init__(self, config: dict):
-        super().__init__(config)
         modelPath = config.get("model_path")
+        self.tokenizer = AutoTokenizer.from_pretrained(modelPath, trust_remote_code=True, use_fast=True)
+
+        super().__init__(config)
 
         devmap = self.makeDeviceMap(modelPath, config.get("gpu_layers"), config.get("vis_gpu_layers"))
-        quant = Quantization.getQuantConfig(config.get("quantization"), devmap.hasCpuLayers)
+        quant = Quantization.getQuantConfig(config.get("quantization"), devmap.hasCpuLayers)#, ["vision_model"])
 
         self.model = AutoModel.from_pretrained(
             modelPath,
@@ -112,7 +113,9 @@ class InternVL2Backend(InferenceBackend):
             trust_remote_code=True,
         ).eval()#.cuda()
 
-        self.tokenizer = AutoTokenizer.from_pretrained(modelPath, trust_remote_code=True, use_fast=True)
+        # https://huggingface.co/docs/transformers/main/perf_torch_compile
+        # https://pytorch.org/get-started/pytorch-2.0/#user-experience
+        #self.model = torch.compile(self.model, mode="max-autotune") # modes: max-autotune, reduce-overhead
 
 
     def setConfig(self, config: dict):
@@ -128,12 +131,14 @@ class InternVL2Backend(InferenceBackend):
             "top_p": self.config.get("top_p"),
             "min_p": self.config.get("min_p"),
             "typical_p": self.config.get("typical_p"),
-            "repetition_penalty": self.config.get("repeat_penalty")
+            "repetition_penalty": self.config.get("repeat_penalty"),
+
+            "pad_token_id": self.tokenizer.pad_token_id
         }
 
 
-    def caption(self, imgPath: str, prompts: List[Dict[str, str]], systemPrompt: str = None) -> Dict[str, str]:
-        pixel_values = load_image(imgPath, max_num=12).to(torch.bfloat16).cuda()
+    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
+        pixel_values = load_image(imgFile, max_num=12).to(torch.bfloat16).cuda()
         answers = dict()
 
         self.model.system_message = systemPrompt.strip() if systemPrompt else ""
@@ -197,10 +202,3 @@ class InternVL2Backend(InferenceBackend):
 
         devmap.setCudaLayer("mlp1")
         return devmap
-
-
-
-import sys, os
-def printErr(text):
-    sys.stderr.write(text + os.linesep)
-    sys.stderr.flush()

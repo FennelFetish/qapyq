@@ -1,5 +1,6 @@
 import sys, struct, msgpack
 from typing import Any, IO
+from typing_extensions import override
 from host.protocol import Protocol, MessageLoop, Service, msghandler
 from host.imagecache import ImageCache, ImageFile
 from config import Config
@@ -8,8 +9,8 @@ from config import Config
 class Host(Service):
     def __init__(self, protocol: Protocol):
         super().__init__(protocol)
-        self.imgCache = ImageCache()
         self.loop = MessageLoop(protocol)
+        self.imgCache = ImageCache()
 
         self.inference = None
         protocol.setSubServiceSpawner(Service.ID.INFERENCE, self.spawnInference)
@@ -42,6 +43,7 @@ class ForwardingProtocol(Protocol):
         self.receiverProtocol = receiverProtocol
         self.imgCache = imgCache
 
+    @override
     def readMessage(self) -> tuple[int, dict[str, Any] | None]:
         header = self.bufIn.read(self.HEADER_LENGTH)
         srv, length, reqId = struct.unpack("!HII", header)
@@ -50,18 +52,19 @@ class ForwardingProtocol(Protocol):
         self.receiverProtocol.write(header, data)
         return reqId, None
 
+    @override
     def writeSubService(self, reqId: int, header: bytes, data: bytes):
         msg: dict = msgpack.unpackb(data)
         # TODO: Add callback when imgFile doesn't exist yet? -> This shouldn't happen because upload is queued before tasks
         if (img := msg.get("img")) and (imgFile := self.imgCache.getImage(img)):
             if imgFile.isComplete():
-                self.uploadCompleted(imgFile, reqId, msg)
+                self.forwardImgData(imgFile, reqId, msg)
             else:
-                imgFile.addCompleteCallback(lambda imgFile, reqId=reqId, msg=msg: self.uploadCompleted(imgFile, reqId, msg))
+                imgFile.addCompleteCallback(lambda imgFile, reqId=reqId, msg=msg: self.forwardImgData(imgFile, reqId, msg))
         else:
             self.write(header, data)
 
-    def uploadCompleted(self, imgFile: ImageFile, reqId: int, msg: dict):
+    def forwardImgData(self, imgFile: ImageFile, reqId: int, msg: dict):
         msg["img_data"] = imgFile.data
         self.writeMessage(reqId, msg)
 

@@ -1,11 +1,11 @@
 from typing import Any
-import base64, random
-from io import BytesIO
-from PIL import Image
+import random
+from abc import ABC, abstractmethod
 from config import Config
+from host.imagecache import ImageFile
 
 
-class InferenceBackend:
+class InferenceBackend(ABC):
     def __init__(self, config: dict[str, Any]):
         self.stop: list[str] = []
 
@@ -38,22 +38,6 @@ class InferenceBackend:
 
 
     @staticmethod
-    def imageToBase64(imgPath: str):
-        if imgPath.lower().endswith(".png"):
-            with open(imgPath, "rb") as img:
-                imgData = img.read()
-        else:
-            buffer = BytesIO()
-            img = Image.open(imgPath)
-            img.save(buffer, format='PNG')
-            imgData = buffer.getvalue()
-            del img, buffer
-
-        base64Data = base64.b64encode(imgData).decode('utf-8')
-        return f"data:image/png;base64,{base64Data}"
-
-
-    @staticmethod
     def mergeSystemPrompt(prompts: list[dict[str, str]], systemPrompt: str) -> list[dict[str, str]]:
         for conv in prompts:
             name, prompt  = next(iter(conv.items())) # First entry
@@ -63,8 +47,20 @@ class InferenceBackend:
         return prompts
 
 
-    def caption(self, imgPath: str, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
+
+class CaptionBackend(InferenceBackend):
+    def __init__(self, config: dict[str, Any]):
+        super().__init__(config)
+
+    @abstractmethod
+    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
         raise NotImplementedError()
 
+
+class AnswerBackend(InferenceBackend):
+    def __init__(self, config: dict[str, Any]):
+        super().__init__(config)
+
+    @abstractmethod
     def answer(self, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
         raise NotImplementedError()

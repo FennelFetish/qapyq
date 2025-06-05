@@ -4,6 +4,7 @@ ultralytics.utils.ONLINE = False
 
 from ultralytics import YOLO
 from PIL import Image
+from host.imagecache import ImageFile
 
 
 class YoloMask:
@@ -25,8 +26,8 @@ class YoloMask:
         return list(self.model.names.values())
 
 
-    def detectBoxes(self, imgPath: str, classes: list[str]):
-        image = Image.open(imgPath)
+    def detectBoxes(self, imgFile: ImageFile, classes: list[str]):
+        image = imgFile.openPIL()
         image = self.scaleImage(image)
 
         results = []

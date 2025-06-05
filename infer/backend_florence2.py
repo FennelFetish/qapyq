@@ -1,10 +1,9 @@
 from transformers import AutoModelForCausalLM, AutoProcessor, set_seed
 import torch, re
-from PIL import Image
 import numpy as np
 import cv2 as cv
-from typing import List, Dict
-from .backend import InferenceBackend
+from host.imagecache import ImageFile
+from .backend import CaptionBackend
 from .devmap import DevMap
 from .quant import Quantization
 
@@ -13,7 +12,7 @@ from .quant import Quantization
 # https://blog.roboflow.com/florence-2-instance-segmentation/
 
 
-class Florence2Backend(InferenceBackend):
+class Florence2Backend(CaptionBackend):
     TASK_DEFAULT_CAPTION = "<DETAILED_CAPTION>"
     TASK_DETECT     = "<CAPTION_TO_PHRASE_GROUNDING>"
     TASK_DETECT_ALL = "<OD>"
@@ -84,8 +83,8 @@ class Florence2Backend(InferenceBackend):
         }
 
 
-    def caption(self, imgPath: str, prompts: List[Dict[str, str]], systemPrompt: str = None) -> Dict[str, str]:
-        image = Image.open(imgPath)
+    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
+        image = imgFile.openPIL()
         answers = dict()
 
         set_seed(self.randomSeed())
@@ -151,7 +150,7 @@ class Florence2Backend(InferenceBackend):
     #     print(f"transition_beam_scores[0]: {transition_beam_scores[0]}")
 
     #     parsed_answer = self.processor.post_process_generation(
-    #         sequence=generated_ids.sequences[0], 
+    #         sequence=generated_ids.sequences[0],
     #         transition_beam_score=transition_beam_scores[0],
     #         task=task, image_size=(image.width, image.height)
     #     )
@@ -160,8 +159,8 @@ class Florence2Backend(InferenceBackend):
     #     return parsed_answer
 
 
-    def detectBoxes(self, imgPath: str, classes: list[str]):
-        image = Image.open(imgPath)
+    def detectBoxes(self, imgFile: ImageFile, classes: list[str]):
+        image = imgFile.openPIL()
         if image.mode != "RGB":
             image = image.convert("RGB")
 
@@ -170,14 +169,14 @@ class Florence2Backend(InferenceBackend):
         # When empty, do OD (all classes), TODO: use detailed caption as grounding?
         if not classes:
             results.extend( self._detectClass(image, self.TASK_DETECT_ALL) )
-        
+
         for prompt in classes:
             results.extend( self._detectClass(image, self.TASK_DETECT, prompt) )
         return results
 
     def _detectClass(self, image, task: str, prompt: str = None):
         w, h = image.size
-        
+
         answer: dict = self.runTask(image, task, prompt).get(task)
         bboxes = answer["bboxes"]
         labels = answer["labels"]
@@ -199,8 +198,8 @@ class Florence2Backend(InferenceBackend):
             }
 
 
-    def mask(self, imgPath: str, classes: list[str]):
-        image = Image.open(imgPath)
+    def mask(self, imgFile: ImageFile, classes: list[str]):
+        image = imgFile.openPIL()
         if image.mode != "RGB":
             image = image.convert("RGB")
         w, h = image.size
@@ -235,7 +234,7 @@ class Florence2Backend(InferenceBackend):
     @staticmethod
     def makeDeviceMap(modelPath, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
         devmap = DevMap.fromConfig(
-            modelPath, 
+            modelPath,
             "text_config.num_hidden_layers"
         )
         devmap.maxLayerVis = 3
@@ -251,7 +250,7 @@ class Florence2Backend(InferenceBackend):
         devmap.setCudaLayer("language_model.model.decoder.embed_positions")
         devmap.setCudaLayer("language_model.model.decoder.layernorm_embedding")
         devmap.setLLMLayers("language_model.model.decoder.layers", llmGpuLayers)
-        
+
         if visGpuLayers == 0:
             devmap.setCpuLayer("image_projection")
             devmap.setCpuLayer("image_proj_norm")
