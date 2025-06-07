@@ -1,6 +1,7 @@
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QSignalBlocker
 import superqt, copy
+from .model_settings import ModelSettingsWindow
 from config import Config
 
 
@@ -194,7 +195,7 @@ class InferenceSettingsWidget(superqt.QCollapsible):
             "typical_p": self.typicalP.value(),
 
             "repeat_penalty": self.repeatPenalty.value(),
-            
+
             # "mirostat_mode": self.microstatMode.value(),
             # "mirostat_tau": self.microstatTau.value(),
             # "mirostat_eta": self.microstatEta.value(),
@@ -209,9 +210,6 @@ class InferenceSettingsWidget(superqt.QCollapsible):
         return settings
 
 
-
-# ModelSettingsWindow depends on InferenceSettingsWidget above
-from .model_settings import ModelSettingsWindow
 
 class InferencePresetWidget(InferenceSettingsWidget):
     def __init__(self, configAttr="inferCaptionPresets"):
@@ -265,7 +263,7 @@ class InferencePresetWidget(InferenceSettingsWidget):
         presets: dict = getattr(Config, self.configAttr)
         for name in sorted(presets.keys()):
             self.preset.addItem(name)
-        
+
         if selectName:
             index = self.preset.findText(selectName)
         elif self.preset.count() > 0:
@@ -273,7 +271,7 @@ class InferencePresetWidget(InferenceSettingsWidget):
         else:
             self.setDefaultValues()
             index = -1
-        
+
         self.preset.setCurrentIndex(index)
 
 

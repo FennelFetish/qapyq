@@ -1,8 +1,9 @@
 import sys, struct, msgpack, copy, traceback
-from typing import Any
+from typing import Any, Callable
 from threading import Condition
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QProcess, QProcessEnvironment, QByteArray, QMutex, QMutexLocker
 from host.protocol import Protocol, Service
+from host.host_window import LOCAL_NAME
 from config import Config
 
 
@@ -50,16 +51,88 @@ class ProcFuture:
                 self._cond.wait()
 
 
+class AwaitableFunc:
+    def __init__(self, func: Callable, *args):
+        self.func = func
+        self.args = args
+        self.run  = False
+        self.cond = Condition()
+
+    def __call__(self):
+        self.func(*self.args)
+        with self.cond:
+            self.run = True
+            self.cond.notify_all()
+
+    def awaitExec(self):
+        with self.cond:
+            while not self.run:
+                self.cond.wait()
+
+
+
+# TODO: For different config on remote host:
+#       Load config from "preset name [host]"
+#       Then, always use model path as-is?
+class InferenceProcConfig:
+    def __init__(self, hostName: str):
+        cfgLocal = Config.inferHosts.get(LOCAL_NAME, {})
+        self.localBasePath: str = cfgLocal.get("model_base_path", "")
+        self.remoteBasePath: str = ""
+
+        if hostName == LOCAL_NAME:
+            self.remote = False
+            self.hostServiceId = Service.ID.INFERENCE
+            self.executable = sys.executable
+            self.arguments = ["-u", "main_inference.py"] # Unbuffered pipes
+        else:
+            self.remote = True
+            self.hostServiceId = Service.ID.HOST
+
+            cfgRemote: dict = Config.inferHosts.get(hostName, {})
+            self.remoteBasePath = cfgRemote.get("model_base_path", "")
+
+            import shlex
+            cmd = shlex.split(cfgRemote.get("cmd", ""))
+            self.executable: str = cmd[0]
+            self.arguments: list[str] = cmd[1:]
+
+        self.localBasePath = self.localBasePath.replace("\\", "/").rstrip("/")
+        self.remoteBasePath = self.remoteBasePath.replace("\\", "/").rstrip("/")
+
+    def translateConfig(self, config: dict[str, Any], keys: list[str]) -> dict:
+        if self.remote and self.remoteBasePath:
+            config = copy.deepcopy(config)
+            self._translateModelPaths(config, keys)
+        return config
+
+    def translateConfigList(self, config: dict[str, Any], listKey: str, keys: list[str]) -> dict:
+        if self.remote and self.remoteBasePath:
+            config = copy.deepcopy(config)
+            for subcfg in config.get(listKey, []):
+                self._translateModelPaths(subcfg, keys)
+        return config
+
+    def _translateModelPaths(self, config: dict[str, Any], keys: list[str]):
+        modelPath: str = None
+        for key in keys:
+            if modelPath := config.get(key):
+                modelPath = modelPath.replace("\\", "/")
+                modelPath = modelPath.removeprefix(self.localBasePath).lstrip("/")
+                config[key] = f"{self.remoteBasePath}/{modelPath}"
+
+
 
 class InferenceProcess(QObject):
-    queueStart = Signal()
+    queueStart = Signal(object)
     queueWrite = Signal(int, dict, object)
+    processEnded = Signal()
+    execAwaitable = Signal(object)
 
-
-    def __init__(self, remote=True):
+    def __init__(self, config: InferenceProcConfig):
         super().__init__()
 
-        self.remote = remote
+        self.procCfg = config
         self.proc: QProcess = None
 
         self.currentLLMConfig = dict()
@@ -75,15 +148,25 @@ class InferenceProcess(QObject):
         self._futures: dict[int, ProcFuture] = dict()
         self._nextReqId = 1  # reqId 0 for messages with no associated Future
 
-        self.queueStart.connect(self._start, Qt.ConnectionType.QueuedConnection)
+        self.queueStart.connect(self._startProcess, Qt.ConnectionType.QueuedConnection)
         self.queueWrite.connect(self._writeMessage, Qt.ConnectionType.QueuedConnection)
+        self.execAwaitable.connect(lambda func: func(), Qt.ConnectionType.QueuedConnection)
 
 
-    def start(self):
-        self.queueStart.emit()
+    def awaitTask(self, func: Callable, *args):
+        task = AwaitableFunc(func, *args)
+        self.execAwaitable.emit(task)
+        task.awaitExec()
+
+
+    def start(self, wait=True):
+        if wait:
+            self.awaitTask(self._startProcess)
+        else:
+            self.queueStart.emit(None)
 
     @Slot()
-    def _start(self):
+    def _startProcess(self):
         with QMutexLocker(self._mutex):
             if self.proc:
                 return
@@ -96,38 +179,31 @@ class InferenceProcess(QObject):
             env.insert("VLLM_DO_NOT_TRACK", "1")
 
             self.proc = QProcess()
-            if self.remote:
-                # TODO: Textfield for this command and arguments
-                with open("./ssh-command.txt", "r") as file:
-                    command = file.readline().split(" ")
-
-                self.proc.setProgram(command[0])
-                self.proc.setArguments(command[1:])
-
-                # self.proc.setProgram(sys.executable)
-                # self.proc.setArguments(["-u", "main_host.py"]) # Unbuffered pipes
-            else:
-                self.proc.setProgram(sys.executable)
-                self.proc.setArguments(["-u", "main_inference.py"]) # Unbuffered pipes
+            self.proc.setProgram(self.procCfg.executable)
+            self.proc.setArguments(self.procCfg.arguments)
 
             self.proc.setProcessEnvironment(env)
             self.proc.setProcessChannelMode(QProcess.ProcessChannelMode.ForwardedErrorChannel)
             self.proc.setReadChannel(QProcess.ProcessChannel.StandardOutput)
             self.proc.readyReadStandardOutput.connect(self._onReadyRead)
             self.proc.finished.connect(self._onProcessEnded)
-            self.proc.start()
 
+            self.proc.start()
             self.proc.waitForStarted()
 
 
-    def stop(self):
-        with QMutexLocker(self._mutex):
-            self.currentLLMConfig = dict()
-            self.currentTagConfig = dict()
+    def stop(self, wait=False):
+        self.currentLLMConfig = dict()
+        self.currentTagConfig = dict()
 
+        with QMutexLocker(self._mutex):
             if self.proc:
-                serviceId = Service.ID.HOST if self.remote else Service.ID.INFERENCE
-                self.queueWrite.emit(serviceId, {"cmd": "quit"}, None)
+                self.queueWrite.emit(self.procCfg.hostServiceId, {"cmd": "quit"}, None)
+            else:
+                wait = False
+
+        if wait:
+            self.awaitTask(lambda: self.proc.waitForFinished())
 
 
     def kill(self):
@@ -140,21 +216,26 @@ class InferenceProcess(QObject):
 
 
     def setupCaption(self, config: dict):
+        config = self.procCfg.translateConfig(config, ["model_path", "proj_path"])
         self._setup(config, "setup_caption", "currentLLMConfig")
 
     def setupTag(self, config: dict):
+        config = self.procCfg.translateConfig(config, ["model_path", "csv_path"])
         self._setup(config, "setup_tag", "currentTagConfig")
 
     def setupLLM(self, config: dict):
+        config = self.procCfg.translateConfig(config, ["model_path"])
         self._setup(config, "setup_llm", "currentLLMConfig")
 
     def setupMasking(self, config: dict):
+        config = self.procCfg.translateConfig(config, ["model_path"])
         self._query({
             "cmd": "setup_masking",
             "config": config
         })
 
     def setupUpscale(self, config: dict):
+        config = self.procCfg.translateConfigList(config, "levels", ["model_path"])
         self._query({
             "cmd": "setup_upscale",
             "config": config
@@ -182,18 +263,17 @@ class InferenceProcess(QObject):
             raise
 
     def _updateBackend(self, config: dict, configAttr: str) -> None:
-        with QMutexLocker(self._mutex):
-            currentConfig: dict = getattr(self, configAttr)
-            diff = ( True for k, v in currentConfig.items() if config.get(k) != v )
-            if any(diff):
-                self.stop()
-                self.start()
+        currentConfig: dict = getattr(self, configAttr)
+        diff = ( True for k, v in currentConfig.items() if config.get(k) != v )
+        if any(diff):
+            self.stop(wait=True)
+            self.start(wait=True)
 
-            # Remove sampling settings so they are not included in the check above
-            currentConfig = copy.deepcopy(config)
-            if Config.INFER_PRESET_SAMPLECFG_KEY in currentConfig:
-                del currentConfig[Config.INFER_PRESET_SAMPLECFG_KEY]
-            setattr(self, configAttr, currentConfig)
+        # Remove sampling settings so they are not included in the check above
+        currentConfig = copy.deepcopy(config)
+        if Config.INFER_PRESET_SAMPLECFG_KEY in currentConfig:
+            del currentConfig[Config.INFER_PRESET_SAMPLECFG_KEY]
+        setattr(self, configAttr, currentConfig)
 
 
     def cacheImage(self, imgPath: str, imgData: bytes, totalSize: int):
@@ -233,6 +313,7 @@ class InferenceProcess(QObject):
         })
 
     def mask(self, config: dict, classes: list[str], imgPath: str) -> bytes:
+        config = self.procCfg.translateConfig(config, ["model_path"])
         return self._queryKey("mask", {
             "cmd": "mask",
             "config": config,
@@ -241,6 +322,7 @@ class InferenceProcess(QObject):
         })
 
     def maskBoxes(self, config: dict, classes: list[str], imgPath: str) -> list[dict]:
+        config = self.procCfg.translateConfig(config, ["model_path"])
         return self._queryKey("boxes", {
             "cmd": "mask_boxes",
             "config": config,
@@ -249,12 +331,14 @@ class InferenceProcess(QObject):
         })
 
     def getDetectClasses(self, config: dict) -> list[str]:
+        config = self.procCfg.translateConfig(config, ["model_path"])
         return self._queryKey("classes", {
             "cmd": "get_detect_classes",
             "config": config
         })
 
     def upscaleImageFile(self, config: dict, imgPath: str) -> tuple[int, int, bytes]:
+        config = self.procCfg.translateConfigList(config, "levels", ["model_path"])
         answer = self._query({
             "cmd": "imgfile_upscale",
             "config": config,
@@ -263,6 +347,7 @@ class InferenceProcess(QObject):
         return answer["w"], answer["h"], answer["img"]
 
     def upscaleImage(self, config: dict, imgData: bytes, w: int, h: int) -> tuple[int, int, bytes]:
+        config = self.procCfg.translateConfigList(config, "levels", ["model_path"])
         answer = self._query({
             "cmd": "img_upscale",
             "config": config,
@@ -273,9 +358,9 @@ class InferenceProcess(QObject):
         return answer["w"], answer["h"], answer["img"]
 
 
-    def _query(self, msg: dict) -> dict[str, Any]:
+    def _query(self, msg: dict, serviceId=Service.ID.INFERENCE) -> dict[str, Any]:
         future = ProcFuture()
-        self.queueWrite.emit(Service.ID.INFERENCE, msg, future)
+        self.queueWrite.emit(serviceId, msg, future)
 
         answer = future.result()
         if not answer:
@@ -298,10 +383,13 @@ class InferenceProcess(QObject):
             future.setException(exception)
         self._futures = dict()
 
-        # Buffers still intact
-        self.proc.readAllStandardOutput()
-        self.proc.readAllStandardError()
-        self.proc = None
+        self.processEnded.emit()
+
+        with QMutexLocker(self._mutex):
+            # Buffers still intact
+            self.proc.readAllStandardOutput()
+            self.proc.readAllStandardError()
+            self.proc = None
 
 
     @Slot()
@@ -321,6 +409,8 @@ class InferenceProcess(QObject):
         except Exception as ex:
             if future:
                 future.setException(ex)
+            else:
+                raise
 
 
     @Slot()

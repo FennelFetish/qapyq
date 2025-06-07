@@ -1,7 +1,7 @@
 import os.path
+from typing import Mapping
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QSignalBlocker
-from .inference_settings import InferenceSettingsWidget
 from .backend_config import BackendDef, BackendTypes, BackendPathModes, BackendsCaption, BackendsTag, BackendsLLM, BackendsMask, BackendsUpscale
 from config import Config
 from lib import qtlib
@@ -77,7 +77,7 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
 
 
 class BaseSettingsWidget(QtWidgets.QWidget):
-    def __init__(self, configAttr: str, backends: dict[str, BackendDef]):
+    def __init__(self, configAttr: str, backends: Mapping[str, BackendDef]):
         super().__init__()
         self.configAttr = configAttr
         self.backends = backends
@@ -259,7 +259,7 @@ class BaseSettingsWidget(QtWidgets.QWidget):
 
 
 class LLMModelSettings(BaseSettingsWidget):
-    def __init__(self, configAttr: str, backends: dict[str, BackendDef]):
+    def __init__(self, configAttr: str, backends: Mapping[str, BackendDef]):
         super().__init__(configAttr, backends)
 
     def build(self, layout: QtWidgets.QGridLayout, row: int):
@@ -300,6 +300,7 @@ class LLMModelSettings(BaseSettingsWidget):
         layout.addWidget(self.spinBatchSize, row, 4, 1, 2)
 
         row += 1
+        from .inference_settings import InferenceSettingsWidget
         self.inferSettings = InferenceSettingsWidget()
         layout.addWidget(self.inferSettings, row, 0, 1, 7)
 
@@ -416,7 +417,7 @@ class CaptionModelSettings(LLMModelSettings):
 
 
 class TagModelSettings(BaseSettingsWidget):
-    def __init__(self, configAttr: str, backends: dict[str, BackendDef]):
+    def __init__(self, configAttr: str, backends: Mapping[str, BackendDef]):
         super().__init__(configAttr, backends)
 
     def build(self, layout: QtWidgets.QGridLayout, row: int):
@@ -469,7 +470,7 @@ class TagModelSettings(BaseSettingsWidget):
 
 
 class MaskModelSettings(BaseSettingsWidget):
-    def __init__(self, configAttr: str, backends: dict[str, BackendDef]):
+    def __init__(self, configAttr: str, backends: Mapping[str, BackendDef]):
         super().__init__(configAttr, backends)
 
     def build(self, layout: QtWidgets.QGridLayout, row: int):
@@ -533,7 +534,7 @@ class ScaleModelSettings(BaseSettingsWidget):
         return preset.get(cls.KEY_INTERP_DOWN, cls.DEFAULT_INTERP_DOWN)
 
 
-    def __init__(self, configAttr: str, backends: dict[str, BackendDef]):
+    def __init__(self, configAttr: str, backends: Mapping[str, BackendDef]):
         super().__init__(configAttr, backends)
 
     def _buildBase(self, layout: QtWidgets.QGridLayout, row: int) -> int:

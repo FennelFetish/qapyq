@@ -1,5 +1,8 @@
-from PySide6.QtCore import Qt, QThreadPool, QThread, QRunnable, Signal, Slot, QObject
+#from typing import Generator, Callable
+from PySide6.QtCore import Qt, QThreadPool, QThread, QRunnable, Signal, Slot, QObject, QMutex, QMutexLocker
 from lib.util import Singleton
+from config import Config
+from .inference_proc import InferenceProcess, InferenceProcConfig
 
 
 class Inference(metaclass=Singleton):
@@ -8,19 +11,47 @@ class Inference(metaclass=Singleton):
 
 
     def __init__(self):
-        # All interaction with the interference process must happen inside this thread
-        # self.threadPool = QThreadPool()
-        # self.threadPool.setMaxThreadCount(1)
-
         self.signals = self.Signals()
 
-        self._thread = QThread()
-        self._thread.setObjectName("inference")
-        self._thread.start()
+        # All interaction with the interference process must happen inside this thread
+        self.threadPool = QThreadPool()
+        self.threadPool.setMaxThreadCount(1)
 
-        from .inference_proc import InferenceProcess
-        self.proc = InferenceProcess()
-        self.proc.moveToThread(self._thread)
+        self._procThread = QThread()
+        self._procThread.setObjectName("inference")
+        self._procThread.start()
+
+        self._mutex = QMutex()
+        self._proc = None
+
+
+    def _createProc(self):
+        host = None
+        for hostName, hostCfg in Config.inferHosts.items():
+            if bool(hostCfg.get("active")):
+                host = hostName
+                break
+        else:
+            raise RuntimeError("No active hosts")
+
+        print(f"Using host: {host}")
+        procCfg = InferenceProcConfig(host)
+        self._proc = InferenceProcess(procCfg)
+        #self._proc.processEnded.connect(self._onProcessEnded)
+        self._proc.moveToThread(self._procThread)
+
+    # @Slot()
+    # def _onProcessEnded(self):
+    #     with QMutexLocker(self._mutex):
+    #         self._proc = None
+
+    @property
+    def proc(self):
+        with QMutexLocker(self._mutex):
+            if not self._proc:
+                self._createProc()
+            return self._proc
+
 
     def startProcess(self):
         task = InferenceTask(lambda: self.proc.start())
@@ -31,8 +62,40 @@ class Inference(metaclass=Singleton):
         self.queueTask(task)
 
     def queueTask(self, task: QRunnable):
-        #self.threadPool.start(task)
-        QThreadPool.globalInstance().start(task)
+        self.threadPool.start(task)
+
+
+
+# class ProcInfo:
+#     def __init__(self, proc: InferenceProcess):
+#         self.proc = proc
+#         self.queuedFiles = 0
+#         self.priority = 1.0
+
+#         self.imgUploader = ImageUploader(proc)
+
+#     def sortKey(self) -> float:
+#         return self.queuedFiles * self.priority
+
+
+
+# # Context manager?
+# class InferenceSession:
+#     def __init__(self, files: list[str]):
+#         self.files = files
+#         self.procs: list[ProcInfo] = list()
+#         self.checkFunc: Callable[[str], bool] = None
+
+#     def getFreeProc(self):
+#         return min(self.procs, key=ProcInfo.sortKey)
+
+#     def iterFiles(self) -> Generator[tuple[InferenceProcess, str]]:
+#         for file in self.files:
+#             if not self.checkFunc(file):
+#                 continue
+
+#             proc = self.getFreeProc()
+#             proc.imgUploader.queueUpload(file)
 
 
 
