@@ -273,6 +273,12 @@ class MainMenu(QtWidgets.QMenu):
         actModelConfig.triggered.connect(self.showModelSettings)
         self.addAction(actModelConfig)
 
+        actShowHostWin = QtGui.QAction("Hosts...", self)
+        actShowHostWin.setShortcutContext(Qt.ApplicationShortcut)
+        actShowHostWin.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_H))
+        actShowHostWin.triggered.connect(self.showHostsWin)
+        self.addAction(actShowHostWin)
+
         actClearVram = QtGui.QAction("Clear V&RAM", self)
         actClearVram.setShortcutContext(Qt.ApplicationShortcut)
         actClearVram.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_R))
@@ -344,6 +350,11 @@ class MainMenu(QtWidgets.QMenu):
     def showModelSettings(self):
         from infer.model_settings import ModelSettingsWindow
         ModelSettingsWindow.openInstance(self.mainWindow)
+
+    @Slot()
+    def showHostsWin(self):
+        from host.host_window import HostWindow
+        HostWindow.openInstance(self.mainWindow)
 
     def changeImage(self, forward: bool):
         tab = self.mainWindow.currentTab

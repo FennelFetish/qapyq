@@ -294,7 +294,7 @@ class InferenceTask(QRunnable):
             inferProc = Inference().proc
             inferProc.start()
 
-            if inferProc.remote:
+            if inferProc.procCfg.remote:
                 from infer.inference import ImageUploader
                 self.imgUploader = ImageUploader([self.imgPath])
 

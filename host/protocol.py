@@ -81,6 +81,9 @@ class Protocol:
     def readMessage(self) -> tuple[int, dict[str, Any] | None]:
         header = self.bufIn.read(self.HEADER_LENGTH)
         srv, length, reqId = struct.unpack("!HII", header)
+        if srv > 256:
+            print(f"WARNING: Protocol received message for service {srv}")
+
         data = self.bufIn.read(length)
 
         if srv == self.serviceId:

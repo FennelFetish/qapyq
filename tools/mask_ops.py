@@ -1887,6 +1887,8 @@ class MaskTask(QRunnable):
 
     def __init__(self, mode: str, maskItem, config: dict, classes: list[str], imgPath: str, color: float):
         super().__init__()
+        self.setAutoDelete(False)
+
         self.signals  = self.Signals()
         self.mode     = mode
         self.maskItem = maskItem
@@ -1895,12 +1897,17 @@ class MaskTask(QRunnable):
         self.imgPath  = imgPath
         self.color    = color
 
+        self.imgUploader = None
+
     @Slot()
     def run(self):
         try:
-            from infer.inference import Inference
+            from infer.inference import Inference, ImageUploader
             inferProc = Inference().proc
             inferProc.start()
+
+            if inferProc.procCfg.remote:
+                self.imgUploader = ImageUploader([self.imgPath])
 
             inferProc.setupMasking(self.config)
             self.signals.loaded.emit()
@@ -1915,6 +1922,9 @@ class MaskTask(QRunnable):
             import traceback
             traceback.print_exc()
             self.signals.fail.emit(str(ex))
+        finally:
+            if self.imgUploader:
+                self.imgUploader.imageDone.emit(self.imgPath)
 
 
 

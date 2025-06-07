@@ -17,7 +17,7 @@ class Host(Service):
 
     def spawnInference(self, serviceId: int):
         self.inference = InferenceSubprocess(serviceId, self.protocol, self.imgCache)
-        return self.inference.protocol
+        return self.inference.fwdProtocol
 
 
     @msghandler("cache_img")
@@ -43,15 +43,20 @@ class ForwardingProtocol(Protocol):
         self.receiverProtocol = receiverProtocol
         self.imgCache = imgCache
 
+    # Forwarding from inference subprocess to stdout, runs in threadOut
     @override
     def readMessage(self) -> tuple[int, dict[str, Any] | None]:
         header = self.bufIn.read(self.HEADER_LENGTH)
         srv, length, reqId = struct.unpack("!HII", header)
+        if srv > 256:
+            print(f"WARNING: ForwardingProtocol received message for service {srv}")
+
         data = self.bufIn.read(length)
 
         self.receiverProtocol.write(header, data)
         return reqId, None
 
+    # Forwarding from stdin to inference subprocess, runs in main thread
     @override
     def writeSubService(self, reqId: int, header: bytes, data: bytes):
         msg: dict = msgpack.unpackb(data)
@@ -82,8 +87,8 @@ class InferenceSubprocess:
             text=False
         )
 
-        self.protocol = ForwardingProtocol(serviceId, self.process.stdout, self.process.stdin, mainProtocol, imgCache)
-        self.loop = MessageLoop(self.protocol)
+        self.fwdProtocol = ForwardingProtocol(serviceId, self.process.stdout, self.process.stdin, mainProtocol, imgCache)
+        self.loop = MessageLoop(self.fwdProtocol)
 
         self.threadOut = threading.Thread(target=self.loop)
         self.threadOut.daemon = True
@@ -99,7 +104,7 @@ class InferenceSubprocess:
             print(line.decode().strip())
 
     def stop(self):
-        self.protocol.writeMessage(0, {"cmd": "quit"})
+        self.fwdProtocol.writeMessage(0, {"cmd": "quit"})
         self.loop.stop()
 
 

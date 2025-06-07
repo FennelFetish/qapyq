@@ -81,6 +81,9 @@ def numpyToQImageMask(mat: np.ndarray) -> QtGui.QImage:
     return QtGui.QImage(mat, width, height, QtGui.QImage.Format.Format_Grayscale8)
 
 def numpyToQImage(mat: np.ndarray) -> QtGui.QImage:
+    if len(mat.shape) < 3:
+        return numpyToQImageMask(mat)
+
     # QImage needs alignment to 32bit/4bytes. Add padding.
     height, width, channels = mat.shape
     lineLen = width * channels
@@ -584,3 +587,50 @@ class RowScrollArea(BaseColorScrollArea):
             y = scrollBar.maximum()
 
         scrollBar.setValue(y)
+
+
+
+class CheckboxItemWidget(QtWidgets.QWidget):
+    def __init__(self, text: str):
+        super().__init__()
+        self.checkbox = QtWidgets.QCheckBox()
+        self.label = QtWidgets.QLabel(text)
+
+        layout = QtWidgets.QHBoxLayout()
+        layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.checkbox)
+        layout.addWidget(self.label)
+        self.setLayout(layout)
+
+    @property
+    def checked(self) -> bool:
+        return self.checkbox.isChecked()
+
+    @checked.setter
+    def checked(self, state: bool):
+        self.checkbox.setChecked(state)
+
+    @property
+    def text(self) -> str:
+        return self.label.text()
+
+    @text.setter
+    def text(self, text: str):
+        self.label.setText(text)
+
+
+class CheckableListWidget(QtWidgets.QListWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def addCheckboxItem(self, text: str, checked=False) -> CheckboxItemWidget:
+        widget = CheckboxItemWidget(text)
+        widget.checked = checked
+        item = QtWidgets.QListWidgetItem()
+        self.addItem(item)
+        self.setItemWidget(item, widget)
+        return widget
+
+    def getCheckboxItem(self, item: QtWidgets.QListWidgetItem) -> CheckboxItemWidget:
+        return self.itemWidget(item)
