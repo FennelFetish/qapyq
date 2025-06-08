@@ -153,6 +153,7 @@ class InferenceProcConfig:
 class InferenceProcess(QObject):
     queueStart = Signal(object)
     queueWrite = Signal(int, dict, object)
+    processReady = Signal(object, bool)
     processEnded = Signal(object)
     execAwaitable = Signal(object)
 
@@ -166,6 +167,7 @@ class InferenceProcess(QObject):
 
         self.procCfg = config
         self.proc: QProcess = None
+        self.ready = False
 
         self.currentLLMConfig = dict()
         self.currentTagConfig = dict()
@@ -218,6 +220,8 @@ class InferenceProcess(QObject):
     def _startProcess(self):
         with QMutexLocker(self._mutex):
             if self.proc:
+                if self.ready:
+                    self.processReady.emit(self, True)
                 return
 
             env = QProcessEnvironment.systemEnvironment()
@@ -239,6 +243,11 @@ class InferenceProcess(QObject):
 
             print(f"Starting inference process '{self.procCfg.hostName}'")
             self.proc.start()
+
+            future = ProcFuture()
+            future.setCallback(self._onProcessStarted)
+            self.queueWrite.emit(self.procCfg.hostServiceId, {"cmd": "echo"}, future)
+
             self.proc.waitForStarted()
 
 
@@ -435,6 +444,17 @@ class InferenceProcess(QObject):
         return self._query(msg).get(returnKey)
 
 
+    def _onProcessStarted(self, future: ProcFuture):
+        try:
+            future.result()
+            state = True
+        except:
+            state = False
+
+        with QMutexLocker(self._mutex):
+            self.ready = state
+            self.processReady.emit(self, state)
+
     @Slot()
     def _onProcessEnded(self, exitCode, exitStatus):
         print(f"Inference process '{self.procCfg.hostName}' ended. Exit code: {exitCode}, {exitStatus}")
@@ -451,6 +471,7 @@ class InferenceProcess(QObject):
             self.proc.readAllStandardOutput()
             self.proc.readAllStandardError()
             self.proc = None
+            self.ready = False
 
 
     @Slot()

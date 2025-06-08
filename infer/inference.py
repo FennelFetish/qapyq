@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Iterable, Generator, Callable, Any
 from collections import deque
 from queue import Queue
+from threading import Condition
 from PySide6.QtCore import Qt, QThreadPool, QThread, QRunnable, Signal, Slot, QObject, QMutex, QMutexLocker
 from lib.util import Singleton
 from config import Config
@@ -9,23 +10,19 @@ from .inference_proc import InferenceProcess, InferenceProcConfig, ProcFuture
 
 
 class Inference(metaclass=Singleton):
-    class Signals(QObject):
-        #runTask = Signal(object)
-        pass
-
-
     def __init__(self):
-        #self.signals = self.Signals()
-
         self._mutex = QMutex()
         self._procs: dict[str, InferenceProcess] = dict()
         self._procsInUse: set[InferenceProcess] = set()
 
 
-    def createSession(self) -> InferenceSession:
-        procs: list[InferenceProcess] = []
+    def createSession(self, maxProcesses: int = -1) -> InferenceSession:
+        prioHosts = sorted(Config.inferHosts.items(), key=lambda item: item[1].get("priority", 1.0), reverse=True)
+
+        procStates: list[ProcState] = []
+        hostnames = []
         with QMutexLocker(self._mutex):
-            for hostName, hostCfg in Config.inferHosts.items():
+            for hostName, hostCfg in prioHosts:
                 if not bool(hostCfg.get("active")):
                     continue
 
@@ -35,16 +32,22 @@ class Inference(metaclass=Singleton):
                 if not proc:
                     proc = self._procs[hostName] = self._createProc(hostName)
 
-                # TODO: Update proc config / or remove process
                 self._procsInUse.add(proc)
-                procs.append(proc)
 
-        if not procs:
-            raise RuntimeError("No free inference processes available")
+                procState = ProcState(proc, float(hostCfg.get("priority", 1.0)))
+                procStates.append(procState)
+                hostnames.append(hostName)
 
-        hostnames = ", ".join(p.procCfg.hostName for p in procs)
+                maxProcesses -= 1
+                if maxProcesses == 0:
+                    break
+
+        if not procStates:
+            raise RuntimeError("No free inference hosts available")
+
+        hostnames = ", ".join(hostnames)
         print(f"Starting inference session with hosts: {hostnames}")
-        sess = InferenceSession(procs)
+        sess = InferenceSession(procStates)
         return sess
 
     def releaseSession(self, session: InferenceSession):
@@ -108,10 +111,10 @@ class Inference(metaclass=Singleton):
 
 
 class ProcState:
-    def __init__(self, proc: InferenceProcess):
+    def __init__(self, proc: InferenceProcess, priority: float):
         self.proc = proc
+        self.priority = priority
         self.queuedFiles = set()
-        self.priority = 1.0
 
         if proc.procCfg.remote:
             self.imgUploader = ImageUploader(proc)
@@ -142,14 +145,14 @@ class ProcState:
 
 # Only one thread may interact with each inference process at the same time.
 class InferenceSession:
-    def __init__(self, procs: list[InferenceProcess]):
-        self.procs: list[ProcState] = [ProcState(proc) for proc in procs]
+    def __init__(self, procStates: list[ProcState]):
+        self.procs: list[ProcState] = procStates
         self.queueSize = 16
         self._resultQueue = Queue[tuple[ProcState, str, list[Any], Exception | None]]()
 
-        # TODO: Make a callback for setting status bar text when models are ready.
-        # self.readyProcs: list[ProcState] = list()
-        # self._condProc = Condition()
+        self.readyProcs: list[ProcState] = list()
+        self.failedProcs: list[ProcState] = list()
+        self._condProc = Condition()
 
     def __enter__(self):
         return self
@@ -159,53 +162,67 @@ class InferenceSession:
         return False
 
 
-    # def getFreeProc(self):
-    #     with self._condProc:
-    #         while not self.readyProcs:
-    #             self._condProc.wait()
-    #         return min(self.readyProcs, key=ProcState.sortKey)
-
     def getFreeProc(self):
-        return min(self.procs, key=ProcState.sortKey)
+        with self._condProc:
+            while not self.readyProcs:
+                self._condProc.wait()
+                if len(self.failedProcs) == len(self.procs):
+                    raise RuntimeError("Failed to start inference hosts")
 
-    def prepareProcs(self, prepareFunc: Callable[[InferenceProcess], None]):
+            return min(self.readyProcs, key=ProcState.sortKey)
+
+    @Slot()
+    def _onProcReady(self, proc: InferenceProcess, state: bool):
+        with self._condProc:
+            if procState := next((p for p in self.procs if p.proc == proc), None):
+                if state:
+                    self.readyProcs.append(procState)
+                else:
+                    procState.shutdown()
+                    self.failedProcs.append(procState)
+
+            self._condProc.notify_all()
+
+    def _onProcPrepared(self, future: ProcFuture, prepareCallback: Callable):
+        try:
+            future.result()
+            prepareCallback()
+        except:
+            pass
+
+    def prepare(self, prepareFunc: Callable[[InferenceProcess], None], prepareCallback: Callable[[], None] | None = None):
         for procState in self.procs:
             proc = procState.proc
+            proc.processReady.connect(self._onProcReady)
             with proc:
                 proc.start(wait=True)
                 prepareFunc(proc)
 
-                # for future in proc.getRecordedFutures():
-                #     future.setCallback(lambda future, procState=procState: self._onProcReady(future, procState))
-
-    # def _onProcReady(self, future: ProcFuture, procState: ProcState):
-    #     with self._condProc:
-    #         self.readyProcs.append(procState)
-    #         self._condProc.notify_all()
+                if prepareCallback:
+                    callback = lambda future: self._onProcPrepared(future, prepareCallback)
+                    for future in proc.getRecordedFutures():
+                        future.setCallback(callback)
 
 
     def _queueFile(self, file: str, queueFunc: Callable[[str, InferenceProcess], None]) -> bool:
         procState = self.getFreeProc()
         procState.queueFile(file)
 
-        proc = procState.proc
-        with proc:
-            queueFunc(file, procState.proc)
-            futures = proc.getRecordedFutures()
-            if not futures:
-                return False
+        with procState.proc as proc:
+            queueFunc(file, proc)
+            if futures := proc.getRecordedFutures():
+                resultCb = ResultCallback(self, procState, file, len(futures))
+                for future in futures:
+                    future.setCallback(resultCb)
+                return True
 
-            resultCb = ResultCallback(self, procState, file, len(futures))
-            for future in futures:
-                future.setCallback(resultCb)
+        return False
 
-        return True
-
-
-    def iterFiles(self, files: Iterable[str], queueFunc: Callable[[str, InferenceProcess], None]) -> Generator[tuple[str, list[Any]]]:
+    def queueFiles(self, files: Iterable[str], queueFunc: Callable[[str, InferenceProcess], None]) -> Generator[tuple[str, list[Any]]]:
         numQueued = 0
         it = iter(files)
 
+        # TODO: When a process becomes ready late, queue files to it
         # Queue initial files
         for _ in range(len(self.procs) * self.queueSize):
             if (file := next(it, None)) and self._queueFile(file, queueFunc):
