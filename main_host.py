@@ -29,6 +29,10 @@ class Host(Service):
         self.imgCache.releaseImage(msg["img"])
 
 
+    @msghandler("echo")
+    def echo(self, msg: dict):
+        return msg
+
     @msghandler("quit")
     def handleQuit(self, msg):
         if self.inference:

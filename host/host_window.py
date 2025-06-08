@@ -164,6 +164,19 @@ class LocalHostSettings(QtWidgets.QGroupBox):
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         row = 0
+        info = "A higher priority increases the likelihood that files are queued on this host."
+        layout.addWidget(QtWidgets.QLabel(info), row, 0, 1, 2)
+
+        row += 1
+        self.spinPriority = QtWidgets.QDoubleSpinBox()
+        self.spinPriority.setRange(1.0, 100.0)
+        layout.addWidget(QtWidgets.QLabel("Priority:"), row, 0)
+        layout.addWidget(self.spinPriority, row, 1)
+
+        row += 1
+        layout.setRowMinimumHeight(row, 20)
+
+        row += 1
         info = "This path is used to translate local model paths to remote paths."
         layout.addWidget(QtWidgets.QLabel(info), row, 0, 1, 2)
 
@@ -184,11 +197,13 @@ class LocalHostSettings(QtWidgets.QGroupBox):
         self.setLayout(layout)
 
     def fromDict(self, data: dict):
+        self.spinPriority.setValue(data.get("priority", 2.0))
         self.txtModelBasePath.setText(data.get("model_base_path", ""))
 
     def toDict(self, active: bool) -> dict:
         return {
             "active": active,
+            "priority": self.spinPriority.value(),
             "model_base_path": self.txtModelBasePath.text()
         }
 
@@ -207,6 +222,12 @@ class HostSettings(QtWidgets.QGroupBox):
         self.txtName.textChanged.connect(self.nameChanged.emit)
         layout.addWidget(QtWidgets.QLabel("Name:"), row, 0)
         layout.addWidget(self.txtName, row, 1)
+
+        row += 1
+        self.spinPriority = QtWidgets.QDoubleSpinBox()
+        self.spinPriority.setRange(1.0, 100.0)
+        layout.addWidget(QtWidgets.QLabel("Priority:"), row, 0)
+        layout.addWidget(self.spinPriority, row, 1)
 
         row += 1
         self.txtCmd = QtWidgets.QLineEdit("ssh hostname /srv/qapyq/run-host.sh")
@@ -235,12 +256,14 @@ class HostSettings(QtWidgets.QGroupBox):
 
 
     def fromDict(self, data: dict):
+        self.spinPriority.setValue(data.get("priority", 1.0))
         self.txtCmd.setText(data.get("cmd", "ssh hostname /srv/qapyq/run-host.sh"))
         self.txtModelBasePath.setText(data.get("model_base_path", ""))
 
     def toDict(self, active: bool) -> dict:
         return {
             "active": active,
+            "priority": self.spinPriority.value(),
             "cmd": self.txtCmd.text().strip(),
             "model_base_path": self.txtModelBasePath.text().strip()
         }

@@ -13,6 +13,10 @@ class InferenceService(Service):
         self.loop = MessageLoop(protocol)
 
 
+    @msghandler("echo")
+    def echo(self, msg: dict):
+        return msg
+
     @msghandler("quit")
     def handleQuit(self, msg):
         self.loop.stop()
