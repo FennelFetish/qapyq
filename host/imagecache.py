@@ -3,9 +3,6 @@ from typing import Callable
 from io import BytesIO
 
 
-# TODO: Upload Session, for ensuring cache is cleared on inference error
-
-
 class ImageFile:
     MIME_TYPES = ["image/png", "image/jpeg"]
 
@@ -15,9 +12,6 @@ class ImageFile:
         self.size = 0
         self._callbacks: list[Callable[[ImageFile], None]] | None = None
 
-    @staticmethod
-    def empty(filename: str, size: int):
-        return ImageFile(filename, bytearray(size))
 
     @staticmethod
     def fromMsg(msg: dict):
@@ -30,8 +24,9 @@ class ImageFile:
         return ImageFile(file)
 
 
-    def addData(self, data: bytes):
-        assert self.data is not None
+    def addData(self, data: bytes, totalSize: int):
+        if self.data is None:
+            self.data = bytearray(totalSize)
 
         end = self.size + len(data)
         if end > len(self.data):
@@ -45,7 +40,7 @@ class ImageFile:
 
 
     def isComplete(self) -> bool:
-        return (self.data is None) or self.size >= len(self.data)
+        return (self.data is not None) and self.size >= len(self.data)
 
     def addCompleteCallback(self, callback: Callable[[ImageFile], None]):
         if self._callbacks is None:
@@ -101,15 +96,15 @@ class ImageCache:
         self.totalSize = 0
 
     def recvImageData(self, file: str, data: bytes, totalSize: int):
-        imgFile = self.images.get(file)
-        if not imgFile:
-            self.images[file] = imgFile = ImageFile.empty(file, totalSize)
-
-        imgFile.addData(data)
+        imgFile = self.getImage(file)
+        imgFile.addData(data, totalSize)
         self.totalSize += len(data)
 
-    def getImage(self, file: str) -> ImageFile | None:
-        return self.images.get(file)
+    def getImage(self, file: str) -> ImageFile:
+        imgFile = self.images.get(file)
+        if not imgFile:
+            self.images[file] = imgFile = ImageFile(file)
+        return imgFile
 
     def releaseImage(self, file: str):
         if imgFile := self.images.pop(file, None):

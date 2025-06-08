@@ -1,7 +1,8 @@
+from __future__ import annotations
 import sys, struct, msgpack, copy, traceback
 from typing import Any, Callable
 from threading import Condition
-from PySide6.QtCore import Qt, Slot, Signal, QObject, QProcess, QProcessEnvironment, QByteArray, QMutex, QMutexLocker
+from PySide6.QtCore import Qt, Slot, Signal, QObject, QThread, QProcess, QProcessEnvironment, QByteArray, QMutex, QMutexLocker
 from host.protocol import Protocol, Service
 from host.host_window import LOCAL_NAME
 from config import Config
@@ -27,28 +28,52 @@ class InferenceException(Exception):
 class ProcFuture:
     def __init__(self):
         self._cond = Condition()
+        self._received = False
         self._result: dict | None = None
-        self._exception = None
+        self._exception: Exception | None = None
+        self._callback: Callable | None = None
 
-    def setResult(self, result: dict):
+    def setCallback(self, callback: Callable[[ProcFuture], None]):
         with self._cond:
+            self._callback = callback
+            if not self._received:
+                return
+
+        callback(self)
+
+
+    def setResult(self, result: dict | None):
+        with self._cond:
+            self._received = True
             self._result = result
             self._cond.notify_all()
+            cb = self._callback
+
+        if cb:
+            cb(self)
 
     def setException(self, exception):
         with self._cond:
-            if not self._exception:
-                self._exception = exception
-                self._cond.notify_all()
+            if self._exception:
+                return
 
-    def result(self) -> dict:
+            self._received = True
+            self._exception = exception
+            self._cond.notify_all()
+            cb = self._callback
+
+        if cb:
+            cb(self)
+
+    def result(self) -> dict | None:
         with self._cond:
-            while True:
-                if self._exception is not None:
-                    raise self._exception
-                if self._result is not None:
-                    return self._result
+            while not self._received:
                 self._cond.wait()
+
+            if self._exception is not None:
+                raise self._exception
+            return self._result
+
 
 
 class AwaitableFunc:
@@ -76,6 +101,8 @@ class AwaitableFunc:
 #       Then, always use model path as-is?
 class InferenceProcConfig:
     def __init__(self, hostName: str):
+        self.hostName = hostName
+
         cfgLocal = Config.inferHosts.get(LOCAL_NAME, {})
         self.localBasePath: str = cfgLocal.get("model_base_path", "")
         self.remoteBasePath: str = ""
@@ -126,11 +153,16 @@ class InferenceProcConfig:
 class InferenceProcess(QObject):
     queueStart = Signal(object)
     queueWrite = Signal(int, dict, object)
-    processEnded = Signal()
+    processEnded = Signal(object)
     execAwaitable = Signal(object)
 
     def __init__(self, config: InferenceProcConfig):
         super().__init__()
+
+        self._thread = QThread()
+        self._thread.setObjectName("inference-process")
+        self._thread.start()
+        self.moveToThread(self._thread)
 
         self.procCfg = config
         self.proc: QProcess = None
@@ -152,11 +184,28 @@ class InferenceProcess(QObject):
         self.queueWrite.connect(self._writeMessage, Qt.ConnectionType.QueuedConnection)
         self.execAwaitable.connect(lambda func: func(), Qt.ConnectionType.QueuedConnection)
 
+        self.record = False
+        self.recordedFutures: list[ProcFuture] = list()
+
 
     def awaitTask(self, func: Callable, *args):
         task = AwaitableFunc(func, *args)
         self.execAwaitable.emit(task)
         task.awaitExec()
+
+
+    def __enter__(self):
+        self.record = True
+        return self
+
+    def __exit__(self, excType, excVal, excTraceback):
+        self.record = False
+        return False
+
+    def getRecordedFutures(self) -> list[ProcFuture]:
+        futures = self.recordedFutures
+        self.recordedFutures = list()
+        return futures
 
 
     def start(self, wait=True):
@@ -188,15 +237,16 @@ class InferenceProcess(QObject):
             self.proc.readyReadStandardOutput.connect(self._onReadyRead)
             self.proc.finished.connect(self._onProcessEnded)
 
+            print(f"Starting inference process '{self.procCfg.hostName}'")
             self.proc.start()
             self.proc.waitForStarted()
 
 
     def stop(self, wait=False):
-        self.currentLLMConfig = dict()
-        self.currentTagConfig = dict()
-
         with QMutexLocker(self._mutex):
+            self.currentLLMConfig = dict()
+            self.currentTagConfig = dict()
+
             if self.proc:
                 self.queueWrite.emit(self.procCfg.hostServiceId, {"cmd": "quit"}, None)
             else:
@@ -205,7 +255,6 @@ class InferenceProcess(QObject):
         if wait:
             self.awaitTask(lambda: self.proc.waitForFinished())
 
-
     def kill(self):
         try:
             with QMutexLocker(self._mutex):
@@ -213,6 +262,10 @@ class InferenceProcess(QObject):
                     self.proc.kill()
         except:
             traceback.print_exc()
+
+    def shutdown(self):
+        self._thread.quit()
+        self._thread.wait()
 
 
     def setupCaption(self, config: dict):
@@ -252,6 +305,10 @@ class InferenceProcess(QObject):
             self._updateBackend(config, configAttr)
             future = ProcFuture()
             self.queueWrite.emit(Service.ID.INFERENCE, msg, future)
+
+            if self.record:
+                self.recordedFutures.append(future)
+                return
 
             answer = future.result()
             if not answer:
@@ -362,6 +419,10 @@ class InferenceProcess(QObject):
         future = ProcFuture()
         self.queueWrite.emit(serviceId, msg, future)
 
+        if self.record:
+            self.recordedFutures.append(future)
+            return dict()
+
         answer = future.result()
         if not answer:
             raise InferenceException("Unknown error")
@@ -376,14 +437,14 @@ class InferenceProcess(QObject):
 
     @Slot()
     def _onProcessEnded(self, exitCode, exitStatus):
-        print(f"Inference process ended. Exit code: {exitCode}, {exitStatus}")
+        print(f"Inference process '{self.procCfg.hostName}' ended. Exit code: {exitCode}, {exitStatus}")
 
         exception = InferenceException("Process terminated")
         for future in self._futures.values():
             future.setException(exception)
         self._futures = dict()
 
-        self.processEnded.emit()
+        self.processEnded.emit(self)
 
         with QMutexLocker(self._mutex):
             # Buffers still intact
@@ -417,7 +478,7 @@ class InferenceProcess(QObject):
     def _onReadyRead(self):
         while self.proc.bytesAvailable() > Protocol.HEADER_LENGTH:
             reqId, msg = self._readMessage()
-            if reqId > 0 and msg is not None:
+            if reqId > 0:
                 if future := self._futures.pop(reqId, None):
                     future.setResult(msg)
                 else:
