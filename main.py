@@ -337,14 +337,16 @@ class MainMenu(QtWidgets.QMenu):
     @Slot()
     def clearVram(self):
         from infer.inference import Inference
-        Inference().quitProcess()
-        self.mainWindow.currentTab.statusBar().showMessage("Inference process ended", 4000)
+        if names := Inference().quitProcesses():
+            names = ", ".join(names)
+            self.mainWindow.currentTab.statusBar().showMessage(f"Inference process ended ({names})", 4000)
 
     @Slot()
     def killInference(self):
         from infer.inference import Inference
-        Inference().proc.kill()
-        self.mainWindow.currentTab.statusBar().showMessage("Inference process killed", 4000)
+        if names := Inference().killProcesses():
+            names = ", ".join(names)
+            self.mainWindow.currentTab.statusBar().showMessage(f"Inference process killed ({names})", 4000)
 
     @Slot()
     def showModelSettings(self):

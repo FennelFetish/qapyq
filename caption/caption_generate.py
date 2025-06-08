@@ -1,7 +1,7 @@
 import os, re, traceback
 from enum import Enum
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject, QSignalBlocker
+from PySide6.QtCore import Qt, Slot, Signal, QThreadPool, QRunnable, QObject, QSignalBlocker
 from infer.inference import Inference
 from infer.inference_proc import InferenceProcess
 from infer.inference_settings import InferencePresetWidget
@@ -183,7 +183,7 @@ class CaptionGenerate(CaptionTab):
         if "tags" in content:
             task.tagConfig = self.tagSettings.getInferenceConfig()
 
-        Inference().queueTask(task)
+        QThreadPool.globalInstance().start(task)
 
     @Slot()
     def onProgress(self, message):
@@ -285,48 +285,84 @@ class InferenceTask(QRunnable):
         self.config: dict      = None
         self.tagConfig: dict   = None
 
-        self.imgUploader = None
-
-
     @Slot()
     def run(self):
         try:
-            inferProc = Inference().proc
-            inferProc.start()
+            with Inference().createSession() as sess:
+                self.signals.progress.emit("Loading model ...")
+                sess.prepareProcs(self.prepare)
 
-            if inferProc.procCfg.remote:
-                from infer.inference import ImageUploader
-                self.imgUploader = ImageUploader([self.imgPath])
+                allResults = []
+                for file, results in sess.iterFiles((self.imgPath,), self.queue):
+                    for res in results:
+                        if tags := res.get("tags"):
+                            allResults.append(tags)
+                        elif captions := res.get("captions"):
+                            allResults.extend(cap for name, cap in captions.items() if not name.startswith('?'))
 
-            results = []
-            for c in self.content:
-                if c == "caption":
-                    results.append( self.runCaption(inferProc) )
-                elif c == "tags":
-                    results.append( self.runTags(inferProc) )
-
-            text = os.linesep.join(results)
-            self.signals.done.emit(self.imgPath, text)
+                text = os.linesep.join(allResults)
+                self.signals.done.emit(self.imgPath, text)
         except Exception as ex:
             traceback.print_exc()
             self.signals.fail.emit(str(ex))
-        finally:
-            if self.imgUploader:
-                self.imgUploader.imageDone.emit(self.imgPath)
 
-    def runCaption(self, inferProc: InferenceProcess) -> str:
-        self.signals.progress.emit("Loading caption model ...")
-        inferProc.setupCaption(self.config)
+    def prepare(self, proc: InferenceProcess):
+        for c in self.content:
+            if c == "caption":
+                proc.setupCaption(self.config)
+            elif c == "tags":
+                proc.setupTag(self.tagConfig)
 
-        self.signals.progress.emit("Generating caption ...")
-        captions = inferProc.caption(self.imgPath, self.prompts, self.systemPrompt)
+    def queue(self, file: str, proc: InferenceProcess):
+        self.signals.progress.emit("Generating ...")
 
-        parts = (cap for name, cap in captions.items() if not name.startswith('?'))
-        return os.linesep.join(parts)
+        for c in self.content:
+            if c == "caption":
+                proc.caption(file, self.prompts, self.systemPrompt)
+            elif c == "tags":
+                proc.tag(file)
 
-    def runTags(self, inferProc: InferenceProcess) -> str:
-        self.signals.progress.emit("Loading tag model ...")
-        inferProc.setupTag(self.tagConfig)
 
-        self.signals.progress.emit("Generating tags ...")
-        return inferProc.tag(self.imgPath)
+    # @Slot()
+    # def run(self):
+    #     try:
+    #         with Inference().createSession() as sess:
+    #             inferProc = sess.getFreeProc().proc
+    #             inferProc.start()
+
+    #             if inferProc.procCfg.remote:
+    #                 from infer.inference import ImageUploader
+    #                 self.imgUploader = ImageUploader([self.imgPath])
+
+    #             results = []
+    #             for c in self.content:
+    #                 if c == "caption":
+    #                     results.append( self.runCaption(inferProc) )
+    #                 elif c == "tags":
+    #                     results.append( self.runTags(inferProc) )
+
+    #             text = os.linesep.join(results)
+    #             self.signals.done.emit(self.imgPath, text)
+    #     except Exception as ex:
+    #         traceback.print_exc()
+    #         self.signals.fail.emit(str(ex))
+    #     finally:
+    #         if self.imgUploader:
+    #             self.imgUploader.imageDone.emit(self.imgPath)
+
+    # def runCaption(self, inferProc: InferenceProcess) -> str:
+    #     self.signals.progress.emit("Loading caption model ...")
+    #     inferProc.setupCaption(self.config)
+
+    #     self.signals.progress.emit("Generating caption ...")
+    #     captions = inferProc.caption(self.imgPath, self.prompts, self.systemPrompt)
+
+    #     parts = (cap for name, cap in captions.items() if not name.startswith('?'))
+    #     return os.linesep.join(parts)
+
+    # def runTags(self, inferProc: InferenceProcess) -> str:
+    #     self.signals.progress.emit("Loading tag model ...")
+    #     inferProc.setupTag(self.tagConfig)
+
+    #     self.signals.progress.emit("Generating tags ...")
+    #     return inferProc.tag(self.imgPath)

@@ -60,8 +60,8 @@ class ForwardingProtocol(Protocol):
     @override
     def writeSubService(self, reqId: int, header: bytes, data: bytes):
         msg: dict = msgpack.unpackb(data)
-        # TODO: Add callback when imgFile doesn't exist yet? -> This shouldn't happen because upload is queued before tasks
-        if (img := msg.get("img")) and (imgFile := self.imgCache.getImage(img)):
+        if img := msg.get("img"):
+            imgFile = self.imgCache.getImage(img)
             if imgFile.isComplete():
                 self.forwardImgData(imgFile, reqId, msg)
             else:
