@@ -1,13 +1,15 @@
+from typing import Callable
 from PySide6 import QtWidgets
 from PySide6.QtCore import QSignalBlocker, Qt, Slot
 from config import Config
 from infer.inference import Inference
+from infer.inference_proc import InferenceProcess
 from infer.inference_settings import InferencePresetWidget
 from infer.prompt import PromptWidget, PromptsHighlighter
 from lib import qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
-from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
+from .batch_task import BatchInferenceTask, BatchSignalHandler, BatchUtil
 
 
 TRANSFORM_OVERWRITE_MODE_ALL     = "all"
@@ -191,7 +193,7 @@ class BatchTransform(QtWidgets.QWidget):
 
 
 
-class BatchTransformTask(BatchTask):
+class BatchTransformTask(BatchInferenceTask):
     def __init__(self, log, filelist):
         super().__init__("transform", log, filelist)
         self.prompts      = None
@@ -203,17 +205,13 @@ class BatchTransformTask(BatchTask):
         self.stripAround = True
         self.stripMulti  = False
 
-        self.inferProc = None
         self.varParser = None
         self.writeKeys = None
 
 
-    def runPrepare(self):
-        self.inferProc = Inference().proc
-        self.inferProc.start()
-
+    def runPrepare(self, proc: InferenceProcess):
         self.signals.progressMessage.emit("Loading LLM ...")
-        self.inferProc.setupLLM(self.config)
+        proc.setupLLM(self.config)
 
         self.writeKeys = {k for conv in self.prompts for k in conv.keys() if not k.startswith('?')}
 
@@ -222,37 +220,58 @@ class BatchTransformTask(BatchTask):
         self.varParser.stripMultiWhitespace = self.stripMulti
 
 
-    def runProcessFile(self, imgFile) -> str:
+    def runCheckFile(self, imgFile: str, proc: InferenceProcess) -> Callable | None:
         captionFile = CaptionFile(imgFile)
         if not captionFile.loadFromJson():
             self.log(f"WARNING: Couldn't read captions from {captionFile.jsonPath}")
             return None
 
+        if not self.check(captionFile):
+            return None
+
+        prompts = self.parsePrompts(imgFile, captionFile)
+        def queue():
+            proc.answer(prompts, self.systemPrompt)
+        return queue
+
+    def check(self, captionFile: CaptionFile) -> set:
         writeKeys = set(self.writeKeys)
         if self.overwriteMode == TRANSFORM_OVERWRITE_MODE_MISSING:
-            for name in captionFile.captions.keys():
-                writeKeys.discard(name)
+            writeKeys.difference_update(captionFile.captions.keys())
+        return writeKeys
 
+
+    def runProcessFile(self, imgFile, results: list) -> str | None:
+        if not results:
+            return None
+
+        captionFile = CaptionFile(imgFile)
+        if not captionFile.loadFromJson():
+            self.log(f"WARNING: Couldn't read captions from {captionFile.jsonPath}")
+            return None
+
+        writeKeys = self.check(captionFile)
         if not writeKeys:
             return None
 
-        if self.runAnswers(imgFile, captionFile, writeKeys):
+        answers = results[0].get("answers")
+        if self.storeAnswers(imgFile, captionFile, writeKeys, answers):
             captionFile.saveToJson()
             return captionFile.jsonPath
         return None
 
 
-    def runAnswers(self, imgFile, captionFile: CaptionFile, writeKeys) -> bool:
-        prompts = self.parsePrompts(imgFile, captionFile)
-        answers = self.inferProc.answer(prompts, self.systemPrompt)
+    def storeAnswers(self, imgFile, captionFile: CaptionFile, writeKeys: set, answers) -> bool:
         if not answers:
-            self.log(f"WARNING: No answers returned for {imgFile}")
+            self.log(f"WARNING: No captions returned for {imgFile}, skipping")
             return False
+
+        prompts = self.parsePrompts(imgFile, captionFile)
 
         changed = False
         for name, caption in answers.items():
             if not caption:
-                self.log(f"WARNING: Caption '{name}' is empty for {imgFile}, ignoring")
+                self.log(f"WARNING: Generated caption '{name}' is empty for {imgFile}, skipping key")
                 continue
             if name not in writeKeys:
                 continue

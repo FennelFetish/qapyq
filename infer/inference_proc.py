@@ -98,7 +98,7 @@ class AwaitableFunc:
 
 # TODO: For different config on remote host:
 #       Load config from "preset name [host]"
-#       Then, always use model path as-is?
+#       Then, always use model path as-is? Or translate it so it can be tested locally?
 class InferenceProcConfig:
     def __init__(self, hostName: str):
         self.hostName = hostName
@@ -131,13 +131,6 @@ class InferenceProcConfig:
         if self.remote and self.remoteBasePath:
             config = copy.deepcopy(config)
             self._translateModelPaths(config, keys)
-        return config
-
-    def translateConfigList(self, config: dict[str, Any], listKey: str, keys: list[str]) -> dict:
-        if self.remote and self.remoteBasePath:
-            config = copy.deepcopy(config)
-            for subcfg in config.get(listKey, []):
-                self._translateModelPaths(subcfg, keys)
         return config
 
     def _translateModelPaths(self, config: dict[str, Any], keys: list[str]):
@@ -240,8 +233,6 @@ class InferenceProcess(QObject):
             self.proc.setReadChannel(QProcess.ProcessChannel.StandardOutput)
             self.proc.readyReadStandardOutput.connect(self._onReadyRead)
             self.proc.finished.connect(self._onProcessEnded)
-
-            print(f"Starting inference process '{self.procCfg.hostName}'")
             self.proc.start()
 
             future = ProcFuture()
@@ -297,7 +288,7 @@ class InferenceProcess(QObject):
         })
 
     def setupUpscale(self, config: dict):
-        config = self.procCfg.translateConfigList(config, "levels", ["model_path"])
+        config = self.procCfg.translateConfig(config, ["model_path"])
         self._query({
             "cmd": "setup_upscale",
             "config": config
@@ -404,7 +395,7 @@ class InferenceProcess(QObject):
         })
 
     def upscaleImageFile(self, config: dict, imgPath: str) -> tuple[int, int, bytes]:
-        config = self.procCfg.translateConfigList(config, "levels", ["model_path"])
+        config = self.procCfg.translateConfig(config, ["model_path"])
         answer = self._query({
             "cmd": "imgfile_upscale",
             "config": config,
@@ -413,7 +404,7 @@ class InferenceProcess(QObject):
         return answer["w"], answer["h"], answer["img"]
 
     def upscaleImage(self, config: dict, imgData: bytes, w: int, h: int) -> tuple[int, int, bytes]:
-        config = self.procCfg.translateConfigList(config, "levels", ["model_path"])
+        config = self.procCfg.translateConfig(config, ["model_path"])
         answer = self._query({
             "cmd": "img_upscale",
             "config": config,
@@ -467,11 +458,15 @@ class InferenceProcess(QObject):
         self.processEnded.emit(self)
 
         with QMutexLocker(self._mutex):
-            # Buffers still intact
-            self.proc.readAllStandardOutput()
-            self.proc.readAllStandardError()
-            self.proc = None
-            self.ready = False
+            try:
+                # Buffers still intact
+                self.proc.readAllStandardOutput()
+                self.proc.readAllStandardError()
+            except:
+                pass
+            finally:
+                self.proc = None
+                self.ready = False
 
 
     @Slot()

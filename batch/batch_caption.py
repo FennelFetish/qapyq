@@ -1,14 +1,16 @@
+from typing import Callable
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QSignalBlocker
 from config import Config
 from infer.inference import Inference
+from infer.inference_proc import InferenceProcess
 from infer.inference_settings import  InferencePresetWidget
 from infer.tag_settings import TagPresetWidget
 from infer.prompt import PromptWidget, PromptsHighlighter
 from lib import qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
-from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
+from .batch_task import BatchInferenceTask, BatchSignalHandler, BatchUtil
 
 
 CAPTION_OVERWRITE_MODE_ALL     = "all"
@@ -242,9 +244,9 @@ class BatchCaption(QtWidgets.QWidget):
 
 
 
-class BatchCaptionTask(BatchTask):
+class BatchCaptionTask(BatchInferenceTask):
     def __init__(self, log, filelist):
-        super().__init__("caption", log, filelist, uploadImages=True)
+        super().__init__("caption", log, filelist)
         self.prompts      = None
         self.systemPrompt = None
         self.config       = None
@@ -259,21 +261,20 @@ class BatchCaptionTask(BatchTask):
 
         self.doCaption = False
         self.doTag     = False
-        self.inferProc = None
         self.varParser = None
         self.writeKeys = None
 
 
-    def runPrepare(self):
+    def runPrepare(self, proc: InferenceProcess):
         self.doCaption = self.prompts is not None
         self.doTag = self.tagConfig is not None
 
-        self.inferProc = Inference().proc
-        self.inferProc.start()
+        models = []
 
         if self.doCaption:
-            self.signals.progressMessage.emit("Loading caption model ...")
-            self.inferProc.setupCaption(self.config)
+            models.append("caption")
+            proc.setupCaption(self.config)
+
             self.writeKeys = {k for conv in self.prompts for k in conv.keys() if not k.startswith('?')}
 
             self.varParser = TemplateVariableParser()
@@ -281,23 +282,70 @@ class BatchCaptionTask(BatchTask):
             self.varParser.stripMultiWhitespace = self.stripMulti
 
         if self.doTag:
-            self.signals.progressMessage.emit("Loading tag model ...")
-            self.inferProc.setupTag(self.tagConfig)
+            models.append("tag")
+            proc.setupTag(self.tagConfig)
             if not self.tagName:
                 self.tagName = "tags"
 
+        modelsText = " and ".join(models)
+        self.signals.progressMessage.emit(f"Loading {modelsText} model ...")
 
-    def runProcessFile(self, imgFile: str) -> str:
+
+    def runCheckFile(self, imgFile: str, proc: InferenceProcess) -> Callable | None:
+        captionFile = CaptionFile(imgFile)
+        if captionFile.jsonExists() and not captionFile.loadFromJson():
+            self.log(f"WARNING: Failed to load captions from {captionFile.jsonPath}")
+            return None
+
+        if self.checkCaption(captionFile):
+            doCaption = True
+            prompts = self.parsePrompts(imgFile, captionFile)
+        else:
+            doCaption = False
+            prompts = None
+
+        doTag = self.checkTag(captionFile)
+
+        if not (doCaption or doTag):
+            return None
+
+        def queue():
+            if doCaption:
+                proc.caption(imgFile, prompts, self.systemPrompt)
+            if doTag:
+                proc.tag(imgFile)
+        return queue
+
+    def checkCaption(self, captionFile: CaptionFile) -> set:
+        if not self.doCaption:
+            return set()
+
+        writeKeys = set(self.writeKeys)
+        if self.overwriteMode == CAPTION_OVERWRITE_MODE_MISSING:
+            writeKeys.difference_update(captionFile.captions.keys())
+        return writeKeys
+
+    def checkTag(self, captionFile: CaptionFile) -> bool:
+        return self.doTag and not (self.tagSkipExisting and captionFile.getTags(self.tagName))
+
+
+    def runProcessFile(self, imgFile: str, results: list) -> str | None:
+        if not results:
+            return None
+
         captionFile = CaptionFile(imgFile)
         if captionFile.jsonExists() and not captionFile.loadFromJson():
             self.log(f"WARNING: Failed to load captions from {captionFile.jsonPath}")
             return None
 
         changed = False
-        if self.doCaption:
-            changed |= self.runCaption(imgFile, captionFile)
-        if self.doTag:
-            changed |= self.runTags(imgFile, captionFile)
+        it = iter(results)
+        if writeKeys := self.checkCaption(captionFile):
+            answers = next(it, {}).get("captions")
+            changed |= self.storeCaptions(imgFile, captionFile, writeKeys, answers)
+        if self.checkTag(captionFile):
+            tags = next(it, {}).get("tags")
+            changed |= self.storeTags(imgFile, captionFile, tags)
 
         if changed:
             captionFile.saveToJson()
@@ -305,25 +353,17 @@ class BatchCaptionTask(BatchTask):
         return None
 
 
-    def runCaption(self, imgFile: str, captionFile: CaptionFile) -> bool:
-        writeKeys = set(self.writeKeys)
-        if self.overwriteMode == CAPTION_OVERWRITE_MODE_MISSING:
-            for name in captionFile.captions.keys():
-                writeKeys.discard(name)
-
-        if not writeKeys:
+    def storeCaptions(self, imgFile: str, captionFile: CaptionFile, writeKeys: set, answers) -> bool:
+        if not answers:
+            self.log(f"WARNING: No captions returned for {imgFile}, skipping")
             return False
 
         prompts = self.parsePrompts(imgFile, captionFile)
-        answers = self.inferProc.caption(imgFile, prompts, self.systemPrompt)
-        if not answers:
-            self.log(f"WARNING: No captions returned for {imgFile}")
-            return False
 
         changed = False
         for name, caption in answers.items():
             if not caption:
-                self.log(f"WARNING: Caption '{name}' is empty for {imgFile}, ignoring")
+                self.log(f"WARNING: Generated caption '{name}' is empty for {imgFile}, skipping key")
                 continue
             if name not in writeKeys:
                 continue
@@ -337,21 +377,16 @@ class BatchCaptionTask(BatchTask):
 
         return changed
 
-
-    def runTags(self, imgFile: str, captionFile: CaptionFile) -> bool:
-        if self.tagSkipExisting and captionFile.getTags(self.tagName):
+    def storeTags(self, imgFile: str, captionFile: CaptionFile, tags) -> bool:
+        if not tags:
+            self.log(f"WARNING: No tags returned for {imgFile}, skipping")
             return False
 
-        tags = self.inferProc.tag(imgFile)
-        if tags:
-            captionFile.addTags(self.tagName, tags)
-            return True
-        else:
-            self.log(f"WARNING: No tags returned for {imgFile}, ignoring")
-            return False
+        captionFile.addTags(self.tagName, tags)
+        return True
 
 
-    def parsePrompts(self, imgFile: str, captionFile: CaptionFile) -> list:
+    def parsePrompts(self, imgFile: str, captionFile: CaptionFile) -> list[dict]:
         self.varParser.setup(imgFile, captionFile)
 
         prompts = list()

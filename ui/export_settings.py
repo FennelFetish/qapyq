@@ -778,19 +778,23 @@ class ImageExportTask(QRunnable):
 
     def inferUpscale(self, mat: np.ndarray) -> np.ndarray:
         from infer.inference import Inference
-        inferProc = Inference().proc
-        inferProc.start()
 
         modelName = os.path.basename(self.scaleConfig.modelPath)
         modelName = os.path.splitext(modelName)[0]
 
-        self.signals.progress.emit(f"Loading upscale model ({modelName}) ...")
         upscaleConfig = self.scaleConfig.toDict()
-        inferProc.setupUpscale(upscaleConfig)
-        self.signals.progress.emit(f"Upscaling with model ({modelName}) ...")
-
         hOrig, wOrig = mat.shape[:2]
-        w, h, imgData = inferProc.upscaleImage(upscaleConfig, mat.tobytes(), wOrig, hOrig)
+
+        with Inference().createSession(1) as session:
+            session.prepare()
+            proc = session.getFreeProc().proc
+
+            self.signals.progress.emit(f"Loading upscale model ({modelName}) ...")
+            proc.setupUpscale(upscaleConfig)
+            self.signals.progress.emit(f"Upscaling with model ({modelName}) ...")
+
+            w, h, imgData = proc.upscaleImage(upscaleConfig, mat.tobytes(), wOrig, hOrig)
+
         channels = len(imgData) // (w*h)
         mat = np.frombuffer(imgData, dtype=np.uint8)
         mat.shape = (h, w, channels)
