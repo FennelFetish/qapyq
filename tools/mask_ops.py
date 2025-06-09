@@ -1,5 +1,5 @@
 from typing_extensions import override
-from PySide6.QtCore import Qt, Slot, QPointF, QRectF, QSignalBlocker, QRunnable, QObject, Signal
+from PySide6.QtCore import Qt, Signal, Slot, QPointF, QRectF, QSignalBlocker, QRunnable, QObject, QThreadPool
 from PySide6.QtGui import QPainter, QPen, QBrush, QColor, QLinearGradient
 from PySide6 import QtWidgets
 import cv2 as cv
@@ -1549,8 +1549,7 @@ class MacroMaskOperation(MaskOperation):
         task.signals.done.connect(self.onDone)
         task.signals.fail.connect(self.onFail)
 
-        from infer.inference import Inference
-        Inference().queueTask(task)
+        QThreadPool.globalInstance().start(task)
         self.maskTool.tab.statusBar().showMessage("Running macro...", 0)
 
         # Store layers so result can be loaded when image is changed
@@ -1665,8 +1664,7 @@ class DetectMaskOperation(MaskOperation):
         task.signals.done.connect(self.onRetrieveClassesDone)
         task.signals.fail.connect(self.onRetrieveClassesFail)
 
-        from infer.inference import Inference
-        Inference().queueTask(task)
+        QThreadPool.globalInstance().start(task)
         self.maskTool.tab.statusBar().showMessage("Loading detection model...", 0)
 
     @Slot()
@@ -1709,8 +1707,7 @@ class DetectMaskOperation(MaskOperation):
         task.signals.done.connect(self.onDone)
         task.signals.fail.connect(self.onFail)
 
-        from infer.inference import Inference
-        Inference().queueTask(task)
+        QThreadPool.globalInstance().start(task)
         self.maskTool.tab.statusBar().showMessage("Loading detection model...", 0)
 
         # Store layers so result can be loaded when image is changed
@@ -1840,8 +1837,7 @@ class SegmentMaskOperation(MaskOperation):
         task.signals.done.connect(self.onDone)
         task.signals.fail.connect(self.onFail)
 
-        from infer.inference import Inference
-        Inference().queueTask(task)
+        QThreadPool.globalInstance().start(task)
         self.maskTool.tab.statusBar().showMessage("Loading segmentation model...", 0)
 
         # Store layers so result can be loaded when image is changed
@@ -1897,34 +1893,35 @@ class MaskTask(QRunnable):
         self.imgPath  = imgPath
         self.color    = color
 
-        self.imgUploader = None
-
     @Slot()
     def run(self):
-        try:
-            from infer.inference import Inference, ImageUploader
-            inferProc = Inference().proc
-            inferProc.start()
+        from infer.inference import Inference, InferenceProcess
 
-            if inferProc.procCfg.remote:
-                self.imgUploader = ImageUploader([self.imgPath])
+        def prepare(proc: InferenceProcess):
+            proc.setupMasking(self.config)
 
-            inferProc.setupMasking(self.config)
-            self.signals.loaded.emit()
-
+        def check(file: str, proc: InferenceProcess):
             if self.mode == self.MODE_DETECT:
-                result = inferProc.maskBoxes(self.config, self.classes, self.imgPath)
+                return lambda: proc.maskBoxes(self.config, self.classes, file)
             else:
-                result = inferProc.mask(self.config, self.classes, self.imgPath)
+                return lambda: proc.mask(self.config, self.classes, file)
 
-            self.signals.done.emit(self.maskItem, self.imgPath, self.color, result)
+        try:
+            with Inference().createSession(1) as session:
+                session.prepare(prepare, lambda: self.signals.loaded.emit())
+
+                result = None
+                for file, results in session.queueFiles((self.imgPath,), check):
+                    if self.mode == self.MODE_DETECT:
+                        result = results[0].get("boxes")
+                    else:
+                        result = results[0].get("mask")
+
+                self.signals.done.emit(self.maskItem, self.imgPath, self.color, result)
         except Exception as ex:
             import traceback
             traceback.print_exc()
             self.signals.fail.emit(str(ex))
-        finally:
-            if self.imgUploader:
-                self.imgUploader.imageDone.emit(self.imgPath)
 
 
 
@@ -1972,11 +1969,11 @@ class RetrieveDetectionClassesTask(QRunnable):
     def run(self):
         try:
             from infer.inference import Inference
-            inferProc = Inference().proc
-            inferProc.start()
-
-            classes = inferProc.getDetectClasses(self.config)
-            self.signals.done.emit(classes)
+            with Inference().createSession(1) as session:
+                session.prepare()
+                proc = session.getFreeProc().proc
+                classes = proc.getDetectClasses(self.config)
+                self.signals.done.emit(classes)
         except Exception as ex:
             import traceback
             traceback.print_exc()

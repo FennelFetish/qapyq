@@ -164,7 +164,7 @@ class LocalHostSettings(QtWidgets.QGroupBox):
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         row = 0
-        info = "A higher priority increases the likelihood that files are queued on this host."
+        info = "A higher priority increases the likelihood that tasks are queued on this host."
         layout.addWidget(QtWidgets.QLabel(info), row, 0, 1, 2)
 
         row += 1
@@ -230,18 +230,25 @@ class HostSettings(QtWidgets.QGroupBox):
         layout.addWidget(self.spinPriority, row, 1)
 
         row += 1
-        self.txtCmd = QtWidgets.QLineEdit("ssh hostname /srv/qapyq/run-host.sh")
-        self.txtCmd.setPlaceholderText("Command to start run-host.sh")
-        qtlib.setMonospace(self.txtCmd)
-        layout.addWidget(QtWidgets.QLabel("Command:"), row, 0)
-        layout.addWidget(self.txtCmd, row, 1)
-
-        row += 1
         self.txtModelBasePath = QtWidgets.QLineEdit()
         self.txtModelBasePath.setPlaceholderText("Path on remote machine")
         qtlib.setMonospace(self.txtModelBasePath)
         layout.addWidget(QtWidgets.QLabel("Model Base Path:"), row, 0)
         layout.addWidget(self.txtModelBasePath, row, 1)
+
+        row += 1
+        layout.setRowMinimumHeight(row, 20)
+
+        row += 1
+        info = "This command is used to start qapyq/run-host.sh on the remote host."
+        layout.addWidget(QtWidgets.QLabel(info), row, 0, 1, 2)
+
+        row += 1
+        self.txtCmd = QtWidgets.QLineEdit("ssh hostname /srv/qapyq/run-host.sh")
+        self.txtCmd.setPlaceholderText("Command to start run-host.sh")
+        qtlib.setMonospace(self.txtCmd)
+        layout.addWidget(QtWidgets.QLabel("Command:"), row, 0)
+        layout.addWidget(self.txtCmd, row, 1)
 
         self.setLayout(layout)
 
@@ -264,6 +271,6 @@ class HostSettings(QtWidgets.QGroupBox):
         return {
             "active": active,
             "priority": self.spinPriority.value(),
-            "cmd": self.txtCmd.text().strip(),
-            "model_base_path": self.txtModelBasePath.text().strip()
+            "model_base_path": self.txtModelBasePath.text().strip(),
+            "cmd": self.txtCmd.text().strip()
         }

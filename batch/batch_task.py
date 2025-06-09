@@ -1,7 +1,8 @@
-from typing import Callable
+import traceback, time
+from typing import Iterable, Callable, Any
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Signal, Slot, QRunnable, QObject, QMutex, QMutexLocker
-import traceback, time
+from infer.inference import Inference
 from lib.filelist import FileList
 
 
@@ -13,23 +14,19 @@ class BatchTask(QRunnable):
         fail = Signal(str, object)      # error message, TimeUpdate
 
 
-    def __init__(self, name: str, log: Callable, filelist: FileList, uploadImages=False):
+    def __init__(self, name: str, log: Callable, filelist: FileList):
         super().__init__()
         self.setAutoDelete(False)
+        self.signals = BatchTask.Signals()
 
+        self.name     = name
         self._mutex   = QMutex()
         self._aborted = False
-
-        self.signals  = BatchTask.Signals()
-        self.name     = name
-
-        self.uploadImages = uploadImages
-        self.imageUploader = None
 
         self._indentLogs = False
         self.log = self._wrapLogFunc(log)
 
-        self.files = list(filelist.getFiles())
+        self.files = filelist.getFiles().copy()
         if len(self.files) == 0 and filelist.currentFile:
             self.files.append(filelist.currentFile)
 
@@ -59,13 +56,9 @@ class BatchTask(QRunnable):
             self.signals.progress.emit(None, None)
 
             self.runPrepare()
-
-            if self.uploadImages:
-                from infer.inference import ImageUploader
-                self.imageUploader = ImageUploader(self.files)
-
             self.signals.progressMessage.emit("Processing ...")
-            self.processAll()
+            self.processAll((file,) for file in self.files)
+
         except Exception as ex:
             print(f"Error during batch {self.name}:")
             traceback.print_exc()
@@ -77,7 +70,7 @@ class BatchTask(QRunnable):
             self.runCleanup()
 
 
-    def processAll(self):
+    def processAll(self, processFileArgs: Iterable[tuple]):
         numFiles = len(self.files)
         numFilesDone = 0
         numFilesSkipped = 0
@@ -87,7 +80,7 @@ class BatchTask(QRunnable):
         self.signals.progress.emit(None, update)
         timeAvg.init()
 
-        for fileNr, imgFile in enumerate(self.files):
+        for fileNr, (imgFile, *args) in enumerate(processFileArgs):
             if self.isAborted():
                 abortMessage = f"Batch {self.name} aborted after {fileNr} files{update.getSkippedText(numFiles-fileNr)}"
                 self.log(abortMessage)
@@ -99,7 +92,7 @@ class BatchTask(QRunnable):
 
             try:
                 self._indentLogs = True
-                outputFile = self.runProcessFile(imgFile)
+                outputFile = self.runProcessFile(imgFile, *args)
                 if not outputFile:
                     self.log(f"Skipped")
                     numFilesSkipped += 1
@@ -108,9 +101,6 @@ class BatchTask(QRunnable):
                 self.log(f"WARNING: {str(ex)}")
                 traceback.print_exc()
             finally:
-                if self.imageUploader:
-                    self.imageUploader.imageDone.emit(imgFile)
-
                 self._indentLogs = False
                 numFilesDone += 1
                 timeAvg.update()
@@ -129,6 +119,43 @@ class BatchTask(QRunnable):
 
     def runCleanup(self):
         pass
+
+
+
+class BatchInferenceTask(BatchTask):
+    def __init__(self, name: str, log: Callable, filelist: FileList):
+        super().__init__(name, log, filelist)
+
+    @Slot()
+    def run(self):
+        try:
+            self.log(f"=== Starting batch {self.name} ===")
+            self.signals.progressMessage.emit(f"Starting batch {self.name} ...")
+            self.signals.progress.emit(None, None)
+
+            with Inference().createSession() as session:
+                session.prepare(self.runPrepare, lambda: self.signals.progressMessage.emit("Processing ..."))
+                self.processAll(session.queueFiles(self.files, self.runCheckFile, all=True))
+
+        except Exception as ex:
+            print(f"Error during batch {self.name}:")
+            traceback.print_exc()
+
+            errorMessage = f"Error during batch {self.name}: {str(ex)}"
+            self.log(errorMessage)
+            self.signals.fail.emit(errorMessage, None)
+        finally:
+            self.runCleanup()
+
+
+    def runPrepare(self, proc):
+        pass
+
+    def runCheckFile(self, imgFile: str, proc) -> Callable | None:
+        pass
+
+    def runProcessFile(self, imgFile: str, results: list[Any]) -> str | None:
+        return None
 
 
 
