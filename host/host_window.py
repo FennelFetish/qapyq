@@ -218,7 +218,7 @@ class HostSettings(QtWidgets.QGroupBox):
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         row = 0
-        self.txtName = QtWidgets.QLineEdit("New Host")
+        self.txtName = QtWidgets.QLineEdit()
         self.txtName.textChanged.connect(self.nameChanged.emit)
         layout.addWidget(QtWidgets.QLabel("Name:"), row, 0)
         layout.addWidget(self.txtName, row, 1)
@@ -240,11 +240,24 @@ class HostSettings(QtWidgets.QGroupBox):
         layout.setRowMinimumHeight(row, 20)
 
         row += 1
-        info = "This command is used to start qapyq/run-host.sh on the remote host."
+        info = "The queue size defines how many images are uploaded and cached on this host."
         layout.addWidget(QtWidgets.QLabel(info), row, 0, 1, 2)
 
         row += 1
-        self.txtCmd = QtWidgets.QLineEdit("ssh hostname /srv/qapyq/run-host.sh")
+        self.spinQueueSize = QtWidgets.QSpinBox()
+        self.spinQueueSize.setRange(1, 100)
+        layout.addWidget(QtWidgets.QLabel("Queue Size:"), row, 0)
+        layout.addWidget(self.spinQueueSize, row, 1)
+
+        row += 1
+        layout.setRowMinimumHeight(row, 20)
+
+        row += 1
+        info = "This command is used to start <code>qapyq/run-host.sh</code> on the remote host."
+        layout.addWidget(QtWidgets.QLabel(info), row, 0, 1, 2)
+
+        row += 1
+        self.txtCmd = QtWidgets.QLineEdit()
         self.txtCmd.setPlaceholderText("Command to start run-host.sh")
         qtlib.setMonospace(self.txtCmd)
         layout.addWidget(QtWidgets.QLabel("Command:"), row, 0)
@@ -264,6 +277,7 @@ class HostSettings(QtWidgets.QGroupBox):
 
     def fromDict(self, data: dict):
         self.spinPriority.setValue(data.get("priority", 1.0))
+        self.spinQueueSize.setValue(data.get("queue_size", 3))
         self.txtCmd.setText(data.get("cmd", "ssh hostname /srv/qapyq/run-host.sh"))
         self.txtModelBasePath.setText(data.get("model_base_path", ""))
 
@@ -271,6 +285,7 @@ class HostSettings(QtWidgets.QGroupBox):
         return {
             "active": active,
             "priority": self.spinPriority.value(),
+            "queue_size": self.spinQueueSize.value(),
             "model_base_path": self.txtModelBasePath.text().strip(),
             "cmd": self.txtCmd.text().strip()
         }
