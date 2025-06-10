@@ -1,7 +1,7 @@
 import os, re, traceback
 from enum import Enum
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, Signal, QThreadPool, QRunnable, QObject, QSignalBlocker
+from PySide6.QtCore import Qt, Slot, Signal, QThreadPool, QRunnable, QObject, QSignalBlocker, QMutex, QMutexLocker
 from infer.inference import Inference
 from infer.inference_proc import InferenceProcess
 from infer.inference_settings import InferencePresetWidget
@@ -27,11 +27,11 @@ class CaptionGenerate(CaptionTab):
 
         self._highlighter = VariableHighlighter()
         self._parser = CurrentVariableParser(context)
-        self._parser.stripAround = False
-        self._parser.stripMultiWhitespace = False
 
         self._hasCurrentVar = False
         self._hasRefinedVar = False
+
+        self._task = None
 
         self._build()
 
@@ -151,67 +151,92 @@ class CaptionGenerate(CaptionTab):
 
     @Slot()
     def generate(self):
-        # TODO: Multi-Edit: Generate for all selected images? Or abort with warning?
-
-        file = self.ctx.tab.imgview.image.filepath
-        if not file:
-            QtWidgets.QMessageBox.information(self, "No Image Loaded", "Please load an image into the Main Window first.")
+        if self._task:
+            self._task.abort()
             return
 
-        self.btnGenerate.setEnabled(False)
+        filelist = self.ctx.tab.filelist
+        currentFile = filelist.getCurrentFile()
+
+        files = list(filelist.selectedFiles)
+        if not files:
+            if currentFile:
+                files.append(currentFile)
+            else:
+                QtWidgets.QMessageBox.information(self, "No Image Loaded", "Please load an image into the Main Window first.")
+                return
+
+        self.btnGenerate.setText("Abort")
         self.statusBar.showMessage("Starting ...")
 
         content = self.cboCapTag.currentText().lower().split(", ")
 
-        task = InferenceTask(file, content)
+        task = InferenceTask(files, content)
         task.signals.progress.connect(self.onProgress)
         task.signals.done.connect(self.onGenerated)
         task.signals.fail.connect(self.onFail)
 
         if "caption" in content:
-            currentFile = self.ctx.tab.filelist.getCurrentFile()
-            self.onFileChanged(currentFile)
+            self.onFileChanged(currentFile) # Update parser
+            task.varParser = self._parser.freeze()
 
-            task.prompts = [
-                {name: self._parser.parse(prompt) for name, prompt in conv.items()}
-                for conv in self.promptWidget.getParsedPrompts()
-            ]
-
+            task.prompts = self.promptWidget.getParsedPrompts()
             task.systemPrompt = self.promptWidget.systemPrompt.strip()
             task.config = self.inferSettings.getInferenceConfig()
 
         if "tags" in content:
             task.tagConfig = self.tagSettings.getInferenceConfig()
 
+        self._task = task
         QThreadPool.globalInstance().start(task)
+
+
+    def _finishTask(self):
+        self.btnGenerate.setText("Generate")
+        self._task = None
 
     @Slot()
     def onProgress(self, message):
         self.statusBar.showMessage(message)
 
     @Slot()
-    def onGenerated(self, imgPath: str, generatedText: str):
-        self.btnGenerate.setEnabled(True)
+    def onFail(self, errorMsg: str):
+        self._finishTask()
+        self.statusBar.showColoredMessage(errorMsg, False, 0)
 
-        if not generatedText:
+    @Slot()
+    def onGenerated(self, fileResults: dict[str, str]):
+        self._finishTask()
+
+        if not fileResults:
             self.statusBar.showColoredMessage("Finished with empty result", False, 0)
             return
 
         self.statusBar.showColoredMessage("Done", True)
 
         filelist = self.ctx.tab.filelist
-        if imgPath == filelist.getCurrentFile():
-            text = self._addToCaption(generatedText, self.ctx.text.getCaption())
-            self.ctx.text.setCaption(text)
-            self.ctx.needsRulesApplied.emit()
-        else:
-            existingText = filelist.getData(imgPath, DataKeys.Caption)
-            if existingText is None:
-                existingText = self.ctx.container.srcSelector.loadCaption(imgPath)
+        multiEditActive = self.ctx.container.multiEdit.active
+        multiEditActive &= not filelist.selectedFiles.isdisjoint(fileResults.keys())
+        if multiEditActive:
+            self.ctx.container.multiEdit.clear()  # Save state
 
-            text = self._addToCaption(generatedText, existingText)
-            filelist.setData(imgPath, DataKeys.Caption, text)
-            filelist.setData(imgPath, DataKeys.CaptionState, DataKeys.IconStates.Changed)
+        for imgPath, generatedText in fileResults.items():
+            if not multiEditActive and imgPath == filelist.getCurrentFile():
+                text = self._addToCaption(generatedText, self.ctx.text.getCaption())
+                self.ctx.text.setCaption(text)
+                self.ctx.needsRulesApplied.emit()
+            else:
+                existingText = filelist.getData(imgPath, DataKeys.Caption)
+                if existingText is None:
+                    existingText = self.ctx.container.srcSelector.loadCaption(imgPath)
+
+                text = self._addToCaption(generatedText, existingText)
+                filelist.setData(imgPath, DataKeys.Caption, text)
+                filelist.setData(imgPath, DataKeys.CaptionState, DataKeys.IconStates.Changed)
+
+        if multiEditActive:
+            self.ctx.container.onFileSelectionChanged(filelist.selectedFiles)  # Reload
+
 
     def _addToCaption(self, generatedText: str, existingText: str | None) -> str:
         if not existingText:
@@ -223,11 +248,6 @@ class CaptionGenerate(CaptionTab):
             case ApplyMode.Replace: return generatedText
             case _:
                 raise ValueError("Invalid mode")
-
-    @Slot()
-    def onFail(self, errorMsg: str):
-        self.btnGenerate.setEnabled(True)
-        self.statusBar.showColoredMessage(errorMsg, False, 0)
 
 
 
@@ -242,7 +262,11 @@ class CurrentVariableParser(TemplateVariableParser):
     def __init__(self, context: CaptionContext, imgPath: str = None):
         super().__init__(imgPath)
         self.ctx = context
+        self.currentCaption = ""
         self.refinedCaption = ""
+
+        self.stripAround = False
+        self.stripMultiWhitespace = False
 
     def updateRefinedCaption(self, caption: str):
         self.refinedCaption = self.ctx.rulesProcessor().process(caption)
@@ -250,7 +274,7 @@ class CurrentVariableParser(TemplateVariableParser):
     def _getImgProperties(self, var: str) -> str | None:
         match var:
             case self.CURRENT_VAR_NAME:
-                return self.ctx.text.getCaption()
+                return self.currentCaption or self.ctx.text.getCaption()
             case self.REFINED_VAR_NAME:
                 return self.refinedCaption
 
@@ -264,58 +288,126 @@ class CurrentVariableParser(TemplateVariableParser):
     def refinedInPrompt(cls, prompt: str) -> bool:
         return cls.REFINED_VAR_PATTERN.search(prompt) is not None
 
+    def freeze(self):
+        varParser = CurrentVariableParser(None)
+        varParser.currentCaption = self.ctx.text.getCaption()
+        varParser.refinedCaption = self.refinedCaption
+        return varParser
+
 
 
 class InferenceTask(QRunnable):
+    CONTENT_CAPTION = "caption"
+    CONTENT_TAG = "tags"
+
+    MULTIPROC_MIN_FILES_TAG = 16
+    MULTIPROC_MIN_FILES_CAPTION = 2
+
     class Signals(QObject):
         progress = Signal(str)
-        done = Signal(str, str)
+        done = Signal(dict)
         fail = Signal(str)
 
-    def __init__(self, imgPath, content: list[str]):
+    def __init__(self, files: list[str], content: list[str]):
         super().__init__()
         self.setAutoDelete(False)
-
         self.signals = InferenceTask.Signals()
-        self.imgPath = imgPath
+
+        self.files = files
         self.content = content
 
+        self.varParser: CurrentVariableParser = None
         self.prompts: list[dict[str, str]] = None
         self.systemPrompt: str = None
         self.config: dict      = None
         self.tagConfig: dict   = None
 
+        self._mutex = QMutex()
+        self._aborted = False
+
+
+    def abort(self):
+        self.signals.progress.emit("Aborting ...")
+        with QMutexLocker(self._mutex):
+            self._aborted = True
+
+    def isAborted(self) -> bool:
+        with QMutexLocker(self._mutex):
+            return self._aborted
+
+
+    def getMaxProcs(self) -> int:
+        if self.CONTENT_CAPTION in self.content:
+            if len(self.files) >= self.MULTIPROC_MIN_FILES_CAPTION:
+                return -1
+        elif self.CONTENT_TAG in self.content:
+            if len(self.files) >= self.MULTIPROC_MIN_FILES_TAG:
+                return -1
+        return 1
+
+
     @Slot()
     def run(self):
         try:
-            with Inference().createSession(1) as session:
-                self.signals.progress.emit("Loading model ...")
-                session.prepare(self.prepare, lambda: self.signals.progress.emit("Generating ..."))
+            contentText = " and ".join(self.content)
+            progressText = f"Generating {contentText} ({{}}/{len(self.files)}) ..."
 
-                allResults = []
-                for file, results in session.queueFiles((self.imgPath,), self.queue):
+            maxProcs = self.getMaxProcs()
+            with Inference().createSession(maxProcs) as session:
+                self.signals.progress.emit(f"Loading {contentText} model ...")
+                session.prepare(self.prepare, lambda: self.signals.progress.emit(progressText.format(0)))
+
+                fileResults = dict()
+                for fileNr, (file, results) in enumerate(session.queueFiles(self.files, self.check), 1):
+                    if self.isAborted():
+                        self.signals.fail.emit("Aborted")
+                        return
+
+                    self.signals.progress.emit(progressText.format(fileNr))
+
+                    allResults = []
                     for res in results:
                         if tags := res.get("tags"):
                             allResults.append(tags)
                         elif captions := res.get("captions"):
                             allResults.extend(cap for name, cap in captions.items() if not name.startswith('?'))
 
-                text = os.linesep.join(allResults)
-                self.signals.done.emit(self.imgPath, text)
+                    fileResults[file] = os.linesep.join(allResults)
+
+                self.signals.done.emit(fileResults)
+
         except Exception as ex:
             traceback.print_exc()
             self.signals.fail.emit(str(ex))
 
+
     def prepare(self, proc: InferenceProcess):
         for c in self.content:
-            if c == "caption":
+            if c == self.CONTENT_CAPTION:
                 proc.setupCaption(self.config)
-            elif c == "tags":
+            elif c == self.CONTENT_TAG:
                 proc.setupTag(self.tagConfig)
 
-    def queue(self, file: str, proc: InferenceProcess):
-        for c in self.content:
-            if c == "caption":
-                proc.caption(file, self.prompts, self.systemPrompt)
-            elif c == "tags":
-                proc.tag(file)
+    def check(self, file: str, proc: InferenceProcess):
+        def queue():
+            for c in self.content:
+                if c == self.CONTENT_CAPTION:
+                    prompts = self.parsePrompts(file)
+                    proc.caption(file, prompts, self.systemPrompt)
+                elif c == self.CONTENT_TAG:
+                    proc.tag(file)
+        return queue
+
+    def parsePrompts(self, imgFile: str) -> list:
+        self.varParser.setup(imgFile)
+
+        prompts = list()
+        missingVars = set()
+        for conv in self.prompts:
+            prompts.append( {name: self.varParser.parse(prompt) for name, prompt in conv.items()} )
+            missingVars.update(self.varParser.missingVars)
+
+        if missingVars:
+            print(f"WARNING: '{imgFile}' is missing values for variables: {', '.join(missingVars)}")
+
+        return prompts

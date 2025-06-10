@@ -1,6 +1,5 @@
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QSignalBlocker
-from typing import List, Dict
 from config import Config
 import lib.qtlib as qtlib
 
@@ -91,17 +90,17 @@ class PromptWidget(QtWidgets.QWidget):
         return self.txtPrompts.toPlainText()
 
 
-    def getParsedPrompts(self, defaultName: str = None, rounds: int = 1) -> List[Dict[str, str]]:
+    def getParsedPrompts(self, defaultName: str = None, rounds: int = 1) -> list[dict[str, str]]:
         if not defaultName:
             defaultName = "caption"
 
         currentName: str = defaultName
         allNames = set()
 
-        currentPrompt: List[str] = list()               # List of text lines
-        currentConversation: Dict[str, str] = dict()    # Ordered list of prompts, name -> prompt
-        conversations: List[Dict[str, str]] = list()    # Ordered list of conversations
-        
+        currentPrompt: list[str] = list()               # List of text lines
+        currentConversation: dict[str, str] = dict()    # Ordered list of prompts, name -> prompt
+        conversations: list[dict[str, str]] = list()    # Ordered list of conversations
+
         text = self.txtPrompts.toPlainText()
         for line in text.splitlines():
             if line.startswith("---") or line.startswith("==="):
@@ -155,7 +154,7 @@ class PromptWidget(QtWidgets.QWidget):
         presets: dict = getattr(Config, self.presetsAttr)
         for name in sorted(presets.keys()):
             self.preset.addItem(name)
-        
+
         if not presets:
             defaults: dict = getattr(Config, self.defaultAttr)
             self.fromDict(defaults)
@@ -164,7 +163,7 @@ class PromptWidget(QtWidgets.QWidget):
             index = self.preset.findText(selectName)
         else:
             index = 0
-        
+
         self.preset.setCurrentIndex(index)
 
     @Slot()
@@ -197,7 +196,7 @@ class PromptWidget(QtWidgets.QWidget):
         self.fromDict(preset)
 
         Config.inferSelectedPresets[self.presetsAttr] = name
-    
+
     @Slot()
     def savePreset(self):
         if not (name := self.preset.currentText().strip()):
@@ -242,7 +241,7 @@ class PromptsHighlighter(QtGui.QSyntaxHighlighter):
         formatIndex = self.previousBlockState()
         if formatIndex < 0:
             formatIndex = 0
-        
+
         isPromptTitle = False
         isConvTitle = False
         isHidden = False
