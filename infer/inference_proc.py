@@ -41,9 +41,11 @@ class ProcFuture:
 
         callback(self)
 
-
     def setResult(self, result: dict | None):
         with self._cond:
+            if self._received:
+                return
+
             self._received = True
             self._result = result
             self._cond.notify_all()
@@ -54,7 +56,7 @@ class ProcFuture:
 
     def setException(self, exception):
         with self._cond:
-            if self._exception:
+            if self._received:
                 return
 
             self._received = True
@@ -75,24 +77,21 @@ class ProcFuture:
             return self._result
 
 
-
 class AwaitableFunc:
     def __init__(self, func: Callable, *args):
         self.func = func
         self.args = args
-        self.run  = False
-        self.cond = Condition()
+        self.future = ProcFuture()
 
     def __call__(self):
-        self.func(*self.args)
-        with self.cond:
-            self.run = True
-            self.cond.notify_all()
+        try:
+            self.func(*self.args)
+            self.future.setResult(None)
+        except Exception as ex:
+            self.future.setException(ex)
 
     def awaitExec(self):
-        with self.cond:
-            while not self.run:
-                self.cond.wait()
+        self.future.result()
 
 
 

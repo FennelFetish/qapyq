@@ -34,7 +34,10 @@ class Inference(metaclass=Singleton):
 
                 self._procsInUse.add(proc)
 
-                procState = ProcState(proc, float(hostCfg.get("priority", 1.0)))
+                priority = float(hostCfg.get("priority", 1.0))
+                queueSize = max(int(hostCfg.get("queue_size", 1)), 1)
+
+                procState = ProcState(proc, priority, queueSize)
                 procStates.append(procState)
                 hostnames.append(hostName)
 
@@ -113,13 +116,13 @@ class Inference(metaclass=Singleton):
 # Queuing: Pass files that pass the check to ImageUploader immediately.
 #          But only queue inference when last one from this ProcState has returned a result (easier aborting).
 class ProcState:
-    def __init__(self, proc: InferenceProcess, priority: float):
+    def __init__(self, proc: InferenceProcess, priority: float, queueSize: int):
         self.proc = proc
         self.priority = priority
+        self.queueSize = queueSize
 
         self.queuedFiles = set()
         self.taskQueue = deque[tuple[str, Callable]]()
-        self.totalFilesQueued = 0
 
         if proc.procCfg.remote:
             self.imgUploader = ImageUploader(proc)
@@ -129,14 +132,16 @@ class ProcState:
     def sortKey(self):
         return len(self.queuedFiles), -self.priority
 
+    def hasSpace(self) -> bool:
+        return len(self.queuedFiles) < self.queueSize
+
     def queueFile(self, file: str, taskFunc: Callable) -> bool:
         self.queuedFiles.add(file)
         self.taskQueue.append((file, taskFunc))
         if self.imgUploader:
             self.imgUploader.queueFile.emit(file)
 
-        self.totalFilesQueued += 1
-        return self.totalFilesQueued == 1
+        return len(self.queuedFiles) == 1
 
     def fileDone(self, file: str):
         try:
@@ -144,6 +149,7 @@ class ProcState:
             if self.imgUploader:
                 self.imgUploader.imageDone.emit(file)
         except KeyError:
+            # When file wasn't queued on host (skipped files)
             pass
 
     def getNextTask(self) -> tuple[str, Callable] | None:
@@ -166,9 +172,9 @@ class InferenceSession:
         self.procs: list[ProcState] = procStates
         self.readyProcs: list[ProcState] = list()
         self.failedProcs: list[ProcState] = list()
-        self._condProc = Condition()
 
-        self.queueSize = 8  # Per process
+        self._condProc = Condition()
+        self._prepared = False
 
         self._resultQueue = Queue[tuple[ProcState, str, list[Any], Exception | None]]()
 
@@ -202,14 +208,23 @@ class InferenceSession:
 
             self._condProc.notify_all()
 
-    def _onProcPrepared(self, future: ProcFuture, prepareCallback: Callable):
+    def _onProcPrepared(self, future: ProcFuture, prepareCallback: Callable | None):
         try:
             future.result()
-            prepareCallback()
+
+            with self._condProc:
+                if self._prepared:
+                    return
+                self._prepared = True
+
+            if prepareCallback:
+                prepareCallback()
         except:
+            # TODO: Faster aborting by queueing exception to resultQueue?
+            #traceback.print_exc()
             pass
 
-    def prepare(self, prepareFunc: Callable[[InferenceProcess], None] | None = None, prepareCallback: Callable[[], None] | None = None):
+    def prepare(self, prepareFunc: Callable[[InferenceProcess], None] | None = None, prepareCallback: Callable | None = None):
         for procState in self.procs:
             proc = procState.proc
             proc.processReady.connect(self._onProcReady)
@@ -218,10 +233,9 @@ class InferenceSession:
                 if prepareFunc:
                     prepareFunc(proc)
 
-                if prepareCallback:
-                    callback = lambda future: self._onProcPrepared(future, prepareCallback)
-                    for future in proc.getRecordedFutures():
-                        future.setCallback(callback)
+                callback = lambda future: self._onProcPrepared(future, prepareCallback)
+                for future in proc.getRecordedFutures():
+                    future.setCallback(callback)
 
 
     def _queueEmptyResult(self, file: str, procState: ProcState):
@@ -229,17 +243,14 @@ class InferenceSession:
 
     def _tryQueueFile(self, file: str, procState: ProcState, checkFunc: Callable[[str, InferenceProcess], Callable | None], all: bool) -> bool:
         #print(f"Check: {file} ({procState.proc.procCfg.hostName})")
-        taskFunc = checkFunc(file, procState.proc)
-        if not taskFunc:
-            if all:
-                taskFunc = lambda file=file, procState=procState: self._queueEmptyResult(file, procState)
-            else:
-                return False
-
-        if procState.queueFile(file, taskFunc):
-            self._queueNextFile(procState, all)
+        if taskFunc := checkFunc(file, procState.proc):
+            if procState.queueFile(file, taskFunc):
+                self._queueNextFile(procState, all)
+        elif all:
+            self._queueEmptyResult(file, procState)
+        else:
+            return False
         return True
-
 
     def _queueNextFile(self, procState: ProcState, all: bool):
         task = procState.getNextTask()
@@ -262,10 +273,9 @@ class InferenceSession:
         numQueued = 0
         it = iter(files)
 
-        # FIXME: This might not fill queue when queueFunc does nothing?
         def fillProcQueue(procState: ProcState):
             nonlocal numQueued
-            while len(procState.queuedFiles) <= self.queueSize and (file := next(it, None)):
+            while procState.hasSpace() and (file := next(it, None)):
                 if self._tryQueueFile(file, procState, checkFunc, all):
                     numQueued += 1
 
