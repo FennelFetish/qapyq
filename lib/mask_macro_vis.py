@@ -6,7 +6,7 @@ from lib.qtlib import COLOR_BUBBLE_BLACK
 
 class MacroVisualization(QtWidgets.QScrollArea):
     SPACING = 6
-    COLORS = ["#1f363f", "#3f1f2d", "#243f1f", "#241f3f", "#3f2e1f", "#1f3f37", "#3f1f3e",
+    COLORS = ["#3f1f2d", "#243f1f", "#1f363f", "#3f2e1f", "#241f3f", "#1f3f37", "#3f1f3e",
               "#353f1f", "#1f2c3f", "#3f1f22", "#1f3f26", "#2f1f3f", "#3f381f"]
 
     def __init__(self):
