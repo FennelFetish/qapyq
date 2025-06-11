@@ -6,6 +6,9 @@ import numpy as np
 from config import Config
 import tools.mask_ops as mask_ops
 from lib.qtlib import numpyToQImageMask, qimageToNumpyMask
+from infer.inference import InferenceChain
+from infer.inference_proc import InferenceProcess
+
 
 
 class MacroOp(Enum):
@@ -88,28 +91,29 @@ def jsonIndentLimit(indent, limit):
 
 class MaskingMacro:
     VERSION = "1.0"
+    OP_FUNC = {}
     COMPACT_JSON_PATTERN = jsonIndentLimit("    ", 2)
 
     def __init__(self):
         self.operations: list[MacroOpItem] = list()
         self.recording = False
 
-        self.opFunc = {
-            MacroOp.Rectangle:      mask_ops.DrawRectangleMaskOperation.operate,
-            MacroOp.Clear:          mask_ops.ClearMaskOperation.operate,
-            MacroOp.Invert:         mask_ops.InvertMaskOperation.operate,
-            MacroOp.Threshold:      mask_ops.ThresholdMaskOperation.operate,
-            MacroOp.Normalize:      mask_ops.NormalizeMaskOperation.operate,
-            MacroOp.Quantize:       mask_ops.QuantizeMaskOperation.operate,
-            MacroOp.Morph:          mask_ops.MorphologyMaskOperation.operate,
-            MacroOp.GaussBlur:      mask_ops.BlurMaskOperation.operate,
-            MacroOp.CentroidRect:   mask_ops.CentroidRectMaskOperation.operate,
+        if not MaskingMacro.OP_FUNC:
+            MaskingMacro.OP_FUNC.update({
+                MacroOp.Rectangle:      mask_ops.DrawRectangleMaskOperation.operate,
+                MacroOp.Clear:          mask_ops.ClearMaskOperation.operate,
+                MacroOp.Invert:         mask_ops.InvertMaskOperation.operate,
+                MacroOp.Threshold:      mask_ops.ThresholdMaskOperation.operate,
+                MacroOp.Normalize:      mask_ops.NormalizeMaskOperation.operate,
+                MacroOp.Quantize:       mask_ops.QuantizeMaskOperation.operate,
+                MacroOp.Morph:          mask_ops.MorphologyMaskOperation.operate,
+                MacroOp.GaussBlur:      mask_ops.BlurMaskOperation.operate,
+                MacroOp.CentroidRect:   mask_ops.CentroidRectMaskOperation.operate,
 
-            MacroOp.CondColor:      mask_ops.ColorConditionMaskOperation.operate,
-            MacroOp.CondArea:       mask_ops.AreaConditionMaskOperation.operate,
-            MacroOp.CondRegions:    mask_ops.RegionConditionMaskOperation.operate
-        }
-
+                MacroOp.CondColor:      mask_ops.ColorConditionMaskOperation.operate,
+                MacroOp.CondArea:       mask_ops.AreaConditionMaskOperation.operate,
+                MacroOp.CondRegions:    mask_ops.RegionConditionMaskOperation.operate
+            })
 
     def addOperation(self, op: MacroOp, **kwargs) -> MacroOpItem | None:
         if not self.recording:
@@ -121,6 +125,11 @@ class MaskingMacro:
 
     def clear(self):
         self.operations = list()
+
+
+    def needsInference(self) -> bool:
+        inferenceOps = (MacroOp.Detect, MacroOp.Segment)
+        return any((opItem.op in inferenceOps) for opItem in self.operations)
 
 
     def saveTo(self, path: str):
@@ -175,9 +184,6 @@ class MaskingMacro:
     # TODO: Macros that use scratch layers may expect a fixed number of input layers (like 1)
     #       and blend the results from wrong layers when starting with 2 layers.
     def run(self, imgPath: str, layers: list[np.ndarray], currentLayerIndex=0) -> tuple[list[np.ndarray], list[bool]]:
-        '''
-        Must run in inference thread.
-        '''
         layers = list(layers)
         changed = [False] * len(layers)
         shape = layers[0].shape
@@ -219,21 +225,22 @@ class MaskingMacro:
         return (layers, changed)
 
 
-    def _runOp(self, mat: np.ndarray, imgPath: str, op: MacroOp, args: dict) -> np.ndarray:
-        if func := self.opFunc.get(op):
+    @classmethod
+    def _runOp(cls, mat: np.ndarray, imgPath: str, op: MacroOp, args: dict) -> np.ndarray:
+        if func := cls.OP_FUNC.get(op):
             return func(mat, **args)
 
         match op:
             case MacroOp.Brush:
-                return self.opBrush(mat, args)
+                return cls.opBrush(mat, args)
             case MacroOp.FloodFill:
-                return self.opFloodFill(mat, args)
+                return cls.opFloodFill(mat, args)
             case MacroOp.DetectPad:
-                return self.opDetectPad(mat, imgPath, args)
-            case MacroOp.Detect:
-                return self.opDetect(mat, imgPath, args)
-            case MacroOp.Segment:
-                return self.opSegment(mat, imgPath, args)
+                return cls.opDetectPad(mat, imgPath, args)
+            # case MacroOp.Detect:
+            #     return cls.opDetect(mat, imgPath, args, inferProc)
+            # case MacroOp.Segment:
+            #     return cls.opSegment(mat, imgPath, args, inferProc)
 
         raise MacroRunException(f"Unrecognized operation: {op}")
 
@@ -256,40 +263,33 @@ class MaskingMacro:
         image = cv.imread(imgPath, cv.IMREAD_UNCHANGED)
         return mask_ops.DetectPadMaskOperation.operate(mat, image, **args)
 
-    def opDetect(self, mat: np.ndarray, imgPath: str, args: dict) -> np.ndarray:
-        # TODO: Don't start on every call?
-        from infer.inference import Inference
-        inferProc = Inference().proc
-        inferProc.start()
+    # @staticmethod
+    # def opDetect(mat: np.ndarray, imgPath: str, args: dict, inferProc: InferenceProcess) -> np.ndarray:
+    #     preset = args.pop("preset")
+    #     threshold = args.pop("threshold")
+    #     config: dict = Config.inferMaskPresets.get(preset)
+    #     classes = config.get("classes", [])
 
-        preset = args.pop("preset")
-        threshold = args.pop("threshold")
-        config: dict = Config.inferMaskPresets.get(preset)
-        classes = config.get("classes", [])
+    #     boxes = inferProc.maskBoxes(config, classes, imgPath)
+    #     for box in boxes:
+    #         name = box["name"]
+    #         if box["confidence"] < threshold or (classes and name not in classes):
+    #             continue
+    #         mat = mask_ops.DetectMaskOperation.operate(mat, box, **args)
 
-        boxes = inferProc.maskBoxes(config, classes, imgPath)
-        for box in boxes:
-            name = box["name"]
-            if box["confidence"] < threshold or (classes and name not in classes):
-                continue
-            mat = mask_ops.DetectMaskOperation.operate(mat, box, **args)
+    #     return mat
 
-        return mat
+    # @staticmethod
+    # def opSegment(mat: np.ndarray, imgPath: str, args: dict, inferProc: InferenceProcess) -> np.ndarray:
+    #     preset = args.pop("preset")
+    #     config: dict = Config.inferMaskPresets.get(preset)
+    #     classes = config.get("classes", [])
 
-    def opSegment(self, mat: np.ndarray, imgPath: str, args: dict) -> np.ndarray:
-        # TODO: Don't start on every call?
-        from infer.inference import Inference
-        inferProc = Inference().proc
-        inferProc.start()
+    #     maskBytes = inferProc.mask(config, classes, imgPath)
+    #     return mask_ops.SegmentMaskOperation.operate(mat, maskBytes, **args)
 
-        preset = args.pop("preset")
-        config: dict = Config.inferMaskPresets.get(preset)
-        classes = config.get("classes", [])
-
-        maskBytes = inferProc.mask(config, classes, imgPath)
-        return mask_ops.SegmentMaskOperation.operate(mat, maskBytes, **args)
-
-    def opBrush(self, mat: np.ndarray, args: dict) -> np.ndarray:
+    @staticmethod
+    def opBrush(mat: np.ndarray, args: dict) -> np.ndarray:
         strokeColor  = args["color"]
         strokeSize   = args["size"]
         strokeSmooth = args["smooth"]
@@ -352,3 +352,107 @@ class MaskingMacro:
 
         # Convert QImage to numpy
         return qimageToNumpyMask(image)
+
+
+
+class ChainedMacroRunner:
+    def __init__(self, macro: MaskingMacro, maskPath: str, layers: list[np.ndarray], currentLayerIndex=0):
+        self.macro = macro
+        self.maskPath = maskPath
+        self._itOp = iter(macro.operations)
+
+        self.layerIndex = currentLayerIndex
+        self.layers = layers
+        self.shape = layers[0].shape
+        self.changed = [False] * len(layers)
+
+
+    def __call__(self, file: str, proc: InferenceProcess):
+        #print(">>> ChainedMacroRunner.__call__")
+        while opItem := next(self._itOp, None):
+            args = opItem.args.copy()
+            #print(f"[{opItem}]")
+
+            match opItem.op:
+                case MacroOp.SetLayer:
+                    index = int(args["index"])
+                    if 0 <= index < len(self.layers):
+                        self.layerIndex = index
+                    else:
+                        raise MacroRunException(f"Failed to set active layer to index {index}")
+
+                case MacroOp.AddLayer:
+                    self.layers.append( np.zeros(self.shape, dtype=np.uint8) )
+                    self.changed.append(True)
+
+                case MacroOp.DeleteLayer:
+                    index = int(args["index"])
+                    if 0 <= index < len(self.layers):
+                        del self.layers[index]
+                        del self.changed[index]
+                    else:
+                        raise MacroRunException(f"Failed to delete layer at index {index}")
+
+                case MacroOp.BlendLayers:
+                    self.layers[self.layerIndex] = self.macro.opBlendLayers(self.layers[self.layerIndex], self.layers, args)
+                    self.changed[self.layerIndex] = True
+
+                case MacroOp.Detect:
+                    return lambda args=args: self.queueDetect(file, proc, args)
+
+                case MacroOp.Segment:
+                    return lambda args=args: self.queueSegment(file, proc, args)
+
+                case _:
+                    self.layers[self.layerIndex] = self.macro._runOp(self.layers[self.layerIndex], file, opItem.op, args)
+                    self.changed[self.layerIndex] = True
+
+        return InferenceChain.result((self.maskPath, self.layers, self.changed))
+
+
+    def queueDetect(self, file: str, proc: InferenceProcess, args: dict):
+        #print(">>> ChainedMacroRunner.queueDetect")
+
+        preset = args.pop("preset")
+        threshold = args.pop("threshold")
+        config: dict = Config.inferMaskPresets.get(preset)
+        classes = config.get("classes", [])
+
+        def cbDetect(results: list):
+            #print(">>> ChainedMacroRunner.queueDetect.cbDetect")
+            try:
+                boxes = results[0]["boxes"]
+            except:
+                raise RuntimeError("Failed to retrieve detection result")
+
+            for box in boxes:
+                name = box["name"]
+                if box["confidence"] < threshold or (classes and name not in classes):
+                    continue
+                self.layers[self.layerIndex] = mask_ops.DetectMaskOperation.operate(self.layers[self.layerIndex], box, **args)
+
+            return InferenceChain.queue(self)
+
+        proc.maskBoxes(config, classes, file)
+        return InferenceChain.resultCallback(cbDetect)
+
+
+    def queueSegment(self, file: str, proc: InferenceProcess, args: dict):
+        #print(">>> ChainedMacroRunner.queueSegment")
+
+        preset = args.pop("preset")
+        config: dict = Config.inferMaskPresets.get(preset)
+        classes = config.get("classes", [])
+
+        def cbSegment(results: list):
+            #print(">>> ChainedMacroRunner.queueSegment.cbSegment")
+            try:
+                maskBytes = results[0]["mask"]
+            except:
+                raise RuntimeError("Failed to retrieve segmentation result")
+
+            self.layers[self.layerIndex] = mask_ops.SegmentMaskOperation.operate(self.layers[self.layerIndex], maskBytes, **args)
+            return InferenceChain.queue(self)
+
+        proc.mask(config, classes, file)
+        return InferenceChain.resultCallback(cbSegment)

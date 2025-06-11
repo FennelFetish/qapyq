@@ -176,7 +176,7 @@ class InferenceSession:
         self._condProc = Condition()
         self._prepared = False
 
-        self._resultQueue = Queue[tuple[ProcState, str, list[Any], Exception | None]]()
+        self._resultQueue = Queue[tuple[ProcState, str, list[Any], Exception | None, InferenceChain | None]]()
 
     def __enter__(self):
         return self
@@ -201,7 +201,7 @@ class InferenceSession:
             if procState := next((p for p in self.procs if p.proc == proc), None):
                 if state:
                     self.readyProcs.append(procState)
-                    self._resultQueue.put_nowait((procState, "", [], None))  # Signal proc ready with file=""
+                    self._queueEmptyResult("", procState)  # Signal proc ready with file=""
                 else:
                     procState.shutdown()
                     self.failedProcs.append(procState)
@@ -239,30 +239,47 @@ class InferenceSession:
 
 
     def _queueEmptyResult(self, file: str, procState: ProcState):
-        self._resultQueue.put_nowait((procState, file, [], None))
+        self._resultQueue.put_nowait((procState, file, [], None, None))
 
+    # Called once per file, executes the check function.
     def _tryQueueFile(self, file: str, procState: ProcState, checkFunc: Callable[[str, InferenceProcess], Callable | None], all: bool) -> bool:
         #print(f"Check: {file} ({procState.proc.procCfg.hostName})")
+        #print(f"+++ _tryQueueFile calling {checkFunc}")
         if taskFunc := checkFunc(file, procState.proc):
-            if procState.queueFile(file, taskFunc):
-                self._queueNextFile(procState, all)
-        elif all:
+            # InferenceChain.result comes here (when no task was queued but result was returned directly)
+            if isinstance(taskFunc, InferenceChain):
+                #print("Exec InferenceChain in _tryQueueFile")
+                if taskFunc.exec(self, procState, file, all):
+                    return True
+            else:
+                if procState.queueFile(file, taskFunc):
+                    self._queueNextTask(procState, all)
+                return True
+
+        if all:
             self._queueEmptyResult(file, procState)
-        else:
-            return False
-        return True
+            return True
+        return False
 
-    def _queueNextFile(self, procState: ProcState, all: bool):
-        task = procState.getNextTask()
-        if not task:
-            return
 
-        file, taskFunc = task
+    def _queueNextTask(self, procState: ProcState, all: bool):
+        if task := procState.getNextTask():
+            self._queueTask(task[0], task[1], procState, all)
+
+    def _queueTask(self, file: str, taskFunc: Callable[[], InferenceChain | None], procState: ProcState, all: bool):
         with procState.proc as proc:
             #print(f"QUEUE: {file} ({procState.proc.procCfg.hostName})")
-            taskFunc()
+
+            #print(f"+++ _queueNextFile calling {taskFunc}")
+            chain = taskFunc()
             if futures := proc.getRecordedFutures():
-                resultCb = ResultCallback(self, procState, file, len(futures))
+                if chain:
+                    # InferenceChain.resultCallback comes here
+                    assert chain.callback is not None
+                    resultCb = ChainCallback(chain.callback, self, procState, file, len(futures))
+                else:
+                    resultCb = ResultCallback(self, procState, file, len(futures))
+
                 for future in futures:
                     future.setCallback(resultCb)
             elif all:
@@ -283,11 +300,18 @@ class InferenceSession:
         fillProcQueue(self.getFreeProc())
 
         # Handle inference results
+        # TODO: Catch and yield exception to not abort iteration.
         while numQueued > 0 and (queuedResult := self._resultQueue.get()):
-            procState, file, result, exception = queuedResult
+            procState, file, result, exception, chainTask = queuedResult
 
             if exception:
                 raise exception
+
+            if chainTask:
+                # InferenceChain.queue and InfereChain.forwardResult come here
+                #print(f"+++ Exec InferenceChain in iter: {chainTask}")
+                chainTask.exec(self, procState, file, all)
+                continue
 
             # Empty file is the signal when a new process becomes ready
             if not file:
@@ -298,7 +322,7 @@ class InferenceSession:
             yield file, result
 
             numQueued -= 1
-            self._queueNextFile(procState, all)
+            self._queueNextTask(procState, all)
             fillProcQueue(procState)
 
 
@@ -312,17 +336,107 @@ class ResultCallback:
         self.results = []
 
     def __call__(self, future: ProcFuture):
-        exception = None
         try:
             result = future.result()
             self.results.append(result)
         except Exception as ex:
-            exception = ex
-            self.results.append(None)
+            self.sess._resultQueue.put_nowait((self.procState, self.file, [], ex, None))
+            return
 
         self.remaining -= 1
         if self.remaining <= 0:
-            self.sess._resultQueue.put_nowait((self.procState, self.file, self.results, exception))
+            self.onDone()
+
+    def onDone(self):
+        self.sess._resultQueue.put_nowait((self.procState, self.file, self.results, None, None))
+
+
+class ChainCallback(ResultCallback):
+    def __init__(self, func: Callable, sess: InferenceSession, procState: ProcState, file: str, resultCount: int):
+        super().__init__(sess, procState, file, resultCount)
+        self.func = func
+
+    def onDone(self):
+        # Forward the callback to queue for execution in same thread
+        chain = InferenceChain.forwardResult(self.func, self.results)
+        self.sess._resultQueue.put_nowait((self.procState, self.file, [], None, chain))
+
+
+
+class InferenceChain:
+    def __init__(self):
+        self.callback: Callable = None
+        self._checkFunc: Callable = None
+        self._fwdFunc: Callable = None
+        self._result: Any = None
+        self.exec: Callable[[InferenceSession, ProcState, str, bool], bool] = None
+
+    @staticmethod
+    def queue(checkFunc: Callable[[str, InferenceProcess], None]) -> InferenceChain:
+        'Result callbacks return `queue`-InferenceChain.'
+        chain = InferenceChain()
+        chain._checkFunc = checkFunc
+        chain.exec = chain._execQueue
+        return chain
+
+    @staticmethod
+    def resultCallback(func: Callable) -> InferenceChain:
+        'Queue functions return `resultCallback`-InferenceChain.'
+        chain = InferenceChain()
+        chain.callback = func
+        return chain
+
+    @staticmethod
+    def forwardResult(func: Callable, result: Any) -> InferenceChain:
+        'ChainCallbacks enqueue `forwardResult`-InferenceChain.'
+        chain = InferenceChain()
+        chain._fwdFunc = func
+        chain._result = result
+        chain.exec = chain._execForwardResult
+        return chain
+
+    @staticmethod
+    def result(result: Any) -> InferenceChain:
+        'Processing functions return `result`-InferenceChain.'
+        chain = InferenceChain()
+        chain._result = result
+        chain.exec = chain._execResult
+        return chain
+
+
+    def _execQueue(self, session: InferenceSession, procState: ProcState, file: str, all: bool) -> bool:
+        #print("!!! InferenceChain > _execQueue")
+        if queueFunc := self._checkFunc(file, procState.proc):
+            if isinstance(queueFunc, InferenceChain):
+                #print(f"+++ InferenceChain._execQueue calling {queueFunc}")
+                queueFunc.exec(session, procState, file, all)
+            else:
+                session._queueTask(file, queueFunc, procState, all)
+            return True
+        return False
+
+    def _execForwardResult(self, session: InferenceSession, procState: ProcState, file: str, all: bool) -> bool:
+        #print("!!! InferenceChain > _execForwardResult")
+        if chain := self._fwdFunc(self._result):
+            return chain.exec(session, procState, file, all)
+        return False
+
+    def _execResult(self, session: InferenceSession, procState: ProcState, file: str, all: bool) -> bool:
+        #print("!!! InferenceChain > _execResult")
+        session._resultQueue.put_nowait((procState, file, [self._result], None, None))
+        return True
+
+
+    def __str__(self) -> str:
+        if self.callback:
+            return f"[InferenceChain Callback, {self.callback}]"
+        if self._checkFunc:
+            return f"[InferenceChain Queue, checkFunc={self._checkFunc}]"
+        if self._fwdFunc:
+            return f"[InferenceChain ForwardResult, fwdFunc={self._fwdFunc}]"
+        if self._result:
+            return f"[InferenceChain Result]"
+        return f"[InferenceChain UNKNOWN]"
 
 
 

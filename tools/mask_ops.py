@@ -1945,13 +1945,31 @@ class MacroMaskTask(QRunnable):
         try:
             macro = mask_macro.MaskingMacro()
             macro.loadFrom(self.macroPath)
-            layerMats, layerChanged = macro.run(self.imgPath, self.layerMats, self.currentLayerIndex)
+
+            if macro.needsInference():
+                macroRunner = mask_macro.ChainedMacroRunner(macro, "", self.layerMats, self.currentLayerIndex)
+                layerMats, layerChanged = self.runChain(macroRunner)
+            else:
+                layerMats, layerChanged = macro.run(self.imgPath, self.layerMats, self.currentLayerIndex)
 
             self.signals.done.emit(self.imgPath, self.macroName, self.layers, layerMats, layerChanged)
+
         except Exception as ex:
             import traceback
             traceback.print_exc()
             self.signals.fail.emit(str(ex))
+
+
+    def runChain(self, macroRunner):
+        from infer.inference import Inference
+        with Inference().createSession(1) as session:
+            session.prepare()
+
+            for file, results in session.queueFiles((self.imgPath,), macroRunner):
+                if results:
+                    return results[0][1:]
+
+        raise RuntimeError("No result")
 
 
 

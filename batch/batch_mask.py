@@ -9,10 +9,10 @@ import numpy as np
 from config import Config
 from infer.inference import Inference
 from lib import qtlib
-from lib.mask_macro import MaskingMacro
+from lib.mask_macro import MaskingMacro, ChainedMacroRunner
 from lib.mask_macro_vis import MacroVisualization
 import ui.export_settings as export
-from .batch_task import BatchSignalHandler, BatchTask, BatchUtil
+from .batch_task import BatchSignalHandler, BatchTask, BatchInferenceTask, BatchUtil
 
 
 # TODO: Store detections in json (or separate batch detect?)
@@ -259,9 +259,13 @@ class BatchMask(QtWidgets.QWidget):
         self.saveExportPreset()
         self.btnStart.setText("Abort")
 
-        macroPath = self.cboMacro.currentData()
         saveMode = self.cboDestType.currentData()
-        self._task = BatchMaskTask(self.log, self.tab.filelist, macroPath, saveMode, self.destPathSettings)
+        macroPath = self.cboMacro.currentData()
+        macro = MaskingMacro()
+        macro.loadFrom(macroPath)
+
+        taskClass = BatchInferenceMaskTask if macro.needsInference() else BatchMaskTask
+        self._task = taskClass(self.log, self.tab.filelist, macro, saveMode, self.destPathSettings)
 
         skipNonExistingSource = self.chkSkipNoInput.isChecked()
         srcMode: MaskSrcMode = self.cboSrcType.currentData()
@@ -349,29 +353,78 @@ def createAlphaMaskSource(skipNonExisting: bool):
 
 class MaskSkipException(Exception): pass
 
-class BatchMaskTask(BatchTask):
-    def __init__(self, log, filelist, macroPath: str, saveMode: MaskDestMode, destPathSettings: export.PathSettings):
-        super().__init__("mask", log, filelist)
-        self.macroPath      = macroPath
-        self.saveMode       = saveMode
+class BaseBatchMaskTask:
+    def __init__(self, macro: MaskingMacro, saveMode: MaskDestMode, destPathSettings: export.PathSettings):
+        self.macro = macro
+        self.saveMode = saveMode
 
-        self.pathTemplate   = destPathSettings.pathTemplate
-        self.overwriteFiles = destPathSettings.overwriteFiles
+        self.pathTemplate      = destPathSettings.pathTemplate
+        self.overwriteFiles    = destPathSettings.overwriteFiles
         self.skipExistingFiles = destPathSettings.skipExistingFiles
 
         self.maskSource: Callable = None
         self.maskProcessFunc: Callable = None
 
+    def checkDestinationPath(self, w: int, h: int) -> str:
+        self.parser.width = w
+        self.parser.height = h
+
+        noCounter = self.overwriteFiles or self.skipExistingFiles
+        path = self.parser.parsePath(self.pathTemplate, noCounter)
+        if self.skipExistingFiles and os.path.exists(path):
+            raise MaskSkipException()
+        return path
 
     def runPrepare(self):
         self.parser = export.ExportVariableParser()
-        self.macro = MaskingMacro()
-        self.macro.loadFrom(self.macroPath)
 
         match self.saveMode:
             case MaskDestMode.File:  self.maskProcessFunc = self.processAsSeparateFile
             case MaskDestMode.Alpha: self.maskProcessFunc = self.processAsAlpha
             case _: raise ValueError("Invalid destination mode")
+
+    def runCleanup(self):
+        import gc
+        gc.collect()
+
+
+    def processAsSeparateFile(self, imgFile: str, layers: list[np.ndarray]) -> list[np.ndarray]:
+        raise NotImplementedError()
+
+    def processAsAlpha(self, imgFile: str, layers: list[np.ndarray]) -> list[np.ndarray]:
+        raise NotImplementedError()
+
+
+    @staticmethod
+    def _processAsSeparateFile(layers: list[np.ndarray]) -> list[np.ndarray]:
+        layers = layers[:4]
+
+        # Can't write images with only 2 channels. Need 1/3/4 channels.
+        if len(layers) == 2:
+            layers.append( np.zeros_like(layers[0]) )
+
+        # Reverse order of first 3 layers to convert from BGR(A) to RGB(A)
+        layers[:3] = layers[2::-1]
+        return layers
+
+    @staticmethod
+    def _processAsAlpha(imgMat: np.ndarray, layers: list[np.ndarray]) -> list[np.ndarray]:
+        channels = imgMat.shape[2] if len(imgMat.shape) > 2 else 1
+        if channels == 1:
+            imgChannels = [imgMat] * 3
+        else:
+            imgChannels = list(cv.split(imgMat))[:3]
+
+        imgChannels.append(layers[0])
+        return imgChannels
+
+
+
+class BatchMaskTask(BaseBatchMaskTask, BatchTask):
+    def __init__(self, log, filelist, macro: MaskingMacro, saveMode: MaskDestMode, destPathSettings: export.PathSettings):
+        BaseBatchMaskTask.__init__(self, macro, saveMode, destPathSettings)
+        BatchTask.__init__(self, "mask", log, filelist)
+
 
     def runProcessFile(self, imgFile: str) -> str | None:
         self.parser.setup(imgFile)
@@ -388,16 +441,6 @@ class BatchMaskTask(BatchTask):
         export.saveImage(path, combined, self.log)
         return path
 
-    def checkDestinationPath(self, w: int, h: int) -> str:
-        self.parser.width = w
-        self.parser.height = h
-
-        noCounter = self.overwriteFiles or self.skipExistingFiles
-        path = self.parser.parsePath(self.pathTemplate, noCounter)
-        if self.skipExistingFiles and os.path.exists(path):
-            raise MaskSkipException()
-        return path
-
 
     def processAsSeparateFile(self, imgFile: str) -> tuple[str, list[np.ndarray]]:
         imgReader = QImageReader(imgFile)
@@ -408,31 +451,64 @@ class BatchMaskTask(BatchTask):
 
         layers = self.maskSource(imgFile, w, h)
         layers, layerChanged = self.macro.run(imgFile, layers)
-        layers = layers[:4]
-
-        # Can't write images with only 2 channels. Need 1/3/4 channels.
-        if len(layers) == 2:
-            layers.append( np.zeros_like(layers[0]) )
-
-        # Reverse order of first 3 layers to convert from BGR(A) to RGB(A)
-        layers[:3] = layers[2::-1]
-        return path, layers
+        return path, self._processAsSeparateFile(layers)
 
 
     def processAsAlpha(self, imgFile: str) -> tuple[str, list[np.ndarray]]:
-        mat = cv.imread(imgFile, cv.IMREAD_UNCHANGED)
-        h, w = mat.shape[:2]
+        imgMat = cv.imread(imgFile, cv.IMREAD_UNCHANGED)
+        h, w = imgMat.shape[:2]
 
         path = self.checkDestinationPath(w, h)
 
         layers = self.maskSource(imgFile, w, h)
         layers, layerChanged = self.macro.run(imgFile, layers)
+        return path, self._processAsAlpha(imgMat, layers)
 
-        channels = mat.shape[2] if len(mat.shape) > 2 else 1
-        if channels == 1:
-            imgChannels = [mat] * 3
-        else:
-            imgChannels = list(cv.split(mat))[:3]
 
-        imgChannels.append(layers[0])
-        return path, imgChannels
+
+class BatchInferenceMaskTask(BaseBatchMaskTask, BatchInferenceTask):
+    def __init__(self, log, filelist, macro: MaskingMacro, saveMode: MaskDestMode, destPathSettings: export.PathSettings):
+        BaseBatchMaskTask.__init__(self, macro, saveMode, destPathSettings)
+        BatchInferenceTask.__init__(self, "mask", log, filelist)
+
+    def runPrepare(self, proc):
+        super().runPrepare()
+
+
+    def runCheckFile(self, imgFile: str, proc) -> Callable | None:
+        try:
+            imgReader = QImageReader(imgFile)
+            imgSize = imgReader.size()
+            w, h = imgSize.width(), imgSize.height()
+
+            self.parser.setup(imgFile)
+            path = self.checkDestinationPath(w, h)
+
+            layers = self.maskSource(imgFile, w, h)
+            macroRunner = ChainedMacroRunner(self.macro, path, layers)
+            return macroRunner(imgFile, proc)
+        except MaskSkipException:
+            return None
+
+
+    def runProcessFile(self, imgFile: str, results: list) -> str | None:
+        if not results:
+            return
+
+        destPath, layers, layerChanged = results[0]
+        layers = self.maskProcessFunc(imgFile, layers)
+
+        # BGRA, shape: (h, w, channels)
+        # Creates a copy of the data.
+        combined = np.dstack(layers)
+
+        export.saveImage(destPath, combined, self.log)
+        return destPath
+
+
+    def processAsSeparateFile(self, imgFile: str, layers: list[np.ndarray]) -> list[np.ndarray]:
+        return self._processAsSeparateFile(layers)
+
+    def processAsAlpha(self, imgFile: str, layers: list[np.ndarray]) -> list[np.ndarray]:
+        imgMat = cv.imread(imgFile, cv.IMREAD_UNCHANGED)
+        return self._processAsAlpha(imgMat, layers)
