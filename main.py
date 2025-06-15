@@ -14,6 +14,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, app):
         super().__init__()
         self.app = app
+        self._quitConfirmed = False
 
         self.setAttribute(Qt.WA_QuitOnClose)
         self.setWindowIcon(QtGui.QPixmap(Config.windowIcon))
@@ -41,7 +42,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabWidget.setMovable(True)
         self.tabWidget.setElideMode(Qt.ElideMiddle)
         self.tabWidget.currentChanged.connect(self.onTabChanged)
-        self.tabWidget.tabCloseRequested.connect(self.closeTab)
+        self.tabWidget.tabCloseRequested.connect(self.askCloseTab)
         self.setCentralWidget(self.tabWidget)
 
     @Slot()
@@ -82,22 +83,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.toggleFullscreen()
 
     @Slot()
-    def closeCurrentTab(self):
-        if self._fullscreenTab:
-            self.toggleFullscreen()
-        self.closeTab( self.tabWidget.currentIndex() )
-
-    @Slot()
-    def closeTab(self, index):
-        tab: ImgTab = self.tabWidget.widget(index)
-        tab.onTabClosed()
-
-        self.tabWidget.removeTab(index)
-        if self.tabWidget.count() == 0:
-            self.addTab()
-        tab.deleteLater()
-
-    @Slot()
     def onTabChanged(self, index):
         tab = self.currentTab
         for win in self.auxWindows.values():
@@ -107,6 +92,45 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.toolbar.setTool(tab.toolName if tab else None)
         self.updateTitle(self.tabWidget.tabText(index))
+
+
+    def _closeTab(self, index: int):
+        tab: ImgTab = self.tabWidget.widget(index)
+        tab.onTabClosed()
+
+        self.tabWidget.removeTab(index)
+        if self.tabWidget.count() == 0:
+            self.addTab()
+        tab.deleteLater()
+
+    def askCloseCurrentTab(self, confirm=False):
+        if self._fullscreenTab:
+            self.toggleFullscreen()
+        self.askCloseTab(self.tabWidget.currentIndex(), confirm)
+
+    @Slot()
+    def askCloseTab(self, index: int, confirm=False):
+        tab: ImgTab = self.tabWidget.widget(index)
+        questions = tab.checkClose()
+        if questions:
+            text = "This tab has:\n"
+            text += "\n".join(f"• {q}" for q in questions)
+            text += "\n\nDo you really want to close this tab?"
+        elif confirm:
+            text = "Do you really want to close the current tab?"
+        else:
+            self._closeTab(index)
+            return
+
+        dialog = QtWidgets.QMessageBox(self)
+        dialog.setIcon(QtWidgets.QMessageBox.Icon.Question)
+        dialog.setWindowTitle("Confirm Close Tab")
+        dialog.setText(text)
+        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+        dialog.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
+
+        if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes:
+            self._closeTab(index)
 
 
     @Slot()
@@ -183,7 +207,38 @@ class MainWindow(QtWidgets.QMainWindow):
         self.auxWindows.pop(winName, None)
 
 
-    def closeEvent(self, event):
+    def askQuit(self, confirm=False) -> bool:
+        questions = list[str]()
+        for i in range(self.tabWidget.count()):
+            tab: ImgTab = self.tabWidget.widget(i)
+            questions.extend(tab.checkClose())
+
+        if questions:
+            text = "Some tabs have:\n"
+            text += "\n".join(f"• {q}" for q in questions)
+            text += "\n\nDo you really want to quit the application?"
+        elif confirm:
+            text = "Do you really want to quit the application?"
+        else:
+            self._quitConfirmed = True
+            return True
+
+        dialog = QtWidgets.QMessageBox(self)
+        dialog.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+        dialog.setWindowTitle("Confirm Quit")
+        dialog.setText(text)
+        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+        dialog.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
+
+        self._quitConfirmed = (dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes)
+        return self._quitConfirmed
+
+
+    def closeEvent(self, event: QtGui.QCloseEvent):
+        if not (self._quitConfirmed or self.askQuit()):
+            event.ignore()
+            return
+
         QThreadPool.globalInstance().clear()
 
         from gallery.thumbnail_cache import ThumbnailCache
@@ -260,7 +315,7 @@ class MainMenu(QtWidgets.QMenu):
         actCloseTab = QtGui.QAction("Close Tab", self)
         actCloseTab.setShortcutContext(Qt.ApplicationShortcut)
         actCloseTab.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_W))
-        actCloseTab.triggered.connect(self.closeTabWithConfirmation)
+        actCloseTab.triggered.connect(lambda: mainWindow.askCloseCurrentTab(True))
         self.addAction(actCloseTab)
 
         self.addSeparator()
@@ -365,29 +420,9 @@ class MainMenu(QtWidgets.QMenu):
         else:
             tab.filelist.setPrevFile()
 
-
-    @Slot()
-    def closeTabWithConfirmation(self):
-        dialog = QtWidgets.QMessageBox(self.mainWindow)
-        dialog.setIcon(QtWidgets.QMessageBox.Icon.Question)
-        dialog.setWindowTitle("Confirm Close Tab")
-        dialog.setText(f"Do you really want to close the current tab?")
-        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
-        dialog.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
-
-        if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes:
-            self.mainWindow.closeCurrentTab()
-
     @Slot()
     def quitWithConfirmation(self):
-        dialog = QtWidgets.QMessageBox(self.mainWindow)
-        dialog.setIcon(QtWidgets.QMessageBox.Icon.Question)
-        dialog.setWindowTitle("Confirm Quit")
-        dialog.setText(f"Do you really want to quit the application?")
-        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
-        dialog.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
-
-        if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes:
+        if self.mainWindow.askQuit(True):
             self.mainWindow.close()
 
 

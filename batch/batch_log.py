@@ -143,3 +143,11 @@ class BatchLog(QtWidgets.QWidget):
         entry: BatchLogEntry = self.cboEntries.currentData()
         if entry:
             entry.saveLog(self._savePath)
+
+
+    def hasUnfinished(self):
+        for i in range(self.cboEntries.count()):
+            entry: BatchLogEntry = self.cboEntries.itemData(i)
+            if not entry.done:
+                return True
+        return False
