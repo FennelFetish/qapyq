@@ -1,22 +1,22 @@
 from PySide6 import QtWidgets
-from PySide6.QtCore import Slot, QThreadPool
+from PySide6.QtCore import Slot
 from PIL import Image
 from config import Config
 from lib import qtlib
-from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
 import tools.scale as scale
 import ui.export_settings as export
+from .batch_task import BatchTask, BatchTaskHandler, BatchUtil
+from .batch_log import BatchLog
 
 
 class BatchScale(QtWidgets.QWidget):
     EXPORT_PRESET_KEY = "batch-scale"
 
-    def __init__(self, tab, logSlot, progressBar, statusBar):
+    def __init__(self, tab, logWidget: BatchLog, bars):
         super().__init__()
         self.tab = tab
-        self.log = logSlot
-        self.progressBar: QtWidgets.QProgressBar = progressBar
-        self.statusBar: qtlib.ColoredMessageStatusBar = statusBar
+        self.logWidget = logWidget
+        self.taskHandler = BatchTaskHandler(bars, "Scale", self.createTask)
 
         self._imageSize = None
         self.scaleModes = {}
@@ -29,9 +29,6 @@ class BatchScale(QtWidgets.QWidget):
         self.pathSettings = export.PathSettings(self.parser)
         self.pathSettings.pathTemplate   = config.get("path_template", "{{path}}_{{w}}x{{h}}.png")
         self.pathSettings.overwriteFiles = config.get("overwrite", False)
-
-        self._task = None
-        self._taskSignalHandler = None
 
         self._build()
 
@@ -48,10 +45,7 @@ class BatchScale(QtWidgets.QWidget):
         layout.addWidget(self._buildScaleMode(), 0, 0)
         layout.addWidget(self._buildExportSettings(), 1, 0)
         layout.addWidget(self._buildPathSettings(), 0, 1, 3, 1)
-
-        self.btnStart = QtWidgets.QPushButton("Start Batch Scale")
-        self.btnStart.clicked.connect(self.startStop)
-        layout.addWidget(self.btnStart, 3, 0, 1, 2)
+        layout.addWidget(self.taskHandler.btnStart, 3, 0, 1, 2)
 
         self.setLayout(layout)
 
@@ -172,32 +166,19 @@ class BatchScale(QtWidgets.QWidget):
             "overwrite": self.pathSettings.overwriteFiles
         }
 
-    @Slot()
-    def startStop(self):
-        if self._task:
-            if BatchUtil.confirmAbort(self):
-                self._task.abort()
-            return
 
+    def createTask(self) -> BatchTask | None:
         if not self._confirmStart():
             return
 
         self.saveExportPreset()
-        self.btnStart.setText("Abort")
 
+        log = self.logWidget.addEntry("Scale")
         scaleFunc = self.selectedScaleMode.getScaleFunc()
-        self._task = BatchScaleTask(self.log, self.tab.filelist, scaleFunc, self.pathSettings)
-        self._task.interpUp   = export.INTERP_MODES_PIL[ self.cboInterpUp.currentText() ]
-        self._task.interpDown = export.INTERP_MODES_PIL[ self.cboInterpDown.currentText() ]
-
-        self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
-        self._taskSignalHandler.finished.connect(self.taskDone)
-        QThreadPool.globalInstance().start(self._task)
-
-    def taskDone(self):
-        self.btnStart.setText("Start Batch Scale")
-        self._task = None
-        self._taskSignalHandler = None
+        task = BatchScaleTask(log, self.tab.filelist, scaleFunc, self.pathSettings)
+        task.interpUp   = export.INTERP_MODES_PIL[ self.cboInterpUp.currentText() ]
+        task.interpDown = export.INTERP_MODES_PIL[ self.cboInterpDown.currentText() ]
+        return task
 
 
 

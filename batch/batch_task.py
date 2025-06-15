@@ -1,9 +1,11 @@
 import traceback, time
 from typing import Iterable, Callable, Any
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Signal, Slot, QRunnable, QObject, QMutex, QMutexLocker
-from infer.inference import Inference
+from PySide6.QtCore import Qt, Signal, Slot, QRunnable, QObject, QMutex, QMutexLocker, QThreadPool
+from infer.inference import Inference, InferenceChain
 from lib.filelist import FileList
+import lib.qtlib as qtlib
+from .batch_log import BatchLogEntry
 
 
 class BatchTask(QRunnable):
@@ -14,29 +16,19 @@ class BatchTask(QRunnable):
         fail = Signal(str, object)      # error message, TimeUpdate
 
 
-    def __init__(self, name: str, log: Callable, filelist: FileList):
+    def __init__(self, name: str, log: BatchLogEntry, filelist: FileList):
         super().__init__()
         self.setAutoDelete(False)
         self.signals = BatchTask.Signals()
 
         self.name     = name
+        self.log      = log
         self._mutex   = QMutex()
         self._aborted = False
-
-        self._indentLogs = False
-        self.log = self._wrapLogFunc(log)
 
         self.files = filelist.getFiles().copy()
         if len(self.files) == 0 and filelist.currentFile:
             self.files.append(filelist.currentFile)
-
-    def _wrapLogFunc(self, log: Callable):
-        def logIndent(line: str):
-            if self._indentLogs:
-                line = "  " + line
-            log(line)
-
-        return logIndent
 
 
     def abort(self):
@@ -68,6 +60,7 @@ class BatchTask(QRunnable):
             self.signals.fail.emit(errorMessage, None)
         finally:
             self.runCleanup()
+            self.log.release.emit()
 
 
     def processAll(self, processFileArgs: Iterable[tuple]):
@@ -91,17 +84,16 @@ class BatchTask(QRunnable):
             outputFile = None
 
             try:
-                self._indentLogs = True
-                outputFile = self.runProcessFile(imgFile, *args)
-                if not outputFile:
-                    self.log(f"Skipped")
-                    numFilesSkipped += 1
+                with self.log.indent():
+                    outputFile = self.runProcessFile(imgFile, *args)
+                    if not outputFile:
+                        self.log(f"Skipped")
+                        numFilesSkipped += 1
             except Exception as ex:
                 outputFile = None
                 self.log(f"WARNING: {str(ex)}")
                 traceback.print_exc()
             finally:
-                self._indentLogs = False
                 numFilesDone += 1
                 timeAvg.update()
                 update = BatchProgressUpdate(timeAvg, numFiles, numFilesDone, numFilesSkipped)
@@ -123,7 +115,7 @@ class BatchTask(QRunnable):
 
 
 class BatchInferenceTask(BatchTask):
-    def __init__(self, name: str, log: Callable, filelist: FileList):
+    def __init__(self, name: str, log: BatchLogEntry, filelist: FileList):
         super().__init__(name, log, filelist)
 
     @Slot()
@@ -146,12 +138,13 @@ class BatchInferenceTask(BatchTask):
             self.signals.fail.emit(errorMessage, None)
         finally:
             self.runCleanup()
+            self.log.release.emit()
 
 
     def runPrepare(self, proc):
         pass
 
-    def runCheckFile(self, imgFile: str, proc) -> Callable | None:
+    def runCheckFile(self, imgFile: str, proc) -> Callable | InferenceChain | None:
         pass
 
     def runProcessFile(self, imgFile: str, results: list[Any]) -> str | None:
@@ -229,57 +222,185 @@ class BatchProgressUpdate:
 
 
 
-class BatchSignalHandler(QObject):
+class BatchProgressBar(QtWidgets.QProgressBar):
+    def __init__(self):
+        super().__init__()
+        self._timeText = ""
+        self._lastTime = None
+
+    def setTime(self, time: BatchProgressUpdate | None):
+        if time is None:
+            return
+
+        self._lastTime = time
+        timeSpent      = self.formatSeconds(time.timeSpent)
+        timeRemaining  = self.formatSeconds(time.timeRemaining)
+        self._timeText = f"{time.filesProcessed}/{time.filesTotal} Files processed in {timeSpent}, " \
+                       + f"{timeRemaining} remaining ({time.timePerFile:.2f}s per File)"
+
+    def resetTime(self):
+        self._lastTime = None
+        self._timeText = ""
+        self.update()
+
+    def text(self) -> str:
+        if text := super().text():
+            if self._timeText:
+                return f"{text}  -  {self._timeText}"
+            return text
+        return self._timeText
+
+    def reset(self):
+        super().reset()
+        if self._lastTime:
+            timeSpent = self.formatSeconds(self._lastTime.timeSpent)
+            self._timeText = f"{self._lastTime.filesProcessed} Files processed in {timeSpent} ({self._lastTime.timePerFile:.2f}s per File)"
+        else:
+            self._timeText = ""
+
+    @staticmethod
+    def formatSeconds(seconds: float):
+        s = round(seconds)
+        hours = s // 3600
+        minutes = (s % 3600) // 60
+        seconds = s % 60
+
+        if hours > 0:
+            return f"{hours:02}:{minutes:02}:{seconds:02}"
+        return f"{minutes:02}:{seconds:02}"
+
+
+
+class BatchTaskHandler(QObject):
+    started = Signal()
     finished = Signal()
 
-    def __init__(self, statusBar, progressBar, task: BatchTask):
+    def __init__(self, bars: tuple, name: str, taskFactory: Callable[[], BatchTask | None]):
         super().__init__()
+        self.name = name.capitalize()
+        self.taskFactory = taskFactory
 
-        from lib.qtlib import ColoredMessageStatusBar
-        self.statusBar: ColoredMessageStatusBar = statusBar
+        self.btnStart = QtWidgets.QPushButton(f"Start Batch {self.name}")
+        self.btnStart.clicked.connect(self.startStop)
 
-        from .batch_container import BatchProgressBar
-        self.progressBar: BatchProgressBar = progressBar
-        self.progressBar.resetTime()
+        self.progressBar: BatchProgressBar = bars[0]
+        self.statusBar: qtlib.ColoredMessageStatusBar = bars[1]
+        self.statusBar.addPermanentWidget(self.progressBar)
+
+        self._task: BatchTask | None = None
+
+        self._tabActive = False
+        self._lastMessage: str | tuple[str, bool] | None = None
+        self._lastUpdate: BatchProgressUpdate | None = None
+
+
+    def setTabActive(self, active: bool):
+        if active == self._tabActive:
+            return
+        self._tabActive = active
+
+        if active:
+            if isinstance(self._lastMessage, str):
+                self.statusBar.showMessage(self._lastMessage)
+            elif isinstance(self._lastMessage, tuple):
+                self.statusBar.showColoredMessage(self._lastMessage[0], self._lastMessage[1], 0)
+            else:
+                self.statusBar.clearMessage()
+
+            if self._lastUpdate:
+                self.progressBar.setTime(self._lastUpdate)
+                if self._task:
+                    self.progressBar.setRange(0, self._lastUpdate.filesTotal)
+                    self.progressBar.setValue(self._lastUpdate.filesProcessed)
+                else:
+                    self.progressBar.setRange(0, 1)
+                    self.progressBar.reset()
+            else:
+                self.progressBar.resetTime()
+                self.progressBar.setRange(0, 1)
+                self.progressBar.reset()
+
+
+    @Slot()
+    def startStop(self):
+        if self._task:
+            parent = self.btnStart.parentWidget()
+            if BatchUtil.confirmAbort(parent):
+                self.btnStart.setText("Aborting...")
+                self._task.abort()
+            return
+
+        task = self.taskFactory()
+        if not task:
+            return
 
         task.signals.progress.connect(self.onProgress)
         task.signals.progressMessage.connect(self.onProgressMessage)
         task.signals.done.connect(self.onFinished)
         task.signals.fail.connect(self.onFail)
 
+        self._task = task
+        self.btnStart.setText("Abort")
+        QThreadPool.globalInstance().start(task)
+        self.started.emit()
+
+
     @Slot()
     def onFinished(self, update: BatchProgressUpdate):
-        self.statusBar.showColoredMessage(f"Processed {update.filesTotal} files{update.getSkippedText()}", True, 0)
-        self.progressBar.setTime(update)
+        msg = f"Processed {update.filesTotal} files{update.getSkippedText()}"
+        self._lastMessage = (msg, True)
+        self._lastUpdate = update
+
+        if self._tabActive:
+            self.statusBar.showColoredMessage(msg, True, 0)
+            self.progressBar.setTime(update)
+
         self.taskDone()
 
     @Slot()
     def onFail(self, reason, update: BatchProgressUpdate | None):
-        self.statusBar.showColoredMessage(reason, False, 0)
-        self.progressBar.setTime(update)
+        self._lastMessage = (reason, False)
+        self._lastUpdate = update
+
+        if self._tabActive:
+            self.statusBar.showColoredMessage(reason, False, 0)
+            self.progressBar.setTime(update)
+
         self.taskDone()
 
     @Slot()
-    def onProgress(self, filename, update: BatchProgressUpdate | None):
-        if update:
-            self.progressBar.setRange(0, update.filesTotal)
-            self.progressBar.setValue(update.filesProcessed)
-        else:
-            self.progressBar.setRange(0, 0)
-            self.progressBar.setValue(0)
-
-        self.progressBar.setTime(update)
+    def onProgress(self, filename: str | None, update: BatchProgressUpdate | None):
+        self._lastUpdate = update
         if filename:
-            self.statusBar.showMessage("Wrote " + filename)
+            self._lastMessage = f"Wrote {filename}"
+
+        if self._tabActive:
+            if filename:
+                self.statusBar.showMessage(self._lastMessage)
+
+            self.progressBar.setTime(update)
+            if update:
+                self.progressBar.setRange(0, update.filesTotal)
+                self.progressBar.setValue(update.filesProcessed)
+            else:
+                self.progressBar.setRange(0, 0)
+                self.progressBar.setValue(0)
+
 
     @Slot()
     def onProgressMessage(self, message):
-        self.statusBar.showMessage(message)
+        self._lastMessage = message
+        if self._tabActive:
+            self.statusBar.showMessage(message)
 
     def taskDone(self):
-        self.progressBar.setRange(0, 1)
-        self.progressBar.reset()
+        if self._tabActive:
+            self.progressBar.setRange(0, 1)
+            self.progressBar.reset()
+
         self.finished.emit()
+        self._task = None
+        self.btnStart.setText(f"Start Batch {self.name}")
 
 
 

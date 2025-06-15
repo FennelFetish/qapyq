@@ -2,14 +2,14 @@ from typing import Callable
 from PySide6 import QtWidgets
 from PySide6.QtCore import QSignalBlocker, Qt, Slot
 from config import Config
-from infer.inference import Inference
 from infer.inference_proc import InferenceProcess
 from infer.inference_settings import InferencePresetWidget
 from infer.prompt import PromptWidget, PromptsHighlighter
 from lib import qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
-from .batch_task import BatchInferenceTask, BatchSignalHandler, BatchUtil
+from .batch_task import BatchInferenceTask, BatchTaskHandler, BatchUtil
+from .batch_log import BatchLog
 
 
 TRANSFORM_OVERWRITE_MODE_ALL     = "all"
@@ -17,28 +17,21 @@ TRANSFORM_OVERWRITE_MODE_MISSING = "missing"
 
 
 class BatchTransform(QtWidgets.QWidget):
-    def __init__(self, tab, logSlot, progressBar, statusBar):
+    def __init__(self, tab, logWidget: BatchLog, bars):
         super().__init__()
         self.tab = tab
-        self.log = logSlot
-        self.progressBar: QtWidgets.QProgressBar = progressBar
-        self.statusBar: qtlib.ColoredMessageStatusBar = statusBar
+        self.logWidget = logWidget
+        self.taskHandler = BatchTaskHandler(bars, "Transform", self.createTask)
 
         self.inferSettings = InferencePresetWidget("inferLLMPresets")
 
-        self.btnStart = QtWidgets.QPushButton("Start Batch Transform")
-        self.btnStart.clicked.connect(self.startStop)
-
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self._buildLLMSettings())
-        layout.addWidget(self.btnStart)
+        layout.addWidget(self.taskHandler.btnStart)
         self.setLayout(layout)
 
         self._parser = None
         self._highlighter = VariableHighlighter()
-
-        self._task = None
-        self._taskSignalHandler = None
 
 
     def _buildLLMSettings(self):
@@ -117,13 +110,14 @@ class BatchTransform(QtWidgets.QWidget):
         self._parser = TemplateVariableParser(currentFile)
         self._updateParser()
 
+    @Slot()
     def _updateParser(self):
         if self._parser:
             self._parser.stripAround = self.chkStripAround.isChecked()
             self._parser.stripMultiWhitespace = self.chkStripMulti.isChecked()
             self._updatePreview()
 
-
+    @Slot()
     def _updatePreview(self):
         text = self.promptWidget.prompts
         preview, varPositions = self._parser.parseWithPositions(text)
@@ -156,40 +150,25 @@ class BatchTransform(QtWidgets.QWidget):
         return BatchUtil.confirmStart("Transform", self.tab.filelist.getNumFiles(), ops, self)
 
 
-    @Slot()
-    def startStop(self):
-        if self._task:
-            if BatchUtil.confirmAbort(self):
-                self._task.abort()
-            return
-
+    def createTask(self) -> BatchInferenceTask | None:
         if not self._confirmStart():
             return
-
-        self.btnStart.setText("Abort")
 
         storeName = self.destSelector.name.strip()
         rounds = self.spinRounds.value()
         prompts = self.promptWidget.getParsedPrompts(storeName, rounds)
 
-        self._task = BatchTransformTask(self.log, self.tab.filelist)
-        self._task.prompts = prompts
-        self._task.systemPrompt = self.promptWidget.systemPrompt.strip()
-        self._task.config = self.inferSettings.getInferenceConfig()
+        log = self.logWidget.addEntry("Transform")
+        task = BatchTransformTask(log, self.tab.filelist)
+        task.prompts = prompts
+        task.systemPrompt = self.promptWidget.systemPrompt.strip()
+        task.config = self.inferSettings.getInferenceConfig()
 
-        self._task.overwriteMode = self.cboOverwriteMode.currentData()
-        self._task.storePrompts  = self.chkStorePrompts.isChecked()
-        self._task.stripAround   = self.chkStripAround.isChecked()
-        self._task.stripMulti    = self.chkStripMulti.isChecked()
-
-        self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
-        self._taskSignalHandler.finished.connect(self.taskDone)
-        Inference().queueTask(self._task)
-
-    def taskDone(self):
-        self.btnStart.setText("Start Batch Caption")
-        self._task = None
-        self._taskSignalHandler = None
+        task.overwriteMode = self.cboOverwriteMode.currentData()
+        task.storePrompts  = self.chkStorePrompts.isChecked()
+        task.stripAround   = self.chkStripAround.isChecked()
+        task.stripMulti    = self.chkStripMulti.isChecked()
+        return task
 
 
 

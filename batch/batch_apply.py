@@ -3,13 +3,14 @@ from typing import Callable
 from enum import Enum, auto
 from typing_extensions import override
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, QSignalBlocker, QThreadPool
+from PySide6.QtCore import Qt, Slot, QSignalBlocker
 from config import Config
 from infer.prompt import PromptWidget
 from lib import qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
-from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
+from .batch_task import BatchTask, BatchTaskHandler, BatchUtil
+from .batch_log import BatchLog
 
 
 class WriteMode(Enum):
@@ -48,30 +49,24 @@ WRITE_MODE_TEXT = {
 
 
 class BatchApply(QtWidgets.QWidget):
-    def __init__(self, tab, logSlot, progressBar, statusBar):
+    def __init__(self, tab, logWidget: BatchLog, bars):
         super().__init__()
         self.tab = tab
-        self.log = logSlot
-        self.progressBar: QtWidgets.QProgressBar = progressBar
-        self.statusBar: qtlib.ColoredMessageStatusBar = statusBar
+        self.logWidget = logWidget
+        self.taskHandler = BatchTaskHandler(bars, "Apply", self.createTask)
 
         self.writeSettings = self._buildWriteSettings()
         self.backupSettings = self._buildBackupSettings()
-
-        self.btnStart = QtWidgets.QPushButton("Start Batch Apply")
-        self.btnStart.clicked.connect(self.startStop)
 
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self._buildFormatSettings())
         layout.addWidget(self.writeSettings)
         layout.addWidget(self.backupSettings)
-        layout.addWidget(self.btnStart)
+        layout.addWidget(self.taskHandler.btnStart)
         self.setLayout(layout)
 
         self._parser = None
         self._highlighter = VariableHighlighter()
-        self._task = None
-        self._taskSignalHandler = None
 
         self._onWriteModeChanged(0)
 
@@ -264,13 +259,12 @@ class BatchApply(QtWidgets.QWidget):
         style = f"color: {qtlib.COLOR_RED}" if red else None
         self.chkOverwriteBackup.setStyleSheet(style)
 
-
+    @Slot()
     def _updateParser(self):
         if self._parser:
             self._parser.stripAround = self.chkStripAround.isChecked()
             self._parser.stripMultiWhitespace = self.chkStripMulti.isChecked()
             self._updatePreview()
-
 
     @Slot()
     def _updatePreview(self):
@@ -306,41 +300,26 @@ class BatchApply(QtWidgets.QWidget):
         return BatchUtil.confirmStart("Apply", self.tab.filelist.getNumFiles(), ops, self)
 
 
-    @Slot()
-    def startStop(self):
-        if self._task:
-            if BatchUtil.confirmAbort(self):
-                self._task.abort()
-            return
-
+    def createTask(self) -> BatchTask | None:
         if not self._confirmStart():
             return
 
-        self.btnStart.setText("Abort")
-
+        log = self.logWidget.addEntry("Apply")
         template = self.promptWidget.prompts
-        self._task = BatchApplyTask(self.log, self.tab.filelist, template)
+        task = BatchApplyTask(log, self.tab.filelist, template)
 
         if self.backupSettings.isChecked():
-            self._task.backupType = self.backupDestSelector.type
-            self._task.backupKey  = self.backupDestSelector.name.strip()
-            self._task.overwriteBackup = self.chkOverwriteBackup.isChecked()
+            task.backupType = self.backupDestSelector.type
+            task.backupKey  = self.backupDestSelector.name.strip()
+            task.overwriteBackup = self.chkOverwriteBackup.isChecked()
 
-        self._task.stripAround = self.chkStripAround.isChecked()
-        self._task.stripMulti  = self.chkStripMulti.isChecked()
-        self._task.writeMode   = self.cboWriteMode.currentData()
-        self._task.destPath    = self.txtDestFilePath.text()
-        self._task.destKey     = self.destSelector.name.strip()
-        self._task.deleteJson  = self.chkDeleteJson.isChecked()
-
-        self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
-        self._taskSignalHandler.finished.connect(self.taskDone)
-        QThreadPool.globalInstance().start(self._task)
-
-    def taskDone(self):
-        self.btnStart.setText("Start Batch Apply")
-        self._task = None
-        self._taskSignalHandler = None
+        task.stripAround = self.chkStripAround.isChecked()
+        task.stripMulti  = self.chkStripMulti.isChecked()
+        task.writeMode   = self.cboWriteMode.currentData()
+        task.destPath    = self.txtDestFilePath.text()
+        task.destKey     = self.destSelector.name.strip()
+        task.deleteJson  = self.chkDeleteJson.isChecked()
+        return task
 
 
 

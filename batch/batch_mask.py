@@ -7,12 +7,13 @@ from PySide6.QtGui import QImageReader
 import cv2 as cv
 import numpy as np
 from config import Config
-from infer.inference import Inference
+from infer.inference import InferenceChain
 from lib import qtlib
 from lib.mask_macro import MaskingMacro, ChainedMacroRunner
 from lib.mask_macro_vis import MacroVisualization
 import ui.export_settings as export
-from .batch_task import BatchSignalHandler, BatchTask, BatchInferenceTask, BatchUtil
+from .batch_task import BatchTaskHandler, BatchTask, BatchInferenceTask, BatchUtil
+from .batch_log import BatchLog
 
 
 # TODO: Store detections in json (or separate batch detect?)
@@ -38,12 +39,11 @@ class BatchMask(QtWidgets.QWidget):
     EXPORT_PRESET_KEY_SRC  = "batch-mask-input"
     EXPORT_PRESET_KEY_DEST = "batch-mask"
 
-    def __init__(self, tab, logSlot, progressBar, statusBar):
+    def __init__(self, tab, logWidget: BatchLog, bars):
         super().__init__()
         self.tab = tab
-        self.log = logSlot
-        self.progressBar: QtWidgets.QProgressBar = progressBar
-        self.statusBar: qtlib.ColoredMessageStatusBar = statusBar
+        self.logWidget = logWidget
+        self.taskHandler = BatchTaskHandler(bars, "Mask", self.createTask)
 
         self.parser = export.ExportVariableParser()
         self.parser.setup(self.tab.filelist.getCurrentFile(), None)
@@ -57,9 +57,6 @@ class BatchMask(QtWidgets.QWidget):
         self.destPathSettings = export.PathSettings(self.parser, showInfo=False, showSkip=True)
         self.destPathSettings.pathTemplate   = destConfig.get("path_template", "{{path}}-masklabel.png")
         self.destPathSettings.overwriteFiles = destConfig.get("overwrite", True)
-
-        self._task = None
-        self._taskSignalHandler = None
 
         self._build()
         self.reloadMacros()
@@ -75,9 +72,7 @@ class BatchMask(QtWidgets.QWidget):
         layout.addWidget(self._buildDestinationSettings(), 2, 0)
         self._onSrcModeChanged(self.cboSrcType.currentIndex())
 
-        self.btnStart = QtWidgets.QPushButton("Start Batch Mask")
-        self.btnStart.clicked.connect(self.startStop)
-        layout.addWidget(self.btnStart, 3, 0)
+        layout.addWidget(self.taskHandler.btnStart, 3, 0)
 
         self.setLayout(layout)
 
@@ -246,51 +241,39 @@ class BatchMask(QtWidgets.QWidget):
             "overwrite": self.destPathSettings.overwriteFiles
         }
 
-    @Slot()
-    def startStop(self):
-        if self._task:
-            if BatchUtil.confirmAbort(self):
-                self._task.abort()
-            return
 
+    def createTask(self) -> BatchTask | None:
         if not self._confirmStart():
             return
 
         self.saveExportPreset()
-        self.btnStart.setText("Abort")
 
         saveMode = self.cboDestType.currentData()
         macroPath = self.cboMacro.currentData()
         macro = MaskingMacro()
         macro.loadFrom(macroPath)
 
+        log = self.logWidget.addEntry("Mask")
         taskClass = BatchInferenceMaskTask if macro.needsInference() else BatchMaskTask
-        self._task = taskClass(self.log, self.tab.filelist, macro, saveMode, self.destPathSettings)
+        task = taskClass(log, self.tab.filelist, macro, saveMode, self.destPathSettings)
 
         skipNonExistingSource = self.chkSkipNoInput.isChecked()
         srcMode: MaskSrcMode = self.cboSrcType.currentData()
         match srcMode:
             case MaskSrcMode.NewBlack:
-                self._task.maskSource = newBlackMaskSource
+                task.maskSource = newBlackMaskSource
             case MaskSrcMode.NewWhite:
-                self._task.maskSource = newWhiteMaskSource
+                task.maskSource = newWhiteMaskSource
             case MaskSrcMode.FileFirstLayer:
-                self._task.maskSource = createFileMaskSource(self.srcPathSettings.pathTemplate, 1, skipNonExistingSource)
+                task.maskSource = createFileMaskSource(self.srcPathSettings.pathTemplate, 1, skipNonExistingSource)
             case MaskSrcMode.File4Layers:
-                self._task.maskSource = createFileMaskSource(self.srcPathSettings.pathTemplate, 4, skipNonExistingSource)
+                task.maskSource = createFileMaskSource(self.srcPathSettings.pathTemplate, 4, skipNonExistingSource)
             case MaskSrcMode.Alpha:
-                self._task.maskSource = createAlphaMaskSource(skipNonExistingSource)
+                task.maskSource = createAlphaMaskSource(skipNonExistingSource)
             case _:
                 raise ValueError("Invalid mask source mode")
 
-        self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
-        self._taskSignalHandler.finished.connect(self.taskDone)
-        Inference().queueTask(self._task)
-
-    def taskDone(self):
-        self.btnStart.setText("Start Batch Mask")
-        self._task = None
-        self._taskSignalHandler = None
+        return task
 
 
 
@@ -430,7 +413,7 @@ class BatchMaskTask(BaseBatchMaskTask, BatchTask):
         self.parser.setup(imgFile)
 
         try:
-            path, layers = self.maskProcessFunc(imgFile)
+            destPath, layers = self.maskProcessFunc(imgFile)
         except MaskSkipException:
             return None
 
@@ -438,8 +421,8 @@ class BatchMaskTask(BaseBatchMaskTask, BatchTask):
         # Creates a copy of the data.
         combined = np.dstack(layers)
 
-        export.saveImage(path, combined, self.log)
-        return path
+        export.saveImage(destPath, combined, self.log)
+        return destPath
 
 
     def processAsSeparateFile(self, imgFile: str) -> tuple[str, list[np.ndarray]]:
@@ -447,22 +430,22 @@ class BatchMaskTask(BaseBatchMaskTask, BatchTask):
         imgSize = imgReader.size()
         w, h = imgSize.width(), imgSize.height()
 
-        path = self.checkDestinationPath(w, h)
+        destPath = self.checkDestinationPath(w, h)
 
         layers = self.maskSource(imgFile, w, h)
         layers, layerChanged = self.macro.run(imgFile, layers)
-        return path, self._processAsSeparateFile(layers)
+        return destPath, self._processAsSeparateFile(layers)
 
 
     def processAsAlpha(self, imgFile: str) -> tuple[str, list[np.ndarray]]:
         imgMat = cv.imread(imgFile, cv.IMREAD_UNCHANGED)
         h, w = imgMat.shape[:2]
 
-        path = self.checkDestinationPath(w, h)
+        destPath = self.checkDestinationPath(w, h)
 
         layers = self.maskSource(imgFile, w, h)
         layers, layerChanged = self.macro.run(imgFile, layers)
-        return path, self._processAsAlpha(imgMat, layers)
+        return destPath, self._processAsAlpha(imgMat, layers)
 
 
 
@@ -475,17 +458,17 @@ class BatchInferenceMaskTask(BaseBatchMaskTask, BatchInferenceTask):
         super().runPrepare()
 
 
-    def runCheckFile(self, imgFile: str, proc) -> Callable | None:
+    def runCheckFile(self, imgFile: str, proc) -> Callable | InferenceChain | None:
         try:
             imgReader = QImageReader(imgFile)
             imgSize = imgReader.size()
             w, h = imgSize.width(), imgSize.height()
 
             self.parser.setup(imgFile)
-            path = self.checkDestinationPath(w, h)
+            destPath = self.checkDestinationPath(w, h)
 
             layers = self.maskSource(imgFile, w, h)
-            macroRunner = ChainedMacroRunner(self.macro, path, layers)
+            macroRunner = ChainedMacroRunner(self.macro, destPath, layers)
             return macroRunner(imgFile, proc)
         except MaskSkipException:
             return None
@@ -493,7 +476,7 @@ class BatchInferenceMaskTask(BaseBatchMaskTask, BatchInferenceTask):
 
     def runProcessFile(self, imgFile: str, results: list) -> str | None:
         if not results:
-            return
+            return None
 
         destPath, layers, layerChanged = results[0]
         layers = self.maskProcessFunc(imgFile, layers)

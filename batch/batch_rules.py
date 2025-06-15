@@ -1,7 +1,7 @@
 import os
 from typing import Callable, Iterable
 from PySide6 import QtGui, QtWidgets
-from PySide6.QtCore import Qt, Slot, Signal, QTimer, QThreadPool
+from PySide6.QtCore import Qt, Slot, Signal, QTimer
 from caption.caption_preset import CaptionPreset, CaptionPresetConditional, MutualExclusivity
 from caption.caption_filter import CaptionRulesProcessor
 from caption.caption_conditionals import ConditionalRule
@@ -12,18 +12,18 @@ from ui.edit_table import EditableTable
 from ui.flow_layout import FlowLayout, SortedStringFlowWidget, ManualStartReorderWidget
 from lib import qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
-from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
+from .batch_task import BatchTask, BatchTaskHandler, BatchUtil
+from .batch_log import BatchLog
 
 
 class BatchRules(QtWidgets.QWidget):
     formatsUpdated = Signal()
 
-    def __init__(self, tab, logSlot, progressBar, statusBar):
+    def __init__(self, tab, logWidget: BatchLog, bars):
         super().__init__()
         self.tab = tab
-        self.log = logSlot
-        self.progressBar: QtWidgets.QProgressBar = progressBar
-        self.statusBar: qtlib.ColoredMessageStatusBar = statusBar
+        self.logWidget = logWidget
+        self.taskHandler = BatchTaskHandler(bars, "Rules", self.createTask)
 
         self.bannedSeparator = ", "
         self.captionFile: CaptionFile = None
@@ -32,9 +32,6 @@ class BatchRules(QtWidgets.QWidget):
 
         self.highlight = CaptionHighlight(BatchRulesDataSource(self))
         self.wildcards = dict[str, list[str]]()
-
-        self._task = None
-        self._taskSignalHandler = None
 
         splitter = QtWidgets.QSplitter(Qt.Orientation.Vertical)
         splitter.addWidget(self._buildSubTabs())
@@ -46,10 +43,7 @@ class BatchRules(QtWidgets.QWidget):
 
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(splitter)
-
-        self.btnStart = QtWidgets.QPushButton("Start Batch Rules")
-        self.btnStart.clicked.connect(self.startStop)
-        layout.addWidget(self.btnStart)
+        layout.addWidget(self.taskHandler.btnStart)
 
         self.setLayout(layout)
 
@@ -375,7 +369,7 @@ class BatchRules(QtWidgets.QWidget):
             preset = captionContainer.ctx.settings.getPreset()
             self.applyPreset(preset)
         else:
-            self.statusBar.showColoredMessage("Caption window not open", False)
+            self.taskHandler.statusBar.showColoredMessage("Caption window not open", False)
 
     @Slot()
     def clearRules(self):
@@ -453,33 +447,18 @@ class BatchRules(QtWidgets.QWidget):
         return BatchUtil.confirmStart("Rules", self.tab.filelist.getNumFiles(), ops, self)
 
 
-    @Slot()
-    def startStop(self):
-        if self._task:
-            if BatchUtil.confirmAbort(self):
-                self._task.abort()
-            return
-
+    def createTask(self) -> BatchTask | None:
         if not self._confirmStart():
-            return
+            return None
 
-        self.btnStart.setText("Abort")
-
-        self._task = BatchRulesTask(self.log, self.tab.filelist, self.setupProcessor())
-        self._task.srcType = self.srcSelector.type
-        self._task.srcKey  = self.srcSelector.name.strip()
-        self._task.targetType = self.destSelector.type
-        self._task.targetKey  = self.destSelector.name.strip()
-        self._task.skipExisting = self.chkSkipExisting.isChecked()
-
-        self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
-        self._taskSignalHandler.finished.connect(self.taskDone)
-        QThreadPool.globalInstance().start(self._task)
-
-    def taskDone(self):
-        self.btnStart.setText("Start Batch Rules")
-        self._task = None
-        self._taskSignalHandler = None
+        log = self.logWidget.addEntry("Rules")
+        task = BatchRulesTask(log, self.tab.filelist, self.setupProcessor())
+        task.srcType = self.srcSelector.type
+        task.srcKey  = self.srcSelector.name.strip()
+        task.targetType = self.destSelector.type
+        task.targetKey  = self.destSelector.name.strip()
+        task.skipExisting = self.chkSkipExisting.isChecked()
+        return task
 
 
 

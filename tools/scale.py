@@ -49,12 +49,7 @@ class ScaleTool(ViewTool):
         task.signals.done.connect(self.onExportDone, Qt.ConnectionType.BlockingQueuedConnection)
         task.signals.progress.connect(self.onExportProgress, Qt.ConnectionType.BlockingQueuedConnection)
         task.signals.fail.connect(self.onExportFailed, Qt.ConnectionType.BlockingQueuedConnection)
-
-        if scaleConfig.useUpscaleModel:
-            from infer.inference import Inference
-            Inference().queueTask(task)
-        else:
-            QThreadPool.globalInstance().start(task)
+        QThreadPool.globalInstance().start(task)
 
     @Slot()
     def onExportDone(self, file, path):
