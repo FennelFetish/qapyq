@@ -237,10 +237,6 @@ class MaskingMacro:
                 return cls.opFloodFill(mat, args)
             case MacroOp.DetectPad:
                 return cls.opDetectPad(mat, imgPath, args)
-            # case MacroOp.Detect:
-            #     return cls.opDetect(mat, imgPath, args, inferProc)
-            # case MacroOp.Segment:
-            #     return cls.opSegment(mat, imgPath, args, inferProc)
 
         raise MacroRunException(f"Unrecognized operation: {op}")
 
@@ -262,31 +258,6 @@ class MaskingMacro:
         import cv2 as cv
         image = cv.imread(imgPath, cv.IMREAD_UNCHANGED)
         return mask_ops.DetectPadMaskOperation.operate(mat, image, **args)
-
-    # @staticmethod
-    # def opDetect(mat: np.ndarray, imgPath: str, args: dict, inferProc: InferenceProcess) -> np.ndarray:
-    #     preset = args.pop("preset")
-    #     threshold = args.pop("threshold")
-    #     config: dict = Config.inferMaskPresets.get(preset)
-    #     classes = config.get("classes", [])
-
-    #     boxes = inferProc.maskBoxes(config, classes, imgPath)
-    #     for box in boxes:
-    #         name = box["name"]
-    #         if box["confidence"] < threshold or (classes and name not in classes):
-    #             continue
-    #         mat = mask_ops.DetectMaskOperation.operate(mat, box, **args)
-
-    #     return mat
-
-    # @staticmethod
-    # def opSegment(mat: np.ndarray, imgPath: str, args: dict, inferProc: InferenceProcess) -> np.ndarray:
-    #     preset = args.pop("preset")
-    #     config: dict = Config.inferMaskPresets.get(preset)
-    #     classes = config.get("classes", [])
-
-    #     maskBytes = inferProc.mask(config, classes, imgPath)
-    #     return mask_ops.SegmentMaskOperation.operate(mat, maskBytes, **args)
 
     @staticmethod
     def opBrush(mat: np.ndarray, args: dict) -> np.ndarray:
@@ -356,7 +327,7 @@ class MaskingMacro:
 
 
 class ChainedMacroRunner:
-    def __init__(self, macro: MaskingMacro, maskPath: str, layers: list[np.ndarray], currentLayerIndex=0):
+    def __init__(self, macro: MaskingMacro, maskPath: str, layers: list[np.ndarray], currentLayerIndex: int = 0):
         self.macro = macro
         self.maskPath = maskPath
         self._itOp = iter(macro.operations)
@@ -368,10 +339,8 @@ class ChainedMacroRunner:
 
 
     def __call__(self, file: str, proc: InferenceProcess):
-        #print(">>> ChainedMacroRunner.__call__")
         while opItem := next(self._itOp, None):
             args = opItem.args.copy()
-            #print(f"[{opItem}]")
 
             match opItem.op:
                 case MacroOp.SetLayer:
@@ -411,15 +380,12 @@ class ChainedMacroRunner:
 
 
     def queueDetect(self, file: str, proc: InferenceProcess, args: dict):
-        #print(">>> ChainedMacroRunner.queueDetect")
-
         preset = args.pop("preset")
         threshold = args.pop("threshold")
         config: dict = Config.inferMaskPresets.get(preset)
         classes = config.get("classes", [])
 
         def cbDetect(results: list):
-            #print(">>> ChainedMacroRunner.queueDetect.cbDetect")
             try:
                 boxes = results[0]["boxes"]
             except:
@@ -438,14 +404,11 @@ class ChainedMacroRunner:
 
 
     def queueSegment(self, file: str, proc: InferenceProcess, args: dict):
-        #print(">>> ChainedMacroRunner.queueSegment")
-
         preset = args.pop("preset")
         config: dict = Config.inferMaskPresets.get(preset)
         classes = config.get("classes", [])
 
         def cbSegment(results: list):
-            #print(">>> ChainedMacroRunner.queueSegment.cbSegment")
             try:
                 maskBytes = results[0]["mask"]
             except:

@@ -149,6 +149,7 @@ class HostWindow(QtWidgets.QMainWindow):
     @Slot()
     def _onAddHostClicked(self):
         self.addHost("New Host", {})
+        self.listHost.setCurrentRow(self.listHost.count()-1)
 
     @Slot()
     def _onDelHostClicked(self):
