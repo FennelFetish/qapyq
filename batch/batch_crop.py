@@ -3,19 +3,20 @@ from enum import Enum
 from typing import Callable
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QSignalBlocker
+from PySide6.QtGui import QImageReader
 import cv2 as cv
 import numpy as np
 from config import Config
 from lib import qtlib
-from lib.mask_macro import MaskingMacro
-from infer.inference import Inference
-from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
+from lib.mask_macro import MaskingMacro, ChainedMacroRunner
+from infer.inference import InferenceChain
 import ui.export_settings as export
 from ui.size_preset import SizeBucket, SizePresetWidget
+from .batch_task import BatchTask, BatchInferenceTask, BatchTaskHandler, BatchUtil
+from .batch_log import BatchLog
+
 
 # TODO: Set which mask layers are used to define crop region (last layer, layer nr, each layer defines a region, maximum)
-
-# TODO: Filter regions (only biggest, minimum size, etc...)
 
 # TODO: When writing multiple regions into multiple files, when Size Factor is large, the regions may overlap.
 #       Should this be handled when writing output mask is enabled? Remove other regions from mask?
@@ -40,12 +41,11 @@ class BatchCrop(QtWidgets.QWidget):
 
     BUCKET_SPLIT = re.compile(r'[ ,x]')
 
-    def __init__(self, tab, logSlot, progressBar, statusBar):
+    def __init__(self, tab, logWidget: BatchLog, bars):
         super().__init__()
         self.tab = tab
-        self.log = logSlot
-        self.progressBar: QtWidgets.QProgressBar = progressBar
-        self.statusBar: qtlib.ColoredMessageStatusBar = statusBar
+        self.logWidget = logWidget
+        self.taskHandler = BatchTaskHandler(bars, "Crop", self.createTask)
 
         self.inputPathParser = export.ExportVariableParser()
         self.outputPathParser = export.ExportVariableParser()
@@ -53,9 +53,6 @@ class BatchCrop(QtWidgets.QWidget):
         currentFile = self.tab.filelist.getCurrentFile()
         self.inputPathParser.setup(currentFile, None)
         self.outputPathParser.setup(currentFile, None)
-
-        self._task = None
-        self._taskSignalHandler = None
 
         self._build()
         self.reloadMacros()
@@ -81,9 +78,7 @@ class BatchCrop(QtWidgets.QWidget):
         layout.addWidget(self._buildOutputImage(), 2, 1)
         layout.addWidget(QtWidgets.QWidget(), 3, 1)
 
-        self.btnStart = QtWidgets.QPushButton("Start Batch Crop")
-        self.btnStart.clicked.connect(self.startStop)
-        layout.addWidget(self.btnStart, 4, 0, 1, 2)
+        layout.addWidget(self.taskHandler.btnStart, 4, 0, 1, 2)
 
         self.setLayout(layout)
 
@@ -349,23 +344,23 @@ class BatchCrop(QtWidgets.QWidget):
         }
 
 
-    @Slot()
-    def startStop(self):
-        if self._task:
-            if BatchUtil.confirmAbort(self):
-                self._task.abort()
-            return
-
+    def createTask(self) -> BatchTask | None:
         if not self._confirmStart():
             return
 
         self.saveExportPreset()
-        self.btnStart.setText("Abort")
 
+        taskClass = BatchCropTask
         match self.cboInputMaskMode.currentData():
             case InputMaskType.Macro:
                 macroPath = self.cboInputMacro.currentData()
-                maskSrcFunc = createMacroMaskSource(macroPath)
+                macro = MaskingMacro()
+                macro.loadFrom(macroPath)
+                if macro.needsInference():
+                    taskClass = BatchInferenceCropTask
+                    maskSrcFunc = macro
+                else:
+                    maskSrcFunc = createMacroMaskSource(macroPath)
             case InputMaskType.File:
                 maskSrcFunc = createFileMaskSource(self.inputMaskPathSettings.pathTemplate)
             case InputMaskType.Alpha:
@@ -377,36 +372,67 @@ class BatchCrop(QtWidgets.QWidget):
             case OutputMaskType.Discard:
                 maskDestFunc = createDiscardMaskDest()
             case OutputMaskType.File:
-                maskDestFunc = createFileMaskDest(self.outputMaskPathSettings, self.log)
+                maskDestFunc = createFileMaskDest(self.outputMaskPathSettings)
             case OutputMaskType.Alpha:
                 maskDestFunc = createAlphaMaskDest()
             case _:
                 raise ValueError("Invalid output mask type")
 
-        self._task = BatchCropTask(self.log, self.tab.filelist, maskSrcFunc, maskDestFunc, self.outputImagePathSettings)
-        self._task.combined      = not self.chkMultipleOutputs.isChecked()
-        self._task.allowUpscale  = self.chkAllowUpscale.isChecked()
-        self._task.sizeFactor    = self.spinCropSize.value()
-        self._task.sizeBuckets   = self.sizePresets.parseSizeBuckets(self.chkInverseBuckets.isChecked())
-        self._task.interpUp      = export.INTERP_MODES[ self.cboInterpUp.currentText() ]
-        self._task.interpDown    = export.INTERP_MODES[ self.cboInterpDown.currentText() ]
+        log = self.logWidget.addEntry("Crop")
+        task = taskClass(log, self.tab.filelist, maskSrcFunc, maskDestFunc, self.outputImagePathSettings)
 
-        self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
-        self._taskSignalHandler.finished.connect(self.taskDone)
-        Inference().queueTask(self._task)
-
-    def taskDone(self):
-        self.btnStart.setText("Start Batch Crop")
-        self._task = None
-        self._taskSignalHandler = None
+        task.combined      = not self.chkMultipleOutputs.isChecked()
+        task.allowUpscale  = self.chkAllowUpscale.isChecked()
+        task.sizeFactor    = self.spinCropSize.value()
+        task.sizeBuckets   = self.sizePresets.parseSizeBuckets(self.chkInverseBuckets.isChecked())
+        task.interpUp      = export.INTERP_MODES[ self.cboInterpUp.currentText() ]
+        task.interpDown    = export.INTERP_MODES[ self.cboInterpDown.currentText() ]
+        return task
 
 
 
-def createMacroMaskSource(macroPath: str) -> Callable[[str, np.ndarray], list[np.ndarray]]:
+class CropRegion:
+    '`x1` and `y1` are the last included pixel coordinates. Offset them by +1 when slicing.'
+
+    def __init__(self, xMin: int, yMin: int, xMax: int, yMax: int):
+        self.x0 = xMin
+        self.y0 = yMin
+        self.x1 = xMax
+        self.y1 = yMax
+
+    def width(self):
+        return self.x1 - self.x0 + 1
+
+    def height(self):
+        return self.y1 - self.y0 + 1
+
+    def size(self):
+        return self.width(), self.height()
+
+    def toTuple(self):
+        return self.x0, self.y0, self.x1, self.y1
+
+    def copy(self):
+        return CropRegion(self.x0, self.y0, self.x1, self.y1)
+
+    def slice2D(self) -> tuple[slice, slice]:
+        return slice(self.y0, self.y1+1), slice(self.x0, self.x1+1)
+
+    def slice3D(self, start3: int, stop3: int) -> tuple[slice, slice, slice]:
+        return slice(self.y0, self.y1+1), slice(self.x0, self.x1+1), slice(start3, stop3)
+
+    def __str__(self) -> str:
+        return f"CropRegion[x:{self.x0} to {self.x1}, y:{self.y0} to {self.y1}, {self.width()}x{self.height()}]"
+
+
+
+MaskSource = Callable[[str, np.ndarray, Callable], list[np.ndarray] | None]
+
+def createMacroMaskSource(macroPath: str) -> MaskSource:
     macro = MaskingMacro()
     macro.loadFrom(macroPath)
 
-    def mask(imgPath: str, imgMat: np.ndarray):
+    def mask(imgPath: str, imgMat: np.ndarray, log):
         h, w = imgMat.shape[:2]
         layers = [ np.zeros((h, w), dtype=np.uint8) ]
         layers, layerChanged = macro.run(imgPath, layers)
@@ -414,16 +440,21 @@ def createMacroMaskSource(macroPath: str) -> Callable[[str, np.ndarray], list[np
 
     return mask
 
-def createFileMaskSource(pathTemplate: str):
+def createFileMaskSource(pathTemplate: str) -> MaskSource:
     parser = export.ExportVariableParser()
 
-    def loadMask(path: str):
+    def loadMask(path: str, imgW: int, imgH: int, log):
         maskMat = cv.imread(path, cv.IMREAD_UNCHANGED)
+        maskH, maskW = maskMat.shape[:2]
+        if maskW != imgW or maskH != imgH:
+            log(f"Mask size ({maskW}x{maskH}) doesn't match image size ({imgW}x{imgH})")
+            return None
+
         layers = list(cv.split(maskMat))
         layers[:3] = layers[2::-1] # Convert BGR(A) -> RGB(A)
         return layers
 
-    def mask(imgPath: str, imgMat: np.ndarray):
+    def mask(imgPath: str, imgMat: np.ndarray, log):
         parser.setup(imgPath)
         h, w = imgMat.shape[:2]
         parser.width  = w
@@ -431,13 +462,13 @@ def createFileMaskSource(pathTemplate: str):
 
         path = parser.parsePath(pathTemplate, True)
         if os.path.exists(path):
-            return loadMask(path)
+            return loadMask(path, w, h, log)
         return None
 
     return mask
 
-def createAlphaMaskSource():
-    def mask(imgPath: str, imgMat: np.ndarray):
+def createAlphaMaskSource() -> MaskSource:
+    def mask(imgPath: str, imgMat: np.ndarray, log):
         h, w = imgMat.shape[:2]
         channels = imgMat.shape[2] if len(imgMat.shape) > 2 else 1
         if channels < 4:
@@ -449,20 +480,22 @@ def createAlphaMaskSource():
 
 
 
-def createDiscardMaskDest():
-    def writeMask(imgPath: str, imgCropped: np.ndarray, maskLayers: list[np.ndarray], region: CropRegion, regionIndex: int, targetSize: SizeBucket):
+MaskDest = Callable[[str, np.ndarray, list[np.ndarray], CropRegion, int, SizeBucket, Callable], np.ndarray]
+
+def createDiscardMaskDest() -> MaskDest:
+    def writeMask(imgPath: str, imgCropped: np.ndarray, maskLayers: list[np.ndarray], region: CropRegion, regionIndex: int, targetSize: SizeBucket, log):
         return imgCropped
     return writeMask
 
-def createFileMaskDest(pathSettings: export.PathSettings, log):
+def createFileMaskDest(pathSettings: export.PathSettings) -> MaskDest:
     pathTemplate   = pathSettings.pathTemplate
     overwriteFiles = pathSettings.overwriteFiles
     parser = export.ExportVariableParser()
 
-    def writeMask(imgPath: str, imgCropped: np.ndarray, maskLayers: list[np.ndarray], region: CropRegion, regionIndex: int, targetSize: SizeBucket):
+    def writeMask(imgPath: str, imgCropped: np.ndarray, maskLayers: list[np.ndarray], region: CropRegion, regionIndex: int, targetSize: SizeBucket, log):
         masks = list()
         for mask in maskLayers[:4]:
-            masks.append( mask[region.y0 : region.y1+1, region.x0 : region.x1+1] )
+            masks.append( mask[region.slice2D()] )
 
         if len(masks) == 2:
             masks.append( np.zeros_like(masks[0]) )
@@ -486,15 +519,15 @@ def createFileMaskDest(pathSettings: export.PathSettings, log):
 
     return writeMask
 
-def createAlphaMaskDest():
-    def writeMask(imgPath: str, imgCropped: np.ndarray, maskLayers: list[np.ndarray], region: CropRegion, regionIndex: int, targetSize: SizeBucket):
+def createAlphaMaskDest() -> MaskDest:
+    def writeMask(imgPath: str, imgCropped: np.ndarray, maskLayers: list[np.ndarray], region: CropRegion, regionIndex: int, targetSize: SizeBucket, log):
         channels = imgCropped.shape[2] if len(imgCropped.shape) > 2 else 1
         if channels == 1:
             imgChannels = [imgCropped] * 3
         else:
             imgChannels = list(cv.split(imgCropped))[:3]
 
-        croppedMask = maskLayers[0][region.y0 : region.y1+1, region.x0 : region.x1+1] # Use first mask layer for alpha channel
+        croppedMask = maskLayers[0][region.slice2D()] # Use first mask layer for alpha channel
         imgChannels.append(croppedMask)
         return np.dstack(imgChannels)
 
@@ -502,33 +535,10 @@ def createAlphaMaskDest():
 
 
 
-class CropRegion:
-    def __init__(self, xMin: int, yMin: int, xMax: int, yMax: int):
-        self.x0 = xMin
-        self.y0 = yMin
-        self.x1 = xMax
-        self.y1 = yMax
+class BaseBatchCropTask:
+    log = print  # For ignoring error. Child classes will set the 'self.log' attribute.
 
-    def width(self):
-        return self.x1 - self.x0 + 1
-
-    def height(self):
-        return self.y1 - self.y0 + 1
-
-    def size(self):
-        return self.width(), self.height()
-
-    def toTuple(self):
-        return self.x0, self.y0, self.x1, self.y1
-
-    def copy(self):
-        return CropRegion(self.x0, self.y0, self.x1, self.y1)
-
-
-class BatchCropTask(BatchTask):
-    def __init__(self, log, filelist, maskSrcFunc, maskDestFunc, imgPathSettings: export.PathSettings):
-        super().__init__("crop", log, filelist)
-        self.maskSrcFunc  = maskSrcFunc
+    def __init__(self, maskDestFunc: MaskDest, imgPathSettings: export.PathSettings):
         self.maskDestFunc = maskDestFunc
 
         self.outPathTemplate   = imgPathSettings.pathTemplate
@@ -544,19 +554,18 @@ class BatchCropTask(BatchTask):
     def runPrepare(self):
         self.outPathParser = export.ExportVariableParser()
 
-    def runProcessFile(self, imgFile: str) -> str | None:
-        imgMat = cv.imread(imgFile, cv.IMREAD_UNCHANGED)
-        imgH, imgW = imgMat.shape[:2]
+    def runCleanup(self):
+        import gc
+        gc.collect()
 
-        maskLayers = self.maskSrcFunc(imgFile, imgMat)
-        if not maskLayers:
-            self.log(f"Failed to load mask")
-            return None
 
-        cropRegions = self.findCropRegions(maskLayers[-1]) # Last layer defines crop regions
+    def doCrop(self, maskLayers: list[np.ndarray], imgFile: str, imgMat: np.ndarray) -> str | None:
+        cropRegions = self.findCropRegions(maskLayers[-1]) # Last mask layer defines crop regions
         if not cropRegions:
             self.log("No regions")
             return None
+
+        imgH, imgW = imgMat.shape[:2]
         self.adjustCropRegions(imgW, imgH, cropRegions)
 
         # Prepare before writing files in saveCroppedImage()
@@ -566,9 +575,9 @@ class BatchCropTask(BatchTask):
         for i, region in enumerate(cropRegions):
             fitRegion, targetSize = self.getTargetSize(imgW, imgH, region)
             if fitRegion and targetSize:
-                # Do Cropping
-                cropped = imgMat[fitRegion.y0 : fitRegion.y1+1, fitRegion.x0 : fitRegion.x1+1, :3] # Remove alpha
-                cropped = self.maskDestFunc(imgFile, cropped, maskLayers, fitRegion, i, targetSize)
+                self.log(f"Saving region {fitRegion.width()}x{fitRegion.height()} as {targetSize.w}x{targetSize.h}")
+                cropped = imgMat[fitRegion.slice3D(0,3)] # Remove alpha
+                cropped = self.maskDestFunc(imgFile, cropped, maskLayers, fitRegion, i, targetSize, self.log)
                 savePath = self.saveCroppedImage(i, cropped, targetSize)
             else:
                 self.log(f"No suitable target size found for region {i} ({region.width()}x{region.height()})")
@@ -584,14 +593,14 @@ class BatchCropTask(BatchTask):
         regions: list[CropRegion] = list()
         for c in contours:
             x, y, w, h = cv.boundingRect(c)
-            regions.append(CropRegion(x, y, x+w, y+h))
+            regions.append(CropRegion(x, y, x+w-1, y+h-1))
 
         if not self.combined:
             return regions
 
         h, w = mat.shape[:2]
-        xMin, xMax = w, 0
-        yMin, yMax = h, 0
+        xMin, xMax = w-1, 0
+        yMin, yMax = h-1, 0
 
         for reg in regions:
             xMin = min(xMin, reg.x0)
@@ -706,3 +715,53 @@ class BatchCropTask(BatchTask):
         path = self.outPathParser.parsePath(self.outPathTemplate, self.outOverwriteFiles)
         export.saveImage(path, scaled, self.log)
         return path
+
+
+
+class BatchCropTask(BaseBatchCropTask, BatchTask):
+    def __init__(self, log, filelist, maskSrcFunc: MaskSource, maskDestFunc: Callable, imgPathSettings: export.PathSettings):
+        BaseBatchCropTask.__init__(self, maskDestFunc, imgPathSettings)
+        BatchTask.__init__(self, "crop", log, filelist)
+        self.maskSrcFunc  = maskSrcFunc
+
+    def runProcessFile(self, imgFile: str) -> str | None:
+        imgMat = cv.imread(imgFile, cv.IMREAD_UNCHANGED)
+
+        maskLayers = self.maskSrcFunc(imgFile, imgMat, self.log)
+        if not maskLayers:
+            self.log(f"Failed to load mask")
+            return None
+
+        return self.doCrop(maskLayers, imgFile, imgMat)
+
+
+
+class BatchInferenceCropTask(BaseBatchCropTask, BatchInferenceTask):
+    def __init__(self, log, filelist, macro: MaskingMacro, maskDestFunc: Callable, imgPathSettings: export.PathSettings):
+        BaseBatchCropTask.__init__(self, maskDestFunc, imgPathSettings)
+        BatchInferenceTask.__init__(self, "crop", log, filelist)
+        self.macro = macro
+
+    def runPrepare(self, proc):
+        super().runPrepare()
+
+
+    def runCheckFile(self, imgFile: str, proc) -> Callable | InferenceChain | None:
+        imgReader = QImageReader(imgFile)
+        imgSize = imgReader.size()
+        imgW, imgH = imgSize.width(), imgSize.height()
+
+        layers = [ np.zeros((imgH, imgW), dtype=np.uint8) ]
+        macroRunner = ChainedMacroRunner(self.macro, "", layers)
+        return macroRunner(imgFile, proc)
+
+
+    def runProcessFile(self, imgFile: str, results: list) -> str | None:
+        if not results:
+            self.log(f"Failed to load mask")
+            return None
+
+        _, maskLayers, layerChanged = results[0]
+
+        imgMat = cv.imread(imgFile, cv.IMREAD_UNCHANGED)
+        return self.doCrop(maskLayers, imgFile, imgMat)
