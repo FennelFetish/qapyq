@@ -147,6 +147,12 @@ class ImgTab(QtWidgets.QMainWindow):
         QTimer.singleShot(100, self.imgview.updateView)
 
 
+    def checkClose(self) -> list[str]:
+        if batchWin := self.getWindowContent("batch"):
+            if batchWin.logWidget.hasUnfinished():
+                return ["Ongoing batch processing"]
+        return []
+
     def onTabClosed(self):
         self.imgview.tool.onDisabled(self.imgview)
         self.filelist.reset()
