@@ -4,14 +4,15 @@ from enum import Enum
 from typing import Callable
 from typing_extensions import override
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, QThreadPool
+from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QImageReader
 from config import Config
 from ui.tab import ImgTab
 from lib import qtlib
 from lib.filelist import FileList
-from .batch_task import BatchTask, BatchSignalHandler, BatchUtil
 import ui.export_settings as export
+from .batch_task import BatchTask, BatchTaskHandler, BatchUtil
+from .batch_log import BatchLog
 
 
 # TODO: Multiple IO threads?
@@ -29,18 +30,11 @@ class Mode(Enum):
 class BatchFile(QtWidgets.QWidget):
     BASEPATH_VAR_PATTERN = re.compile(r'{{.*basepath.*}}')
 
-    def __init__(self, tab: ImgTab, logSlot, progressBar, statusBar):
+    def __init__(self, tab: ImgTab, logWidget: BatchLog, bars):
         super().__init__()
         self.tab = tab
-        self.log = logSlot
-        self.progressBar: QtWidgets.QProgressBar = progressBar
-        self.statusBar: qtlib.ColoredMessageStatusBar = statusBar
-
-        self._task = None
-        self._taskSignalHandler = None
-
-        self.btnStart = QtWidgets.QPushButton("Start Batch File")
-        self.btnStart.clicked.connect(self.startStop)
+        self.logWidget = logWidget
+        self.taskHandler = BatchTaskHandler(bars, "File", self.createTask)
 
         self.destinationSettings = FileDestinationSettings(tab)
         self.imageSettings = FileImageSettings()
@@ -55,7 +49,7 @@ class BatchFile(QtWidgets.QWidget):
         layout.addWidget(self.captionSettings, 1, 1)
         layout.addWidget(self.maskSettings, 2, 0, 1, 2)
         layout.setRowStretch(3, 1)
-        layout.addWidget(self.btnStart, 4, 0, 1, 2)
+        layout.addWidget(self.taskHandler.btnStart, 4, 0, 1, 2)
 
         self.setLayout(layout)
 
@@ -137,57 +131,44 @@ class BatchFile(QtWidgets.QWidget):
 
         return BatchUtil.confirmStart("File", self.tab.filelist.getNumFiles(), ops, self)
 
-    @Slot()
-    def startStop(self):
-        if self._task:
-            if BatchUtil.confirmAbort(self):
-                self._task.abort()
-            return
 
+    def createTask(self) -> BatchTask | None:
         if not self._confirmStart():
             return
 
         self.destinationSettings.saveExportPreset()
         self.maskSettings.saveExportPreset()
-        self.btnStart.setText("Abort")
 
         basePath = self.destinationSettings.basePath
         if not basePath:
             basePath = self.tab.filelist.commonRoot
 
-        self._task = BatchFileTask(self.log, self.tab.filelist)
-        self._task.destPathTemplate = self.destinationSettings.destinationPathTemplate
+        log = self.logWidget.addEntry("File")
+        task = BatchFileTask(log, self.tab.filelist)
+        task.destPathTemplate = self.destinationSettings.destinationPathTemplate
 
-        self._task.mode        = self.destinationSettings.mode
-        self._task.basePath    = os.path.abspath(basePath)
-        self._task.flatFolders = self.destinationSettings.flatFolders
+        task.mode        = self.destinationSettings.mode
+        task.basePath    = os.path.abspath(basePath)
+        task.flatFolders = self.destinationSettings.flatFolders
 
         if self.imageSettings.isChecked():
-            self._task.includeImages     = True
-            self._task.overwriteImages   = self.imageSettings.overwriteFiles
+            task.includeImages     = True
+            task.overwriteImages   = self.imageSettings.overwriteFiles
 
         if self.maskSettings.isChecked():
-            self._task.includeMasks      = True
-            self._task.renameMasks       = self.maskSettings.chkRenameToImgName.isChecked()
-            self._task.overwriteMasks    = self.maskSettings.maskPathSettings.overwriteFiles
-            self._task.maskPathTemplate  = self.maskSettings.maskPathSettings.pathTemplate
+            task.includeMasks      = True
+            task.renameMasks       = self.maskSettings.chkRenameToImgName.isChecked()
+            task.overwriteMasks    = self.maskSettings.maskPathSettings.overwriteFiles
+            task.maskPathTemplate  = self.maskSettings.maskPathSettings.pathTemplate
 
         if self.captionSettings.isChecked():
-            self._task.includeJson       = self.captionSettings.chkIncludeJson.isChecked()
-            self._task.includeTxt        = self.captionSettings.chkIncludeTxt.isChecked()
-            self._task.overwriteCaptions = self.captionSettings.overwriteFiles
-            self._task.createArchive     = self.captionSettings.chkArchiveTextFiles.isChecked()
-            self._task.archivePath       = self.captionSettings.txtArchivePath.text()
+            task.includeJson       = self.captionSettings.chkIncludeJson.isChecked()
+            task.includeTxt        = self.captionSettings.chkIncludeTxt.isChecked()
+            task.overwriteCaptions = self.captionSettings.overwriteFiles
+            task.createArchive     = self.captionSettings.chkArchiveTextFiles.isChecked()
+            task.archivePath       = self.captionSettings.txtArchivePath.text()
 
-        self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
-        self._taskSignalHandler.finished.connect(self.taskDone)
-        QThreadPool.globalInstance().start(self._task)
-
-    @Slot()
-    def taskDone(self):
-        self.btnStart.setText("Start Batch File")
-        self._task = None
-        self._taskSignalHandler = None
+        return task
 
 
 

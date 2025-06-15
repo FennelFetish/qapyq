@@ -3,7 +3,7 @@ from typing import Iterable, Generator, Callable, Any
 from collections import deque
 from queue import Queue
 from threading import Condition
-from PySide6.QtCore import Qt, QThreadPool, QThread, QRunnable, Signal, Slot, QObject, QMutex, QMutexLocker
+from PySide6.QtCore import Qt, QThreadPool, QThread, Signal, Slot, QObject, QMutex, QMutexLocker
 from lib.util import Singleton
 from config import Config
 from .inference_proc import InferenceProcess, InferenceProcConfig, ProcFuture
@@ -78,21 +78,6 @@ class Inference(metaclass=Singleton):
                 self._procs.pop(proc.procCfg.hostName, None)
 
         QThreadPool.globalInstance().start(remove)
-
-
-    # TODO: Remove method
-    @property
-    def proc(self):
-        from host.host_window import LOCAL_NAME
-        with QMutexLocker(self._mutex):
-            proc = self._procs.get(LOCAL_NAME)
-            if not proc:
-                self._procs[LOCAL_NAME] = proc = self._createProc(LOCAL_NAME)
-            return proc
-
-    # TODO: Remove method?
-    def queueTask(self, task: QRunnable):
-        QThreadPool.globalInstance().start(task)
 
 
     def quitProcesses(self) -> list[str]:
@@ -269,8 +254,9 @@ class InferenceSession:
     def _queueTask(self, file: str, taskFunc: Callable[[], InferenceChain | None], procState: ProcState, all: bool):
         with procState.proc as proc:
             #print(f"QUEUE: {file} ({procState.proc.procCfg.hostName})")
-
             #print(f"+++ _queueNextFile calling {taskFunc}")
+
+            # Execute task while recording its futures
             chain = taskFunc()
             if futures := proc.getRecordedFutures():
                 if chain:

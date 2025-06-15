@@ -1,8 +1,7 @@
 from typing import Callable
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, QSignalBlocker
+from PySide6.QtCore import Qt, QSignalBlocker
 from config import Config
-from infer.inference import Inference
 from infer.inference_proc import InferenceProcess
 from infer.inference_settings import  InferencePresetWidget
 from infer.tag_settings import TagPresetWidget
@@ -10,7 +9,8 @@ from infer.prompt import PromptWidget, PromptsHighlighter
 from lib import qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
-from .batch_task import BatchInferenceTask, BatchSignalHandler, BatchUtil
+from .batch_task import BatchInferenceTask, BatchTaskHandler, BatchUtil
+from .batch_log import BatchLog
 
 
 CAPTION_OVERWRITE_MODE_ALL     = "all"
@@ -18,12 +18,11 @@ CAPTION_OVERWRITE_MODE_MISSING = "missing"
 
 
 class BatchCaption(QtWidgets.QWidget):
-    def __init__(self, tab, logSlot, progressBar, statusBar):
+    def __init__(self, tab, logWidget: BatchLog, bars):
         super().__init__()
         self.tab = tab
-        self.log = logSlot
-        self.progressBar: QtWidgets.QProgressBar = progressBar
-        self.statusBar: qtlib.ColoredMessageStatusBar = statusBar
+        self.logWidget = logWidget
+        self.taskHandler = BatchTaskHandler(bars, "Caption", self.createTask)
 
         self.inferSettings = InferencePresetWidget()
         self.tagSettings = TagPresetWidget()
@@ -31,20 +30,14 @@ class BatchCaption(QtWidgets.QWidget):
         self.captionGroup = self._buildCaptionSettings()
         self.tagGroup = self._buildTagSettings()
 
-        self.btnStart = QtWidgets.QPushButton("Start Batch Caption")
-        self.btnStart.clicked.connect(self.startStop)
-
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.captionGroup)
         layout.addWidget(self.tagGroup)
-        layout.addWidget(self.btnStart)
+        layout.addWidget(self.taskHandler.btnStart)
         self.setLayout(layout)
 
         self._parser = None
         self._highlighter = VariableHighlighter()
-
-        self._task = None
-        self._taskSignalHandler = None
 
 
     def _buildCaptionSettings(self):
@@ -201,46 +194,31 @@ class BatchCaption(QtWidgets.QWidget):
         return BatchUtil.confirmStart("Caption", self.tab.filelist.getNumFiles(), ops, self)
 
 
-    @Slot()
-    def startStop(self):
-        if self._task:
-            if BatchUtil.confirmAbort(self):
-                self._task.abort()
-            return
-
+    def createTask(self) -> BatchInferenceTask | None:
         if not self._confirmStart():
-            return
+            return None
 
-        self.btnStart.setText("Abort")
-
-        self._task = BatchCaptionTask(self.log, self.tab.filelist)
+        log = self.logWidget.addEntry("Caption")
+        task = BatchCaptionTask(log, self.tab.filelist)
 
         if self.captionGroup.isChecked():
             storeName = self.destCaption.name.strip()
             rounds = self.spinRounds.value()
-            self._task.prompts = self.promptWidget.getParsedPrompts(storeName, rounds)
+            task.prompts = self.promptWidget.getParsedPrompts(storeName, rounds)
 
-            self._task.systemPrompt  = self.promptWidget.systemPrompt.strip()
-            self._task.config        = self.inferSettings.getInferenceConfig()
-            self._task.overwriteMode = self.cboOverwriteMode.currentData()
-            self._task.storePrompts  = self.chkStorePrompts.isChecked()
-            self._task.stripAround   = self.chkStripAround.isChecked()
-            self._task.stripMulti    = self.chkStripMulti.isChecked()
+            task.systemPrompt  = self.promptWidget.systemPrompt.strip()
+            task.config        = self.inferSettings.getInferenceConfig()
+            task.overwriteMode = self.cboOverwriteMode.currentData()
+            task.storePrompts  = self.chkStorePrompts.isChecked()
+            task.stripAround   = self.chkStripAround.isChecked()
+            task.stripMulti    = self.chkStripMulti.isChecked()
 
         if self.tagGroup.isChecked():
-            self._task.tagConfig = self.tagSettings.getInferenceConfig()
-            self._task.tagName = self.destTag.name.strip()
-            self._task.tagSkipExisting = self.chkTagSkipExisting.isChecked()
+            task.tagConfig = self.tagSettings.getInferenceConfig()
+            task.tagName = self.destTag.name.strip()
+            task.tagSkipExisting = self.chkTagSkipExisting.isChecked()
 
-        self._taskSignalHandler = BatchSignalHandler(self.statusBar, self.progressBar, self._task)
-        self._taskSignalHandler.finished.connect(self.taskDone)
-        Inference().queueTask(self._task)
-
-    @Slot()
-    def taskDone(self):
-        self.btnStart.setText("Start Batch Caption")
-        self._task = None
-        self._taskSignalHandler = None
+        return task
 
 
 
