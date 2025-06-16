@@ -110,3 +110,7 @@ class ImageCache:
         if imgFile := self.images.pop(file, None):
             assert imgFile.data is not None
             self.totalSize -= imgFile.size
+
+    def clear(self):
+        self.images.clear()
+        self.totalSize = 0

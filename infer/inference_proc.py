@@ -179,6 +179,10 @@ class InferenceProcess(QObject):
         self.recordedFutures: list[ProcFuture] = list()
 
 
+    @property
+    def ready(self) -> bool:
+        return bool(self._ready)
+
     def awaitTask(self, func: Callable, *args):
         task = AwaitableFunc(func, *args)
         self.execAwaitable.emit(task)
@@ -328,6 +332,11 @@ class InferenceProcess(QObject):
             del currentConfig[Config.INFER_PRESET_SAMPLECFG_KEY]
         setattr(self, configAttr, currentConfig)
 
+
+    def clearImageCache(self):
+        self.queueWrite.emit(Service.ID.HOST, {
+            "cmd": "cache_clear"
+        }, None)
 
     def cacheImage(self, imgPath: str, imgData: bytes, totalSize: int):
         self.queueWrite.emit(Service.ID.HOST, {

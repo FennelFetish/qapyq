@@ -90,6 +90,9 @@ class Protocol:
             return reqId, msgpack.unpackb(data)
         elif prot := self._getSubService(srv):
             prot.writeSubService(reqId, header, data)
+        else:
+            print(f"WARNING: Unsupported service {srv}")
+
         return 0, None
 
 

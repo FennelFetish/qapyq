@@ -20,6 +20,10 @@ class Host(Service):
         return self.inference.fwdProtocol
 
 
+    @msghandler("cache_clear")
+    def clearImageCache(self, msg: dict):
+        self.imgCache.clear()
+
     @msghandler("cache_img")
     def cacheImage(self, msg: dict):
         self.imgCache.recvImageData(msg["img"], msg["img_data"], msg["size"])
