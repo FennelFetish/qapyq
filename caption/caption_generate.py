@@ -1,4 +1,5 @@
 import os, re, traceback
+from typing import Iterable
 from enum import Enum
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QThreadPool, QRunnable, QObject, QSignalBlocker, QMutex, QMutexLocker
@@ -178,7 +179,7 @@ class CaptionGenerate(CaptionTab):
 
         if "caption" in content:
             self.onFileChanged(currentFile) # Update parser
-            task.varParser = self._parser.freeze()
+            task.varParser = FrozenCurrentVariableParser(self.ctx, self.promptWidget.prompts, files)
 
             task.prompts = self.promptWidget.getParsedPrompts()
             task.systemPrompt = self.promptWidget.systemPrompt.strip()
@@ -274,7 +275,7 @@ class CurrentVariableParser(TemplateVariableParser):
     def _getImgProperties(self, var: str) -> str | None:
         match var:
             case self.CURRENT_VAR_NAME:
-                return self.currentCaption or self.ctx.text.getCaption()
+                return self.ctx.text.getCaption()
             case self.REFINED_VAR_NAME:
                 return self.refinedCaption
 
@@ -288,11 +289,39 @@ class CurrentVariableParser(TemplateVariableParser):
     def refinedInPrompt(cls, prompt: str) -> bool:
         return cls.REFINED_VAR_PATTERN.search(prompt) is not None
 
-    def freeze(self):
-        varParser = CurrentVariableParser(None)
-        varParser.currentCaption = self.ctx.text.getCaption()
-        varParser.refinedCaption = self.refinedCaption
-        return varParser
+
+class FrozenCurrentVariableParser(TemplateVariableParser):
+    def __init__(self, context: CaptionContext, prompt: str, imgPaths: Iterable[str]):
+        super().__init__()
+        self.stripAround = False
+        self.stripMultiWhitespace = False
+        self.currentCaptions = dict[str, str | None]()
+
+        needsRefined = CurrentVariableParser.refinedInPrompt(prompt)
+        if needsRefined or CurrentVariableParser.currentInPrompt(prompt):
+            filelist = context.tab.filelist
+            srcSelector = context.container.srcSelector
+            for file in imgPaths:
+                caption = filelist.getData(file, DataKeys.Caption)
+                if caption is None:
+                    caption = srcSelector.loadCaption(file)
+                self.currentCaptions[file] = caption
+
+        if needsRefined:
+            self.rulesProcessor = context.createRulesProcessor()
+        else:
+            self.rulesProcessor = None
+
+    def _getImgProperties(self, var: str) -> str | None:
+        match var:
+            case CurrentVariableParser.CURRENT_VAR_NAME:
+                return self.currentCaptions.get(self.imgPath)
+            case CurrentVariableParser.REFINED_VAR_NAME:
+                if caption := self.currentCaptions.get(self.imgPath):
+                    return self.rulesProcessor.process(caption)
+                return None
+
+        return super()._getImgProperties(var)
 
 
 
@@ -316,7 +345,7 @@ class InferenceTask(QRunnable):
         self.files = files
         self.content = content
 
-        self.varParser: CurrentVariableParser = None
+        self.varParser: FrozenCurrentVariableParser = None
         self.prompts: list[dict[str, str]] = None
         self.systemPrompt: str = None
         self.config: dict      = None
@@ -412,7 +441,6 @@ class InferenceTask(QRunnable):
         return queue
 
     def parsePrompts(self, imgFile: str) -> list:
-        # TODO: It should take the current/refined for each file
         self.varParser.setup(imgFile)
 
         prompts = list()
