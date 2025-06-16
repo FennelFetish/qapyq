@@ -88,24 +88,25 @@ class BatchTask(QRunnable):
             self.log(f"Processing: {imgFile}")
             outputFile = None
 
-            try:
-                if exception:
-                    raise exception
+            with self.log.indent():
+                try:
+                    if exception:
+                        self.log(f"WARNING: {str(exception)}")
+                    else:
+                        outputFile = self.runProcessFile(imgFile, *args)
 
-                with self.log.indent():
-                    outputFile = self.runProcessFile(imgFile, *args)
                     if not outputFile:
                         self.log(f"Skipped")
                         numFilesSkipped += 1
-            except Exception as ex:
-                outputFile = None
-                self.log(f"WARNING: {str(ex)}")
-                traceback.print_exc()
-            finally:
-                numFilesDone += 1
-                timeAvg.update()
-                update = BatchProgressUpdate(timeAvg, numFiles, numFilesDone, numFilesSkipped)
-                self.signals.progress.emit(outputFile, update)
+                except Exception as ex:
+                    outputFile = None
+                    self.log(f"WARNING: {str(ex)}")
+                    traceback.print_exc()
+                finally:
+                    numFilesDone += 1
+                    timeAvg.update()
+                    update = BatchProgressUpdate(timeAvg, numFiles, numFilesDone, numFilesSkipped)
+                    self.signals.progress.emit(outputFile, update)
 
         self.log(f"Batch {self.name} finished, processed {numFiles} files{update.getSkippedText()} in {update.timeSpent:.2f} seconds")
         self.signals.done.emit(update.finalize())

@@ -143,6 +143,7 @@ class InferenceProcess(QObject):
     queueWrite = Signal(int, dict, object)
     processReady = Signal(object, bool)
     processEnded = Signal(object)
+    processStartFailed = Signal(object)
     execAwaitable = Signal(object)
 
     def __init__(self, config: InferenceProcConfig):
@@ -155,7 +156,7 @@ class InferenceProcess(QObject):
 
         self.procCfg = config
         self.proc: QProcess = None
-        self.ready = False
+        self._ready: bool | None = None
 
         self.currentLLMConfig = dict()
         self.currentTagConfig = dict()
@@ -208,8 +209,8 @@ class InferenceProcess(QObject):
     def _startProcess(self):
         with QMutexLocker(self._mutex):
             if self.proc:
-                if self.ready:
-                    self.processReady.emit(self, True)
+                if self._ready is not None:
+                    self.processReady.emit(self, self._ready)
                 return
 
             env = QProcessEnvironment.systemEnvironment()
@@ -234,7 +235,11 @@ class InferenceProcess(QObject):
             future.setCallback(self._onProcessStarted)
             self.queueWrite.emit(self.procCfg.hostServiceId, {"cmd": "echo"}, future)
 
-            self.proc.waitForStarted()
+            if not self.proc.waitForStarted():
+                print(f"WARNING: Inference process ({self.procCfg.hostName}) failed to start (wrong command?)")
+                self._ready = False
+                self.processReady.emit(self, False)
+                self.processStartFailed.emit(self)
 
 
     def stop(self, wait=False):
@@ -428,7 +433,7 @@ class InferenceProcess(QObject):
             state = False
 
         with QMutexLocker(self._mutex):
-            self.ready = state
+            self._ready = state
             self.processReady.emit(self, state)
 
     @Slot()
@@ -451,7 +456,7 @@ class InferenceProcess(QObject):
                 pass
             finally:
                 self.proc = None
-                self.ready = False
+                self._ready = False
 
 
     @Slot()
