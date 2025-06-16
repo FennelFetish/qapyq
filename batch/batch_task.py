@@ -2,7 +2,7 @@ import traceback, time
 from typing import Iterable, Callable, Any
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Signal, Slot, QRunnable, QObject, QMutex, QMutexLocker, QThreadPool
-from infer.inference import Inference, InferenceChain
+from infer.inference import Inference, InferenceChain, InferenceSetupException
 from lib.filelist import FileList
 import lib.qtlib as qtlib
 from .batch_log import BatchLogEntry
@@ -49,21 +49,24 @@ class BatchTask(QRunnable):
 
             self.runPrepare()
             self.signals.progressMessage.emit("Processing ...")
-            self.processAll((file,) for file in self.files)
+            self.processAll(self.files)
 
         except Exception as ex:
             print(f"Error during batch {self.name}:")
             traceback.print_exc()
 
-            errorMessage = f"Error during batch {self.name}: {str(ex)}"
-            self.log(errorMessage)
-            self.signals.fail.emit(errorMessage, None)
+            exString = str(ex)
+            self.log(f"Error during batch {self.name}: {exString}")
+            self.signals.fail.emit(exString, None)
         finally:
             self.runCleanup()
             self.log.release.emit()
 
 
-    def processAll(self, processFileArgs: Iterable[tuple]):
+    def _getFileArgs(self, args: Any) -> tuple:
+        return args, None
+
+    def processAll(self, processFileArgs: Iterable):
         numFiles = len(self.files)
         numFilesDone = 0
         numFilesSkipped = 0
@@ -73,7 +76,9 @@ class BatchTask(QRunnable):
         self.signals.progress.emit(None, update)
         timeAvg.init()
 
-        for fileNr, (imgFile, *args) in enumerate(processFileArgs):
+        for fileNr, fileArgs in enumerate(processFileArgs):
+            imgFile, exception, *args = self._getFileArgs(fileArgs)
+
             if self.isAborted():
                 abortMessage = f"Batch {self.name} aborted after {fileNr} files{update.getSkippedText(numFiles-fileNr)}"
                 self.log(abortMessage)
@@ -84,6 +89,9 @@ class BatchTask(QRunnable):
             outputFile = None
 
             try:
+                if exception:
+                    raise exception
+
                 with self.log.indent():
                     outputFile = self.runProcessFile(imgFile, *args)
                     if not outputFile:
@@ -117,6 +125,13 @@ class BatchTask(QRunnable):
 class BatchInferenceTask(BatchTask):
     def __init__(self, name: str, log: BatchLogEntry, filelist: FileList):
         super().__init__(name, log, filelist)
+        self.session = None
+
+    def abort(self):
+        with QMutexLocker(self._mutex):
+            self._aborted = True
+            if self.session:
+                self.session.abort()
 
     @Slot()
     def run(self):
@@ -126,6 +141,9 @@ class BatchInferenceTask(BatchTask):
             self.signals.progress.emit(None, None)
 
             with Inference().createSession() as session:
+                with QMutexLocker(self._mutex):
+                    self.session = session
+
                 session.prepare(self.runPrepare, lambda: self.signals.progressMessage.emit("Processing ..."))
                 self.processAll(session.queueFiles(self.files, self.runCheckFile, all=True))
 
@@ -133,12 +151,24 @@ class BatchInferenceTask(BatchTask):
             print(f"Error during batch {self.name}:")
             traceback.print_exc()
 
-            errorMessage = f"Error during batch {self.name}: {str(ex)}"
-            self.log(errorMessage)
-            self.signals.fail.emit(errorMessage, None)
+            exString = str(ex)
+            self.log(f"Error during batch {self.name}: {exString}")
+            self.signals.fail.emit(exString, None)
         finally:
+            with QMutexLocker(self._mutex):
+                self.session = None
+
             self.runCleanup()
             self.log.release.emit()
+
+
+    def _getFileArgs(self, args: tuple) -> tuple:
+        imgFile, results, exception = args
+
+        if exception and isinstance(exception, InferenceSetupException):
+            raise exception
+
+        return (imgFile, exception, results)
 
 
     def runPrepare(self, proc):
@@ -325,7 +355,7 @@ class BatchTaskHandler(QObject):
     def startStop(self):
         if self._task:
             parent = self.btnStart.parentWidget()
-            if BatchUtil.confirmAbort(parent):
+            if BatchUtil.confirmAbort(parent) and self._task: # Recheck task (may have finished in the meantime)
                 self.btnStart.setText("Aborting...")
                 self._task.abort()
             return

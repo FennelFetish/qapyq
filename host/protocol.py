@@ -128,7 +128,8 @@ class MessageLoop:
                 self.running = False
             except:
                 exType, exMessage, exTraceback = sys.exc_info()
-                traceback.print_exc()
+                stacktrace = ''.join(traceback.format_tb(exTraceback))
+                print("\n", stacktrace)
                 self.handleError(reqId, str(exType), str(exMessage))
 
     def handleError(self, reqId: int, excType: str, excMessage: str) -> None:
@@ -141,4 +142,3 @@ class MessageLoop:
             "error_type": excType,
             "error": excMessage
         })
-
