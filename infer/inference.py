@@ -157,9 +157,9 @@ class ProcState:
 
     def shutdown(self):
         if self.imgUploader:
-            for file in self.queuedFiles:
-                self.imgUploader.imageDone.emit(file)
             self.imgUploader.shutdown()
+            if self.proc.ready:
+                self.proc.clearImageCache()
 
 
 
@@ -296,8 +296,12 @@ class InferenceSession:
         for procState in self.procs:
             proc = procState.proc
             proc.processReady.connect(self._onProcReady)
+            proc.start(wait=True)
+
+            if proc.procCfg.remote:
+                proc.clearImageCache()
+
             with proc:
-                proc.start(wait=True)
                 if prepareFunc:
                     prepareFunc(proc)
 
