@@ -8,19 +8,15 @@ from host.host_window import LOCAL_NAME
 from config import Config
 
 
-class InferenceSetupException(Exception):
-    def __init__(self, cmd: str, message: str, errorType: str = None):
-        modelType = cmd.split("_")[-1]
-        errorType = f" ({errorType})" if errorType else ""
-        msg = f"Couldn't load {modelType} model: {message}{errorType}"
-        super().__init__(msg)
-
 class InferenceException(Exception):
-    def __init__(self, message: str, errorType: str = None):
-        msg = f"Error during inference: {message}"
-        if errorType:
-            msg += f" ({errorType})"
+    def __init__(self, hostName: str, message: str, errorType: str = None):
+        self.hostName = hostName
+        self.message = message
+        self.errorType = errorType
 
+        host = f" ({hostName})" if hostName else ""
+        errorType = f" ({errorType})" if errorType else ""
+        msg = f"Error during inference{host}: {message}{errorType}"
         super().__init__(msg)
 
 
@@ -309,11 +305,7 @@ class InferenceProcess(QObject):
                 self.recordedFutures.append(future)
                 return
 
-            answer = future.result()
-            if not answer:
-                raise InferenceSetupException(cmd, "Unknown error")
-            if error := answer.get("error"):
-                raise InferenceSetupException(cmd, error, answer.get("error_type"))
+            future.result()
         except:
             self.stop()
             raise
@@ -422,13 +414,7 @@ class InferenceProcess(QObject):
             self.recordedFutures.append(future)
             return dict()
 
-        answer = future.result()
-        if not answer:
-            raise InferenceException("Unknown error")
-        if error := answer.get("error"):
-            raise InferenceException(error, answer.get("error_type"))
-
-        return answer
+        return future.result()
 
     def _queryKey(self, returnKey: str, msg: dict) -> Any:
         return self._query(msg).get(returnKey)
@@ -449,7 +435,7 @@ class InferenceProcess(QObject):
     def _onProcessEnded(self, exitCode, exitStatus):
         print(f"Inference process '{self.procCfg.hostName}' ended. Exit code: {exitCode}, {exitStatus}")
 
-        exception = InferenceException("Process terminated")
+        exception = InferenceException(self.procCfg.hostName, f"Process terminated")
         for future in self._futures.values():
             future.setException(exception)
         self._futures = dict()
@@ -493,11 +479,19 @@ class InferenceProcess(QObject):
     def _onReadyRead(self):
         while self.proc.bytesAvailable() > Protocol.HEADER_LENGTH:
             reqId, msg = self._readMessage()
-            if reqId > 0:
-                if future := self._futures.pop(reqId, None):
-                    future.setResult(msg)
+            if reqId <= 0:
+                continue
+
+            if future := self._futures.pop(reqId, None):
+                if not msg:
+                    future.setException(InferenceException(self.procCfg.hostName, "Unknown error"))
+                elif error := msg.get("error"):
+                    future.setException(InferenceException(self.procCfg.hostName, error, msg.get("error_type", "Unknown Error Type")))
                 else:
-                    print("WARNING: Message from inference process has no Future")
+                    future.setResult(msg)
+            else:
+                content = (msg.get("cmd") or msg.get("error_type")) if msg else "Unknown"
+                print(f"WARNING: Message from inference process has no Future (Received: {content})")
 
 
     def _readMessage(self) -> tuple[int, dict | None]:

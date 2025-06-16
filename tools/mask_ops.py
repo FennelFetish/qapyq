@@ -1911,7 +1911,10 @@ class MaskTask(QRunnable):
                 session.prepare(prepare, lambda: self.signals.loaded.emit())
 
                 result = None
-                for file, results in session.queueFiles((self.imgPath,), check):
+                for file, results, exception in session.queueFiles((self.imgPath,), check):
+                    if exception:
+                        raise exception
+
                     if self.mode == self.MODE_DETECT:
                         result = results[0].get("boxes")
                     else:
@@ -1965,7 +1968,9 @@ class MacroMaskTask(QRunnable):
         with Inference().createSession(1) as session:
             session.prepare()
 
-            for file, results in session.queueFiles((self.imgPath,), macroRunner):
+            for file, results, exception in session.queueFiles((self.imgPath,), macroRunner):
+                if exception:
+                    raise exception
                 if results:
                     return results[0][1:]
 

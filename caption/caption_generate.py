@@ -325,11 +325,15 @@ class InferenceTask(QRunnable):
         self._mutex = QMutex()
         self._aborted = False
 
+        self.session = None
+
 
     def abort(self):
         self.signals.progress.emit("Aborting ...")
         with QMutexLocker(self._mutex):
             self._aborted = True
+            if self.session:
+                self.session.abort()
 
     def isAborted(self) -> bool:
         with QMutexLocker(self._mutex):
@@ -354,11 +358,17 @@ class InferenceTask(QRunnable):
 
             maxProcs = self.getMaxProcs()
             with Inference().createSession(maxProcs) as session:
+                with QMutexLocker(self._mutex):
+                    self.session = session
+
                 self.signals.progress.emit(f"Loading {contentText} model ...")
                 session.prepare(self.prepare, lambda: self.signals.progress.emit(progressText.format(0)))
 
                 fileResults = dict()
-                for fileNr, (file, results) in enumerate(session.queueFiles(self.files, self.check), 1):
+                for fileNr, (file, results, exception) in enumerate(session.queueFiles(self.files, self.check), 1):
+                    if exception:
+                        raise exception
+
                     if self.isAborted():
                         self.signals.fail.emit("Aborted")
                         return
@@ -379,6 +389,9 @@ class InferenceTask(QRunnable):
         except Exception as ex:
             traceback.print_exc()
             self.signals.fail.emit(str(ex))
+        finally:
+            with QMutexLocker(self._mutex):
+                self.session = None
 
 
     def prepare(self, proc: InferenceProcess):
@@ -399,6 +412,7 @@ class InferenceTask(QRunnable):
         return queue
 
     def parsePrompts(self, imgFile: str) -> list:
+        # TODO: It should take the current/refined for each file
         self.varParser.setup(imgFile)
 
         prompts = list()
