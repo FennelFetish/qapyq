@@ -1,4 +1,5 @@
 import json, os, sys, math
+from config import Config
 
 class DevMap:
     CPU = "cpu"
@@ -9,6 +10,8 @@ class DevMap:
 
         self.deviceMap = dict()
         self.hasCpuLayers = False
+
+        self.device = int(Config.inferDevices[0] or 0) if Config.inferDevices else 0
 
     @classmethod
     def fromConfig(cls, modelDirectory: str, llmLayersKey: str, visLayersKey: str = None):
@@ -31,32 +34,31 @@ class DevMap:
         return int(val) if val else 0
 
 
-    def setCudaLayer(self, name: str, device: int = 0) -> None:
-        self.deviceMap[name] = device
+    def setCudaLayer(self, name: str) -> None:
+        self.deviceMap[name] = self.device
 
     def setCpuLayer(self, name: str) -> None:
         self.deviceMap[name] = self.CPU
         self.hasCpuLayers = True
-    
 
-    def setLLMLayers(self, prefix: str, gpuLayersPercent: int, device: int = 0) -> None:
+
+    def setLLMLayers(self, prefix: str, gpuLayersPercent: int) -> None:
         numGpuLayers = self._getNumLayers("LLM", gpuLayersPercent, self.maxLayerLLM)
-        self._setLayers(prefix, numGpuLayers, self.maxLayerLLM, device)
+        self._setLayers(prefix, numGpuLayers, self.maxLayerLLM)
 
-    def setVisLayers(self, prefix: str, gpuLayersPercent: int, device: int = 0) -> None:
+    def setVisLayers(self, prefix: str, gpuLayersPercent: int) -> None:
         numGpuLayers = self._getNumLayers("Vis", gpuLayersPercent, self.maxLayerVis)
-        self._setLayers(prefix, numGpuLayers, self.maxLayerVis, device)
+        self._setLayers(prefix, numGpuLayers, self.maxLayerVis)
 
-    @staticmethod
-    def _getNumLayers(type: str, percent: int, maxLayer: int):
+    def _getNumLayers(self, type: str, percent: int, maxLayer: int):
         if percent < 0:
             percent = 100
-        
+
         numGpuLayers = math.ceil((percent / 100) * (maxLayer+1))
-        print(f"Total {type} layers: {maxLayer+1}, GPU: {numGpuLayers} ({percent}%), CPU: {(maxLayer+1)-numGpuLayers}")
+        print(f"Total {type} layers: {maxLayer+1}, GPU: {numGpuLayers} ({percent}% on device {self.device}), CPU: {(maxLayer+1)-numGpuLayers}")
         return numGpuLayers
 
-    def _setLayers(self, prefix: str, numGpuLayers: int, maxGpuLayer: int, device: int) -> None:
+    def _setLayers(self, prefix: str, numGpuLayers: int, maxGpuLayer: int) -> None:
         if numGpuLayers == 0:
             self.deviceMap[prefix] = self.CPU
             return
@@ -66,19 +68,19 @@ class DevMap:
             numGpuLayers = maxGpuLayer+1
 
         if numGpuLayers == maxGpuLayer+1:
-            self.deviceMap[prefix] = device
+            self.deviceMap[prefix] = self.device
             return
         self.hasCpuLayers = True
 
         # Set last layer first (if 1 GPU layer), then (with increasing layer count) continue at the beginning.
-        self.deviceMap[f"{prefix}.0"] = device
+        self.deviceMap[f"{prefix}.0"] = self.device
 
         for l in range(1, numGpuLayers-1):
-            self.deviceMap[f"{prefix}.{l}"] = device
+            self.deviceMap[f"{prefix}.{l}"] = self.device
         for l in range(numGpuLayers-1, maxGpuLayer):
             self.deviceMap[f"{prefix}.{l}"] = self.CPU
-        
-        self.deviceMap[f"{prefix}.{maxGpuLayer}"] = device
+
+        self.deviceMap[f"{prefix}.{maxGpuLayer}"] = self.device
 
 
     @property
@@ -97,7 +99,7 @@ class DevMap:
         sys.stderr.write(f"Device Map:{os.linesep}")
         for k, v in self.deviceMap.items():
             sys.stderr.write(f"{k} => {v}{os.linesep}")
-        
+
         sys.stderr.flush()
 
     @staticmethod
@@ -107,7 +109,7 @@ class DevMap:
         sys.stderr.write(f"Model's Device Map:{os.linesep}")
         for k, v in deviceMap.items():
             sys.stderr.write(f"{k} => {v}{os.linesep}")
-        
+
         sys.stderr.flush()
 
     @staticmethod
