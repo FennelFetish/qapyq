@@ -106,6 +106,7 @@ class Config:
     inferSelectedPresets    = dict()
     INFER_PRESET_SAMPLECFG_KEY = "sample_config"
 
+    inferDevices            = [0]
     inferHosts              = dict()
 
     # Caption
@@ -182,6 +183,7 @@ class Config:
         cls.inferMaskPresets      = data.get("infer_mask_presets", cls.inferMaskPresets)
         cls.inferScalePresets     = data.get("infer_scale_presets", cls.inferScalePresets)
         cls.inferSelectedPresets  = data.get("infer_selected_presets", cls.inferSelectedPresets)
+        cls.inferDevices          = data.get("infer_devices", cls.inferDevices)
         cls.inferHosts            = data.get("infer_hosts", cls.inferHosts)
 
         cls.captionRulesLoadMode  = data.get("caption_rules_load_mode", cls.captionRulesLoadMode)
@@ -238,6 +240,7 @@ class Config:
         data["infer_mask_presets"]          = cls.inferMaskPresets
         data["infer_scale_presets"]         = cls.inferScalePresets
         data["infer_selected_presets"]      = cls.inferSelectedPresets
+        data["infer_devices"]               = cls.inferDevices
         data["infer_hosts"]                 = cls.inferHosts
 
         data["caption_rules_load_mode"]     = cls.captionRulesLoadMode

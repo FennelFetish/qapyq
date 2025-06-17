@@ -86,9 +86,10 @@ class ForwardingProtocol(Protocol):
 class InferenceSubprocess:
     def __init__(self, serviceId: int, mainProtocol: Protocol, imgCache: ImageCache):
         import subprocess, threading
+        devices = ",".join(str(dev) for dev in Config.inferDevices)
 
         self.process = subprocess.Popen(
-            [sys.executable, "-u", "main_inference.py"],
+            [sys.executable, "-u", "main_inference.py", devices],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -125,6 +126,9 @@ def main() -> int:
 
     if not Config.load():
         return 1
+
+    if len(sys.argv) > 1 and sys.argv[1]:
+        Config.inferDevices = sys.argv[1].split(",")
 
     print("Host process started")
     host = Host(protocol)

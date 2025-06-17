@@ -1,6 +1,7 @@
 #!/bin/bash
 
 script_dir="$(dirname "$(readlink -f "$0")")"
+device="$1"
 
 venv_name=".venv"
 venv_path="${script_dir}/${venv_name}"
@@ -19,4 +20,4 @@ python_exec="${venv_path}/bin/python"
 export NO_ALBUMENTATIONS_UPDATE=1
 
 cd "$script_dir"
-exec ${python_exec} "./main_host.py"
+exec ${python_exec} "./main_host.py" "$device"

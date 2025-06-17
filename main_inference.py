@@ -14,6 +14,9 @@ def mainInference() -> int:
     if not Config.load():
         return 1
 
+    if len(sys.argv) > 1 and sys.argv[1]:
+        Config.inferDevices = sys.argv[1].split(",")
+
     print("Inference subprocess started")
     service = InferenceService(protocol)
     service.loop()
