@@ -396,6 +396,7 @@ class ChainedMacroRunner:
                 if box["confidence"] < threshold or (classes and name not in classes):
                     continue
                 self.layers[self.layerIndex] = mask_ops.DetectMaskOperation.operate(self.layers[self.layerIndex], box, **args)
+                self.changed[self.layerIndex] = True
 
             return InferenceChain.queue(self)
 
@@ -415,6 +416,7 @@ class ChainedMacroRunner:
                 raise RuntimeError("Failed to retrieve segmentation result")
 
             self.layers[self.layerIndex] = mask_ops.SegmentMaskOperation.operate(self.layers[self.layerIndex], maskBytes, **args)
+            self.changed[self.layerIndex] = True
             return InferenceChain.queue(self)
 
         proc.mask(config, classes, file)

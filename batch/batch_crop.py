@@ -346,7 +346,7 @@ class BatchCrop(QtWidgets.QWidget):
 
     def createTask(self) -> BatchTask | None:
         if not self._confirmStart():
-            return
+            return None
 
         self.saveExportPreset()
 
