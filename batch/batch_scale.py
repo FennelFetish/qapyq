@@ -1,11 +1,15 @@
+from typing import Callable
 from PySide6 import QtWidgets
 from PySide6.QtCore import Slot
-from PIL import Image
+import cv2 as cv
+import numpy as np
 from config import Config
 from lib import qtlib
 import tools.scale as scale
 import ui.export_settings as export
-from .batch_task import BatchTask, BatchTaskHandler, BatchUtil
+from infer.inference import InferenceChain
+from infer.inference_proc import InferenceProcess
+from .batch_task import BatchTask, BatchInferenceTask, BatchTaskHandler, BatchUtil
 from .batch_log import BatchLog
 
 
@@ -89,17 +93,15 @@ class BatchScale(QtWidgets.QWidget):
         return groupBox
 
     def _buildExportSettings(self):
-        layout = QtWidgets.QFormLayout()
+        layout = QtWidgets.QGridLayout()
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
 
-        self.cboInterpUp = QtWidgets.QComboBox()
-        self.cboInterpUp.addItems(export.INTERP_MODES_PIL.keys())
-        self.cboInterpUp.setCurrentIndex(4) # Default: Lanczos
-        layout.addRow("Interpolation Up:", self.cboInterpUp)
-
-        self.cboInterpDown = QtWidgets.QComboBox()
-        self.cboInterpDown.addItems(export.INTERP_MODES_PIL.keys())
-        self.cboInterpDown.setCurrentIndex(3) # Default: Area
-        layout.addRow("Interpolation Down:", self.cboInterpDown)
+        self.cboScalePreset = export.ScalePresetComboBox()
+        lblScaling = QtWidgets.QLabel("<a href='model_settings'>Scaling</a>:")
+        lblScaling.linkActivated.connect(self.cboScalePreset.showModelSettings)
+        layout.addWidget(lblScaling, 0, 0)
+        layout.addWidget(self.cboScalePreset, 0, 1)
 
         groupBox = QtWidgets.QGroupBox("Export Settings")
         groupBox.setLayout(layout)
@@ -169,44 +171,120 @@ class BatchScale(QtWidgets.QWidget):
 
     def createTask(self) -> BatchTask | None:
         if not self._confirmStart():
-            return
+            return None
 
         self.saveExportPreset()
 
         log = self.logWidget.addEntry("Scale")
         scaleFunc = self.selectedScaleMode.getScaleFunc()
-        task = BatchScaleTask(log, self.tab.filelist, scaleFunc, self.pathSettings)
-        task.interpUp   = export.INTERP_MODES_PIL[ self.cboInterpUp.currentText() ]
-        task.interpDown = export.INTERP_MODES_PIL[ self.cboInterpDown.currentText() ]
-        return task
+        scaleConfigFactory = self.cboScalePreset.getScaleConfigFactory()
+
+        taskClass = BatchInferenceScaleTask if scaleConfigFactory.needsInference() else BatchScaleTask
+        return taskClass(log, self.tab.filelist, scaleFunc, scaleConfigFactory, self.pathSettings)
 
 
 
 class BatchScaleTask(BatchTask):
-    def __init__(self, log, filelist, scaleFunc, pathSettings: export.PathSettings):
+    def __init__(self, log, filelist, scaleFunc: Callable, scaleConfigFactory: export.ScaleConfigFactory, pathSettings: export.PathSettings):
         super().__init__("scale", log, filelist)
         self.scaleFunc      = scaleFunc
+        self.scaleConfig    = scaleConfigFactory.getScaleConfig(1.0) # Only use interpolation mode
         self.pathTemplate   = pathSettings.pathTemplate
         self.overwriteFiles = pathSettings.overwriteFiles
-
-        self.interpUp       = None
-        self.interpDown     = None
 
     def runPrepare(self):
         self.parser = export.ExportVariableParser()
 
     def runProcessFile(self, imgFile: str) -> str:
-        image = Image.open(imgFile)
-        w, h = self.scaleFunc(image.width, image.height)
+        mat = cv.imread(imgFile, cv.IMREAD_UNCHANGED)
+        origH, origW = mat.shape[:2]
+        targetW, targetH = self.scaleFunc(origW, origH)
 
-        if (w != image.width) or (h != image.height):
-            interp = self.interpUp if (w>image.width or h>image.height) else self.interpDown
-            image = image.resize((w, h), resample=interp)
+        if (targetW != origW) or (targetH != origH):
+            scaleFactor = np.sqrt( (targetW * targetH) / (origW * origH) )
+            mat = self.resize(mat, self.scaleConfig, targetW, targetH)
+            self.log(f"Scaled by {scaleFactor:.2f} from {origW}x{origH} to {targetW}x{targetH}")
+        else:
+            self.log(f"Kept size {origW}x{origH}")
+
+        self.parser.setup(imgFile)
+        self.parser.width = targetW
+        self.parser.height = targetH
+
+        path = self.parser.parsePath(self.pathTemplate, self.overwriteFiles)
+        export.saveImage(path, mat, self.log)
+        return path
+
+    @staticmethod
+    def resize(mat: np.ndarray, scaleConfig: export.ScaleConfig, w: int, h: int) -> np.ndarray:
+        srcHeight, srcWidth = mat.shape[:2]
+        interp = scaleConfig.getInterpolationMode(w > srcWidth or h > srcHeight)
+        return cv.resize(mat, (w, h), interpolation=interp)
+
+
+
+class BatchInferenceScaleTask(BatchInferenceTask):
+    def __init__(self, log, filelist, scaleFunc: Callable, scaleConfigFactory: export.ScaleConfigFactory, pathSettings: export.PathSettings):
+        super().__init__("scale", log, filelist)
+        self.scaleFunc      = scaleFunc
+        self.scaleConfigs   = scaleConfigFactory
+        self.pathTemplate   = pathSettings.pathTemplate
+        self.overwriteFiles = pathSettings.overwriteFiles
+
+    def runPrepare(self, proc):
+        self.parser = export.ExportVariableParser()
+
+    def runCheckFile(self, imgFile: str, proc: InferenceProcess) -> Callable | InferenceChain | None:
+        mat = cv.imread(imgFile, cv.IMREAD_UNCHANGED)
+        origH, origW = mat.shape[:2]
+        targetW, targetH = self.scaleFunc(origW, origH)
+
+        if (targetW != origW) or (targetH != origH):
+            scaleFactor = np.sqrt( (targetW * targetH) / (origW * origH) )
+            scaleConfig = self.scaleConfigs.getScaleConfig(scaleFactor)
+            if scaleConfig.useUpscaleModel:
+                # Upscale backend loads files with PIL, so it will return mat as RGB
+                return lambda: self.queue(imgFile, origW, origH, targetW, targetH, scaleConfig, proc)
+            else:
+                mat = BatchScaleTask.resize(mat, scaleConfig, targetW, targetH)
+
+        mat[..., :3] = mat[..., 2::-1] # Convert BGR(A) -> RGB(A)
+        return InferenceChain.result((origW, origH, "", mat))
+
+    def queue(self, imgFile: str, origW: int, origH: int, targetW: int, targetH: int, scaleConfig: export.ScaleConfig, proc: InferenceProcess):
+        def scale(results: list):
+            w, h, imgData = results[0]["w"], results[0]["h"], results[0]["img"]
+            channels = len(imgData) // (w*h)
+
+            mat = np.frombuffer(imgData, dtype=np.uint8)
+            mat.shape = (h, w, channels)
+            if (w != targetW) or (h != targetH):
+                mat = BatchScaleTask.resize(mat, scaleConfig, targetW, targetH)
+
+            return InferenceChain.result((origW, origH, scaleConfig.modelPath, mat))
+
+        proc.upscaleImageFile(scaleConfig.toDict(), imgFile)
+        return InferenceChain.resultCallback(scale)
+
+    def runProcessFile(self, imgFile: str, results: list) -> str | None:
+        if not results:
+            return None
+
+        mat: np.ndarray # RGB
+        origW, origH, modelPath, mat = results[0]
+        h, w = mat.shape[:2]
+
+        if (w != origW) or (h != origH):
+            scaleFactor = np.sqrt( (w * h) / (origW * origH) )
+            modelText = f" using '{modelPath}'" if modelPath else ""
+            self.log(f"Scaled by {scaleFactor:.2f} from {origW}x{origH} to {w}x{h}{modelText}")
+        else:
+            self.log(f"Kept size {origW}x{origH}")
 
         self.parser.setup(imgFile)
         self.parser.width = w
         self.parser.height = h
 
         path = self.parser.parsePath(self.pathTemplate, self.overwriteFiles)
-        export.saveImagePIL(path, image, self.log)
+        export.saveImage(path, mat, self.log, convertFromBGR=False)
         return path

@@ -11,6 +11,8 @@ spandrel_extra_arches.install()
 
 # TODO: Use tiling for large images?
 
+CONVERSIONS = {"1": "RGB", "L": "RGB", "LA": "RGBA", "P": "RGB", "PA": "RGBA"}
+
 
 class UpscaleBackend:
     def __init__(self, config: dict):
@@ -40,6 +42,10 @@ class UpscaleBackend:
 
     def upscaleImage(self, imgFile: ImageFile) -> tuple[int, int, bytes]:
         image = imgFile.openPIL()
+        if convertMode := CONVERSIONS.get(image.mode):
+            print(f"Converting color mode from {image.mode} to {convertMode} ({imgFile.file})")
+            image = image.convert(convertMode)
+
         tensor = self.toTensor(image)
         result = self._upscaleImage(tensor)
         h, w = result.shape[:2]

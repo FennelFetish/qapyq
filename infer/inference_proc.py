@@ -406,7 +406,7 @@ class InferenceProcess(QObject):
             "config": config,
             "img": imgPath
         })
-        return answer["w"], answer["h"], answer["img"]
+        return (answer["w"], answer["h"], answer["img"]) if answer else (0, 0, b"")
 
     def upscaleImage(self, config: dict, imgData: bytes, w: int, h: int) -> tuple[int, int, bytes]:
         config = self.procCfg.translateConfig(config, ["model_path"])
@@ -417,7 +417,7 @@ class InferenceProcess(QObject):
             "w": w,
             "h": h
         })
-        return answer["w"], answer["h"], answer["img"]
+        return (answer["w"], answer["h"], answer["img"]) if answer else (0, 0, b"")
 
 
     def _query(self, msg: dict, serviceId=Service.ID.INFERENCE) -> dict[str, Any]:

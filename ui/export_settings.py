@@ -1,4 +1,4 @@
-import os, superqt
+import os, superqt, copy
 from difflib import SequenceMatcher
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
@@ -35,12 +35,15 @@ class Format:
         self.saveParams = saveParams
         self.conversion = conversion
 
+UNKNOWN_FORMAT = Format({})
+
 # https://pillow.readthedocs.io/en/stable/handbook/concepts.html#concept-modes
 FORMATS = {
-    "PNG":  Format({"optimize": True, "compress_level": 9}),
     "JPG":  Format({"optimize": True, "quality": 100, "subsampling": 0}, {"RGBA": "RGB", "P": "RGB"}),
+    "JXL":  Format({"lossless": True, "quality": 100}, {"P": "RGB"}),
+    "PNG":  Format({"optimize": True, "compress_level": 9}),
+    "TIFF": Format({"compression": "tiff_lzw"}),
     "WEBP": Format({"lossless": True, "quality": 100, "exact": True}),
-    "TIFF": Format({"compression": "tiff_lzw"})
 }
 
 EXTENSION_MAP = {
@@ -53,7 +56,7 @@ def getFormat(extension: str):
     if format := FORMATS.get(key):
         return format
     key = EXTENSION_MAP.get(key, "")
-    return FORMATS.get(key)
+    return FORMATS.get(key, UNKNOWN_FORMAT)
 
 def saveImage(path: str, mat: np.ndarray, logger=print, convertFromBGR=True):
     if convertFromBGR:
@@ -66,16 +69,22 @@ def saveImagePIL(path: str, img: Image.Image, logger=print):
     ext = os.path.splitext(path)[1]
     format = getFormat(ext)
 
-    createFolders(path, logger)
-    if not format:
-        img.save(path)
-        return
-
     if convertMode := format.conversion.get(img.mode):
         logger(f"Save Image: Converting color mode from {img.mode} to {convertMode}")
         img = img.convert(convertMode)
 
-    img.save(path, **format.saveParams)
+    createFolders(path, logger)
+
+    try:
+        img.save(path, **format.saveParams)
+    except Exception as ex:
+        try:
+            saveParams = {k: v for k, v in format.saveParams.items() if k != "optimize"}
+            img.save(path, **saveParams)
+            logger(f"Save Image: Saved without optimization")
+        except Exception as ex:
+            logger(f"Could not save image: {ex} ({type(ex).__name__})")
+
 
 def createFolders(filename, logger=print) -> None:
     folder = os.path.dirname(filename)
@@ -656,6 +665,36 @@ class ScaleConfig:
         return config
 
 
+class ScaleConfigFactory:
+    def __init__(self, presetData: dict):
+        self.presetData = copy.deepcopy(presetData)
+
+    def needsInference(self) -> bool:
+        if levels := self.presetData.get(ScaleModelSettings.KEY_LEVELS):
+            return any(level.get(ScaleModelSettings.LEVELKEY_MODELPATH) for level in levels)
+        return False
+
+    def getScaleConfig(self, scaleFactor: float) -> ScaleConfig:
+        return self.createConfig(self.presetData, scaleFactor)
+
+    @staticmethod
+    def createConfig(presetData: dict, scaleFactor: float):
+        interpUp   = ScaleModelSettings.getInterpUp(presetData)
+        interpDown = ScaleModelSettings.getInterpDown(presetData)
+
+        scaleFactor = round(scaleFactor, 2)
+        modelPath = None
+        if levels := presetData.get(ScaleModelSettings.KEY_LEVELS):
+            maxThreshold = 0.0
+            for level in levels:
+                threshold = round(level.get(ScaleModelSettings.LEVELKEY_THRESHOLD, 1000), 2)
+                if scaleFactor > threshold and threshold >= maxThreshold:
+                    maxThreshold = threshold
+                    modelPath = level.get(ScaleModelSettings.LEVELKEY_MODELPATH)
+
+        return ScaleConfig(interpUp, interpDown, modelPath)
+
+
 class ScalePresetComboBox(QtWidgets.QComboBox):
     CONFIG_ATTR = "inferScalePresets"
 
@@ -702,19 +741,11 @@ class ScalePresetComboBox(QtWidgets.QComboBox):
         return INTERP_MODES[ interpName ]
 
     def getScaleConfig(self, scaleFactor: float) -> ScaleConfig:
-        scaleFactor = round(scaleFactor, 2)
-
         preset = self.getSelectedPreset()
-        interpUp   = ScaleModelSettings.getInterpUp(preset)
-        interpDown = ScaleModelSettings.getInterpDown(preset)
+        return ScaleConfigFactory.createConfig(preset, scaleFactor)
 
-        modelPath = None
-        levels: list[dict] = preset.get(ScaleModelSettings.KEY_LEVELS, [])
-        for level in levels:
-            if scaleFactor > round(level.get(ScaleModelSettings.LEVELKEY_THRESHOLD), 2):
-                modelPath = level.get(ScaleModelSettings.LEVELKEY_MODELPATH)
-
-        return ScaleConfig(interpUp, interpDown, modelPath)
+    def getScaleConfigFactory(self) -> ScaleConfigFactory:
+        return ScaleConfigFactory(self.getSelectedPreset())
 
 
     @Slot()
