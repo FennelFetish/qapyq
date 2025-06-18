@@ -1,3 +1,4 @@
+from __future__ import annotations
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QSignalBlocker
 import superqt, copy
@@ -312,3 +313,40 @@ class InferencePresetWidget(InferenceSettingsWidget):
         preset = copy.deepcopy(preset)
         preset[Config.INFER_PRESET_SAMPLECFG_KEY] = self.toDict()
         return preset
+
+    def getRemoteInferenceConfig(self) -> RemoteInferenceConfig:
+        presetName = self.preset.currentText()
+        return RemoteInferenceConfig(self.configAttr, presetName, self.toDict())
+
+
+
+class RemoteInferenceConfig:
+    def __init__(self, configAttr: str, presetName: str, inferConfig: dict):
+        presets: dict = getattr(Config, configAttr)
+
+        self.defaultConfig: dict = copy.deepcopy( presets.get(presetName, {}) )
+        self.defaultConfig[Config.INFER_PRESET_SAMPLECFG_KEY] = inferConfig
+
+        self.hostConfigs = self._loadHostConfigs(presets, presetName, inferConfig)
+
+    @staticmethod
+    def _loadHostConfigs(presets: dict, presetName: str, inferConfig: dict) -> dict[str, tuple[str, dict]]:
+        import re
+        pattern = re.compile(rf"{presetName}\s*\[(.+)\]")
+        hostConfigs = dict[str, tuple[str, dict]]()
+
+        for name, cfg in sorted(presets.items(), key=lambda x: x[0]):
+            if match := pattern.match(name):
+                hostName = match.group(1)
+                cfg = copy.deepcopy(cfg)
+                cfg[Config.INFER_PRESET_SAMPLECFG_KEY] = inferConfig
+                hostConfigs[hostName.strip()] = (name, cfg)
+
+        return hostConfigs
+
+    def getHostConfig(self, hostName: str) -> dict:
+        if configEntry := self.hostConfigs.get(hostName):
+            presetName, config = configEntry
+            print(f"Using preset '{presetName}' for host '{hostName}'")
+            return config
+        return self.defaultConfig

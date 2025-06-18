@@ -3,7 +3,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, QSignalBlocker
 from config import Config
 from infer.inference_proc import InferenceProcess
-from infer.inference_settings import  InferencePresetWidget
+from infer.inference_settings import InferencePresetWidget, RemoteInferenceConfig
 from infer.tag_settings import TagPresetWidget
 from infer.prompt import PromptWidget, PromptsHighlighter
 from lib import qtlib
@@ -207,7 +207,7 @@ class BatchCaption(QtWidgets.QWidget):
             task.prompts = self.promptWidget.getParsedPrompts(storeName, rounds)
 
             task.systemPrompt  = self.promptWidget.systemPrompt.strip()
-            task.config        = self.inferSettings.getInferenceConfig()
+            task.configs       = self.inferSettings.getRemoteInferenceConfig()
             task.overwriteMode = self.cboOverwriteMode.currentData()
             task.storePrompts  = self.chkStorePrompts.isChecked()
             task.stripAround   = self.chkStripAround.isChecked()
@@ -227,7 +227,7 @@ class BatchCaptionTask(BatchInferenceTask):
         super().__init__("caption", log, filelist)
         self.prompts      = None
         self.systemPrompt = None
-        self.config       = None
+        self.configs: RemoteInferenceConfig = None
         self.overwriteMode = CAPTION_OVERWRITE_MODE_ALL
         self.storePrompts: bool = False
         self.stripAround  = True
@@ -251,7 +251,7 @@ class BatchCaptionTask(BatchInferenceTask):
 
         if self.doCaption:
             models.append("caption")
-            proc.setupCaption(self.config)
+            proc.setupCaption(self.configs.getHostConfig(proc.procCfg.hostName))
 
             self.writeKeys = {k for conv in self.prompts for k in conv.keys() if not k.startswith('?')}
 

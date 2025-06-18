@@ -5,7 +5,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QThreadPool, QRunnable, QObject, QSignalBlocker, QMutex, QMutexLocker
 from infer.inference import Inference
 from infer.inference_proc import InferenceProcess
-from infer.inference_settings import InferencePresetWidget
+from infer.inference_settings import InferencePresetWidget, RemoteInferenceConfig
 from infer.tag_settings import TagPresetWidget
 from infer.prompt import PromptWidget, PromptsHighlighter
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
@@ -183,7 +183,7 @@ class CaptionGenerate(CaptionTab):
 
             task.prompts = self.promptWidget.getParsedPrompts()
             task.systemPrompt = self.promptWidget.systemPrompt.strip()
-            task.config = self.inferSettings.getInferenceConfig()
+            task.configs = self.inferSettings.getRemoteInferenceConfig()
 
         if "tags" in content:
             task.tagConfig = self.tagSettings.getInferenceConfig()
@@ -348,8 +348,8 @@ class InferenceTask(QRunnable):
         self.varParser: FrozenCurrentVariableParser = None
         self.prompts: list[dict[str, str]] = None
         self.systemPrompt: str = None
-        self.config: dict      = None
-        self.tagConfig: dict   = None
+        self.configs: RemoteInferenceConfig = None
+        self.tagConfig: dict = None
 
         self._mutex = QMutex()
         self._aborted = False
@@ -426,7 +426,7 @@ class InferenceTask(QRunnable):
     def prepare(self, proc: InferenceProcess):
         for c in self.content:
             if c == self.CONTENT_CAPTION:
-                proc.setupCaption(self.config)
+                proc.setupCaption(self.configs.getHostConfig(proc.procCfg.hostName))
             elif c == self.CONTENT_TAG:
                 proc.setupTag(self.tagConfig)
 

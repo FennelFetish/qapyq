@@ -3,7 +3,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import QSignalBlocker, Qt, Slot
 from config import Config
 from infer.inference_proc import InferenceProcess
-from infer.inference_settings import InferencePresetWidget
+from infer.inference_settings import InferencePresetWidget, RemoteInferenceConfig
 from infer.prompt import PromptWidget, PromptsHighlighter
 from lib import qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
@@ -159,10 +159,10 @@ class BatchTransform(QtWidgets.QWidget):
         prompts = self.promptWidget.getParsedPrompts(storeName, rounds)
 
         log = self.logWidget.addEntry("Transform", BatchLog.GROUP_CAPTION)
-        task = BatchTransformTask(log, self.tab.filelist)
+        configs = self.inferSettings.getRemoteInferenceConfig()
+        task = BatchTransformTask(log, self.tab.filelist, configs)
         task.prompts = prompts
         task.systemPrompt = self.promptWidget.systemPrompt.strip()
-        task.config = self.inferSettings.getInferenceConfig()
 
         task.overwriteMode = self.cboOverwriteMode.currentData()
         task.storePrompts  = self.chkStorePrompts.isChecked()
@@ -173,11 +173,11 @@ class BatchTransform(QtWidgets.QWidget):
 
 
 class BatchTransformTask(BatchInferenceTask):
-    def __init__(self, log, filelist):
+    def __init__(self, log, filelist, configs: RemoteInferenceConfig):
         super().__init__("transform", log, filelist)
         self.prompts      = None
         self.systemPrompt = None
-        self.config       = None
+        self.configs      = configs
 
         self.overwriteMode = TRANSFORM_OVERWRITE_MODE_ALL
         self.storePrompts  = False
@@ -190,7 +190,7 @@ class BatchTransformTask(BatchInferenceTask):
 
     def runPrepare(self, proc: InferenceProcess):
         self.signals.progressMessage.emit("Loading LLM ...")
-        proc.setupLLM(self.config)
+        proc.setupLLM(self.configs.getHostConfig(proc.procCfg.hostName))
 
         self.writeKeys = {k for conv in self.prompts for k in conv.keys() if not k.startswith('?')}
 
