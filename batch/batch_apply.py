@@ -302,7 +302,7 @@ class BatchApply(QtWidgets.QWidget):
 
     def createTask(self) -> BatchTask | None:
         if not self._confirmStart():
-            return
+            return None
 
         log = self.logWidget.addEntry("Apply")
         template = self.promptWidget.prompts

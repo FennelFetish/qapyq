@@ -120,7 +120,7 @@ class MessageLoop:
         self.running = False
 
     def __call__(self):
-        import sys, traceback
+        import traceback
         while self.running:
             reqId = 0
             try:
@@ -129,19 +129,12 @@ class MessageLoop:
                     self.protocol.handleMessage(reqId, msg)
             except KeyboardInterrupt:
                 self.running = False
-            except:
-                exType, exMessage, exTraceback = sys.exc_info()
-                stacktrace = ''.join(traceback.format_tb(exTraceback))
-                print("\n", stacktrace)
-                self.handleError(reqId, str(exType), str(exMessage))
-
-    def handleError(self, reqId: int, excType: str, excMessage: str) -> None:
-        import re
-        pattern = r"<class '([^']+)'>"
-        if match := re.match(pattern, excType):
-            excType = match.group(1)
-
-        self.protocol.writeMessage(reqId, {
-            "error_type": excType,
-            "error": excMessage
-        })
+            except struct.error:
+                # Ignore errors when process is terminated, don't write error message as the pipes are invalid
+                self.running = False
+            except Exception as ex:
+                traceback.print_exc()
+                self.protocol.writeMessage(reqId, {
+                    "error_type": type(ex).__name__,
+                    "error": str(ex)
+                })

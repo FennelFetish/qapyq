@@ -152,7 +152,7 @@ class BatchTransform(QtWidgets.QWidget):
 
     def createTask(self) -> BatchInferenceTask | None:
         if not self._confirmStart():
-            return
+            return None
 
         storeName = self.destSelector.name.strip()
         rounds = self.spinRounds.value()
