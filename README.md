@@ -71,6 +71,7 @@
   - Support for state-of-the-art captioning and masking models
   - Model and sampling settings, GPU acceleration with CPU offload support
   - On-the-fly NF4 and INT8 quantization
+  - Run inference locally and/or on multiple remote machines over SSH
   - Separate inference subprocess isolates potential crashes and allows complete VRAM cleanup
 
 
@@ -159,7 +160,7 @@ If you have questions, please ask in the [Discussions](https://github.com/Fennel
 - [x] AI-assisted mask editing
 - [ ] Overlays (difference image) for comparison tool
 - [x] Image resizing
-- [ ] Run inference on remote machines
+- [x] Run inference on remote machines
 - [ ] Adapt new captioning and masking models
 - [ ] Possibly a plugin system for new tools
 - [ ] Integration with ComfyUI

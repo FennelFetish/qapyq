@@ -83,7 +83,7 @@ def saveImagePIL(path: str, img: Image.Image, logger=print):
             img.save(path, **saveParams)
             logger(f"Save Image: Saved without optimization")
         except Exception as ex:
-            logger(f"Could not save image: {ex} ({type(ex).__name__})")
+            raise ex from None
 
 
 def createFolders(filename, logger=print) -> None:
