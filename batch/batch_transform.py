@@ -158,7 +158,7 @@ class BatchTransform(QtWidgets.QWidget):
         rounds = self.spinRounds.value()
         prompts = self.promptWidget.getParsedPrompts(storeName, rounds)
 
-        log = self.logWidget.addEntry("Transform")
+        log = self.logWidget.addEntry("Transform", BatchLog.GROUP_CAPTION)
         task = BatchTransformTask(log, self.tab.filelist)
         task.prompts = prompts
         task.systemPrompt = self.promptWidget.systemPrompt.strip()

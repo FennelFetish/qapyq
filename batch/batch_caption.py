@@ -198,7 +198,7 @@ class BatchCaption(QtWidgets.QWidget):
         if not self._confirmStart():
             return None
 
-        log = self.logWidget.addEntry("Caption")
+        log = self.logWidget.addEntry("Caption", BatchLog.GROUP_CAPTION)
         task = BatchCaptionTask(log, self.tab.filelist)
 
         if self.captionGroup.isChecked():

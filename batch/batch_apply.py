@@ -304,7 +304,7 @@ class BatchApply(QtWidgets.QWidget):
         if not self._confirmStart():
             return None
 
-        log = self.logWidget.addEntry("Apply")
+        log = self.logWidget.addEntry("Apply", BatchLog.GROUP_CAPTION)
         template = self.promptWidget.prompts
         task = BatchApplyTask(log, self.tab.filelist, template)
 

@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt, Signal, Slot, QRunnable, QObject, QMutex, QMutexL
 from infer.inference import Inference, InferenceChain, InferenceSetupException
 from lib.filelist import FileList
 import lib.qtlib as qtlib
-from .batch_log import BatchLogEntry
+from .batch_log import BatchLogEntry, BatchTaskAbortedException
 
 
 class BatchTask(QRunnable):
@@ -60,7 +60,7 @@ class BatchTask(QRunnable):
             self.signals.fail.emit(exString, None)
         finally:
             self.runCleanup()
-            self.log.release.emit()
+            self.log.releaseEntry()
 
 
     def _getFileArgs(self, args: Any) -> tuple:
@@ -160,7 +160,7 @@ class BatchInferenceTask(BatchTask):
                 self.session = None
 
             self.runCleanup()
-            self.log.release.emit()
+            self.log.releaseEntry()
 
 
     def _getFileArgs(self, args: tuple) -> tuple:
@@ -361,8 +361,11 @@ class BatchTaskHandler(QObject):
                 self._task.abort()
             return
 
-        task = self.taskFactory()
-        if not task:
+        try:
+            task = self.taskFactory()
+            if not task:
+                return
+        except BatchTaskAbortedException:
             return
 
         task.signals.progress.connect(self.onProgress)
