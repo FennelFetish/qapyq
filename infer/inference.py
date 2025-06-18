@@ -399,7 +399,7 @@ class InferenceSession:
 
                 case QueueItem.Type.Chain:
                     try:
-                        # InferenceChain.queue and InfereChain.forwardResult come here
+                        # InferenceChain.queue/result/forwardResult come here
                         item.chain.exec(self, item.procState, item.file, all)
                     except Exception as ex:
                         self._queue.put_nowait(QueueItem.fileResult(item.procState, item.file, [], ex))
