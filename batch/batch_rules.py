@@ -451,7 +451,7 @@ class BatchRules(QtWidgets.QWidget):
         if not self._confirmStart():
             return None
 
-        log = self.logWidget.addEntry("Rules")
+        log = self.logWidget.addEntry("Rules", BatchLog.GROUP_CAPTION)
         task = BatchRulesTask(log, self.tab.filelist, self.setupProcessor())
         task.srcType = self.srcSelector.type
         task.srcKey  = self.srcSelector.name.strip()

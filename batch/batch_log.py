@@ -1,4 +1,5 @@
 import os
+from collections import Counter
 from contextlib import contextmanager
 from datetime import datetime
 from PySide6 import QtWidgets
@@ -9,9 +10,9 @@ from lib import qtlib
 
 class BatchLogEntry(QtWidgets.QPlainTextEdit):
     log = Signal(str)
-    release = Signal()
+    release = Signal(object)
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, runGroup: int):
         super().__init__()
         qtlib.setMonospace(self)
         self.setReadOnly(True)
@@ -23,8 +24,9 @@ class BatchLogEntry(QtWidgets.QPlainTextEdit):
         self.log.connect(self._addLog, Qt.ConnectionType.QueuedConnection)
         self.release.connect(self._onReleased, Qt.ConnectionType.QueuedConnection)
 
-        self._indent = False
+        self.runGroup = runGroup
         self.done = False
+        self._indent = False
 
 
     def __call__(self, line: str):
@@ -44,8 +46,11 @@ class BatchLogEntry(QtWidgets.QPlainTextEdit):
 
         print(line)
 
+    def releaseEntry(self):
+        self.release.emit(self)
+
     @Slot()
-    def _onReleased(self):
+    def _onReleased(self, entry):
         self.done = True
 
     def saveLog(self, savePath: str):
@@ -71,9 +76,12 @@ class BatchLogEntry(QtWidgets.QPlainTextEdit):
 
 
 class BatchLog(QtWidgets.QWidget):
+    GROUP_CAPTION = 1
+
     def __init__(self):
         super().__init__()
         self._savePath = Config.pathExport
+        self._runningGroups: Counter[int] = Counter()
 
         self.cboEntries = QtWidgets.QComboBox()
         self.cboEntries.currentIndexChanged.connect(self._onEntryChanged)
@@ -115,11 +123,17 @@ class BatchLog(QtWidgets.QWidget):
         if entry := self.cboEntries.itemData(index):
             self.stackLayout.setCurrentWidget(entry)
 
-    def addEntry(self, name: str) -> BatchLogEntry:
+    def addEntry(self, name: str, runGroup: int = -1) -> BatchLogEntry:
         self.btnSave.setEnabled(True)
         self.btnClear.setEnabled(True)
 
-        entry = BatchLogEntry(name)
+        entry = BatchLogEntry(name, runGroup)
+        if runGroup >= 0:
+            if self._runningGroups[runGroup] > 0 and not self._askRun():
+                raise BatchTaskAbortedException("Aborted")
+            self._runningGroups[runGroup] += 1
+            entry.release.connect(self._onEntryReleased, Qt.ConnectionType.QueuedConnection)
+
         self.stackLayout.addWidget(entry) # Add to stack first
         self.cboEntries.addItem(entry.title, entry)
         self.cboEntries.setCurrentIndex(self.cboEntries.count()-1)
@@ -151,3 +165,30 @@ class BatchLog(QtWidgets.QWidget):
             if not entry.done:
                 return True
         return False
+
+
+    def _askRun(self):
+        text = "A batch task that affects the selected files is already running.<br>" \
+               "Starting another task that processes the same files may result in " + qtlib.htmlRed("data corruption") + "!<br><br>" \
+               "Do you really want to start a possibly conflicting task?"
+
+        dialog = QtWidgets.QMessageBox(self)
+        dialog.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+        dialog.setWindowTitle("Conflicting Processing")
+        dialog.setTextFormat(Qt.TextFormat.RichText)
+        dialog.setText(text)
+        dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+        dialog.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
+
+        return dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes
+
+    @Slot()
+    def _onEntryReleased(self, entry: BatchLogEntry):
+        if entry.runGroup >= 0:
+            self._runningGroups[entry.runGroup] -= 1
+            if self._runningGroups[entry.runGroup] < 0:
+                self._runningGroups[entry.runGroup] = 0
+
+
+
+class BatchTaskAbortedException(Exception): pass
