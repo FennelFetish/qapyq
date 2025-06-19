@@ -123,7 +123,7 @@ class InferenceProcConfig:
         self.remoteBasePath = self.remoteBasePath.replace("\\", "/").rstrip("/")
 
     def translateConfig(self, config: dict[str, Any], keys: list[str]) -> dict:
-        if self.remote and self.remoteBasePath:
+        if self.remote and self.localBasePath and self.remoteBasePath:
             config = copy.deepcopy(config)
             self._translateModelPaths(config, keys)
         return config
@@ -409,6 +409,7 @@ class InferenceProcess(QObject):
         return (answer["w"], answer["h"], answer["img"]) if answer else (0, 0, b"")
 
     def upscaleImage(self, config: dict, imgData: bytes, w: int, h: int) -> tuple[int, int, bytes]:
+        # TODO: Compress images for remote hosts
         config = self.procCfg.translateConfig(config, ["model_path"])
         answer = self._query({
             "cmd": "img_upscale",

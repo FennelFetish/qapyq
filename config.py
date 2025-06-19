@@ -107,7 +107,13 @@ class Config:
     INFER_PRESET_SAMPLECFG_KEY = "sample_config"
 
     inferDevices            = [0]
-    inferHosts              = dict()
+    inferHosts              = {
+        "Local": {
+            "active": True,
+            "priority": 1.0,
+            "model_base_path": ""
+        }
+    }
 
     # Caption
     captionRulesLoadMode    = "previous"
