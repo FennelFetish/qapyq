@@ -7,6 +7,7 @@ from threading import Condition
 from PySide6.QtCore import Qt, QThreadPool, QThread, Signal, Slot, QObject, QMutex, QMutexLocker
 from lib.util import Singleton
 from config import Config
+from host.host_window import LOCAL_NAME
 from .inference_proc import InferenceProcess, InferenceProcConfig, ProcFuture, InferenceException
 
 
@@ -19,12 +20,14 @@ class Inference(metaclass=Singleton):
 
     def createSession(self, maxProcesses: int = -1) -> InferenceSession:
         prioHosts = sorted(Config.inferHosts.items(), key=lambda item: item[1].get("priority", 1.0), reverse=True)
+        if not prioHosts:
+            prioHosts.append((LOCAL_NAME, {"active": True}))
 
         procStates: list[ProcState] = []
         hostnames = []
         with QMutexLocker(self._mutex):
             for hostName, hostCfg in prioHosts:
-                if not bool(hostCfg.get("active")):
+                if not hostCfg.get("active"):
                     continue
 
                 proc = self._procs.get(hostName)

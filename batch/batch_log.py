@@ -174,7 +174,7 @@ class BatchLog(QtWidgets.QWidget):
 
         dialog = QtWidgets.QMessageBox(self)
         dialog.setIcon(QtWidgets.QMessageBox.Icon.Warning)
-        dialog.setWindowTitle("Conflicting Processing")
+        dialog.setWindowTitle("Conflicting Tasks")
         dialog.setTextFormat(Qt.TextFormat.RichText)
         dialog.setText(text)
         dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
@@ -185,9 +185,7 @@ class BatchLog(QtWidgets.QWidget):
     @Slot()
     def _onEntryReleased(self, entry: BatchLogEntry):
         if entry.runGroup >= 0:
-            self._runningGroups[entry.runGroup] -= 1
-            if self._runningGroups[entry.runGroup] < 0:
-                self._runningGroups[entry.runGroup] = 0
+            self._runningGroups[entry.runGroup] = max(self._runningGroups[entry.runGroup]-1, 0)
 
 
 
