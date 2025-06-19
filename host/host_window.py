@@ -214,55 +214,68 @@ class HostSettings(QtWidgets.QGroupBox):
 
     def __init__(self):
         super().__init__("Remote Host Settings")
+        self._testProc = None
 
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(2, 0)
 
         row = 0
         self.txtName = QtWidgets.QLineEdit()
         self.txtName.textChanged.connect(self.nameChanged.emit)
         layout.addWidget(QtWidgets.QLabel("Name:"), row, 0)
-        layout.addWidget(self.txtName, row, 1)
+        layout.addWidget(self.txtName, row, 1, 1, 2)
 
         row += 1
         self.spinPriority = QtWidgets.QDoubleSpinBox()
         self.spinPriority.setRange(1.0, 100.0)
         layout.addWidget(QtWidgets.QLabel("Priority:"), row, 0)
-        layout.addWidget(self.spinPriority, row, 1)
+        layout.addWidget(self.spinPriority, row, 1, 1, 2)
 
         row += 1
         self.txtModelBasePath = QtWidgets.QLineEdit()
         self.txtModelBasePath.setPlaceholderText("Path on remote machine")
         qtlib.setMonospace(self.txtModelBasePath)
         layout.addWidget(QtWidgets.QLabel("Model Base Path:"), row, 0)
-        layout.addWidget(self.txtModelBasePath, row, 1)
+        layout.addWidget(self.txtModelBasePath, row, 1, 1, 2)
 
         row += 1
         layout.setRowMinimumHeight(row, 20)
 
         row += 1
         info = "The queue size defines how many images are uploaded and cached on this host."
-        layout.addWidget(QtWidgets.QLabel(info), row, 0, 1, 2)
+        layout.addWidget(QtWidgets.QLabel(info), row, 0, 1, 3)
 
         row += 1
         self.spinQueueSize = QtWidgets.QSpinBox()
         self.spinQueueSize.setRange(1, 100)
         layout.addWidget(QtWidgets.QLabel("Queue Size:"), row, 0)
-        layout.addWidget(self.spinQueueSize, row, 1)
+        layout.addWidget(self.spinQueueSize, row, 1, 1, 2)
 
         row += 1
         layout.setRowMinimumHeight(row, 20)
 
         row += 1
         info = "This command is used to start <code>qapyq/run-host.sh</code> on the remote host."
-        layout.addWidget(QtWidgets.QLabel(info), row, 0, 1, 2)
+        layout.addWidget(QtWidgets.QLabel(info), row, 0, 1, 3)
 
         row += 1
         self.txtCmd = QtWidgets.QLineEdit()
         self.txtCmd.setPlaceholderText("Command to start run-host.sh")
         qtlib.setMonospace(self.txtCmd)
         layout.addWidget(QtWidgets.QLabel("Command:"), row, 0)
-        layout.addWidget(self.txtCmd, row, 1)
+        layout.addWidget(self.txtCmd, row, 1, 1, 2)
+
+        row += 1
+        self.lblTestResult = QtWidgets.QLabel("")
+        layout.addWidget(self.lblTestResult, row, 1)
+
+        self.btnTestCmd = QtWidgets.QPushButton("Test Command")
+        self.btnTestCmd.clicked.connect(self._testCommand)
+        layout.addWidget(self.btnTestCmd, row, 2)
+
 
         self.setLayout(layout)
 
@@ -290,3 +303,36 @@ class HostSettings(QtWidgets.QGroupBox):
             "model_base_path": self.txtModelBasePath.text().strip(),
             "cmd": self.txtCmd.text().strip()
         }
+
+
+    @Slot()
+    def _testCommand(self):
+        if self._testProc:
+            return
+
+        self.btnTestCmd.setEnabled(False)
+        self.lblTestResult.setText("Connecting...")
+        self.lblTestResult.setStyleSheet("")
+
+        from infer.inference_proc import InferenceProcess, InferenceProcConfig
+        config = InferenceProcConfig(f"{self.name} - Test", self.toDict(True))
+        self._testProc = InferenceProcess(config)
+        self._testProc.processReady.connect(self._onTestProcessReady)
+        self._testProc.processEnded.connect(self._onTestProcessEnded)
+        self._testProc.start(wait=False)
+
+    @Slot()
+    def _onTestProcessReady(self, proc, state: bool):
+        proc.stop()
+        if state:
+            self.lblTestResult.setText("Command Verified")
+            self.lblTestResult.setStyleSheet(f"color: {qtlib.COLOR_GREEN}")
+        else:
+            self.lblTestResult.setText("Failed: See console for more information")
+            self.lblTestResult.setStyleSheet(f"color: {qtlib.COLOR_RED}")
+
+    @Slot()
+    def _onTestProcessEnded(self, proc):
+        proc.shutdown()
+        self._testProc = None
+        self.btnTestCmd.setEnabled(True)

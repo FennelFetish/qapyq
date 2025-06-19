@@ -91,18 +91,15 @@ class AwaitableFunc:
 
 
 
-# TODO: For different config on remote host:
-#       Load config from "preset name [host]"
-#       Then, always use model path as-is? Or translate it so it can be tested locally?
 class InferenceProcConfig:
-    def __init__(self, hostName: str):
+    def __init__(self, hostName: str, configOverride: dict | None = None):
         self.hostName = hostName
 
         cfgLocal = Config.inferHosts.get(LOCAL_NAME, {})
         self.localBasePath: str = cfgLocal.get("model_base_path", "")
         self.remoteBasePath: str = ""
 
-        if hostName == LOCAL_NAME:
+        if hostName == LOCAL_NAME and not configOverride:
             self.remote = False
             self.hostServiceId = Service.ID.INFERENCE
             self.executable = sys.executable
@@ -111,7 +108,7 @@ class InferenceProcConfig:
             self.remote = True
             self.hostServiceId = Service.ID.HOST
 
-            cfgRemote: dict = Config.inferHosts.get(hostName, {})
+            cfgRemote: dict = configOverride or Config.inferHosts.get(hostName, {})
             self.remoteBasePath = cfgRemote.get("model_base_path", "")
 
             import shlex
