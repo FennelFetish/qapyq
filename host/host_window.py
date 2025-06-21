@@ -319,6 +319,7 @@ class HostSettings(QtWidgets.QGroupBox):
         self._testProc = InferenceProcess(config)
         self._testProc.processReady.connect(self._onTestProcessReady)
         self._testProc.processEnded.connect(self._onTestProcessEnded)
+        self._testProc.processStartFailed.connect(self._onTestProcessEnded)
         self._testProc.start(wait=False)
 
     @Slot()
