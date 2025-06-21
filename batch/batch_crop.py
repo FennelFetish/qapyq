@@ -3,12 +3,12 @@ from enum import Enum
 from typing import Callable
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QSignalBlocker
-from PySide6.QtGui import QImageReader
 import cv2 as cv
 import numpy as np
 from config import Config
 from lib import qtlib
 from lib.mask_macro import MaskingMacro, ChainedMacroRunner
+import lib.imagerw as imagerw
 from infer.inference import InferenceChain
 import ui.export_settings as export
 from ui.size_preset import SizeBucket, SizePresetWidget
@@ -444,7 +444,7 @@ def createFileMaskSource(pathTemplate: str) -> MaskSource:
     parser = export.ExportVariableParser()
 
     def loadMask(path: str, imgW: int, imgH: int, log):
-        maskMat = cv.imread(path, cv.IMREAD_UNCHANGED)
+        maskMat = imagerw.loadMatBGR(path)
         maskH, maskW = maskMat.shape[:2]
         if maskW != imgW or maskH != imgH:
             log(f"Mask size ({maskW}x{maskH}) doesn't match image size ({imgW}x{imgH})")
@@ -725,7 +725,7 @@ class BatchCropTask(BaseBatchCropTask, BatchTask):
         self.maskSrcFunc  = maskSrcFunc
 
     def runProcessFile(self, imgFile: str) -> str | None:
-        imgMat = cv.imread(imgFile, cv.IMREAD_UNCHANGED)
+        imgMat = imagerw.loadMatBGR(imgFile)
 
         maskLayers = self.maskSrcFunc(imgFile, imgMat, self.log)
         if not maskLayers:
@@ -747,10 +747,7 @@ class BatchInferenceCropTask(BaseBatchCropTask, BatchInferenceTask):
 
 
     def runCheckFile(self, imgFile: str, proc) -> Callable | InferenceChain | None:
-        imgReader = QImageReader(imgFile)
-        imgSize = imgReader.size()
-        imgW, imgH = imgSize.width(), imgSize.height()
-
+        imgW, imgH = imagerw.readSize(imgFile)
         layers = [ np.zeros((imgH, imgW), dtype=np.uint8) ]
         macroRunner = ChainedMacroRunner(self.macro, "", layers)
         return macroRunner(imgFile, proc)
@@ -763,5 +760,5 @@ class BatchInferenceCropTask(BaseBatchCropTask, BatchInferenceTask):
 
         _, maskLayers, layerChanged = results[0]
 
-        imgMat = cv.imread(imgFile, cv.IMREAD_UNCHANGED)
+        imgMat = imagerw.loadMatBGR(imgFile)
         return self.doCrop(maskLayers, imgFile, imgMat)

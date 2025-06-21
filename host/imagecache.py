@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Callable
 from io import BytesIO
+import lib.imagerw as imagerw
 
 
 class ImageFile:
@@ -56,18 +57,13 @@ class ImageFile:
 
 
     def openCvMat(self):
-        import cv2 as cv
         if self.data:
-            import numpy as np
-            arr = np.frombuffer(self.data, dtype=np.uint8)
-            return cv.imdecode(arr, cv.IMREAD_UNCHANGED)
-        return cv.imread(self.file, cv.IMREAD_UNCHANGED)
+            return imagerw.decodeMatBGR(self.data)
+        return imagerw.loadMatBGR(self.file)
 
     def openPIL(self):
-        from PIL import Image
-        if self.data:
-            return Image.open(BytesIO(self.data))
-        return Image.open(self.file)
+        source = BytesIO(self.data) if self.data else self.file
+        return imagerw.loadImagePIL(source)
 
     def getURI(self) -> str:
         import base64, mimetypes

@@ -6,6 +6,7 @@ natsort
 # Image
 opencv-python-headless
 pillow
+pillow-jxl-plugin
 
 # Inter-process communication
 msgpack
@@ -41,7 +42,7 @@ onnx
 kornia
 
 # InSPyReNet rembg
-transparent_background
+transparent-background
 
 # Image Upscaling
 spandrel

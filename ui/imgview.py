@@ -2,6 +2,7 @@ from __future__ import annotations
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QTransform
 from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsView
+import lib.imagerw as imagerw
 from .dropview import DropView
 
 
@@ -151,8 +152,11 @@ class ImgItem(QGraphicsPixmapItem):
             return False
 
         pixmap = QPixmap(path)
-        self.setPixmap(pixmap)
+        if pixmap.isNull():
+            try: pixmap = QPixmap.fromImage(imagerw.loadQImagePIL(path))
+            except: pass
 
+        self.setPixmap(pixmap)
         if pixmap.isNull():
             print(f"Failed to load image: {path}")
             return False

@@ -5,11 +5,11 @@ from typing import Callable
 from typing_extensions import override
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QImageReader
 from config import Config
 from ui.tab import ImgTab
 from lib import qtlib
 from lib.filelist import FileList
+import lib.imagerw as imagerw
 import ui.export_settings as export
 from .batch_task import BatchTask, BatchTaskHandler, BatchUtil
 from .batch_log import BatchLog
@@ -580,14 +580,13 @@ class BatchFileTask(BatchTask):
         self.destinationPathParser.setup(imgPath)
         self.maskPathParser.setup(imgPath)
 
-        imgReader = QImageReader(imgPath)
-        imgSize = imgReader.size()
+        imgW, imgH = imagerw.readSize(imgPath)
 
-        self.destinationPathParser.width = imgSize.width()
-        self.destinationPathParser.height = imgSize.height()
+        self.destinationPathParser.width = imgW
+        self.destinationPathParser.height = imgH
 
-        self.maskPathParser.width = imgSize.width()
-        self.maskPathParser.height = imgSize.height()
+        self.maskPathParser.width = imgW
+        self.maskPathParser.height = imgH
 
 
     def processFile(self, srcPath: str, targetFolder: str, targetFileName: str, overwrite: bool) -> str | None:

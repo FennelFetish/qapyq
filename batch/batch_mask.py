@@ -3,7 +3,6 @@ from enum import Enum
 from typing import Callable
 from PySide6 import QtWidgets
 from PySide6.QtCore import QSignalBlocker, Qt, Slot
-from PySide6.QtGui import QImageReader
 import cv2 as cv
 import numpy as np
 from config import Config
@@ -11,6 +10,7 @@ from infer.inference import InferenceChain
 from lib import qtlib
 from lib.mask_macro import MaskingMacro, ChainedMacroRunner
 from lib.mask_macro_vis import MacroVisualization
+import lib.imagerw as imagerw
 import ui.export_settings as export
 from .batch_task import BatchTaskHandler, BatchTask, BatchInferenceTask, BatchUtil
 from .batch_log import BatchLog
@@ -288,7 +288,7 @@ def createFileMaskSource(pathTemplate: str, numLayers: int, skipNonExisting: boo
     parser = export.ExportVariableParser()
 
     def loadMask(path: str, w: int, h: int) -> list[np.ndarray]:
-        maskMat = cv.imread(path, cv.IMREAD_UNCHANGED)
+        maskMat = imagerw.loadMatBGR(path)
         maskH, maskW = maskMat.shape[:2]
         if maskW != w or maskH != h:
             raise ValueError("Size of loaded mask does not match image size")
@@ -321,7 +321,7 @@ def createFileMaskSource(pathTemplate: str, numLayers: int, skipNonExisting: boo
 
 def createAlphaMaskSource(skipNonExisting: bool):
     def alphaMaskSource(imgPath: str, w: int, h: int) -> list[np.ndarray]:
-        imgMat = cv.imread(imgPath, cv.IMREAD_UNCHANGED)
+        imgMat = imagerw.loadMatBGR(imgPath)
         channels = imgMat.shape[2] if len(imgMat.shape) > 2 else 1
         if channels >= 4:
             return [ np.ascontiguousarray(imgMat[..., 3].copy()) ]
@@ -426,10 +426,7 @@ class BatchMaskTask(BaseBatchMaskTask, BatchTask):
 
 
     def processAsSeparateFile(self, imgFile: str) -> tuple[str, list[np.ndarray]]:
-        imgReader = QImageReader(imgFile)
-        imgSize = imgReader.size()
-        w, h = imgSize.width(), imgSize.height()
-
+        w, h = imagerw.readSize(imgFile)
         destPath = self.checkDestinationPath(w, h)
 
         layers = self.maskSource(imgFile, w, h)
@@ -438,7 +435,7 @@ class BatchMaskTask(BaseBatchMaskTask, BatchTask):
 
 
     def processAsAlpha(self, imgFile: str) -> tuple[str, list[np.ndarray]]:
-        imgMat = cv.imread(imgFile, cv.IMREAD_UNCHANGED)
+        imgMat = imagerw.loadMatBGR(imgFile)
         h, w = imgMat.shape[:2]
 
         destPath = self.checkDestinationPath(w, h)
@@ -460,10 +457,7 @@ class BatchInferenceMaskTask(BaseBatchMaskTask, BatchInferenceTask):
 
     def runCheckFile(self, imgFile: str, proc) -> Callable | InferenceChain | None:
         try:
-            imgReader = QImageReader(imgFile)
-            imgSize = imgReader.size()
-            w, h = imgSize.width(), imgSize.height()
-
+            w, h = imagerw.readSize(imgFile)
             self.parser.setup(imgFile)
             destPath = self.checkDestinationPath(w, h)
 
@@ -493,5 +487,5 @@ class BatchInferenceMaskTask(BaseBatchMaskTask, BatchInferenceTask):
         return self._processAsSeparateFile(layers)
 
     def processAsAlpha(self, imgFile: str, layers: list[np.ndarray]) -> list[np.ndarray]:
-        imgMat = cv.imread(imgFile, cv.IMREAD_UNCHANGED)
+        imgMat = imagerw.loadMatBGR(imgFile)
         return self._processAsAlpha(imgMat, layers)

@@ -1,8 +1,8 @@
 from typing import Iterable, Any, Callable
 import os, enum
 from bisect import bisect_left
-from PySide6.QtGui import QImageReader
 from config import Config
+from lib.imagerw import READ_EXTENSIONS
 
 
 def sortKey(path: str):
@@ -36,14 +36,12 @@ class DataKeys:
         Saved   = "saved"
 
 
-# Only images with these extensions are loaded into the FileList:
-VALID_EXTENSION = set([ f".{format.data().decode('utf-8').lower()}" for format in QImageReader.supportedImageFormats() ])
 
 def fileFilter(path) -> bool:
     name, ext = os.path.splitext(path)
     if name.endswith(Config.maskSuffix):
         return False
-    return ext.lower() in VALID_EXTENSION
+    return ext.lower() in READ_EXTENSIONS
 
 
 def removeCommonRoot(path: str, commonRoot: str, allowEmpty=False) -> str:

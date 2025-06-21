@@ -1,7 +1,8 @@
 import os, time
-from PySide6.QtCore import Slot, Signal, QSize, QThreadPool, QObject, QRunnable, Qt
-from PySide6.QtGui import QPixmap, QImage, QImageReader
+from PySide6.QtCore import Slot, Signal, QThreadPool, QObject, QRunnable, Qt
+from PySide6.QtGui import QPixmap, QImage
 from lib.filelist import FileList, DataKeys
+import lib.imagerw as imagerw
 from config import Config
 from .gallery_item import GalleryItem
 
@@ -84,22 +85,17 @@ class ThumbnailTask(QRunnable):
     @Slot()
     def run(self):
         # QPixmap is not threadsafe, loading as QImage instead
-        reader = QImageReader(self.file)
-        reader.setQuality(100)
+        try:
+            img, (w, h) = imagerw.thumbnailQImage(self.file, ThumbnailCache.THUMBNAIL_SIZE)
+        except Exception as ex:
+            print(f"Couldn't load thumbnail: {ex} ({type(ex).__name__})")
+            img = QImage()
+            w = h = -1
 
-        imgSize = reader.size()
-        if imgSize.width() >= 0:
-            targetWidth = ThumbnailCache.THUMBNAIL_SIZE
-            targetWidth = min(targetWidth, imgSize.width())
-            targetHeight = targetWidth * (imgSize.height() / imgSize.width())
-            targetHeight = int(targetHeight + 0.5)
-            reader.setScaledSize(QSize(targetWidth, targetHeight))
-
-        img = reader.read()
         self.checkIcons()
 
         try:
-            self.signals.done.emit(self.filelist, self.target, self.file, img, imgSize.toTuple(), self.icons)
+            self.signals.done.emit(self.filelist, self.target, self.file, img, (w, h), self.icons)
         except RuntimeError as ex:
             if ex.args[0] != "Signal source has been deleted":
                 raise

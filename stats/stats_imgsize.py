@@ -2,8 +2,8 @@ from __future__ import annotations
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
-from PySide6.QtGui import QImageReader
 import lib.qtlib as qtlib
+import lib.imagerw as imagerw
 from ui.tab import ImgTab
 from .stats_base import StatsLayout, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
 
@@ -88,12 +88,7 @@ class SizeBucketStatsLoadTask(StatsLoadTask):
 
     @staticmethod
     def readSize(file: str) -> tuple[str, tuple[int, int]]:
-        try:
-            reader = QImageReader(file)
-            size = reader.size()
-            return file, (size.width(), size.height())
-        except:
-            return file, (-1, -1)
+        return file, imagerw.readSize(file)
 
 
 

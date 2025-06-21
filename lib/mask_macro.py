@@ -255,8 +255,8 @@ class MaskingMacro:
 
     @staticmethod
     def opDetectPad(mat: np.ndarray, imgPath: str, args: dict) -> np.ndarray:
-        import cv2 as cv
-        image = cv.imread(imgPath, cv.IMREAD_UNCHANGED)
+        import lib.imagerw as imagerw
+        image = imagerw.loadMatBGR(imgPath)
         return mask_ops.DetectPadMaskOperation.operate(mat, image, **args)
 
     @staticmethod

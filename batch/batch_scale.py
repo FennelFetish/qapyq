@@ -5,6 +5,7 @@ import cv2 as cv
 import numpy as np
 from config import Config
 from lib import qtlib
+import lib.imagerw as imagerw
 import tools.scale as scale
 import ui.export_settings as export
 from infer.inference import InferenceChain
@@ -196,7 +197,7 @@ class BatchScaleTask(BatchTask):
         self.parser = export.ExportVariableParser()
 
     def runProcessFile(self, imgFile: str) -> str:
-        mat = cv.imread(imgFile, cv.IMREAD_UNCHANGED)
+        mat = imagerw.loadMatBGR(imgFile)
         origH, origW = mat.shape[:2]
         targetW, targetH = self.scaleFunc(origW, origH)
 
@@ -235,7 +236,7 @@ class BatchInferenceScaleTask(BatchInferenceTask):
         self.parser = export.ExportVariableParser()
 
     def runCheckFile(self, imgFile: str, proc: InferenceProcess) -> Callable | InferenceChain | None:
-        mat = cv.imread(imgFile, cv.IMREAD_UNCHANGED)
+        mat = imagerw.loadMatBGR(imgFile)
         origH, origW = mat.shape[:2]
         targetW, targetH = self.scaleFunc(origW, origH)
 

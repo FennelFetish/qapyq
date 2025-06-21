@@ -7,12 +7,13 @@ from PySide6 import QtWidgets
 import cv2 as cv
 import numpy as np
 from lib.filelist import FileList, DataKeys
+from lib.mask_macro import MaskingMacro, MacroOp, MacroOpItem
+from lib.qtlib import numpyToQImageMask, qimageToNumpyMask
+import lib.imagerw as imagerw
 import ui.export_settings as export
 from config import Config
 from .view import ViewTool
 from .mask_ops import MaskOperation
-from lib.mask_macro import MaskingMacro, MacroOp, MacroOpItem
-from lib.qtlib import numpyToQImageMask, qimageToNumpyMask
 
 MaskItem = ForwardRef("MaskItem")
 
@@ -83,7 +84,7 @@ class MaskTool(ViewTool):
 
         filelist.setData(currentFile, DataKeys.MaskState, DataKeys.IconStates.Exists)
 
-        maskMat = cv.imread(maskPath, cv.IMREAD_UNCHANGED)
+        maskMat = imagerw.loadMatBGR(maskPath)
         if maskMat.ndim == 2:
             h, w = maskMat.shape
             maskMat.shape = (h, w, 1)
