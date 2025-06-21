@@ -182,19 +182,21 @@ class SlideshowTool(ViewTool):
 
 
     def onKeyPress(self, event):
-        #super().onKeyPress(event)
-        key = event.key()
-        if key == Qt.Key_Space:
-            self._toolbar.togglePlay()
-            self._toolbar.showBriefly()
-        elif key == Qt.Key_Left:
-            self.prev()
-        elif key == Qt.Key_Right:
-            self.next()
-        elif key == Qt.Key_Up:
-            self._toolbar.adjustInterval(1)
-        elif key == Qt.Key_Down:
-            self._toolbar.adjustInterval(-1)
+        match event.key():
+            case Qt.Key.Key_Space:
+                self._toolbar.togglePlay()
+                self._toolbar.showBriefly()
+            case Qt.Key.Key_Left:
+                self.prev()
+            case Qt.Key.Key_Right:
+                self.next()
+            case Qt.Key.Key_Up:
+                self._toolbar.adjustInterval(1)
+            case Qt.Key.Key_Down:
+                self._toolbar.adjustInterval(-1)
+            case Qt.Key.Key_0:
+                self._imgview.resetView()
+                self._imgview.updateView()
 
 
 
