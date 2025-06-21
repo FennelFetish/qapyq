@@ -325,7 +325,7 @@ class ColorCharFormats:
         self._formats = []
         self._nextHue = util.rnd01()
         self._colorV = QtWidgets.QApplication.palette().color(QtGui.QPalette.ColorRole.Text).valueF()
-        self._colorV = max(self._colorV, 0.2)
+        self._colorV = max(self._colorV, 0.7)
 
     def getFormat(self, index: int) -> QtGui.QTextCharFormat:
         while index >= len(self._formats):
