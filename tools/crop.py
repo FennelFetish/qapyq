@@ -2,7 +2,7 @@ from typing_extensions import override
 import cv2 as cv
 import numpy as np
 from PySide6.QtCore import QPointF, QRect, QRectF, Qt, QTimer, QThreadPool, Slot
-from PySide6.QtGui import QBrush, QPen, QColor, QPainterPath, QPolygonF, QTransform, QCursor
+from PySide6.QtGui import QBrush, QPen, QColor, QPainterPath, QPolygonF, QTransform, QCursor, QPixmap
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QMenu
 from .view import ViewTool
 from lib.filelist import DataKeys
@@ -239,7 +239,12 @@ class CropTool(ViewTool):
         scaleConfig = exportWidget.getScaleConfig(scaleFactor)
         border = cv.BORDER_REPLICATE if self._toolbar.constrainToImage else cv.BORDER_CONSTANT
 
-        task = ExportTask(currentFile, destFile, pixmap, poly, self._targetWidth, self._targetHeight, scaleConfig, border)
+        try:
+            task = ExportTask(currentFile, destFile, pixmap, poly, self._targetWidth, self._targetHeight, scaleConfig, border)
+        except EmptyRegionException:
+            self.tab.statusBar().showColoredMessage("Empty region", False)
+            return False
+
         task.signals.done.connect(self.onExportDone, Qt.ConnectionType.BlockingQueuedConnection)
         task.signals.progress.connect(self.onExportProgress, Qt.ConnectionType.BlockingQueuedConnection)
         task.signals.fail.connect(self.onExportFailed, Qt.ConnectionType.BlockingQueuedConnection)
@@ -432,8 +437,10 @@ class CropTool(ViewTool):
 
 
 
+class EmptyRegionException(Exception): pass
+
 class ExportTask(export.ImageExportTask):
-    def __init__(self, srcFile: str, destFile: str, pixmap, poly: QPolygonF, targetWidth: int, targetHeight: int, scaleConfig: export.ScaleConfig, border):
+    def __init__(self, srcFile: str, destFile: str, pixmap: QPixmap, poly: QPolygonF, targetWidth: int, targetHeight: int, scaleConfig: export.ScaleConfig, border: int):
         self.poly = poly
         self.rect = self.calcCutRect(poly, pixmap)
 
@@ -441,18 +448,23 @@ class ExportTask(export.ImageExportTask):
         self.borderMode = border
 
     @staticmethod
-    def calcCutRect(poly: QPolygonF, pixmap) -> QRect:
+    def calcCutRect(poly: QPolygonF, pixmap: QPixmap) -> QRect:
         pad  = 4
         rect = poly.boundingRect().toRect()
 
-        rect.setLeft(max(0, rect.x()-pad))
-        rect.setTop (max(0, rect.y()-pad))
-        rect.setRight (min(pixmap.width(),  rect.right()+pad))
-        rect.setBottom(min(pixmap.height(), rect.bottom()+pad))
+        if rect.right() < 0 or rect.left() >= pixmap.width() or rect.bottom() < 0 or rect.top() >= pixmap.height():
+            raise EmptyRegionException()
+
+        x = max(0, rect.x()-pad)
+        y = max(0, rect.y()-pad)
+        w = min(pixmap.width(),  rect.right()+pad)  - x + 1
+        h = min(pixmap.height(), rect.bottom()+pad) - y + 1
+
+        rect.setRect(x, y, w, h)
         return rect
 
     @override
-    def toImage(self, pixmap):
+    def toImage(self, pixmap: QPixmap):
         return pixmap.copy(self.rect).toImage()
 
     @override
