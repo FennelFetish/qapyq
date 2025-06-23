@@ -22,13 +22,6 @@ class InspyrenetMask:
 
 
     def mask(self, imgFile: ImageFile, classes: list[str]) -> bytes:
-        image = imgFile.openCvMat()
-
-        channels = image.shape[2] if len(image.shape)>2 else 1
-        if channels == 1:
-            image = np.stack([image] * 3, axis=-1) # Greyscale -> RGB
-        else:
-            image = image[..., 2::-1] # BGR(A) -> RGB
-
-        mask: np.ndarray = self.model.process(image, type="map")
+        mat = imgFile.openCvMat(rgb=True, forceRGB=True)
+        mask: np.ndarray = self.model.process(mat, type="map")
         return mask[..., 0].tobytes()

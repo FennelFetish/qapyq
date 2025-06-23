@@ -197,7 +197,7 @@ class BatchScaleTask(BatchTask):
         self.parser = export.ExportVariableParser()
 
     def runProcessFile(self, imgFile: str) -> str:
-        mat = imagerw.loadMatBGR(imgFile)
+        mat = imagerw.loadMatBGR(imgFile, rgb=True)
         origH, origW = mat.shape[:2]
         targetW, targetH = self.scaleFunc(origW, origH)
 
@@ -213,7 +213,7 @@ class BatchScaleTask(BatchTask):
         self.parser.height = targetH
 
         path = self.parser.parsePath(self.pathTemplate, self.overwriteFiles)
-        export.saveImage(path, mat, self.log)
+        export.saveImage(path, mat, self.log, convertFromBGR=False)
         return path
 
     @staticmethod
@@ -236,7 +236,7 @@ class BatchInferenceScaleTask(BatchInferenceTask):
         self.parser = export.ExportVariableParser()
 
     def runCheckFile(self, imgFile: str, proc: InferenceProcess) -> Callable | InferenceChain | None:
-        mat = imagerw.loadMatBGR(imgFile)
+        mat = imagerw.loadMatBGR(imgFile, rgb=True)
         origH, origW = mat.shape[:2]
         targetW, targetH = self.scaleFunc(origW, origH)
 
@@ -249,7 +249,6 @@ class BatchInferenceScaleTask(BatchInferenceTask):
             else:
                 mat = BatchScaleTask.resize(mat, scaleConfig, targetW, targetH)
 
-        mat[..., :3] = mat[..., 2::-1] # Convert BGR(A) -> RGB(A)
         return InferenceChain.result((origW, origH, "", mat))
 
     def queue(self, imgFile: str, origW: int, origH: int, targetW: int, targetH: int, scaleConfig: export.ScaleConfig, proc: InferenceProcess):

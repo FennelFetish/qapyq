@@ -288,13 +288,12 @@ def createFileMaskSource(pathTemplate: str, numLayers: int, skipNonExisting: boo
     parser = export.ExportVariableParser()
 
     def loadMask(path: str, w: int, h: int) -> list[np.ndarray]:
-        maskMat = imagerw.loadMatBGR(path)
+        maskMat = imagerw.loadMatBGR(path, rgb=True)
         maskH, maskW = maskMat.shape[:2]
         if maskW != w or maskH != h:
             raise ValueError("Size of loaded mask does not match image size")
 
         layers = list(cv.split(maskMat))
-        layers[:3] = layers[2::-1] # Convert BGR(A) -> RGB(A)
 
         # Ensure minimum number of layers
         while len(layers) < numLayers:

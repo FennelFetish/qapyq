@@ -56,14 +56,14 @@ class ImageFile:
         self._callbacks = None
 
 
-    def openCvMat(self):
+    def openCvMat(self, rgb=False, forceRGB=False, allowGreyscale=True, allowAlpha=True):
         if self.data:
-            return imagerw.decodeMatBGR(self.data)
-        return imagerw.loadMatBGR(self.file)
+            return imagerw.decodeMatBGR(self.data, rgb, forceRGB, allowGreyscale, allowAlpha)
+        return imagerw.loadMatBGR(self.file, rgb, forceRGB, allowGreyscale, allowAlpha)
 
-    def openPIL(self):
+    def openPIL(self, forceRGB=False, allowGreyscale=True, allowAlpha=True):
         source = BytesIO(self.data) if self.data else self.file
-        return imagerw.loadImagePIL(source)
+        return imagerw.loadImagePIL(source, forceRGB, allowGreyscale, allowAlpha)
 
     def getURI(self) -> str:
         import base64, mimetypes

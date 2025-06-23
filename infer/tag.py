@@ -22,12 +22,7 @@ class TagBackend:
     # TODO: Instead of padding, infer each half of image and combine tags. ("out of frame" problem?)
     @staticmethod
     def loadImageSquare(imgFile: ImageFile, targetSize: int):
-        imgSrc = imgFile.openCvMat() # BGR(A) uint8
-
-        # Greyscale -> BGR
-        if len(imgSrc.shape) < 3:
-            imgSrc = np.stack([imgSrc] * 3, axis=-1)
-
+        imgSrc = imgFile.openCvMat(allowGreyscale=False) # BGR(A) uint8
         srcHeight, srcWidth, srcChannels = imgSrc.shape
 
         if srcHeight < srcWidth:

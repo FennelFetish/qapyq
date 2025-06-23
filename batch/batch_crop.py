@@ -444,14 +444,13 @@ def createFileMaskSource(pathTemplate: str) -> MaskSource:
     parser = export.ExportVariableParser()
 
     def loadMask(path: str, imgW: int, imgH: int, log):
-        maskMat = imagerw.loadMatBGR(path)
+        maskMat = imagerw.loadMatBGR(path, rgb=True)
         maskH, maskW = maskMat.shape[:2]
         if maskW != imgW or maskH != imgH:
             log(f"Mask size ({maskW}x{maskH}) doesn't match image size ({imgW}x{imgH})")
             return None
 
         layers = list(cv.split(maskMat))
-        layers[:3] = layers[2::-1] # Convert BGR(A) -> RGB(A)
         return layers
 
     def mask(imgPath: str, imgMat: np.ndarray, log):

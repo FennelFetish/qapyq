@@ -32,11 +32,8 @@ class BriaRmbgMask:
 
     @torch.inference_mode()
     def mask(self, imgFile: ImageFile, classes: list[str]) -> bytes:
-        image = imgFile.openPIL()
+        image = imgFile.openPIL(forceRGB=True)
         wOrig, hOrig = image.size
-
-        if image.mode != "RGB":
-            image = image.convert("RGB")
         image = self.scaleImage(image)
 
         # shape = B C H W

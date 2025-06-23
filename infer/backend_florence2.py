@@ -84,7 +84,7 @@ class Florence2Backend(CaptionBackend):
 
 
     def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
-        image = imgFile.openPIL()
+        image = imgFile.openPIL(forceRGB=True)
         answers = dict()
 
         set_seed(self.randomSeed())
@@ -160,10 +160,7 @@ class Florence2Backend(CaptionBackend):
 
 
     def detectBoxes(self, imgFile: ImageFile, classes: list[str]):
-        image = imgFile.openPIL()
-        if image.mode != "RGB":
-            image = image.convert("RGB")
-
+        image = imgFile.openPIL(forceRGB=True)
         results = []
 
         # When empty, do OD (all classes), TODO: use detailed caption as grounding?
@@ -199,9 +196,7 @@ class Florence2Backend(CaptionBackend):
 
 
     def mask(self, imgFile: ImageFile, classes: list[str]):
-        image = imgFile.openPIL()
-        if image.mode != "RGB":
-            image = image.convert("RGB")
+        image = imgFile.openPIL(forceRGB=True)
         w, h = image.size
 
         mask = np.zeros((h, w), dtype=np.uint8)
