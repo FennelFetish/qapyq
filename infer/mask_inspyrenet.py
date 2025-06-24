@@ -4,15 +4,18 @@
 import numpy as np
 from transparent_background import Remover
 from host.imagecache import ImageFile
+from .devmap import DevMap
 
 
 class InspyrenetMask:
     def __init__(self, config: dict):
+        device, _ = DevMap.getTorchDeviceDtype()
+
         self.model = Remover(
             ckpt=config.get("model_path"),
             mode='base',
             jit=True,
-            device='cuda:0',
+            device=device,
             resize="static"
         )
 

@@ -13,13 +13,15 @@ class JoyCaptionBackend(CaptionBackend):
 
         super().__init__(config)
 
+        self.device, self.dtype = DevMap.getTorchDeviceDtype()
+        devmap = self.makeDeviceMap(modelPath, self.device, config.get("gpu_layers"), config.get("vis_gpu_layers"))
+
         skipModules = ["vision_tower", "multi_modal_projector"]
-        devmap = self.makeDeviceMap(modelPath, config.get("gpu_layers"), config.get("vis_gpu_layers"))
         quant = Quantization.getQuantConfig(config.get("quantization"), devmap.hasCpuLayers, skipModules)
 
         self.model = LlavaForConditionalGeneration.from_pretrained(
             modelPath,
-            torch_dtype=torch.bfloat16,
+            torch_dtype=self.dtype,
             device_map=devmap.deviceMap,
             attn_implementation=devmap.attention,
             quantization_config=quant,
@@ -62,8 +64,8 @@ class JoyCaptionBackend(CaptionBackend):
                 inputText = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
                 inputs = self.processor(text=[inputText], images=[image], return_tensors="pt")
-                inputs = inputs.to("cuda")
-                inputs['pixel_values'] = inputs['pixel_values'].to(torch.bfloat16)
+                inputs = inputs.to(self.device)
+                inputs['pixel_values'] = inputs['pixel_values'].to(self.dtype)
 
                 with torch.inference_mode():
                     generatedIDs = self.model.generate(**inputs, generation_config=self.generationConfig)[0]
@@ -78,14 +80,17 @@ class JoyCaptionBackend(CaptionBackend):
 
 
     @staticmethod
-    def makeDeviceMap(modelPath, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
+    def makeDeviceMap(modelPath, device, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
         devmap = DevMap.fromConfig(
             modelPath,
             "-",
             "vision_config.num_hidden_layers"
         )
-        devmap.maxLayerLLM = 31
 
+        devmap.maxLayerLLM = 31
+        devmap.setDevice(device)
+
+        devmap.setCudaLayer("")
         devmap.setCudaLayer("language_model")
         devmap.setCudaLayer("language_model.lm_head")
         devmap.setCudaLayer("language_model.model.embed_tokens")
@@ -95,14 +100,11 @@ class JoyCaptionBackend(CaptionBackend):
         # Device mismatch with 0 GPU layers
         visGpuLayers = max(visGpuLayers, 1)
 
-        if visGpuLayers == 0:
-            devmap.setCpuLayer("vision_tower")
-        else:
-            devmap.setCudaLayer("vision_tower")
-            devmap.setCudaLayer("vision_tower.vision_model.embeddings")
-            devmap.setCudaLayer("vision_tower.vision_model.post_layernorm")
-            devmap.setCudaLayer("vision_tower.vision_model.head")
-            devmap.setVisLayers("vision_tower.vision_model.encoder.layers", visGpuLayers)
+        devmap.setCudaLayer("vision_tower")
+        devmap.setCudaLayer("vision_tower.vision_model.embeddings")
+        devmap.setCudaLayer("vision_tower.vision_model.post_layernorm")
+        devmap.setCudaLayer("vision_tower.vision_model.head")
+        devmap.setVisLayers("vision_tower.vision_model.encoder.layers", visGpuLayers)
 
         devmap.setCudaLayer("multi_modal_projector")
         return devmap

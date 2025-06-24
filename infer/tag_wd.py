@@ -3,6 +3,7 @@ import onnxruntime
 import pandas as pd
 import torch # Not used directly, but required for GPU inference
 from .tag import TagBackend
+from .devmap import DevMap
 from config import Config
 
 
@@ -21,9 +22,13 @@ class WDTag(TagBackend):
         self.general_indexes = sep_tags[2]
         self.character_indexes = sep_tags[3]
 
-        #https://onnxruntime.ai/docs/api/python/api_summary.html
+        # https://onnxruntime.ai/docs/api/python/api_summary.html
+        # https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html#configuration-options
         # CUDAExecutionProvider needs 'import torch'
-        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+        providers = [
+            ('CUDAExecutionProvider', {"device_id": DevMap.getDeviceId()}),
+            'CPUExecutionProvider'
+        ]
 
         self.model = onnxruntime.InferenceSession(config.get("model_path"), providers=providers)
         _, height, width, _ = self.model.get_inputs()[0].shape

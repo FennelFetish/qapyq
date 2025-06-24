@@ -19,16 +19,17 @@ class Qwen25VLBackend(CaptionBackend):
 
         super().__init__(config)
 
-        devmap = self.makeDeviceMap(modelPath, config.get("gpu_layers", 100), config.get("vis_gpu_layers", 100))
+        self.device, self.dtype = DevMap.getTorchDeviceDtype()
+        devmap = self.makeDeviceMap(modelPath, self.device, config.get("gpu_layers", 100), config.get("vis_gpu_layers", 100))
         quant = Quantization.getQuantConfig(config.get("quantization", "none"), devmap.hasCpuLayers)
 
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             modelPath,
-            torch_dtype=torch.bfloat16,
+            torch_dtype=self.dtype,
             device_map=devmap.deviceMap,
             attn_implementation=devmap.attention,
             quantization_config=quant,
-        )
+        ).eval()
 
         #minPx = 256 * 28 * 28
         #maxPx = 5120 * 28 * 28
@@ -77,7 +78,7 @@ class Qwen25VLBackend(CaptionBackend):
             padding=True,
             return_tensors="pt",
         )
-        inputs = inputs.to("cuda")
+        inputs = inputs.to(self.device)
 
         generatedIDs = self.model.generate(**inputs, generation_config=self.generationConfig)
         generatedIDsTrimmed = [ out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generatedIDs) ]
@@ -173,12 +174,14 @@ class Qwen25VLBackend(CaptionBackend):
 
 
     @staticmethod
-    def makeDeviceMap(modelPath, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
+    def makeDeviceMap(modelPath, device, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
         devmap = DevMap.fromConfig(
             modelPath,
             "num_hidden_layers",
             "vision_config.depth"
         )
+
+        devmap.setDevice(device)
 
         devmap.setCudaLayer("model")
         devmap.setCudaLayer("model.embed_tokens")
@@ -191,7 +194,8 @@ class Qwen25VLBackend(CaptionBackend):
             devmap.setCudaLayer("visual")
             devmap.setCudaLayer("visual.patch_embed")
             devmap.setCudaLayer("visual.merger")
-            devmap.setVisLayers("visual.blocks", visGpuLayers)
+
+        devmap.setVisLayers("visual.blocks", visGpuLayers)
 
         devmap.setCudaLayer("lm_head")
         return devmap

@@ -4,6 +4,35 @@ from config import Config
 class DevMap:
     CPU = "cpu"
 
+
+    @staticmethod
+    def getDeviceId() -> int:
+        return int(Config.inferDevices[0] or 0) if Config.inferDevices else 0
+
+    @classmethod
+    def getTorchDeviceDtype(cls, half=True) -> tuple:
+        import torch
+        if torch.cuda.is_available():
+            device = torch.device("cuda", cls.getDeviceId())
+            if half:
+                if torch.cuda.is_bf16_supported(including_emulation=False):
+                    dtype = torch.bfloat16
+                else:
+                    dtype = torch.float16
+            else:
+                dtype = torch.float32
+
+        elif torch.backends.mps.is_available():
+            device = torch.device("mps", cls.getDeviceId())
+            dtype  = torch.float16 if half else torch.float32
+
+        else:
+            device = torch.device(cls.CPU)
+            dtype  = torch.float32
+
+        return device, dtype
+
+
     def __init__(self, maxLayerLLM: int, maxLayerVis: int = 0):
         self.maxLayerLLM = max(maxLayerLLM, 0)
         self.maxLayerVis = max(maxLayerVis, 0)
@@ -11,7 +40,11 @@ class DevMap:
         self.deviceMap = dict()
         self.hasCpuLayers = False
 
-        self.device = int(Config.inferDevices[0] or 0) if Config.inferDevices else 0
+        self.device = str(self.getDeviceId())
+
+    def setDevice(self, device):
+        self.device = str(device)
+
 
     @classmethod
     def fromConfig(cls, modelDirectory: str, llmLayersKey: str, visLayersKey: str = None):

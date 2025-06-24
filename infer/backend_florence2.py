@@ -24,14 +24,8 @@ class Florence2Backend(CaptionBackend):
         modelPath = config.get("model_path")
         self.tagPattern = re.compile(r'<[^>]*>')
 
-        if torch.cuda.is_available():
-            self.device = "cuda:0"
-            self.dtype = torch.bfloat16
-        else:
-            self.device = "cpu"
-            self.dtype = torch.float32
-
-        devmap = self.makeDeviceMap(modelPath, config.get("gpu_layers", -1), config.get("vis_gpu_layers", -1))
+        self.device, self.dtype = DevMap.getTorchDeviceDtype()
+        devmap = self.makeDeviceMap(modelPath, self.device, config.get("gpu_layers", -1), config.get("vis_gpu_layers", -1))
         quant = Quantization.getQuantConfig(config.get("quantization"), devmap.hasCpuLayers)
 
         self.model = AutoModelForCausalLM.from_pretrained(
@@ -41,7 +35,7 @@ class Florence2Backend(CaptionBackend):
             attn_implementation=devmap.attention,
             quantization_config=quant,
             trust_remote_code=True
-        )#.to(self.device)
+        ).eval()
 
         self.processor = AutoProcessor.from_pretrained(
             modelPath,
@@ -227,12 +221,14 @@ class Florence2Backend(CaptionBackend):
 
 
     @staticmethod
-    def makeDeviceMap(modelPath, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
+    def makeDeviceMap(modelPath, device, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
         devmap = DevMap.fromConfig(
             modelPath,
             "text_config.num_hidden_layers"
         )
+
         devmap.maxLayerVis = 3
+        devmap.setDevice(device)
 
         devmap.setCudaLayer("language_model")
         devmap.setCudaLayer("language_model.lm_head")

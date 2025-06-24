@@ -1,20 +1,27 @@
 # https://github.com/ultralytics/ultralytics/issues/1196  Doesn't seem to work...
+# Online mode is disabled by setting environment var "YOLO_OFFLINE" to "True" before starting inference process.
 import ultralytics.utils
-ultralytics.utils.ONLINE = False
+#ultralytics.utils.ONLINE = False
+if ultralytics.utils.ONLINE:
+    print("WARNING: YOLO has its online features enabled")
+
 
 from ultralytics import YOLO
 from PIL import Image
 from host.imagecache import ImageFile
+from .devmap import DevMap
 
 
 class YoloMask:
     def __init__(self, config: dict) -> None:
         self.model = YOLO(config.get("model_path"), task="detect", verbose=False)
+
         names = ", ".join(self.model.names.values())
         print(f"Yolo classes: {names}")
 
         self.inferenceArgs = {
-            "verbose": False
+            "verbose": False,
+            "device": DevMap.getDeviceId()
         }
 
 
@@ -47,6 +54,7 @@ class YoloMask:
         return results
 
     # Pad instead? Complicates result calculation, but maybe better accuracy when AR is kept?
+    # TODO: Use size buckets to prevent changing input size
     def scaleImage(self, image: Image.Image):
         width, height = image.size
 

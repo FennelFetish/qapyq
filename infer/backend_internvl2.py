@@ -86,7 +86,6 @@ def load_image(imgFile: ImageFile, input_size=448, max_num=12):
 
 
 
-
 # V2.5 with quantization fails with:
 #   File "/mnt/firlefanz/dev-Tools/qapyq/.venv/lib/python3.10/site-packages/accelerate/utils/operations.py", line 155, in send_to_device
 #     return tensor.to(device, non_blocking=non_blocking)
@@ -94,24 +93,25 @@ def load_image(imgFile: ImageFile, input_size=448, max_num=12):
 
 class InternVL2Backend(CaptionBackend):
     def __init__(self, config: dict):
-        modelPath = config.get("model_path")
+        modelPath: str = config["model_path"]
         self.tokenizer = AutoTokenizer.from_pretrained(modelPath, trust_remote_code=True, use_fast=True)
 
         super().__init__(config)
 
-        devmap = self.makeDeviceMap(modelPath, config.get("gpu_layers"), config.get("vis_gpu_layers"))
-        quant = Quantization.getQuantConfig(config.get("quantization"), devmap.hasCpuLayers)#, ["vision_model"])
+        self.device, self.dtype = DevMap.getTorchDeviceDtype()
+        devmap = self.makeDeviceMap(modelPath, self.device, config.get("gpu_layers", 100), config.get("vis_gpu_layers", 100))
+        quant = Quantization.getQuantConfig(config.get("quantization", "none"), devmap.hasCpuLayers)#, ["vision_model"])
 
         self.model = AutoModel.from_pretrained(
             modelPath,
-            torch_dtype=torch.bfloat16,
+            torch_dtype=self.dtype,
             #low_cpu_mem_usage=True,
             #use_flash_attn=True,
             attn_implementation=devmap.attention,
             device_map=devmap.deviceMap,
             quantization_config=quant,
             trust_remote_code=True,
-        ).eval()#.cuda()
+        ).eval()
 
         # https://huggingface.co/docs/transformers/main/perf_torch_compile
         # https://pytorch.org/get-started/pytorch-2.0/#user-experience
@@ -138,7 +138,7 @@ class InternVL2Backend(CaptionBackend):
 
 
     def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
-        pixel_values = load_image(imgFile, max_num=12).to(torch.bfloat16).cuda()
+        pixel_values = load_image(imgFile, max_num=12).to(self.device, dtype=self.dtype)
         answers = dict()
 
         self.model.system_message = systemPrompt.strip() if systemPrompt else ""
@@ -155,12 +155,14 @@ class InternVL2Backend(CaptionBackend):
 
 
     @staticmethod
-    def makeDeviceMap(modelPath: str, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
+    def makeDeviceMap(modelPath: str, device, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
         devmap = DevMap.fromConfig(
             modelPath,
             "llm_config.num_hidden_layers",
             "vision_config.num_hidden_layers"
         )
+
+        devmap.setDevice(device)
 
         # v2.0: 1b, 4b, 40b, 76b
         # v2.5: 38b

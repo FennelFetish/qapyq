@@ -1,11 +1,11 @@
 from .JoytagModels import VisionModel
-import torch
+import os, torch
 import torch.amp.autocast_mode
 import torchvision.transforms as transforms
 import cv2 as cv
-import os
-from .tag import TagBackend
 from config import Config
+from .tag import TagBackend
+from .devmap import DevMap
 
 
 class JoyTag(TagBackend):
@@ -13,8 +13,10 @@ class JoyTag(TagBackend):
         self.threshold = 0.4
         self.setConfig(config)
 
+        self.device, _ = DevMap.getTorchDeviceDtype()
+
         modelDir = config.get("model_path")
-        self.model = VisionModel.load_model(modelDir).eval().to("cuda")
+        self.model = VisionModel.load_model(modelDir).to(self.device).eval()
 
         with open(os.path.join(modelDir, "top_tags.txt"), 'r') as f:
             lines = (self.removeUnderscore(line.strip()) for line in f.readlines())
@@ -38,18 +40,22 @@ class JoyTag(TagBackend):
         imgTensor = transforms.ToTensor()(img)
         imgTensor = transforms.functional.normalize(imgTensor, mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])
 
-        tags, scores = self.predict(imgTensor)
+        tags = self.predict(imgTensor)
         return tags
 
 
     @torch.inference_mode()
     def predict(self, imgTensor: torch.Tensor):
-        batch = { 'image': imgTensor.unsqueeze(0).to('cuda') }
+        batch = { 'image': imgTensor.unsqueeze(0).to(self.device) }
 
-        with torch.amp.autocast_mode.autocast('cuda', enabled=True):
+        with torch.amp.autocast_mode.autocast(self.device.type, enabled=True):
             predictions = self.model(batch)
             tagPredictions = predictions['tags'].sigmoid().cpu()
 
-        scores = {self.topTags[i]: tagPredictions[0][i] for i in range(len(self.topTags))}
-        tags = [tag for tag, score in scores.items() if score > self.threshold]
-        return ', '.join(tags), scores
+        tagScores = sorted(
+            ((tag, score) for tag, score in zip(self.topTags, tagPredictions[0]) if score > self.threshold),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        return ', '.join(x[0] for x in tagScores)

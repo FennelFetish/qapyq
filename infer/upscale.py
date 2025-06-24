@@ -5,6 +5,7 @@ import torch
 import torchvision.transforms as transforms
 import numpy as np
 from host.imagecache import ImageFile
+from .devmap import DevMap
 
 # add extra architectures before `ModelLoader` is used
 spandrel_extra_arches.install()
@@ -36,9 +37,12 @@ class Tile:
 
 class UpscaleBackend:
     def __init__(self, config: dict):
+        self.device, _ = DevMap.getTorchDeviceDtype()
+
         self.model = ModelLoader().load_from_file(config.get("model_path"))
         assert isinstance(self.model, ImageModelDescriptor)
-        self.model.cuda().eval()
+        self.model.to(self.device).eval()
+        #self.model = torch.compile(self.model)
 
         self.toTensor = transforms.ToTensor()
 
@@ -50,7 +54,7 @@ class UpscaleBackend:
     @torch.inference_mode()
     def _upscaleImageBatch(self, mats: Iterable[np.ndarray]) -> list[np.ndarray]:
         tensors = [self.toTensor(mat) for mat in mats]
-        batch = torch.stack(tensors).to(self.model.device) # shape: [batch, channels, height, width]
+        batch = torch.stack(tensors).to(self.device) # shape: [batch, channels, height, width]
 
         batchResult = self.model(batch)
         batchResult = batchResult.cpu()
@@ -140,7 +144,7 @@ class UpscaleBackend:
                 # These coords define two regions to remove artifacts at tile edges:
                 # 1. The crop region from the upscaled tile (excluding its top and left borders).
                 # 2. The point in the final composite image where the cropped tile is pasted.
-                # Cropping includes a padding defined by padX/pady but excludes other overlapping areas which were already set in the final image.
+                # Cropping includes a padding defined by padX/padY but excludes other overlapping areas which were already set in the final image.
                 # When pasting the tile, the padding partially overwrites the previous tiles and replaces their border regions.
                 tile = Tile()
                 tile.cropW = tileW - (endX-tileX)
@@ -165,8 +169,7 @@ class UpscaleBackend:
             newH,    newW    = origShape[0]*scaleY, origShape[1]*scaleX
             matResult = np.zeros((newH, newW, origShape[2]), dtype=np.uint8)
 
-        for i, (matTile, tile) in enumerate(queuedTiles):
-            matUpscaledTile = upscaleResults[i]
+        for (matTile, tile), matUpscaledTile in zip(queuedTiles, upscaleResults):
             tile.scale(scaleX, scaleY)
 
             cropTile = matUpscaledTile[

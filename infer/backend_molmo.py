@@ -11,21 +11,22 @@ class MolmoBackend(CaptionBackend):
         modelPath: str = config["model_path"]
         self.generationConfig = GenerationConfig.from_pretrained(modelPath)
 
-        devmap = self.makeDeviceMap(modelPath, config["gpu_layers"], config["vis_gpu_layers"])
+        self.device, self.dtype = DevMap.getTorchDeviceDtype()
+        devmap = self.makeDeviceMap(modelPath, self.device, config["gpu_layers"], config["vis_gpu_layers"])
         quant = Quantization.getQuantConfig(config["quantization"], devmap.hasCpuLayers)
 
         self.model = AutoModelForCausalLM.from_pretrained(
             modelPath,
-            torch_dtype=torch.bfloat16,
+            torch_dtype=self.dtype,
             #attn_implementation=devmap.attention, # ValueError: MolmoForCausalLM does not support Flash Attention 2.0 yet.
             device_map=devmap.deviceMap,
             quantization_config=quant,
             trust_remote_code=True
-        )
+        ).eval()
 
         self.processor = AutoProcessor.from_pretrained(
             modelPath,
-            torch_dtype=torch.bfloat16,
+            torch_dtype=self.dtype,
             device_map='auto',
             trust_remote_code=True
         )
@@ -92,7 +93,7 @@ class MolmoBackend(CaptionBackend):
         messages += "<|im_start|>assistant\n"
         tokens = self.processor.get_tokens_input(messages, None, False)
         inputs = self.processor.process(images=[image], tokens=tokens)
-        inputs["images"] = inputs["images"].to(torch.bfloat16)
+        inputs["images"] = inputs["images"].to(self.dtype)
 
         # move inputs to the correct device and make a batch of size 1
         inputs = {k: v.to(self.model.device).unsqueeze(0) for k, v in inputs.items()}
@@ -115,12 +116,14 @@ class MolmoBackend(CaptionBackend):
 
 
     @staticmethod
-    def makeDeviceMap(modelPath, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
+    def makeDeviceMap(modelPath, device, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
         devmap = DevMap.fromConfig(
             modelPath,
             "num_hidden_layers"
         )
+
         devmap.maxLayerVis = 22
+        devmap.setDevice(device)
 
         devmap.setCudaLayer("model.transformer")
         devmap.setCudaLayer("model.transformer.ff_out")

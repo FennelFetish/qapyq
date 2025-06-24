@@ -216,6 +216,8 @@ class InferenceProcess(QObject):
 
             env = QProcessEnvironment.systemEnvironment()
             env.insert("NO_ALBUMENTATIONS_UPDATE", "1")
+            env.insert("YOLO_OFFLINE", "True")
+
             #env.insert("VLLM_USE_V1", "1") # RuntimeError: Cannot re-initialize CUDA in forked subprocess. To use CUDA with multiprocessing, you must use the 'spawn' start method
             #env.insert("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
             env.insert("VLLM_NO_USAGE_STATS", "1")

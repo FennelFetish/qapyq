@@ -6,8 +6,10 @@ class Quantization:
     def getQuantConfig(cls, mode: str, cpuOffloadEnabled=False, skipModules: list[str] = []):
         match mode:
             case "nf4":
+                print("Loading model weights with NF4 quantization")
                 return cls.bnb_nf4(cpuOffloadEnabled, skipModules)
             case "int8":
+                print("Loading model weights with INT8 quantization")
                 return cls.bnb_int8(cpuOffloadEnabled, skipModules)
         return None
 

@@ -12,17 +12,18 @@ class Qwen2VLBackend(CaptionBackend):
         super().__init__(config)
         modelPath = config.get("model_path")
 
-        devmap = self.makeDeviceMap(modelPath, config.get("gpu_layers"), config.get("vis_gpu_layers"))
+        self.device, self.dtype = DevMap.getTorchDeviceDtype()
+        devmap = self.makeDeviceMap(modelPath, self.device, config.get("gpu_layers"), config.get("vis_gpu_layers"))
         quant = Quantization.getQuantConfig(config.get("quantization"), devmap.hasCpuLayers)
 
         self.model = Qwen2VLForConditionalGeneration.from_pretrained(
             modelPath,
-            torch_dtype=torch.bfloat16,
+            torch_dtype=self.dtype,
             device_map=devmap.deviceMap,
             attn_implementation=devmap.attention,
             quantization_config=quant,
-            #vision_config={"torch_dtype": torch.bfloat16}
-        )
+            #vision_config={"torch_dtype": self.dtype}
+        ).eval()
 
         self.processor = AutoProcessor.from_pretrained(modelPath)
 
@@ -63,7 +64,7 @@ class Qwen2VLBackend(CaptionBackend):
 
                 # TODO: Only encode image once during first iteration. Look at implementation of Qwen2VLProcessor
                 inputs = self.processor(text=[inputText], images=[image], padding=True, return_tensors="pt")
-                inputs = inputs.to("cuda")
+                inputs = inputs.to(self.device)
 
                 with torch.inference_mode():
                     outputIDs = self.model.generate(**inputs, generation_config=self.generationConfig, tokenizer=self.processor.tokenizer)
@@ -105,12 +106,14 @@ class Qwen2VLBackend(CaptionBackend):
 
 
     @staticmethod
-    def makeDeviceMap(modelPath, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
+    def makeDeviceMap(modelPath, device, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
         devmap = DevMap.fromConfig(
             modelPath,
             "num_hidden_layers",
             "vision_config.depth"
         )
+
+        devmap.setDevice(device)
 
         devmap.setCudaLayer("model")
         devmap.setCudaLayer("model.embed_tokens")
@@ -124,7 +127,8 @@ class Qwen2VLBackend(CaptionBackend):
             devmap.setCudaLayer("visual")
             devmap.setCudaLayer("visual.patch_embed")
             devmap.setCudaLayer("visual.merger")
-            devmap.setVisLayers("visual.blocks", visGpuLayers)
+
+        devmap.setVisLayers("visual.blocks", visGpuLayers)
 
         devmap.setCudaLayer("lm_head")
         return devmap

@@ -10,7 +10,8 @@ class Ovis16Backend(CaptionBackend):
     def __init__(self, config: dict):
         modelPath = config.get("model_path")
 
-        devmap = self.makeDeviceMap(modelPath, config.get("gpu_layers"), config.get("vis_gpu_layers"))
+        self.device, self.dtype = DevMap.getTorchDeviceDtype()
+        devmap = self.makeDeviceMap(modelPath, self.device, config.get("gpu_layers"), config.get("vis_gpu_layers"))
         quant = Quantization.getQuantConfig(config.get("quantization"), devmap.hasCpuLayers)
 
         # Quantization doesnt work: self and mat2 must have the same dtype, but got BFloat16 and Byte
@@ -22,13 +23,13 @@ class Ovis16Backend(CaptionBackend):
 
         self.model = AutoModelForCausalLM.from_pretrained(
             modelPath,
-            torch_dtype=torch.bfloat16,
+            torch_dtype=self.dtype,
             multimodal_max_length=8192,
             #attn_implementation=devmap.attention,
             device_map=devmap.deviceMap,
             quantization_config=quant,
             trust_remote_code=True
-        )
+        ).eval()
 
         self.text_tokenizer = self.model.get_text_tokenizer()
         self.visual_tokenizer = self.model.get_visual_tokenizer()
@@ -102,12 +103,14 @@ class Ovis16Backend(CaptionBackend):
 
 
     @staticmethod
-    def makeDeviceMap(modelPath, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
+    def makeDeviceMap(modelPath, device, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
         devmap = DevMap.fromConfig(
             modelPath,
             "llm_config.num_hidden_layers",
             "visual_tokenizer_config.backbone_config.num_hidden_layers"
         )
+
+        devmap.setDevice(device)
 
         devmap.setCudaLayer("llm")
         devmap.setCudaLayer("llm.lm_head")
@@ -122,10 +125,9 @@ class Ovis16Backend(CaptionBackend):
 
         if visGpuLayers == 0:
             devmap.setCpuLayer("visual_tokenizer.backbone.vision_model.post_layernorm")
-            devmap.setCpuLayer("visual_tokenizer.backbone.vision_model.encoder.layers")
         else:
             devmap.setCudaLayer("visual_tokenizer.backbone.vision_model.post_layernorm")
-            devmap.setVisLayers("visual_tokenizer.backbone.vision_model.encoder.layers", visGpuLayers)
+        devmap.setVisLayers("visual_tokenizer.backbone.vision_model.encoder.layers", visGpuLayers)
 
         devmap.setCudaLayer("vte")
         return devmap

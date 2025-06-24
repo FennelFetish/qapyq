@@ -1,49 +1,31 @@
-from transformers import AutoModelForCausalLM, AutoConfig, set_seed #, AutoTokenizer, AutoModel
+from transformers import AutoModelForCausalLM, set_seed
 import torch
 from host.imagecache import ImageFile
 from .backend import CaptionBackend
 from .devmap import DevMap
-#from .quant import Quantization
+from .quant import Quantization
 
 
 class Ovis2Backend(CaptionBackend):
     def __init__(self, config: dict):
         modelPath = config.get("model_path")
 
-        #devmap = self.makeDeviceMap(modelPath, config.get("gpu_layers"), config.get("vis_gpu_layers"))
-        #quant = Quantization.getQuantConfig(config.get("quantization"), devmap.hasCpuLayers)
-
-        # Quantization doesnt work: self and mat2 must have the same dtype, but got BFloat16 and Byte
-        #   File "/home/rem/.cache/huggingface/modules/transformers_modules/modeling_ovis.py", line 196, in encode
-        #     output = self.backbone(pixel_values, output_hidden_states=True, return_dict=True)
-        # Maybe try putting the whole encoder to CPU (NF4 quant uses float32 @ cpu)?
-        # Or set dtype in backbone config?
-        # --> Or try BitsAndBytesConfig.llm_int8_skip_modules (takes a list of layers that are excluded from quantization)
-
-        modelConfig = AutoConfig.from_pretrained(modelPath, trust_remote_code=True)
-        #modelConfig.llm_config.device_map = devmap.deviceMap
-        #print(f"modelConfig.llm_config._attn_implementation_autoset: {modelConfig.llm_config._attn_implementation_autoset}")
-
-        #modelConfig.llm_config._attn_implementation_autoset = False
-        #del modelConfig.llm_attn_implementation
-        #print(modelConfig)
+        self.device, self.dtype = DevMap.getTorchDeviceDtype()
+        devmap = self.makeDeviceMap(modelPath, self.device, config.get("gpu_layers"), config.get("vis_gpu_layers"))
+        quant = Quantization.getQuantConfig(config.get("quantization"), devmap.hasCpuLayers)
 
         self.model = AutoModelForCausalLM.from_pretrained(
             modelPath,
-            config=modelConfig,
-            torch_dtype=torch.bfloat16,
+            torch_dtype=self.dtype,
             multimodal_max_length=32768,
             #attn_implementation=devmap.attention,
-            #device_map=devmap.deviceMap,
-            #quantization_config=quant,
+            device_map=devmap.deviceMap,
+            quantization_config=quant,
             trust_remote_code=True
-        ).cuda() ###### <<<<<<<<<<<<<<<<<<<<<<
-
-        # self.text_tokenizer = AutoTokenizer.from_pretrained(modelConfig.name_or_path)
-        # self.visual_tokenizer = AutoModel.from_config(modelConfig.visual_tokenizer_config, image_processor_name_or_path=modelConfig.name_or_path)
+        ).eval()
 
         self.text_tokenizer = self.model.get_text_tokenizer()
-        self.visual_tokenizer = self.model.get_visual_tokenizer()
+        self.visual_tokenizer = self.model.get_visual_tokenizer().eval()
 
         self.maxPartition = 9
         super().__init__(config)
@@ -98,8 +80,8 @@ class Ovis2Backend(CaptionBackend):
     def _caption(self, messages, image) -> str:
         prompt, input_ids, pixel_values = self.model.preprocess_inputs(messages, [image], max_partition=self.maxPartition)
         attention_mask = torch.ne(input_ids, self.text_tokenizer.pad_token_id)
-        input_ids = input_ids.unsqueeze(0).to(device=self.model.device)
-        attention_mask = attention_mask.unsqueeze(0).to(device=self.model.device)
+        input_ids = input_ids.unsqueeze(0).to(self.device)
+        attention_mask = attention_mask.unsqueeze(0).to(self.device)
 
         if pixel_values is not None:
             pixel_values = pixel_values.to(dtype=self.visual_tokenizer.dtype, device=self.visual_tokenizer.device)
@@ -113,12 +95,14 @@ class Ovis2Backend(CaptionBackend):
 
 
     @staticmethod
-    def makeDeviceMap(modelPath, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
+    def makeDeviceMap(modelPath, device, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
         devmap = DevMap.fromConfig(
             modelPath,
             "llm_config.num_hidden_layers",
             "visual_tokenizer_config.backbone_config.num_hidden_layers"
         )
+
+        devmap.setDevice(device)
 
         devmap.setCudaLayer("")
         devmap.setCudaLayer("llm")
@@ -127,15 +111,12 @@ class Ovis2Backend(CaptionBackend):
         devmap.setCudaLayer("llm.model.norm")
         devmap.setLLMLayers("llm.model.layers", llmGpuLayers)
 
-        if visGpuLayers == 0:
-            devmap.setCpuLayer("visual_tokenizer")
-            devmap.setCpuLayer("visual_tokenizer.backbone.trunk")
-        else:
-            devmap.setCudaLayer("visual_tokenizer")
-            devmap.setCudaLayer("visual_tokenizer.backbone.preprocessor")
-            devmap.setCudaLayer("visual_tokenizer.head")
-            devmap.setCudaLayer("visual_tokenizer.backbone.trunk.post_trunk_norm")
-            devmap.setVisLayers("visual_tokenizer.backbone.trunk.blocks", visGpuLayers)
+        visGpuLayers = max(visGpuLayers, 1)
+        devmap.setCudaLayer("visual_tokenizer")
+        devmap.setCudaLayer("visual_tokenizer.backbone.preprocessor")
+        devmap.setCudaLayer("visual_tokenizer.head")
+        devmap.setCudaLayer("visual_tokenizer.backbone.trunk.post_trunk_norm")
+        devmap.setVisLayers("visual_tokenizer.backbone.trunk.blocks", visGpuLayers)
 
         devmap.setCudaLayer("vte")
         return devmap

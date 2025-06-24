@@ -5,10 +5,13 @@ import numpy as np
 import cv2 as cv
 from PIL import Image
 from host.imagecache import ImageFile
+from .devmap import DevMap
 
 
 class BriaRmbgMask:
     def __init__(self, config: dict):
+        self.device, _ = DevMap.getTorchDeviceDtype()
+
         self.model = AutoModelForImageSegmentation.from_pretrained(
             config.get("model_path"),
             trust_remote_code=True
@@ -16,7 +19,7 @@ class BriaRmbgMask:
 
         #print(torch.get_float32_matmul_precision()) # highest
         #torch.set_float32_matmul_precision(['high', 'highest'][0])
-        self.model.to('cuda').eval()
+        self.model.to(self.device).eval()
 
         self.maxSize = 1536 # longer side
         self.transform = transforms.Compose([
@@ -37,7 +40,7 @@ class BriaRmbgMask:
         image = self.scaleImage(image)
 
         # shape = B C H W
-        inputImages = self.transform(image).unsqueeze(0).to('cuda')
+        inputImages = self.transform(image).unsqueeze(0).to(self.device)
 
         preds: list[torch.Tensor] = self.model(inputImages)[-1].sigmoid().cpu()
         mask = preds[0].squeeze().numpy()

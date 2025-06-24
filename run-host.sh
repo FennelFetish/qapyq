@@ -18,6 +18,7 @@ fi
 python_exec="${venv_path}/bin/python"
 
 export NO_ALBUMENTATIONS_UPDATE=1
+export YOLO_OFFLINE="True"
 
 cd "$script_dir"
 exec ${python_exec} "./main_host.py" "$device"

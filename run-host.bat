@@ -10,8 +10,10 @@ if not %ERRORLEVEL% == 0 goto :end
 :activate_venv
 set PYTHON="%VENV_DIR%\Scripts\python.exe"
 
-
 :launch
+set NO_ALBUMENTATIONS_UPDATE="1"
+set YOLO_OFFLINE="True"
+
 cd /d "%~dp0%"
 %PYTHON% main_host.py "%1"
 

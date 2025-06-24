@@ -3,15 +3,19 @@ import math
 from llama_cpp import Llama
 from host.imagecache import ImageFile
 from .backend import InferenceBackend
+from .devmap import DevMap
 
 
 class LlamaCppBackend(InferenceBackend):
     def __init__(self, config: dict, **kwargs):
         super().__init__(config)
 
+        deviceId = DevMap.getDeviceId()
+
         self.llm = Llama(
             model_path=config.get("model_path"),
-            n_gpu_layers=self._getNumGpuLayers(config),
+            main_gpu=deviceId,
+            n_gpu_layers=self._getNumGpuLayers(config, deviceId),
             n_ctx=config.get("ctx_length", 32768), # n_ctx should be increased to accommodate the image embedding
             n_batch=config.get("batch_size", 512),
             n_threads=config.get("num_threads", 11),
@@ -23,7 +27,7 @@ class LlamaCppBackend(InferenceBackend):
         )
 
 
-    def _getNumGpuLayers(self, config: dict) -> int:
+    def _getNumGpuLayers(self, config: dict, deviceId: int) -> int:
         gpuLayersPercent = config.get("gpu_layers", 100)
         if gpuLayersPercent < 0:
             gpuLayersPercent = 100
@@ -34,7 +38,7 @@ class LlamaCppBackend(InferenceBackend):
             return -1
 
         numGpuLayers = math.ceil((gpuLayersPercent / 100) * numLayers)
-        print(f"Total GGUF layers: {numLayers}, GPU: {numGpuLayers} ({gpuLayersPercent}%), CPU: {numLayers-numGpuLayers}")
+        print(f"Total GGUF layers: {numLayers}, GPU: {numGpuLayers} ({gpuLayersPercent}% on device {deviceId}), CPU: {numLayers-numGpuLayers}")
         return numGpuLayers
 
     # https://github.com/ggerganov/ggml/blob/master/docs/gguf.md
