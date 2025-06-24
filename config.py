@@ -4,6 +4,7 @@ class Config:
     windowIcon              = "res/qapyq.png"
     guiScale                = 1.0
     qtStyle                 = "Fusion"
+    toolbarPosition         = "Top"
 
     # Font
     fontMonospace           = "res/font/DejaVuSansMono.ttf"
@@ -153,6 +154,7 @@ class Config:
     def _load(cls, data: dict):
         cls.guiScale              = float(data.get("gui_scale", cls.guiScale))
         cls.qtStyle               = data.get("qt_style", cls.qtStyle)
+        cls.toolbarPosition       = data.get("toolbar_position", cls.toolbarPosition)
         cls.fontMonospace         = data.get("font_monospace", cls.fontMonospace)
 
         cls.pathExport            = data.get("path_export", cls.pathExport)
@@ -210,6 +212,7 @@ class Config:
 
         data["gui_scale"]                   = cls.guiScale
         data["qt_style"]                    = cls.qtStyle
+        data["toolbar_position"]            = cls.toolbarPosition
         data["font_monospace"]              = cls.fontMonospace
 
         data["path_export"]                 = cls.pathExport

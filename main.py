@@ -23,7 +23,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.auxWindows: dict[str, aux_window.AuxiliaryWindow] = dict()
         self.menu = MainMenu(self)
         self.toolbar = MainToolBar(self, self.menu)
-        self.addToolBar(self.toolbar)
+        self.addToolBar(self.toolbar.loadDockedArea(), self.toolbar)
 
         self._previousTab: ImgTab | None = None
         self._fullscreenTab: ImgTab | None = None
@@ -245,6 +245,8 @@ class MainWindow(QtWidgets.QMainWindow):
         ThumbnailCache.shutdown()
 
         aux_window.saveWindowPos(self, "main")
+        self.toolbar.saveDockedArea()
+
         if self._fullscreenTab:
             self._fullscreenTab.close()
 
@@ -321,6 +323,7 @@ class MainMenu(QtWidgets.QMenu):
         self.addSeparator()
 
         self.addMenu(self._buildToolsSubmenu(mainWindow))
+        self.addMenu(self._buildWindowsSubmenu(mainWindow))
 
         self.addSeparator()
 
@@ -328,7 +331,7 @@ class MainMenu(QtWidgets.QMenu):
         actModelConfig.triggered.connect(self.showModelSettings)
         self.addAction(actModelConfig)
 
-        actShowHostWin = QtGui.QAction("Hosts...", self)
+        actShowHostWin = QtGui.QAction("&Hosts...", self)
         actShowHostWin.setShortcutContext(Qt.ApplicationShortcut)
         actShowHostWin.setShortcut(QtGui.QKeySequence(Qt.CTRL | Qt.Key_H))
         actShowHostWin.triggered.connect(self.showHostsWin)
@@ -353,13 +356,25 @@ class MainMenu(QtWidgets.QMenu):
         self.addAction(actQuit)
 
     def _buildToolsSubmenu(self, mainWindow: MainWindow) -> QtWidgets.QMenu:
-        menu = QtWidgets.QMenu("Tools")
+        menu = QtWidgets.QMenu("Select Tools")
 
-        for i, tool in enumerate(("view", "slideshow", "measure", "compare", "crop", "scale", "mask")):
+        for i, tool in enumerate(("view", "slideshow", "measure", "compare", "crop", "scale", "mask"), 1):
             act = QtGui.QAction(tool.capitalize(), self)
             act.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
-            act.setShortcut(QtGui.QKeySequence.fromString(f"Ctrl+{i+1}"))
+            act.setShortcut(QtGui.QKeySequence.fromString(f"Ctrl+{i}"))
             act.triggered.connect(lambda checked, tool=tool: mainWindow.setTool(tool))
+            menu.addAction(act)
+
+        return menu
+
+    def _buildWindowsSubmenu(self, mainWindow: MainWindow) -> QtWidgets.QMenu:
+        menu = QtWidgets.QMenu("Toggle Windows")
+
+        for i, win in enumerate(("gallery", "stats", "batch", "caption"), 1):
+            act = QtGui.QAction(win.capitalize(), self)
+            act.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+            act.setShortcut(QtGui.QKeySequence.fromString(f"F{i}"))
+            act.triggered.connect(lambda checked, win=win: mainWindow.toggleAuxWindow(win))
             menu.addAction(act)
 
         return menu
@@ -446,10 +461,10 @@ class MainToolBar(QtWidgets.QToolBar):
         self.addSeparator()
 
         self.windowToggles: dict[str, QtGui.QAction] = dict()
-        self.addWindowToggle("gallery", mainWindow)
-        self.addWindowToggle("stats", mainWindow)
-        self.addWindowToggle("batch", mainWindow)
-        self.addWindowToggle("caption", mainWindow)
+        self.addWindowToggle("gallery", mainWindow, 1)
+        self.addWindowToggle("stats", mainWindow, 2)
+        self.addWindowToggle("batch", mainWindow, 3)
+        self.addWindowToggle("caption", mainWindow, 4)
 
         self.addWidget(qtlib.SpacerWidget())
 
@@ -472,7 +487,8 @@ class MainToolBar(QtWidgets.QToolBar):
             "mask":     self.addAction("Mask")
         }
 
-        for name, act in self._toolActions.items():
+        for i, (name, act) in enumerate(self._toolActions.items(), 1):
+            act.setToolTip(f"Select the {act.text()} Tool with <b>Ctrl+{i}</b>")
             act.setCheckable(True)
             act.triggered.connect(lambda act=act, name=name: mainWindow.setTool(name)) # Capture correct vars
 
@@ -483,8 +499,9 @@ class MainToolBar(QtWidgets.QToolBar):
         if toolName in self._toolActions:
             self._toolActions[toolName].setChecked(True)
 
-    def addWindowToggle(self, winName: str, mainWindow: MainWindow) -> None:
+    def addWindowToggle(self, winName: str, mainWindow: MainWindow, shortcut: int) -> None:
         act = self.addAction(winName.capitalize())
+        act.setToolTip(f"Toggle the {act.text()} Window with <b>F{shortcut}</b>")
         act.setCheckable(True)
         act.triggered.connect(lambda: mainWindow.toggleAuxWindow(winName))
         self.windowToggles[winName] = act
@@ -498,6 +515,25 @@ class MainToolBar(QtWidgets.QToolBar):
         widget = self.widgetForAction(self.actMenu)
         pos = widget.mapToGlobal(QPoint(0, widget.height()))
         self.actMenu.menu().popup(pos)
+
+
+    def saveDockedArea(self):
+        match self.mainWindow.toolBarArea(self):
+            case Qt.ToolBarArea.TopToolBarArea:    area = "Top"
+            case Qt.ToolBarArea.BottomToolBarArea: area = "Bottom"
+            case Qt.ToolBarArea.LeftToolBarArea:   area = "Left"
+            case Qt.ToolBarArea.RightToolBarArea:  area = "Right"
+            case _: area = "Top"
+        Config.toolbarPosition = area
+
+    @staticmethod
+    def loadDockedArea():
+        match Config.toolbarPosition:
+            case "Top":    return Qt.ToolBarArea.TopToolBarArea
+            case "Bottom": return Qt.ToolBarArea.BottomToolBarArea
+            case "Left":   return Qt.ToolBarArea.LeftToolBarArea
+            case "Right":  return Qt.ToolBarArea.RightToolBarArea
+        return Qt.ToolBarArea.TopToolBarArea
 
 
 
