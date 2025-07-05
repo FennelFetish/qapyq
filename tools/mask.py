@@ -429,6 +429,10 @@ class HistoryEntry:
         self.mask = mask
         self.macroItem = macroItem
 
+    def setCompressed(self, mask: np.ndarray):
+        self.compressed = True
+        self.mask = mask
+
 
 class MaskItem(QtWidgets.QGraphicsRectItem):
     def __init__(self, name: str):
@@ -493,13 +497,16 @@ class MaskItem(QtWidgets.QGraphicsRectItem):
         if imgData is None:
             imgData = self.toNumpy()
 
+        historyEntry = HistoryEntry(title, imgData, macroItem)
+
         del self.history[self.historyIndex+1:]
-        self.history.append(HistoryEntry(title, imgData, macroItem))
+        self.history.append(historyEntry)
         self.history = self.history[-Config.maskHistorySize:]
         self.historyIndex = len(self.history) - 1
 
-        task = MaskHistoryTask(imgData, self.historyIndex)
-        task.signals.done.connect(self._setCompressedHistory, Qt.ConnectionType.BlockingQueuedConnection)
+        task = MaskHistoryTask(imgData)
+        # Use lambda. There's a maximally weird bug that can crash the application because 'self' in a Slot becomes a different object.
+        task.signals.done.connect(lambda pngData: historyEntry.setCompressed(pngData), Qt.ConnectionType.BlockingQueuedConnection)
         QThreadPool.globalInstance().start(task)
 
     def jumpHistory(self, index):
@@ -528,13 +535,6 @@ class MaskItem(QtWidgets.QGraphicsRectItem):
     def clearHistoryMacroItems(self):
         for entry in self.history:
             entry.macroItem = None
-
-    @Slot()
-    def _setCompressedHistory(self, pngData, index):
-        if 0 <= index < len(self.history):
-            entry = self.history[index]
-            entry.compressed = True
-            entry.mask = pngData
 
 
 
@@ -569,21 +569,20 @@ class MaskExportTask(QRunnable):
 
 class MaskHistoryTask(QRunnable):
     class HistoryTaskSignals(QObject):
-        done = Signal(object, int)
+        done = Signal(object)
 
-    def __init__(self, mask: np.ndarray, index: int):
+    def __init__(self, mask: np.ndarray):
         super().__init__()
+        self.setAutoDelete(True)
         self.signals = self.HistoryTaskSignals()
-
         self.mask = mask
-        self.index = index
 
     @Slot()
     def run(self):
         try:
             success, encoded = cv.imencode(".png", self.mask, [cv.IMWRITE_PNG_COMPRESSION, 9])
             if success:
-                self.signals.done.emit(encoded, self.index)
+                self.signals.done.emit(encoded)
             else:
                 print("Couldn't encode history as PNG")
         except Exception as ex:
