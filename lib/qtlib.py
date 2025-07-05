@@ -419,16 +419,32 @@ class BubbleRemoveButton(QtWidgets.QPushButton):
 
 
 class ColoredButton(QtWidgets.QPushButton):
+    PALETTE_ORIG: QtGui.QPalette = None
+    PALETTES_CHANGED: dict[tuple[str, str], QtGui.QPalette] = dict()
+
     def __init__(self, text: str, colorButton: str, colorText: str):
         super().__init__(text)
 
-        self._originalPalette = self.palette()
-        self._changedPalette = self.palette()
-        self._changedPalette.setColor(QtGui.QPalette.ColorRole.Button, QtGui.QColor.fromString(colorButton))
-        self._changedPalette.setColor(QtGui.QPalette.ColorRole.ButtonText, QtGui.QColor.fromString(colorText))
+        if not ColoredButton.PALETTE_ORIG:
+            ColoredButton.PALETTE_ORIG = self.palette()
+
+        self._changedPalette = self._getChangedPalette(colorButton, colorText)
+
+    def _getChangedPalette(self, colorButton: str, colorText: str) -> QtGui.QPalette:
+        key = (colorButton, colorText)
+        if palette := ColoredButton.PALETTES_CHANGED.get(key):
+            return palette
+
+        changedPalette = self.palette()
+        changedPalette.setColor(QtGui.QPalette.ColorRole.Button, QtGui.QColor.fromString(colorButton))
+        changedPalette.setColor(QtGui.QPalette.ColorRole.ButtonText, QtGui.QColor.fromString(colorText))
+
+        ColoredButton.PALETTES_CHANGED[key] = changedPalette
+        return changedPalette
 
     def setChanged(self, changed: bool) -> None:
-        self.setPalette(self._changedPalette if changed else self._originalPalette)
+        self.setPalette(self._changedPalette if changed else ColoredButton.PALETTE_ORIG)
+
 
 class SaveButton(ColoredButton):
     def __init__(self, text: str):
@@ -439,24 +455,39 @@ class GreenButton(ColoredButton):
         super().__init__(text, "#0A440A", "#EEFFEE")
 
 
+
 class ToggleButton(QtWidgets.QPushButton):
+    PALETTE_ORIG:    QtGui.QPalette = None
+    PALETTE_CHECKED: QtGui.QPalette = None
+
     def __init__(self, text: str):
         super().__init__(text)
         self.setCheckable(True)
 
-        self._originalPalette = self.palette()
-        highlight     = self._originalPalette.color(QtGui.QPalette.ColorGroup.Normal, QtGui.QPalette.ColorRole.Highlight)
-        highlightText = self._originalPalette.color(QtGui.QPalette.ColorGroup.Normal, QtGui.QPalette.ColorRole.HighlightedText)
-
-        self._checkedPalette = self.palette()
-        self._checkedPalette.setColor(QtGui.QPalette.ColorRole.Button, highlight)
-        self._checkedPalette.setColor(QtGui.QPalette.ColorRole.ButtonText, highlightText)
+        if not ToggleButton.PALETTE_ORIG:
+            self._initPalettes()
+        self.setPalette(ToggleButton.PALETTE_ORIG)
 
         self.toggled.connect(self._onToggled)
 
+    def _initPalettes(self):
+        palette  = self.palette()
+        colorBtn = palette.color(QtGui.QPalette.ColorGroup.Disabled, QtGui.QPalette.ColorRole.Button)
+        palette.setBrush(QtGui.QPalette.ColorGroup.Disabled, QtGui.QPalette.ColorRole.Button, colorBtn.darker(125))
+        ToggleButton.PALETTE_ORIG = palette
+
+        palette   = self.palette()
+        colorBtn  = palette.color(QtGui.QPalette.ColorGroup.Normal, QtGui.QPalette.ColorRole.Highlight)
+        colorText = palette.color(QtGui.QPalette.ColorGroup.Normal, QtGui.QPalette.ColorRole.HighlightedText)
+        palette.setBrush(QtGui.QPalette.ColorGroup.All, QtGui.QPalette.ColorRole.Button, colorBtn)
+        palette.setBrush(QtGui.QPalette.ColorGroup.All, QtGui.QPalette.ColorRole.ButtonText, colorText)
+        palette.setBrush(QtGui.QPalette.ColorGroup.Disabled, QtGui.QPalette.ColorRole.Button, colorBtn.darker())
+        palette.setBrush(QtGui.QPalette.ColorGroup.Disabled, QtGui.QPalette.ColorRole.ButtonText, colorText.darker())
+        ToggleButton.PALETTE_CHECKED = palette
+
     @Slot()
     def _onToggled(self, checked: bool):
-        self.setPalette(self._checkedPalette if checked else self._originalPalette)
+        self.setPalette(ToggleButton.PALETTE_CHECKED if checked else ToggleButton.PALETTE_ORIG)
 
 
 
@@ -587,6 +618,18 @@ class RowScrollArea(BaseColorScrollArea):
             y = scrollBar.maximum()
 
         scrollBar.setValue(y)
+
+    def ensureWidgetVisible(self, childWidget: QtWidgets.QWidget, xmargin: int = 0, ymargin: int = 0) -> None:
+        index = self.widget().layout().indexOf(childWidget)
+        if item := self.widget().layout().itemAt(index):
+            rect = item.geometry()
+            scrollBar = self.verticalScrollBar()
+            scrollVal = scrollBar.value()
+
+            if rect.top() < scrollVal:
+                scrollBar.setValue(rect.top())
+            elif rect.bottom() > scrollVal + self.height():
+                scrollBar.setValue(rect.bottom() - self.height())
 
 
 

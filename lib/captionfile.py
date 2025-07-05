@@ -33,21 +33,21 @@ class CaptionFile:
     def addCaption(self, name: str, caption: str):
         self.captions[name] = caption
 
-    def getCaption(self, name: str):
+    def getCaption(self, name: str) -> str | None:
         return self.captions.get(name, None)
 
 
     def addPrompt(self, name: str, prompt: str):
         self.prompts[name] = prompt
 
-    def getPrompt(self, name: str):
+    def getPrompt(self, name: str) -> str | None:
         return self.prompts.get(name, None)
 
 
     def addTags(self, name: str, tags: str):
         self.tags[name] = tags
 
-    def getTags(self, name: str):
+    def getTags(self, name: str) -> str | None:
         return self.tags.get(name, None)
 
 
@@ -147,7 +147,7 @@ class FileTypeSelector(QtWidgets.QHBoxLayout):
         self.addWidget(self.cboType)
 
         self.cboKey = CaptionKeyComboBox(self.cboType.currentData(), defaultValue)
-        self.cboKey.setMinimumWidth(140)
+        self.cboKey.setMinimumWidth(200)
         self.cboKey.currentTextChanged.connect(self._onEdited)
         qtlib.setMonospace(self.cboKey)
         self.addWidget(self.cboKey)
@@ -255,8 +255,9 @@ class FileTypeSelector(QtWidgets.QHBoxLayout):
             print(f"Failed to save caption to file: {captionFile.jsonPath} [{type}.{name}]")
             return False
 
-    def saveCaptionTxt(self, imgPath: str, text: str) -> None:
-        path = os.path.splitext(imgPath)[0] + self.CAPTION_FILE_EXT
+    @classmethod
+    def saveCaptionTxt(cls, imgPath: str, text: str) -> None:
+        path = os.path.splitext(imgPath)[0] + cls.CAPTION_FILE_EXT
         with open(path, 'w') as file:
             file.write(text)
         print("Saved caption to file:", path)

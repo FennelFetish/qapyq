@@ -1,32 +1,21 @@
-from __future__ import annotations
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QTimer
 from lib.util import stripCountPadding
-from .caption_context import CaptionContext
 
 
-class CaptionTextEdit(QtWidgets.QPlainTextEdit):
-    captionReplaced = Signal()
-    focusChanged = Signal()
-
-    def __init__(self, context: CaptionContext):
+class NavigationTextEdit(QtWidgets.QPlainTextEdit):
+    def __init__(self, separator: str):
         super().__init__()
-        self.ctx = context
-
-        self.separator = self.ctx.settings.separator
-        self.ctx.separatorChanged.connect(self._onSeparatorChanged)
-
+        self.separator = separator
 
     def getCaption(self) -> str:
         return self.toPlainText()
 
     def setCaption(self, text: str):
-        self.captionReplaced.emit()
         self.setPlainText(text)
         self.moveCursor(QtGui.QTextCursor.MoveOperation.End)
 
 
-    @Slot()
     def appendToCaption(self, text: str):
         caption = self.toPlainText()
         if caption:
@@ -34,37 +23,7 @@ class CaptionTextEdit(QtWidgets.QPlainTextEdit):
         caption += text
 
         self.setCaption(caption)
-        self.ctx.needsRulesApplied.emit()
 
-    def toggleCaption(self, caption: str, removeWords: set[str] | None):
-        caption = caption.strip()
-        captions = []
-        removed = False
-
-        text = self.toPlainText()
-        if text:
-            for current in text.split(self.separator.strip()):
-                current = current.strip()
-                if caption == current:
-                    removed = True
-                    continue
-
-                elif removeWords:
-                    currentWords = current.split(" ")
-                    currentMatchSplit = self.ctx.highlight.matchNode.split(currentWords)
-                    if caption in currentMatchSplit:
-                        current = " ".join(word for word in currentWords if (word not in removeWords))
-                        removed = True
-
-                captions.append(current)
-
-        if not removed:
-            captions.append(caption)
-
-        self.setCaption( self.separator.join(captions) )
-        self.ctx.needsRulesApplied.emit()
-
-    @Slot()
     def removeCaption(self, index: int):
         text = self.toPlainText()
         sepStrip = self.separator.strip()
@@ -94,7 +53,6 @@ class CaptionTextEdit(QtWidgets.QPlainTextEdit):
         return "", -1
 
 
-    @Slot()
     def selectCaption(self, index: int):
         self.setFocus()
         text = self.toPlainText()
@@ -142,11 +100,6 @@ class CaptionTextEdit(QtWidgets.QPlainTextEdit):
         self.setTextCursor(cursor)
 
 
-    @Slot()
-    def _onSeparatorChanged(self, separator: str):
-        self.separator = separator
-
-
     def keyPressEvent(self, event: QtGui.QKeyEvent):
         if event.modifiers() & Qt.KeyboardModifier.AltModifier:
             move = None
@@ -179,6 +132,62 @@ class CaptionTextEdit(QtWidgets.QPlainTextEdit):
         # Postpone updates when dropping so they don't interfere with ongoing drag operations in ReorderWidget.
         # But don't postpone normal updates to prevent flickering.
         QTimer.singleShot(0, self.textChanged.emit)
+
+
+
+class CaptionTextEdit(NavigationTextEdit):
+    captionReplaced = Signal()
+    focusChanged = Signal()
+
+    def __init__(self, context: 'CaptionContext'):
+        super().__init__(context.settings.separator)
+        from .caption_context import CaptionContext
+        self.ctx: CaptionContext = context
+        self.ctx.separatorChanged.connect(self._onSeparatorChanged)
+
+
+    def setCaption(self, text: str):
+        self.captionReplaced.emit()
+        super().setCaption(text)
+
+
+    @Slot()
+    def appendToCaption(self, text: str):
+        super().appendToCaption(text)
+        self.ctx.needsRulesApplied.emit()
+
+    def toggleCaption(self, caption: str, removeWords: set[str] | None):
+        caption = caption.strip()
+        captions = []
+        removed = False
+
+        text = self.toPlainText()
+        if text:
+            for current in text.split(self.separator.strip()):
+                current = current.strip()
+                if caption == current:
+                    removed = True
+                    continue
+
+                elif removeWords:
+                    currentWords = current.split(" ")
+                    currentMatchSplit = self.ctx.highlight.matchNode.split(currentWords)
+                    if caption in currentMatchSplit:
+                        current = " ".join(word for word in currentWords if (word not in removeWords))
+                        removed = True
+
+                captions.append(current)
+
+        if not removed:
+            captions.append(caption)
+
+        self.setCaption( self.separator.join(captions) )
+        self.ctx.needsRulesApplied.emit()
+
+
+    @Slot()
+    def _onSeparatorChanged(self, separator: str):
+        self.separator = separator
 
 
     def focusInEvent(self, event: QtGui.QFocusEvent):
