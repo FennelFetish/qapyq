@@ -3,37 +3,16 @@ from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QEvent, QTimer
 import lib.qtlib as qtlib
 from ui.flow_layout import FlowLayout
-from .caption_tab import CaptionTab
+from .caption_tab import CaptionTab, MultiEditSupport
 from .caption_context import CaptionContext
 from .caption_container import CaptionContainer
-
-
-# - As tab in Caption Window
-# - Overrides current colors, highlights defined tags
-
-# - Auto select next file after input
-# - Move back / restore old caption
-# - Skip without change (when edited manually with Caption Window)
-# - Keyboard shortcuts for bubbles (display key)
-# - Navigate with arrow keys: Left=back&restore, Right=Skip Unchanged
-# - Keyboard shortcuts only effective when tab is active
-
-# - Define which tags
-# - Only show selected tags (only bubbles)
-# - Use colors from groups/bans
-# - Select boolean: Enter yes/no if tag should exist
-# - Select one of many (+None)
-# - Select multiple (forward image with ENTER)
-
-# - Load from cache if it exists
-# - Auto save to file and reset cache
 
 
 HELP = [
     "[1-9]: Select tag",
     "[0]: Unselect all tags",
-    "[Enter]: Save and skip to next image",
-    "[Arrow Left/Right]: Navigate to previous/next image",
+    "[Enter]: Save and skip to next (selected) image",
+    "[Arrow Left/Right]: Navigate to previous/next (selected) image",
     "[Esc]: Disable shortcuts"
 ]
 
@@ -98,6 +77,7 @@ class CaptionFocus(CaptionTab):
         layout.setRowMinimumHeight(row, 12)
 
         lblHelp = QtWidgets.QLabel("        ".join(HELP))
+        lblHelp.setMinimumWidth(10)
         lblHelp.setEnabled(False)
         layout.addWidget(lblHelp, row, 0, 1, 4, Qt.AlignmentFlag.AlignCenter)
 
@@ -108,6 +88,9 @@ class CaptionFocus(CaptionTab):
 
         self.setLayout(layout)
 
+
+    def getMultiEditSupport(self) -> MultiEditSupport:
+        return MultiEditSupport.Disabled
 
     def onTabEnabled(self):
         self._tabActive = True

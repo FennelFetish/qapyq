@@ -3,6 +3,7 @@ from typing import Iterable
 from PySide6 import QtWidgets
 from PySide6.QtCore import Signal, Slot
 from ui.tab import ImgTab
+from .caption_tab import CaptionTab, MultiEditSupport
 from .caption_highlight import CaptionHighlight, HighlightDataSource, CaptionGroupData
 from .caption_filter import CaptionRulesProcessor
 from .caption_settings import CaptionSettings
@@ -15,6 +16,7 @@ class CaptionContext(QtWidgets.QTabWidget):
     separatorChanged    = Signal(str)
     controlUpdated      = Signal()
     needsRulesApplied   = Signal()
+    multiEditToggled    = Signal(bool)
 
 
     def __init__(self, container, tab: ImgTab):
@@ -26,6 +28,7 @@ class CaptionContext(QtWidgets.QTabWidget):
         # First slots
         self.controlUpdated.connect(self._invalidateRulesProcessor)
         self.separatorChanged.connect(lambda sep: self._invalidateRulesProcessor())
+        self.multiEditToggled.connect(self._storeMultiEditState)
 
         from .caption_container import CaptionContainer
         self.container: CaptionContainer = container
@@ -54,18 +57,45 @@ class CaptionContext(QtWidgets.QTabWidget):
         self.addTab(self.generate, "Generate")
         self.addTab(CaptionList(self), "List")
 
-        self._activeWidget = None
+        self._activeWidget: CaptionTab = self.currentWidget()
+        self.multiEditSupport: MultiEditSupport = self._activeWidget.getMultiEditSupport()
+        self._activeWidget.onTabEnabled()
+
+        self._multiEditReactivate: bool = False
+        self._tabSwitching = False
         self.currentChanged.connect(self.onTabChanged)
-        self.onTabChanged(0)
+
 
     @Slot()
     def onTabChanged(self, index: int):
         if self._activeWidget:
             self._activeWidget.onTabDisabled()
 
-        if widget := self.widget(index):
+        widget: CaptionTab = self.widget(index)
+        if widget:
+            self._checkMultiEditSupport(widget)
             self._activeWidget = widget
             widget.onTabEnabled()
+
+    def _checkMultiEditSupport(self, widget: CaptionTab):
+        self.multiEditSupport = widget.getMultiEditSupport()
+        match self.multiEditSupport:
+            case MultiEditSupport.Disabled:        checked, enabled = False, False
+            case MultiEditSupport.PreferDisabled:  checked, enabled = False, True
+            case MultiEditSupport.Full:            checked, enabled = self._multiEditReactivate, True
+
+        try:
+            self._tabSwitching = True
+            btnMultiEdit = self.container.btnMultiEdit
+            btnMultiEdit.setChecked(checked)
+            btnMultiEdit.setEnabled(enabled)
+        finally:
+            self._tabSwitching = False
+
+    @Slot()
+    def _storeMultiEditState(self, state: bool):
+        if not self._tabSwitching:
+            self._multiEditReactivate = state
 
 
     @Slot()

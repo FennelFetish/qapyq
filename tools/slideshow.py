@@ -86,15 +86,30 @@ class SlideshowTool(ViewTool):
                 self._history.insert(0, index)
 
     def getRandomIndex(self, tail=True) -> int:
-        numFiles = self.tab.filelist.getNumFiles()
+        filelist = self.tab.filelist
+        numFiles = filelist.getNumFiles()
         if numFiles <= 0:
             return 0
 
         region = self._history[-10:] if tail else self._history[:10]
         attempts = 3
-        while attempts > 0 and (index := random.randint(0, numFiles-1)) in region:
-            attempts -= 1
+        index = 0
+
+        numSelectedFiles = len(filelist.selectedFiles)
+        if numSelectedFiles > 1:
+            while attempts > 0:
+                attempts -= 1
+                index = random.randint(0, numSelectedFiles-1)
+                index = filelist.indexOf(filelist.selection.sorted[index])
+                if index not in region:
+                    break
+
+        else:
+            while attempts > 0 and (index := random.randint(0, numFiles-1)) in region:
+                attempts -= 1
+
         return index
+
 
     def resetHistory(self):
         self._history = list()

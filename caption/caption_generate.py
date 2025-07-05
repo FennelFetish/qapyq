@@ -12,7 +12,7 @@ from lib.template_parser import TemplateVariableParser, VariableHighlighter
 from lib.filelist import DataKeys
 import lib.qtlib as qtlib
 from config import Config
-from .caption_tab import CaptionTab
+from .caption_tab import CaptionTab, MultiEditSupport
 from .caption_context import CaptionContext
 
 
@@ -38,6 +38,8 @@ class CaptionGenerate(CaptionTab):
 
         self.ctx.controlUpdated.connect(self._onControlUpdated)
         self.ctx.captionEdited.connect(self._onCaptionEdited)
+
+        self.ctx.tab.filelist.addSelectionListener(self)
 
 
     def _build(self):
@@ -97,8 +99,10 @@ class CaptionGenerate(CaptionTab):
         layout.addWidget(self.cboCapTag, row, 4)
 
         self.btnGenerate = QtWidgets.QPushButton("Generate")
+        self.btnGenerate.setMinimumWidth(100)
         self.btnGenerate.clicked.connect(self.generate)
         layout.addWidget(self.btnGenerate, row, 5)
+        self._updateGenerateButton()
 
         row += 1
         self.statusBar = qtlib.ColoredMessageStatusBar()
@@ -109,9 +113,16 @@ class CaptionGenerate(CaptionTab):
         self.setLayout(layout)
 
 
+    def getMultiEditSupport(self) -> MultiEditSupport:
+        return MultiEditSupport.PreferDisabled
+
     def onFileChanged(self, currentFile: str):
         self._parser.setup(currentFile)
         self._onPromptChanged()
+
+    def onFileSelectionChanged(self, selectedFiles: set[str]):
+        if self._task is None:
+            self._updateGenerateButton()
 
     @Slot()
     def _onControlUpdated(self):
@@ -149,6 +160,13 @@ class CaptionGenerate(CaptionTab):
         self.txtPromptPreview.setVisible(previewVisible)
         self.layout().setRowStretch(1, 2 if previewVisible else 0)
 
+    def _updateGenerateButton(self):
+        text = "Generate"
+        numSelected = len(self.ctx.tab.filelist.selectedFiles)
+        if numSelected > 1:
+            text += f" ({numSelected})"
+        self.btnGenerate.setText(text)
+
 
     @Slot()
     def generate(self):
@@ -173,9 +191,9 @@ class CaptionGenerate(CaptionTab):
         content = self.cboCapTag.currentText().lower().split(", ")
 
         task = InferenceTask(files, content)
-        task.signals.progress.connect(self.onProgress)
-        task.signals.done.connect(self.onGenerated)
-        task.signals.fail.connect(self.onFail)
+        task.signals.progress.connect(self.onProgress, Qt.ConnectionType.QueuedConnection)
+        task.signals.done.connect(self.onGenerated, Qt.ConnectionType.QueuedConnection)
+        task.signals.fail.connect(self.onFail, Qt.ConnectionType.QueuedConnection)
 
         if "caption" in content:
             self.onFileChanged(currentFile) # Update parser
@@ -193,7 +211,7 @@ class CaptionGenerate(CaptionTab):
 
 
     def _finishTask(self):
-        self.btnGenerate.setText("Generate")
+        self._updateGenerateButton()
         self._task = None
 
     @Slot()
@@ -411,7 +429,10 @@ class InferenceTask(QRunnable):
                         elif captions := res.get("captions"):
                             allResults.extend(cap for name, cap in captions.items() if not name.startswith('?'))
 
-                    fileResults[file] = os.linesep.join(allResults)
+                    if allResults:
+                        fileResults[file] = os.linesep.join(allResults)
+                    else:
+                        print(f"WARNING: No caption generated for '{file}'")
 
                 self.signals.done.emit(fileResults)
 

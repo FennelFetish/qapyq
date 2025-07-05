@@ -368,10 +368,10 @@ class BatchTaskHandler(QObject):
         except BatchTaskAbortedException:
             return
 
-        task.signals.progress.connect(self.onProgress)
-        task.signals.progressMessage.connect(self.onProgressMessage)
-        task.signals.done.connect(self.onFinished)
-        task.signals.fail.connect(self.onFail)
+        task.signals.progress.connect(self.onProgress, Qt.ConnectionType.QueuedConnection)
+        task.signals.progressMessage.connect(self.onProgressMessage, Qt.ConnectionType.QueuedConnection)
+        task.signals.done.connect(self.onFinished, Qt.ConnectionType.QueuedConnection)
+        task.signals.fail.connect(self.onFail, Qt.ConnectionType.QueuedConnection)
 
         self._task = task
         self.btnStart.setText("Abort")

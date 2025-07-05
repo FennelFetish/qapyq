@@ -11,6 +11,7 @@ from .caption_bubbles import CaptionBubbles
 from .caption_text import CaptionTextEdit
 from .caption_highlight import HighlightState
 from .caption_multi_edit import CaptionMultiEdit
+from .caption_tab import MultiEditSupport
 
 
 class CaptionContainer(QtWidgets.QWidget):
@@ -95,7 +96,12 @@ class CaptionContainer(QtWidgets.QWidget):
         self.bubbles.ctrlClicked.connect(self._moveBubbleNext)
         self.bubbles.doubleClicked.connect(self._multiEditEnsureFullPresence)
         self.bubbles.hovered.connect(self._updateBubbleHighlight)
-        splitter.addWidget(self.bubbles)
+
+        bubbleScrollArea = QtWidgets.QScrollArea(widgetResizable=True)
+        bubbleScrollArea.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
+        bubbleScrollArea.setMinimumHeight(34) # TODO: Dynamic?
+        bubbleScrollArea.setWidget(self.bubbles)
+        splitter.addWidget(bubbleScrollArea)
         splitter.setStretchFactor(row, 1)
 
         row += 1
@@ -116,10 +122,11 @@ class CaptionContainer(QtWidgets.QWidget):
         layout.setContentsMargins(4, 0, 4, 2)
 
         col = 0
-        btnMenu = QtWidgets.QPushButton("☰")
-        btnMenu.setFixedWidth(40)
-        btnMenu.setMenu(self.captionMenu)
-        layout.addWidget(btnMenu, 0, col)
+        self.btnMenu = QtWidgets.QPushButton("☰")
+        qtlib.setMonospace(self.btnMenu, 1.1)
+        self.btnMenu.setFixedWidth(40)
+        self.btnMenu.setMenu(self.captionMenu)
+        layout.addWidget(self.btnMenu, 0, col)
         layout.setColumnStretch(col, 0)
 
         col += 1
@@ -140,14 +147,15 @@ class CaptionContainer(QtWidgets.QWidget):
         col += 1
         self.btnMultiEdit = RightClickToggleButton("")
         self.btnMultiEdit.setToolTip(
-            "Shows number of selected images. Left-click to toggle between:\n"  \
-            "- Multi-Edit mode with combined captions of all selected images.\n"  \
-            "- Single-Edit mode with caption of the currently displayed image only.\n"  \
+            "Shows number of selected images.<br>Left-click or <b>Ctrl+M</b> to toggle between:<br>"  \
+            "- Multi-Edit mode with combined captions of all selected images.<br>"  \
+            "- Single-Edit mode with caption of the currently displayed image only.<br>"  \
             "Right-click to clear image selection."
         )
         self.btnMultiEdit.setFixedWidth(30)
         self.btnMultiEdit.hide()
-        self.btnMultiEdit.clicked.connect(self._multiEditToggle)
+        self.btnMultiEdit.toggled.connect(self._multiEditToggle)
+        self.btnMultiEdit.toggled.connect(self.ctx.multiEditToggled.emit)
         self.btnMultiEdit.rightClicked.connect(lambda: self.filelist.clearSelection())
         layout.addWidget(self.btnMultiEdit, 0, col)
 
@@ -195,14 +203,26 @@ class CaptionContainer(QtWidgets.QWidget):
 
         col += 1
         self.chkSkipOnSave = qtlib.ToggleButton("⏭️")
-        self.chkSkipOnSave.setToolTip("Skip to next image after saving (no looping)")
+        self.chkSkipOnSave.setToolTip("Skip to next (selected) image after saving, without looping.\nOnly active in Single Edit Mode.")
         self.chkSkipOnSave.setChecked(False)
+        qtlib.setMonospace(self.chkSkipOnSave, 1.2)
         self.chkSkipOnSave.setFixedWidth(26)
         layout.addWidget(self.chkSkipOnSave, 0, col)
+
+        # Force buttons to the same height after layouting
+        QTimer.singleShot(0, self._setButtonHeights)
 
         widget = QtWidgets.QWidget()
         widget.setLayout(layout)
         return widget
+
+    @Slot()
+    def _setButtonHeights(self):
+        h = self.btnApplyRules.height()
+        if h > 10:
+            self.btnMenu.setFixedHeight(h)
+            self.btnDestLocked.setFixedHeight(h)
+            self.chkSkipOnSave.setFixedHeight(h)
 
 
     def _loadRules(self):
@@ -403,8 +423,9 @@ class CaptionContainer(QtWidgets.QWidget):
     @Slot()
     def saveCaption(self):
         # Skip to next file when saving succeeds and skip-on-save is enabled. Don't loop.
-        if self.saveCaptionNoSkip() and self.chkSkipOnSave.isChecked() and not self.filelist.isLastFile():
-            self.filelist.setNextFile()
+        if self.saveCaptionNoSkip() and self.chkSkipOnSave.isChecked():
+            if not (self.multiEdit.active or self.filelist.isLastFile()):
+                self.filelist.setNextFile()
 
     def saveCaptionNoSkip(self) -> bool:
         if self.multiEdit.active:
@@ -485,14 +506,19 @@ class CaptionContainer(QtWidgets.QWidget):
 
     def onFileSelectionChanged(self, selectedFiles: set[str]):
         if selectedFiles:
+            activate = self.btnMultiEdit.isChecked() or (
+                self.ctx.multiEditSupport == MultiEditSupport.Full
+                and not self.btnMultiEdit.isVisible()
+            )
+
             self.btnMultiEdit.setText(str(len(selectedFiles)))
-            self.btnMultiEdit.setChecked(True)
             self.btnMultiEdit.show()
 
-            edited = self.multiEdit.isEdited
-            loadFunc = self._multiEditLoadApplyRules if self.isAutoApplyRules() else self._loadCaption
-            text = self.multiEdit.loadCaptions(selectedFiles, loadFunc)
-            self._setCaptionUnedited(text, edited)
+            if activate:
+                self._multiEditActivate(selectedFiles)
+
+                # Call after activating MultiEdit: Signal calls _multiEditToggle which would activate again.
+                self.btnMultiEdit.setChecked(True)
 
         else:
             self.btnMultiEdit.hide()
@@ -503,15 +529,29 @@ class CaptionContainer(QtWidgets.QWidget):
                 self.loadCaption()
 
 
-    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+    def keyPressEvent(self, event: QtGui.QKeyEvent):
         if event.matches(QtGui.QKeySequence.StandardKey.Save):
             self.saveCaption()
             event.accept()
             return
 
-        event.ignore()
-        return super().keyPressEvent(event)
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            match event.key():
+                case Qt.Key.Key_M:
+                    if self.btnMultiEdit.isVisible():
+                        self.btnMultiEdit.click()
+                        event.accept()
+                        return
 
+        event.ignore()
+        super().keyPressEvent(event)
+
+
+    def _multiEditActivate(self, selectedFiles: set[str]):
+        edited = self.multiEdit.isEdited
+        loadFunc = self._multiEditLoadApplyRules if self.isAutoApplyRules() else self._loadCaption
+        text = self.multiEdit.loadCaptions(selectedFiles, loadFunc)
+        self._setCaptionUnedited(text, edited)
 
     @Slot()
     def _multiEditEnsureFullPresence(self, index: int):
@@ -530,9 +570,10 @@ class CaptionContainer(QtWidgets.QWidget):
 
     @Slot()
     def _multiEditToggle(self, state: bool):
+        #self.chkSkipOnSave.setEnabled(not state)
         if state:
             if not self.multiEdit.active:
-                self.onFileSelectionChanged(self.filelist.selectedFiles)
+                self._multiEditActivate(self.filelist.selectedFiles)
         elif self.multiEdit.active:
             self.multiEdit.clear()
             self.loadCaption()
@@ -555,6 +596,7 @@ class CaptionContainer(QtWidgets.QWidget):
             return
 
         index = -1
+        # TODO: Keep highlight when another window is activated
         if self.txtCaption.hasFocus():
             index = self.txtCaption.getSelectedCaptionIndex()
 
@@ -621,7 +663,6 @@ class HoverTextEdit(QtWidgets.QPlainTextEdit):
     def isHovered(self, text: str) -> bool:
         return bool(text) and self._hoverWords.issuperset(text.split(" "))
 
-
     def setHoverText(self, text: str):
         if self.hoverText == text:
             return
@@ -632,6 +673,12 @@ class HoverTextEdit(QtWidgets.QPlainTextEdit):
 
         self.hoverText = text
         self.hoverTextChanged.emit(text)
+
+
+    def setPlainText(self, text: str):
+        # Only set text when it changes to prevent scrolling to top when hovering
+        if text != self.toPlainText():
+            super().setPlainText(text)
 
 
     def mouseMoveEvent(self, event):

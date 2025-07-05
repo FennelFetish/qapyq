@@ -196,10 +196,13 @@ class Bubble(QtWidgets.QFrame):
         if isinstance(self.textField, qtlib.DynamicLineEdit):
             self.textField.updateWidth()
 
-    def wheelEvent(self, event):
+    def wheelEvent(self, event: QtGui.QWheelEvent):
         if self.spinWeight:
             self.spinWeight.wheelEvent(event)
             self.spinWeight.lineEdit().setCursorPosition(0) # Clear text selection
+            event.accept()
+        else:
+            event.ignore()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent):
         match event.button():

@@ -1,4 +1,4 @@
-from typing import Iterable, Any, Callable
+from typing import Iterable, Iterator, Any, Callable
 import os, enum
 from bisect import bisect_left
 from config import Config
@@ -54,10 +54,63 @@ def removeCommonRoot(path: str, commonRoot: str, allowEmpty=False) -> str:
 
 
 
+class FileSelection:
+    def __init__(self):
+        super().__init__()
+        self.files: set[str] = set()
+        self._sortedFiles: list[str] | None = None
+
+    @property
+    def sorted(self):
+        if self._sortedFiles is None:
+            self._sortedFiles = sorted(self.files, key=sortKey)
+        return self._sortedFiles
+
+    def add(self, element: str):
+        self.files.add(element)
+        if self._sortedFiles is not None:
+            index = bisect_left(self._sortedFiles, sortKey(element), key=sortKey)
+            self._sortedFiles.insert(index, element)
+
+    def update(self, *s: Iterable[str]):
+        self.files.update(*s)
+        self._sortedFiles = None
+
+    def difference_update(self, *s: Iterable[str]):
+        self.files.difference_update(*s)
+        if self._sortedFiles is not None:
+            self._sortedFiles = [file for file in self._sortedFiles if file in self.files]
+
+    def discard(self, element: str):
+        try:
+            self.remove(element)
+        except (KeyError, ValueError):
+            pass
+
+    def remove(self, element: str):
+        self.files.remove(element)
+        if self._sortedFiles:
+            self._sortedFiles.remove(element)
+
+    def clear(self):
+        self.files.clear()
+        self._sortedFiles = None
+
+    def __len__(self) -> int:
+        return self.files.__len__()
+
+    def __contains__(self, o: object) -> bool:
+        return self.files.__contains__(o)
+
+    def __iter__(self) -> Iterator[str]:
+        return self.files.__iter__()
+
+
+
 class FileList:
     def __init__(self):
         self.files: list[str] = []
-        self.selectedFiles: set[str] = set()  # Min 2 selected files, always includes current file
+        self.selection: FileSelection = FileSelection()  # Min 2 selected files, always includes current file
         self.fileData: dict[str, dict[str, Any]] = dict()
         self.currentFile: str = ""
         self.currentIndex: int = -1  # Index < 0 means: File set, but folder not yet scanned
@@ -68,9 +121,14 @@ class FileList:
         self.dataListeners: list = []
 
 
+    @property
+    def selectedFiles(self) -> set[str]:
+        return self.selection.files
+
+
     def reset(self):
         self.files = list()
-        self.selectedFiles = set()
+        self.selection = FileSelection()
         self.fileData = dict()
         self.currentFile = ""
         self.currentIndex = -1
@@ -80,9 +138,12 @@ class FileList:
         self.dataListeners.clear()
 
 
+    def load(self, path: str):
+        self.loadAll((path,))
+
     def loadAll(self, paths: Iterable[str]):
         self.files.clear()
-        self.selectedFiles.clear()
+        self.selection.clear()
         self.fileData.clear()
         for path in paths:
             if os.path.isdir(path):
@@ -100,7 +161,7 @@ class FileList:
 
     def loadFilesFixed(self, paths: Iterable[str], copyFromFileList=None, copyKeys: list[str]=[DataKeys.ImageSize, DataKeys.Thumbnail]):
         self.files.clear()
-        self.selectedFiles.clear()
+        self.selection.clear()
         self.fileData.clear()
 
         if copyFromFileList and copyKeys:
@@ -140,39 +201,12 @@ class FileList:
         self.notifySelectionChanged()
         self.notifyListChanged()
 
-    def load(self, path: str):
-        if os.path.isdir(path):
-            self.loadFolder(path, True)
-        else:
-            self.loadFile(path)
-
-    def loadFile(self, file: str):
-        self.files = []
-        self.selectedFiles = set()
-        self.fileData = dict()
-        self.currentFile = os.path.abspath(file)
-        self.currentIndex = -1
-        self.commonRoot = ""
-        self.notifySelectionChanged()
-        self.notifyListChanged()
-
-    def loadFolder(self, path: str, subfolders=False):
-        self.files = []
-        self.selectedFiles = set()
-        self.fileData = dict()
-        self._walkPath(path, subfolders)
-        self._postprocessList()
-        self.currentFile = self.files[0] if len(self.files) > 0 else ""
-        self.currentIndex = 0
-        self.notifySelectionChanged()
-        self.notifyListChanged()
-
 
     def filterFiles(self, predKeep: Callable[[str], bool]):
         currentFile = self.currentFile
         self.currentIndex = -1
         self.currentFile = ""
-        numSelected = len(self.selectedFiles)
+        numSelected = len(self.selection)
 
         newFiles = []
         for file in self.files:
@@ -186,7 +220,7 @@ class FileList:
             # Remove file
             else:
                 self.fileData.pop(file, None)
-                self.selectedFiles.discard(file)
+                self.selection.discard(file)
                 if file == currentFile:
                     self.currentIndex = len(newFiles) - 1
 
@@ -200,7 +234,7 @@ class FileList:
         self.files = newFiles
         self._updateCommonRoot()
 
-        if len(self.selectedFiles) != numSelected:
+        if len(self.selection) != numSelected:
             self._validateSelection()
             self.notifySelectionChanged()
 
@@ -217,6 +251,8 @@ class FileList:
 
     def isLastFile(self) -> bool:
         self._lazyLoadFolder()
+        if self.selection:
+            return self.selection.sorted[-1] == self.currentFile
         return self.currentIndex == len(self.files) - 1  # True when no files loaded
 
     def getCurrentFile(self):
@@ -251,17 +287,38 @@ class FileList:
 
     def setNextFile(self):
         self._lazyLoadFolder()
-        if numFiles := len(self.files):
-            self.currentIndex = (self.currentIndex+1) % numFiles
-            self.currentFile = self.files[self.currentIndex]
-            self.notifyFileChanged()
+        if self.selection:
+            self._changeSelectedFile(1)
+        else:
+            self._changeFile(1)
 
     def setPrevFile(self):
         self._lazyLoadFolder()
+        if self.selection:
+            self._changeSelectedFile(-1)
+        else:
+            self._changeFile(-1)
+
+    def _changeFile(self, indexOffset: int):
         if numFiles := len(self.files):
-            self.currentIndex = (self.currentIndex-1) % numFiles
+            self.currentIndex = (self.currentIndex + indexOffset) % numFiles
             self.currentFile = self.files[self.currentIndex]
             self.notifyFileChanged()
+
+    def _changeSelectedFile(self, indexOffset: int):
+        try:
+            sortedSelection = self.selection.sorted
+
+            index = bisect_left(sortedSelection, sortKey(self.currentFile), key=sortKey)
+            if sortedSelection[index] != self.currentFile:
+                raise ValueError("Current file not in selected files")
+            index = (index + indexOffset) % len(sortedSelection)
+
+            self.currentIndex = self.indexOf(sortedSelection[index]) # raises when not found
+            self.currentFile = self.files[self.currentIndex]
+            self.notifyFileChanged()
+        except ValueError as ex:
+            print(f"Warning: {ex}")
 
 
     def setNextFolder(self):
@@ -359,37 +416,37 @@ class FileList:
 
 
     def _validateSelection(self) -> bool:
-        if self.selectedFiles and (len(self.selectedFiles) < 2 or self.currentFile not in self.selectedFiles):
-            self.selectedFiles.clear()
+        if self.selection and (len(self.selection) < 2 or self.currentFile not in self.selection):
+            self.selection.clear()
             return False
         return True
 
     def isSelected(self, file: str):
-        return file in self.selectedFiles
+        return file in self.selection
 
     def selectFile(self, file: str):
-        numSelected = len(self.selectedFiles)
+        numSelected = len(self.selection)
         if numSelected == 0:
             if file == self.currentFile:
                 return
-            self.selectedFiles.add(self.currentFile)
+            self.selection.add(self.currentFile)
 
-        self.selectedFiles.add(file)
-        if len(self.selectedFiles) != numSelected:
+        self.selection.add(file)
+        if len(self.selection) != numSelected:
             self.notifySelectionChanged()
 
     def setSelection(self, files: Iterable[str], updateCurrent=False):
-        self.selectedFiles.clear()
-        self.selectedFiles.update(files)
+        self.selection.clear()
+        self.selection.update(files)
 
         if updateCurrent:
-            if self.selectedFiles and (self.currentFile not in self.selectedFiles):
-                self.setCurrentFile(min(self.selectedFiles, key=sortKey))
+            if self.selection and (self.currentFile not in self.selection):
+                self.setCurrentFile(self.selection.sorted[0])
         else:
-            self.selectedFiles.add(self.currentFile)
+            self.selection.add(self.currentFile)
 
-        if len(self.selectedFiles) < 2:
-            self.selectedFiles.clear()
+        if len(self.selection) < 2:
+            self.selection.clear()
         self.notifySelectionChanged()
 
     def _getFileRange(self, fileEnd: str) -> list[str] | None:
@@ -411,14 +468,14 @@ class FileList:
 
     def selectFileRange(self, fileEnd: str):
         if rangeFiles := self._getFileRange(fileEnd):
-            self.selectedFiles.update(rangeFiles)
+            self.selection.update(rangeFiles)
             self.notifySelectionChanged()
 
     def unselectFileRange(self, fileEnd: str):
         if rangeFiles := self._getFileRange(fileEnd):
-            self.selectedFiles.difference_update(rangeFiles)
-            if self.selectedFiles:
-                self.selectedFiles.add(self.currentFile)
+            self.selection.difference_update(rangeFiles)
+            if self.selection:
+                self.selection.add(self.currentFile)
             self.notifySelectionChanged()
 
     def unselectFile(self, file: str):
@@ -427,16 +484,16 @@ class FileList:
             return
 
         try:
-            self.selectedFiles.remove(file)
-            if len(self.selectedFiles) < 2:
-                self.selectedFiles.clear()
+            self.selection.remove(file)
+            if len(self.selection) < 2:
+                self.selection.clear()
             self.notifySelectionChanged()
         except KeyError:
             pass
 
     def clearSelection(self):
-        if self.selectedFiles:
-            self.selectedFiles.clear()
+        if self.selection:
+            self.selection.clear()
             self.notifySelectionChanged()
 
 
@@ -447,8 +504,9 @@ class FileList:
         self.selectionListeners.remove(listener)
 
     def notifySelectionChanged(self):
+        selectedFiles = self.selectedFiles
         for l in self.selectionListeners:
-            l.onFileSelectionChanged(self.selectedFiles)
+            l.onFileSelectionChanged(selectedFiles)
 
 
     def setData(self, file: str, key: str, data: Any, notify=True) -> None:
