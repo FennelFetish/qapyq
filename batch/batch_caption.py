@@ -117,19 +117,19 @@ class BatchCaption(QtWidgets.QWidget):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
-        layout.setColumnStretch(0, 0)
-        layout.setColumnStretch(1, 0)
         layout.setColumnStretch(2, 1)
 
-        layout.addWidget(self.tagSettings, 0, 0, 1, 2)
-
+        row = 0
         self.destTag = FileTypeSelector()
         self.destTag.setFixedType(FileTypeSelector.TYPE_TAGS)
-        layout.addWidget(QtWidgets.QLabel("Storage key:"), 1, 0)
-        layout.addLayout(self.destTag, 1, 1)
+        layout.addWidget(QtWidgets.QLabel("Storage key:"), row, 0)
+        layout.addLayout(self.destTag, row, 1)
 
         self.chkTagSkipExisting = QtWidgets.QCheckBox("Skip file if key exists")
-        layout.addWidget(self.chkTagSkipExisting, 1, 2)
+        layout.addWidget(self.chkTagSkipExisting, row, 2)
+
+        row += 1
+        layout.addWidget(self.tagSettings, row, 0, 1, 3)
 
         groupBox = QtWidgets.QGroupBox("Generate Tags")
         groupBox.setCheckable(True)

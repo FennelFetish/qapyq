@@ -42,7 +42,8 @@ class MaskBackendDef(BackendDef):
 
 BackendsCaption = {
     "Florence-2":       BackendDef("florence2",     BackendTypes.TRANSFORMERS),
-    "InternVL2/2.5":    BackendDef("internvl2",     BackendTypes.TRANSFORMERS),
+    #"Gemma-3":          BackendDef("gemma3",        BackendTypes.LLAMA_CPP),
+    "InternVL":         BackendDef("internvl2",     BackendTypes.TRANSFORMERS),
     #"InternVL2/2.5 VLLM":BackendDef("internvl2-vllm",BackendTypes.VLLM),
     "JoyCaption":       BackendDef("joycaption",    BackendTypes.TRANSFORMERS),
     "MiniCPM-V-2.6":    BackendDef("minicpm",       BackendTypes.LLAMA_CPP),
@@ -111,6 +112,10 @@ class BackendLoader:
             case "florence2" | "florence2-detect" | "florence2-segment":
                 from .backend_florence2 import Florence2Backend
                 return Florence2Backend(config)
+            case "gemma3":
+                from .backend_llamacpp import LlamaCppVisionBackend
+                from llama_cpp.llama_chat_format import Llava15ChatHandler
+                return LlamaCppVisionBackend(config, Llava15ChatHandler)
             case "internvl2":
                 from .backend_internvl2 import InternVL2Backend
                 return InternVL2Backend(config)

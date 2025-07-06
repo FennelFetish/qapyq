@@ -2,24 +2,35 @@ import numpy as np
 import onnxruntime
 import pandas as pd
 import torch # Not used directly, but required for GPU inference
-from .tag import TagBackend
+from .tag import TagBackend, ThresholdMode
 from .devmap import DevMap
 from config import Config
 
 
 class WDTag(TagBackend):
+    DEFAULT_GENERAL_THRESH = 0.35
+    DEFAULT_CHAR_THRESH = 0.85
+
+    MIN_CHAR_THRESH = 0.15
+
     def __init__(self, config: dict):
-        self.general_thresh = 0.35
-        self.general_mcut = False
-        self.character_thresh = 0.85
-        self.character_mcut = False
+        super().__init__()
+
+        self.includeRatings = False
+
+        self.includeGeneral = True
+        self.generalThresholdMode: ThresholdMode = ThresholdMode(self.DEFAULT_GENERAL_THRESH, False)
+
+        self.includeCharacters = True
+        self.characterOnlyMax = True
+        self.characterThresholdMode: ThresholdMode = ThresholdMode(self.DEFAULT_CHAR_THRESH, True, True)
+
         self.setConfig(config)
 
-        sep_tags = self.loadLabels(config.get("csv_path"))
-
-        self.tag_names = sep_tags[0]
-        self.rating_indexes = sep_tags[1]
-        self.general_indexes = sep_tags[2]
+        sep_tags = self._loadLabels(config.get("csv_path"))
+        self.tag_names         = sep_tags[0]
+        self.rating_indexes    = sep_tags[1]
+        self.general_indexes   = sep_tags[2]
         self.character_indexes = sep_tags[3]
 
         # https://onnxruntime.ai/docs/api/python/api_summary.html
@@ -43,73 +54,85 @@ class WDTag(TagBackend):
     def setConfig(self, config: dict):
         config = config.get(Config.INFER_PRESET_SAMPLECFG_KEY, {})
 
-        self.general_thresh = float(config.get("threshold", 0.35))
-        self.general_mcut   = bool(config.get("general_mcut_enabled", False))
+        self.includeRatings = bool(config.get("include_ratings", False))
 
-        self.character_thresh = float(config.get("character_thresh", 0.85))
-        self.character_mcut   = bool(config.get("character_mcut_enabled", False))
+        self.includeGeneral = bool(config.get("include_general", True))
+        self.generalThresholdMode = ThresholdMode.fromConfig(config, "threshold", "threshold_mode", self.DEFAULT_GENERAL_THRESH)
+
+        self.includeCharacters = bool(config.get("include_characters", True))
+        self.characterOnlyMax = bool(config.get("character_only_max", True))
+        self.characterThresholdMode = ThresholdMode.fromConfig(config, "character_threshold", "character_threshold_mode", self.DEFAULT_CHAR_THRESH)
 
 
     def tag(self, imgFile) -> str:
         img = self.loadImageSquare(imgFile, self.modelTargetSize)
         img = np.expand_dims(img, axis=0)
 
-        tags, characterResults = self.predict(img)
-
-        # Prepend character
-        if characterResults and (char := max(characterResults, key=lambda k: characterResults[k])):
-            tags = ", ".join([char, tags])
-
+        results = self.predict(img)
+        tags = ", ".join(res for res in results if res)
         return tags
 
 
-    def predict(self, image):
+    def predict(self, image) -> tuple[str, ...]:
         input_name = self.model.get_inputs()[0].name
         label_name = self.model.get_outputs()[0].name
         preds = self.model.run([label_name], {input_name: image})[0]
 
-        labels = list(zip(self.tag_names, preds[0].astype(float)))
+        labels: list[tuple[str, float]] = list(zip(self.tag_names, preds[0].astype(float)))
 
         # First 4 labels are actually ratings: pick one with argmax
-        # ratings_names = (labels[i] for i in self.rating_indexes)
-        # rating = dict(ratings_names)
+        if self.includeRatings:
+            maxRating = max(self.nameScores(labels, self.rating_indexes), key=self.scoreKey)
+            rating = "rating " + maxRating[0]
+        else:
+            rating = ""
 
         # Then we have general tags: pick any where prediction confidence > threshold
-        general_names = (labels[i] for i in self.general_indexes)
-
-        general_thresh = self.general_thresh
-        if self.general_mcut:
-            general_probs = np.array([x[1] for x in general_names])
-            general_thresh = self.mcutThreshold(general_probs)
-
-        general_res = (x for x in general_names if x[1] > general_thresh)
-        general_res = dict(general_res)
+        if self.includeGeneral:
+            generalTags = self.processPreds(labels, self.general_indexes, self.generalThresholdMode)
+        else:
+            generalTags = ""
 
         # Everything else is characters: pick any where prediction confidence > threshold
-        character_names = (labels[i] for i in self.character_indexes)
+        if self.includeCharacters:
+            if self.characterOnlyMax:
+                maxCharacter = max(self.nameScores(labels, self.character_indexes), key=self.scoreKey)
+                characterTags = maxCharacter[0] if maxCharacter[1] > self.characterThresholdMode.threshold else ""
+            else:
+                characterTags = self.processPreds(labels, self.character_indexes, self.characterThresholdMode, self.MIN_CHAR_THRESH)
+        else:
+            characterTags = ""
 
-        character_thresh = self.character_thresh
-        if self.character_mcut:
-            character_probs = np.array([x[1] for x in character_names])
-            character_thresh = self.mcutThreshold(character_probs)
-            character_thresh = max(0.15, character_thresh)
+        return rating, characterTags, generalTags
 
-        character_res = (x for x in character_names if x[1] > character_thresh)
-        character_res = dict(character_res)
 
-        sorted_general_strings = sorted(
-            general_res.items(),
-            key=lambda x: x[1],
+    @classmethod
+    def processPreds(cls, labels: list[tuple[str, float]], indexes: list[int], thresholdMode: ThresholdMode, minThreshold=TagBackend.MIN_THRESH) -> str:
+        threshold = thresholdMode.threshold
+        if thresholdMode.adaptive:
+            probs = np.fromiter((x[1] for x in cls.nameScores(labels, indexes)), dtype=float, count=len(indexes))
+            threshold = cls.calcAdaptiveThreshold(probs, threshold, thresholdMode.strict)
+            threshold = max(threshold, minThreshold)
+
+        sortedNames = sorted(
+            (x for x in cls.nameScores(labels, indexes) if x[1] > threshold),
+            key=cls.scoreKey,
             reverse=True,
         )
-        sorted_general_strings = ", ".join(x[0] for x in sorted_general_strings)
-
-        #return sorted_general_strings, rating, character_res, general_res
-        return sorted_general_strings, character_res
+        return ", ".join(x[0] for x in sortedNames)
 
 
     @staticmethod
-    def loadLabels(csvPath: str) -> list[str]:
+    def nameScores(labels: list[tuple[str, float]], indexes: list[int]):
+        return (labels[i] for i in indexes)
+
+    @staticmethod
+    def scoreKey(x: tuple):
+        return x[1]
+
+
+    @staticmethod
+    def _loadLabels(csvPath: str) -> tuple[list[str], list[int], list[int], list[int]]:
         dataframe = pd.read_csv(csvPath)
 
         name_series = dataframe["name"]
@@ -120,18 +143,3 @@ class WDTag(TagBackend):
         general_indexes = list(np.where(dataframe["category"] == 0)[0])
         character_indexes = list(np.where(dataframe["category"] == 4)[0])
         return tag_names, rating_indexes, general_indexes, character_indexes
-
-
-    @staticmethod
-    def mcutThreshold(probs: np.ndarray):
-        """
-        Maximum Cut Thresholding (MCut)
-        Largeron, C., Moulin, C., & Gery, M. (2012). MCut: A Thresholding Strategy
-        for Multi-label Classification. In 11th International Symposium, IDA 2012
-        (pp. 172-183).
-        """
-        sorted_probs = probs[probs.argsort()[::-1]]
-        difs = sorted_probs[:-1] - sorted_probs[1:]
-        t = difs.argmax()
-        thresh = (sorted_probs[t] + sorted_probs[t + 1]) / 2
-        return thresh

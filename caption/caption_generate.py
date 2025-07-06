@@ -1,4 +1,4 @@
-import os, re, traceback
+import os, re, traceback, weakref
 from typing import Iterable
 from enum import Enum
 from PySide6 import QtWidgets
@@ -83,7 +83,13 @@ class CaptionGenerate(CaptionTab):
 
         row += 1
         self.tagSettings = TagPresetWidget()
-        layout.addWidget(self.tagSettings, row, 0, 2, 2)
+        layout.addWidget(self.tagSettings, row, 0, 1, 6)
+
+        row += 1
+        self.statusBar = qtlib.ColoredMessageStatusBar()
+        self.statusBar.layout().setContentsMargins(0, 0, 8, 0)
+        self.statusBar.setSizeGripEnabled(False)
+        layout.addWidget(self.statusBar, row, 0, 1, 4)
 
         self.cboMode = QtWidgets.QComboBox()
         self.cboMode.addItem("Append", ApplyMode.Append)
@@ -103,12 +109,6 @@ class CaptionGenerate(CaptionTab):
         self.btnGenerate.clicked.connect(self.generate)
         layout.addWidget(self.btnGenerate, row, 5)
         self._updateGenerateButton()
-
-        row += 1
-        self.statusBar = qtlib.ColoredMessageStatusBar()
-        self.statusBar.layout().setContentsMargins(50, 0, 8, 0)
-        self.statusBar.setSizeGripEnabled(False)
-        layout.addWidget(self.statusBar, row, 2, 1, 4)
 
         self.setLayout(layout)
 
@@ -172,6 +172,7 @@ class CaptionGenerate(CaptionTab):
     def generate(self):
         if self._task:
             self._task.abort()
+            self.statusBar.showMessage("Aborting ...")
             return
 
         filelist = self.ctx.tab.filelist
@@ -214,16 +215,16 @@ class CaptionGenerate(CaptionTab):
         self._updateGenerateButton()
         self._task = None
 
-    @Slot()
-    def onProgress(self, message):
+    @Slot(str)
+    def onProgress(self, message: str):
         self.statusBar.showMessage(message)
 
-    @Slot()
+    @Slot(str)
     def onFail(self, errorMsg: str):
         self._finishTask()
         self.statusBar.showColoredMessage(errorMsg, False, 0)
 
-    @Slot()
+    @Slot(dict)
     def onGenerated(self, fileResults: dict[str, str]):
         self._finishTask()
 
@@ -372,15 +373,14 @@ class InferenceTask(QRunnable):
         self._mutex = QMutex()
         self._aborted = False
 
-        self.session = None
+        self.weakSession = None
 
 
     def abort(self):
-        self.signals.progress.emit("Aborting ...")
         with QMutexLocker(self._mutex):
             self._aborted = True
-            if self.session:
-                self.session.abort()
+            if (self.weakSession is not None) and (session := self.weakSession()):
+                session.abort()
 
     def isAborted(self) -> bool:
         with QMutexLocker(self._mutex):
@@ -403,15 +403,16 @@ class InferenceTask(QRunnable):
             contentText = " and ".join(self.content)
             progressText = f"Generating {contentText} ({{}}/{len(self.files)}) ..."
 
+            fileResults = dict()
+
             maxProcs = self.getMaxProcs()
             with Inference().createSession(maxProcs) as session:
                 with QMutexLocker(self._mutex):
-                    self.session = session
+                    self.weakSession = weakref.ref(session)
 
                 self.signals.progress.emit(f"Loading {contentText} model ...")
                 session.prepare(self.prepare, lambda: self.signals.progress.emit(progressText.format(0)))
 
-                fileResults = dict()
                 for fileNr, (file, results, exception) in enumerate(session.queueFiles(self.files, self.check), 1):
                     if exception:
                         raise exception
@@ -434,14 +435,11 @@ class InferenceTask(QRunnable):
                     else:
                         print(f"WARNING: No caption generated for '{file}'")
 
-                self.signals.done.emit(fileResults)
+            self.signals.done.emit(fileResults)
 
         except Exception as ex:
             traceback.print_exc()
             self.signals.fail.emit(str(ex))
-        finally:
-            with QMutexLocker(self._mutex):
-                self.session = None
 
 
     def prepare(self, proc: InferenceProcess):

@@ -88,7 +88,7 @@ class BaseSettingsWidget(QtWidgets.QWidget):
     def _build(self) -> None:
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        layout.setColumnMinimumWidth(0, 100)
+        layout.setColumnMinimumWidth(0, 120)
         layout.setColumnMinimumWidth(2, 20)
         layout.setColumnMinimumWidth(3, 100)
         layout.setColumnStretch(0, 0)
@@ -431,17 +431,17 @@ class TagModelSettings(BaseSettingsWidget):
         layout.addWidget(self.btnChooseTagList, row, 6)
 
         row += 1
-        self.spinThreshold = QtWidgets.QDoubleSpinBox()
-        self.spinThreshold.setRange(0.01, 1.0)
-        self.spinThreshold.setSingleStep(0.05)
-        layout.addWidget(QtWidgets.QLabel("Tag Threshold:"), row, 0)
-        layout.addWidget(self.spinThreshold, row, 1)
+        from .tag_settings import TagSettingsWidget
+        self.tagSettings = TagSettingsWidget()
+        self.tagSettings.expand(animate=False)
+        layout.addWidget(self.tagSettings, row, 0, 1, 7)
 
     @Slot()
     def _onBackendChanged(self, index):
         super()._onBackendChanged(index)
 
         enabled = (self.backendType == BackendTypes.ONNX)
+        self.tagSettings.setSupportsRatingAndChars(enabled)
         for w in [self.lblTagListPath, self.txtTagListPath, self.btnChooseTagList]:
             w.setEnabled(enabled)
 
@@ -449,12 +449,14 @@ class TagModelSettings(BaseSettingsWidget):
         altTarget = self.txtTagListPath if target == self.txtPath else self.txtPath
         super()._choosePath(target, altTarget)
 
+
     def fromDict(self, settings: dict) -> None:
         super().fromDict(settings)
         self.txtTagListPath.setText(settings.get("csv_path", ""))
 
         sampleSettings = settings.get(Config.INFER_PRESET_SAMPLECFG_KEY, {})
-        self.spinThreshold.setValue(sampleSettings.get("threshold", 0.35))
+        self.tagSettings.fromDict(sampleSettings)
+        self.tagSettings.setSupportsRatingAndChars(self.backendType == BackendTypes.ONNX)
 
     def toDict(self) -> dict:
         settings = super().toDict()
@@ -462,9 +464,7 @@ class TagModelSettings(BaseSettingsWidget):
         if self.backendType == BackendTypes.ONNX:
             settings["csv_path"] = self.txtTagListPath.text()
 
-        settings[Config.INFER_PRESET_SAMPLECFG_KEY] = {
-            "threshold": self.spinThreshold.value()
-        }
+        settings[Config.INFER_PRESET_SAMPLECFG_KEY] = self.tagSettings.toDict()
         return settings
 
 

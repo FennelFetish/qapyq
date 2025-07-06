@@ -161,7 +161,10 @@ class InferenceSettingsWidget(superqt.QCollapsible):
 
     @Slot()
     def setDefaultValues(self):
-        self.fromDict({})
+        if self.freqPenalty.isEnabled() and self.presencePenalty.isEnabled():
+            self.fromDict({"frequency_penalty": 0.0, "presence_penalty": 0.0})
+        else:
+            self.fromDict({})
 
 
     def fromDict(self, settings: dict):
