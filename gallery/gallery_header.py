@@ -11,7 +11,6 @@ class GalleryHeader(QtWidgets.QFrame):
         self.tab = tab
         self.dir = dir
         self.row = row
-        self.numImages = 0
 
         layout = QtWidgets.QHBoxLayout()
         layout.setContentsMargins(4, 4, 4, 4)
@@ -27,9 +26,9 @@ class GalleryHeader(QtWidgets.QFrame):
         self.setLayout(layout)
         self.setStyleSheet(f"color: #fff; background-color: {qtlib.COLOR_BUBBLE_BLACK}")
 
-    def updateImageLabel(self):
-        text = f"{self.numImages} Image"
-        if self.numImages != 1:
+    def updateImageLabel(self, numImages: int):
+        text = f"{numImages} Image"
+        if numImages != 1:
             text += "s"
         self.lblImgCount.setText(text)
 

@@ -392,7 +392,7 @@ class GalleryListItem(GalleryItem):
     @override
     def setImageSize(self, w: int, h: int):
         super().setImageSize(w, h)
-        if self._built:
+        if self._built and self._pixmap is not None:
             if w < 1 or h < 1:
                 self.lblFilename.setStyleSheet(f"color: {qtlib.COLOR_RED}")
             self.lblFilename.setText(f"{self.filename} ({self.imgWidth}x{self.imgHeight})")

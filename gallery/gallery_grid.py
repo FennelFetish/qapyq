@@ -1,5 +1,7 @@
 from __future__ import annotations
 import os
+from contextlib import contextmanager
+from typing import NamedTuple
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Signal, Slot, QRect, QPoint, QObject, QTimer, QEvent
 from lib.captionfile import FileTypeSelector
@@ -16,7 +18,7 @@ class GalleryGrid(QtWidgets.QWidget):
     VIEW_MODE_LIST = "list"
 
     headersUpdated  = Signal(list)
-    fileChanged     = Signal(object, int)
+    fileChanged     = Signal(object, int, bool)
     reloaded        = Signal()
     thumbnailLoaded = Signal()
     loadingProgress = Signal()
@@ -79,6 +81,11 @@ class GalleryGrid(QtWidgets.QWidget):
         super().deleteLater()
 
 
+    @property
+    def selectedItem(self) -> GalleryItem |  None:
+        return self._selectedItem
+
+
     def setViewMode(self, mode: str):
         newItemClass = GalleryListItem if mode==self.VIEW_MODE_LIST else GalleryGridItem
         if newItemClass == self.itemClass:
@@ -108,26 +115,131 @@ class GalleryGrid(QtWidgets.QWidget):
             item.loadCaption()
 
 
-    def clearLayout(self) -> None:
+    @contextmanager
+    def noGridUpdate(self):
+        try:
+            self.setVisible(False)
+            #self.setUpdatesEnabled(False)
+            yield self
+        finally:
+            #self.setUpdatesEnabled(True)
+            self.setVisible(True)
+
+
+    def clearTask(self):
         if self._loadTask:
             self._loadTask.aborted = True
             self._loadTask = None
 
+    def clearLayout(self):
+        self.clearTask()
         for i in reversed(range(self._layout.count())):
             item = self._layout.takeAt(i)
             if widget := item.widget():
                 widget.deleteLater()
 
 
-    def reloadImages(self):
-        self.fileItems = dict()
+    def reloadImages(self, clear=True):
         self._selectedItem = None
         self._highlightedFiles.clear()
 
-        self.clearLayout()
+        if clear:
+            self.fileItems = dict()
+            self.clearLayout()
+            itemsKeep = set()
+        else:
+            self.clearTask()
+            itemsKeep = self.fileItems.keys() & self.filelist.getFiles()
 
-        self._loadTask = GalleryLoadTask(self)
-        self._loadTask.loadBatch()
+        self._loadGrid(itemsKeep)
+
+
+    def _loadGrid(self, itemsKeep: set[str]):
+        currentFile = self.filelist.getCurrentFile()
+        files = self.filelist.getFiles()
+
+        # Take all headers and remove unneded GalleryItems from layout and 'self.fileItems'
+        headers: dict[str, GalleryHeader] = dict()
+        for i in reversed(range(self._layout.count())):
+            widget: GalleryHeader | GalleryItem = self._layout.takeAt(i).widget()
+            if isinstance(widget, GalleryHeader):
+                headers[widget.dir] = widget
+            elif widget.file not in itemsKeep:
+                self.fileItems.pop(widget.file)
+                widget.deleteLater()
+
+        headerInfo = dict[str, HeaderInfo]() # Sorted
+        createTasks = list[CreateTask]()
+
+        row = col = 0
+        currentDir = ""
+        currentHeader: HeaderInfo = None
+        emptyLastRow = False
+
+        # Assign each file and header to row and column in grid.
+        # Reuse existing GalleryItems/GalleryHeaders and immediately move them to their new place.
+        # Add a CreateTask for new files and headers.
+        for file in files:
+            dirname = os.path.dirname(file)
+            if currentDir != dirname:
+                currentDir = dirname
+
+                currentHeader = HeaderInfo()
+                headerInfo[dirname] = currentHeader
+
+                if col > 0:
+                    col = 0
+                    row += 1
+
+                # Add header
+                if header := headers.pop(dirname, None):
+                    currentHeader.header = header
+                    header.row = row
+                    self._layout.addWidget(header, row, 0, 1, self.columns)
+                else:
+                    createTasks.append(CreateTask(row, 0, True, dirname))
+
+                row += 1
+
+            # Add Image
+            if item := self.fileItems.get(file):
+                item.row = row
+                self._layout.addWidget(item, row, col, Qt.AlignmentFlag.AlignTop)
+
+                if file == currentFile:
+                    self._selectedItem = item
+                    item.selected = True
+                elif item.selected:
+                    item.selected = False
+            else:
+                createTasks.append(CreateTask(row, col, False, file))
+
+            currentHeader.fileCount += 1
+            emptyLastRow = False
+
+            col += 1
+            if col >= self.columns:
+                col = 0
+                row += 1
+                emptyLastRow = True
+
+        self.rows = row
+        if not emptyLastRow:
+            self.rows += 1
+
+        # Delete remaining (unused) headers
+        for header in headers.values():
+            header.deleteLater()
+
+        for info in headerInfo.values():
+            info.updateHeader()
+
+        self.headersUpdated.emit( HeaderInfo.getLoadedHeaders(headerInfo) )
+
+        if createTasks:
+            self._loadTask = GalleryLoadTask(self, headerInfo, createTasks)
+            self._loadTask.loadBatch()
+
 
     def getLoadPercent(self) -> float:
         if self._loadTask and len(self.filelist.files) > 0:
@@ -152,16 +264,26 @@ class GalleryGrid(QtWidgets.QWidget):
             return
         self.columns = cols
 
-        items = []
+        widgets = list[GalleryHeader | GalleryItem]()
         for i in reversed(range(self._layout.count())):
-            items.append(self._layout.takeAt(i))
+            widgets.append(self._layout.takeAt(i).widget())
 
-        headers = list()
+        headers = list[GalleryHeader]()
         emptyLastRow = False
 
         row, col = 0, 0
-        for widget in (item.widget() for item in reversed(items)):
-            if isinstance(widget, GalleryItem):
+        for widget in reversed(widgets):
+            if isinstance(widget, GalleryHeader):
+                if col > 0:
+                    row += 1
+                    col = 0
+
+                widget.row = row
+                headers.append(widget)
+                self._layout.addWidget(widget, row, 0, 1, cols)
+                row += 1
+
+            else:
                 widget.row = row
                 self._layout.addWidget(widget, row, col, Qt.AlignmentFlag.AlignTop)
                 emptyLastRow = False
@@ -171,15 +293,6 @@ class GalleryGrid(QtWidgets.QWidget):
                     row += 1
                     col = 0
                     emptyLastRow = True
-
-            elif isinstance(widget, GalleryHeader):
-                if col > 0:
-                    row += 1
-                    col = 0
-                widget.row = row
-                headers.append(widget)
-                self._layout.addWidget(widget, row, 0, 1, cols)
-                row += 1
 
         self.rows = row
         if not emptyLastRow:
@@ -245,17 +358,21 @@ class GalleryGrid(QtWidgets.QWidget):
         self._selectedItem = item
 
         item.takeFocus()
-        self.fileChanged.emit(item, item.row)
+        self.fileChanged.emit(item, item.row, False)
 
     def onFileListChanged(self, currentFile: str):
-        # When files were appended, the selection is kept
-        # and the gallery should scroll to the selection instead of the top
+        # When files are appended, the selection is kept.
+        # When files are removed, update the selection.
+        # The gallery should scroll to the selection instead of the top.
         if (selectedItem := self._selectedItem) and selectedItem.file != currentFile:
-            selectedItem = None
+            selectedItem.selected = False
+            if selectedItem := self.fileItems.get(currentFile):
+                selectedItem.selected = True
+                self._selectedItem = selectedItem
 
-        self.reloadImages()
+        self.reloadImages(clear=False)
         if selectedItem:
-            self.fileChanged.emit(selectedItem, selectedItem.row)
+            self.fileChanged.emit(selectedItem, selectedItem.row, True)
         else:
             self.reloaded.emit()
 
@@ -327,113 +444,113 @@ class GalleryDragEventFilter(QObject):
 
 
 
-class GalleryLoadTask(QObject):
-    INTERVAL_SHORT = 10
-    INTERVAL_LONG  = 1500
+class HeaderInfo:
+    def __init__(self):
+        self.header: GalleryHeader | None = None
+        self.fileCount: int = 0
 
-    def __init__(self, galleryGrid: GalleryGrid):
+    def updateHeader(self):
+        if self.header:
+            self.header.updateImageLabel(self.fileCount)
+
+    @staticmethod
+    def getLoadedHeaders(headerInfo: dict[str, HeaderInfo]) -> list[GalleryHeader]:
+        return [info.header for info in headerInfo.values() if info.header]
+
+
+class CreateTask(NamedTuple):
+    row: int
+    col: int
+    isHeader: bool
+    file: str  # Or directory path
+
+
+class GalleryLoadTask(QObject):
+    BATCH_SIZE_FIRST = 1000
+    BATCH_SIZE       = 10000
+
+    # Let first iteration adjust the layout and load the first thumbnails
+    INTERVAL_FIRST   = 1000
+    INTERVAL         = 10
+
+    def __init__(self, galleryGrid: GalleryGrid, headers: dict[str, HeaderInfo], createItems: list[CreateTask]):
         super().__init__()
         self.galleryGrid = galleryGrid
         self.layout      = galleryGrid._layout
         self.numColumns  = galleryGrid.columns
         self.itemClass   = galleryGrid.itemClass
 
-        self.run = 0
+        self.headers = headers
+        self.createItems = createItems
+
         self.needsAdjust = False
         self.aborted = False
 
-        self.files = galleryGrid.filelist.getFiles()
         self.index = 0
         self.readyIndex = 0
-        self.batchSize = 50
 
-        self.headers: list[GalleryHeader] = list()
-        self.currentHeader: GalleryHeader = None
-        self.row = 0
-        self.col = 0
-        self.emptyLastRow = False
+        self.batchSize = self.BATCH_SIZE_FIRST
+        self.interval = self.INTERVAL_FIRST
 
-        self.timer = QTimer()
-        self.timer.setSingleShot(True)
+        self.timer = QTimer(singleShot=True, interval=self.interval)
         self.timer.timeout.connect(self.loadBatch)
-
-        # Let first iteration adjust the layout and load the first thumbnails
-        initialInterval = self.INTERVAL_LONG if len(self.files) > 1000 else self.INTERVAL_SHORT
-        self.timer.setInterval(initialInterval)
 
 
     @Slot()
-    def loadBatch(self) -> None:
-        self.run += 1
+    def loadBatch(self):
         if self.aborted:
             return
 
-        lastNumHeaders = len(self.headers)
+        newHeaders = False
 
-        end = min(self.index + self.batchSize, len(self.files))
-        for self.index in range(self.index, end):
-            file = self.files[self.index]
+        with self.galleryGrid.noGridUpdate():
+            end = min(self.index + self.batchSize, len(self.createItems))
+            for self.index in range(self.index, end):
+                row, col, isHeader, file = self.createItems[self.index]
 
-            dirname = os.path.dirname(file)
-            if not self.currentHeader or self.currentHeader.dir != dirname:
-                if self.col > 0:
-                    self.col = 0
-                    self.row += 1
+                if isHeader:
+                    self.addHeader(file, row)
+                    newHeaders = True
+                else:
+                    self.addImage(file, row, col)
 
-                self.currentHeader = self.addHeader(dirname, self.row)
-                self.headers.append(self.currentHeader)
-                self.row += 1
+                if row >= self.galleryGrid.rows:
+                    self.galleryGrid.rows = row + 1
 
-            self.addImage(file, self.row, self.col)
-            self.currentHeader.numImages += 1
-            self.emptyLastRow = False
-
-            self.col += 1
-            if self.col >= self.numColumns:
-                self.col = 0
-                self.row += 1
-                self.emptyLastRow = True
-
-        numRows = self.row
-        if not self.emptyLastRow:
-            numRows += 1
-        self.galleryGrid.rows = numRows
-
-        # Update headers and their image counter
-        for header in self.headers[max(0, lastNumHeaders-1):]:
-            header.updateImageLabel()
-
-        if len(self.headers) != lastNumHeaders:
-            self.galleryGrid.headersUpdated.emit(self.headers)
+        if newHeaders:
+            self.galleryGrid.headersUpdated.emit( HeaderInfo.getLoadedHeaders(self.headers) )
         else:
             self.galleryGrid.loadingProgress.emit()
 
         # Queue next batch
         self.index += 1
-        if self.index < len(self.files):
-            self.setReady(self.index // 80)
+        if self.index < len(self.createItems):
+            readyIndex = self.index // 100
+            readyIndex = max(readyIndex, self.readyIndex+(self.numColumns*5)+1)
+            self.setReady(readyIndex)
 
-            if self.run == 2:
-                self.timer.setInterval(self.INTERVAL_SHORT)
+            self.batchSize = self.BATCH_SIZE
+            self.timer.setInterval(self.interval)
             self.timer.start()
+            self.interval = self.INTERVAL
         else:
             self.setReady(self.index)
             self.finalize()
 
+
     def setReady(self, toIndex: int):
-        toIndex = max(toIndex, 0)
-        toIndex = min(toIndex, len(self.files))
+        toIndex = min(toIndex, len(self.createItems))
         for index in range(self.readyIndex, toIndex):
-            file = self.files[index]
-            item = self.galleryGrid.fileItems[file]
-            item.ready = True
+            _, _, isHeader, file = self.createItems[index]
+            if not isHeader:
+                item = self.galleryGrid.fileItems[file]
+                item.ready = True
 
         self.readyIndex = toIndex
 
 
     def finalize(self):
-        self.galleryGrid._loadTask = None
-
+        self.galleryGrid.clearTask()
         if self.needsAdjust:
             self.galleryGrid.adjustGrid()
 
@@ -453,10 +570,13 @@ class GalleryLoadTask(QObject):
         if filelist.isSelected(file):
             galleryItem.selectedSecondary = True
 
-    def addHeader(self, dir: str, row: int) -> GalleryHeader:
+    def addHeader(self, dir: str, row: int):
         header = GalleryHeader(self.galleryGrid.tab, dir, row)
         self.layout.addWidget(header, row, 0, 1, self.numColumns)
-        return header
+
+        headerInfo = self.headers[dir]
+        headerInfo.header = header
+        headerInfo.updateHeader()
 
 
 

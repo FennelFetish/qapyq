@@ -191,6 +191,7 @@ class FileList:
             self.loadAll(paths)
             return
 
+        self._lazyLoadFolder()
         for path in paths:
             if os.path.isdir(path):
                 self._walkPath(path, True)
@@ -198,6 +199,13 @@ class FileList:
                 self.files.append(os.path.abspath(path))
 
         self._postprocessList(removeDuplicates=True)
+
+        try:
+            self.currentIndex = self.indexOf(self.currentFile)
+        except ValueError:
+            print(f"Warning: File {self.currentFile} not in FileList")
+            self.currentIndex = -1
+
         self.notifySelectionChanged()
         self.notifyListChanged()
 
@@ -280,7 +288,7 @@ class FileList:
 
     def indexOf(self, file: str) -> int:
         index = bisect_left(self.files, sortKey(file), key=sortKey)
-        if self.files[index] == file:
+        if index < len(self.files) and self.files[index] == file:
             return index
         raise ValueError("File not in FileList")
 
@@ -310,7 +318,7 @@ class FileList:
             sortedSelection = self.selection.sorted
 
             index = bisect_left(sortedSelection, sortKey(self.currentFile), key=sortKey)
-            if sortedSelection[index] != self.currentFile:
+            if index >= len(sortedSelection) or sortedSelection[index] != self.currentFile:
                 raise ValueError("Current file not in selected files")
             index = (index + indexOffset) % len(sortedSelection)
 

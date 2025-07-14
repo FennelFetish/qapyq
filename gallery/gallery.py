@@ -1,5 +1,5 @@
 import time
-from PySide6 import QtWidgets
+from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QSignalBlocker, QTimer
 from bisect import bisect_right
 from .gallery_grid import GalleryGrid, GalleryHeader
@@ -8,8 +8,6 @@ from lib.captionfile import FileTypeSelector
 from ui.tab import ImgTab
 from config import Config
 
-
-# TODO: Contains directory tree toolbar ... folder navigation with hierarchal menu?
 
 class Gallery(QtWidgets.QWidget):
     MIN_GRID_UPDATE_DELAY = 1.0
@@ -89,10 +87,10 @@ class Gallery(QtWidgets.QWidget):
         self.cboFolders.currentIndexChanged.connect(self.onFolderSelected)
         qtlib.setMonospace(self.cboFolders)
 
-        self.scrollArea = FastScrollArea()
+        self.scrollArea = GalleryScrollArea(self.tab)
         self.scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scrollArea.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        self.scrollArea.setSizeAdjustPolicy(FastScrollArea.SizeAdjustPolicy.AdjustToContents)
+        self.scrollArea.setSizeAdjustPolicy(GalleryScrollArea.SizeAdjustPolicy.AdjustToContents)
         self.scrollArea.setWidgetResizable(True)
         self.scrollArea.verticalScrollBar().valueChanged.connect(self.updateComboboxFolder)
 
@@ -237,27 +235,32 @@ class Gallery(QtWidgets.QWidget):
         self.scrollArea.verticalScrollBar().setValue(0)
 
     @Slot()
-    def ensureVisible(self, widget, row):
+    def ensureVisible(self, widget: QtWidgets.QWidget, row: int, delay: bool):
+        if delay:
+            QTimer.singleShot(100, lambda: self.ensureVisible(widget, row, False))
+            return
+
         if self.chkFollowSelection.isChecked() and widget.visibleRegion().isEmpty():
             if (y := self.galleryGrid.getYforRow(row)) >= 0:
                 self.scrollArea.verticalScrollBar().setValue(y)
 
     def scrollToSelection(self):
-        if self.galleryGrid and (selectedItem := self.galleryGrid._selectedItem):
-            QTimer.singleShot(100, lambda: self.ensureVisible(selectedItem, selectedItem.row))
+        if self.galleryGrid and (selectedItem := self.galleryGrid.selectedItem):
+            self.ensureVisible(selectedItem, selectedItem.row, delay=True)
+
 
     def onFileSelectionChanged(self, selectedFiles: set[str]):
         self.updateStatusBar(self.cboFolders.count())
-
 
     def highlightFiles(self, files: list[str]):
         self.galleryGrid.highlightFiles(files)
 
 
 
-class FastScrollArea(QtWidgets.QScrollArea):
-    def __init__(self):
+class GalleryScrollArea(QtWidgets.QScrollArea):
+    def __init__(self, tab: ImgTab):
         super().__init__()
+        self.tab = tab
 
     def wheelEvent(self, event):
         scrollBar = self.verticalScrollBar()
@@ -270,3 +273,20 @@ class FastScrollArea(QtWidgets.QScrollArea):
         y = gallery.getYforRow(row, scrollDown)
         if y >= 0:
             scrollBar.setValue(y)
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent):
+        filelist = self.tab.filelist
+        match event.key():
+            case Qt.Key.Key_Left:
+                filelist.setPrevFile()
+            case Qt.Key.Key_Right:
+                filelist.setNextFile()
+            case Qt.Key.Key_Up:
+                filelist.setPrevFolder()
+            case Qt.Key.Key_Down:
+                filelist.setNextFolder()
+            case _:
+                super().keyPressEvent(event)
+                return
+
+        event.accept()
