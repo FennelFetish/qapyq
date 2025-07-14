@@ -517,6 +517,7 @@ class ScaleModelSettings(BaseSettingsWidget):
     KEY_BACKEND        = "backend"
     KEY_INTERP_UP      = "interp_up"
     KEY_INTERP_DOWN    = "interp_down"
+    KEY_LPFILTER       = "filter_lowpass"
     KEY_LEVELS         = "levels"
     LEVELKEY_THRESHOLD = "threshold"
     LEVELKEY_MODELPATH = "model_path"
@@ -524,14 +525,19 @@ class ScaleModelSettings(BaseSettingsWidget):
     DEFAULT_BACKEND     = "upscale"
     DEFAULT_INTERP_UP   = "Lanczos"
     DEFAULT_INTERP_DOWN = "Area"
+    DEFAULT_LPFILTER    = True
 
     @classmethod
-    def getInterpUp(cls, preset: dict):
+    def getInterpUp(cls, preset: dict) -> str:
         return preset.get(cls.KEY_INTERP_UP, cls.DEFAULT_INTERP_UP)
 
     @classmethod
-    def getInterpDown(cls, preset: dict):
+    def getInterpDown(cls, preset: dict) -> str:
         return preset.get(cls.KEY_INTERP_DOWN, cls.DEFAULT_INTERP_DOWN)
+
+    @classmethod
+    def getLowPassFilter(cls, preset: dict) -> bool:
+        return preset.get(cls.KEY_LPFILTER, cls.DEFAULT_LPFILTER)
 
 
     def __init__(self, configAttr: str, backends: Mapping[str, BackendDef]):
@@ -549,9 +555,13 @@ class ScaleModelSettings(BaseSettingsWidget):
         self.cboInterpDown.addItems(INTERP_MODES.keys())
         self.cboInterpDown.setCurrentIndex(3) # Default: Area
 
+        self.chkLpFilter = QtWidgets.QCheckBox("Anti-Aliasing (prevents artifacts when downscaling large images, but might blur)")
+        self.chkLpFilter.setChecked(True)
+
         layout.addWidget(QtWidgets.QLabel("Downscale:"), row, 0)
         layout.addWidget(QtWidgets.QLabel("Interpolation:"), row, 1)
         layout.addWidget(self.cboInterpDown, row, 2)
+        layout.addWidget(self.chkLpFilter, row, 4, 1, 3)
 
         row += 1
         layout.addWidget(QtWidgets.QLabel("Upscale:"), row, 0)
@@ -562,7 +572,7 @@ class ScaleModelSettings(BaseSettingsWidget):
 
         layout.addWidget(QtWidgets.QLabel("Interpolation:"), row, 1)
         layout.addWidget(self.cboInterpUp, row, 2)
-        layout.addWidget(QtWidgets.QLabel("Will use simple interpolation until the first threshold defined below."), row, 4)
+        layout.addWidget(QtWidgets.QLabel("Will use simple interpolation when upscaling until the first threshold defined below."), row, 4, 1, 3)
 
         row += 1
         layout.setRowMinimumHeight(row, 12)
@@ -624,6 +634,8 @@ class ScaleModelSettings(BaseSettingsWidget):
         interpUpIndex = self.cboInterpDown.findText( self.getInterpUp(settings) )
         self.cboInterpUp.setCurrentIndex(interpUpIndex)
 
+        self.chkLpFilter.setChecked(self.getLowPassFilter(settings))
+
         levels: list[dict] = settings.get(self.KEY_LEVELS, [])
         for i, level in zip((0, 1, 2), levels):
             with QSignalBlocker(self.scaleLevels[i][0]):
@@ -644,5 +656,6 @@ class ScaleModelSettings(BaseSettingsWidget):
             self.KEY_BACKEND:     self.DEFAULT_BACKEND,
             self.KEY_INTERP_UP:   self.cboInterpUp.currentText(),
             self.KEY_INTERP_DOWN: self.cboInterpDown.currentText(),
+            self.KEY_LPFILTER:    self.chkLpFilter.isChecked(),
             self.KEY_LEVELS:      levels
         }

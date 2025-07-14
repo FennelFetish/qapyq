@@ -1,13 +1,14 @@
 from typing_extensions import override
 import cv2 as cv
 import numpy as np
-from PySide6.QtCore import QPointF, QRect, QRectF, Qt, QTimer, QThreadPool, Slot
+from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt, QTimer, QThreadPool, Slot
 from PySide6.QtGui import QBrush, QPen, QColor, QPainterPath, QPolygonF, QTransform, QCursor, QPixmap
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QMenu
 from .view import ViewTool
 from lib.filelist import DataKeys
-import ui.export_settings as export
+from ui.imgview import ImgView
 from ui.size_preset import SIZE_PRESET_SIGNALS
+import ui.export_settings as export
 from config import Config
 
 
@@ -45,7 +46,7 @@ class CropTool(ViewTool):
         self._cropAspectRatio = self._targetWidth / self._targetHeight
 
         # Crop rectangle in view space
-        self._cropRect = QGraphicsRectItem(-50, -50, 100, 100)
+        self._cropRect = SelectionRect(-50, -50, 100, 100)
         self._cropRect.setPen(self.PEN_UPSCALE)
         self._cropRect.setVisible(False)
         self._lastCenter = QPointF() # For nudging
@@ -123,9 +124,9 @@ class CropTool(ViewTool):
         self.updateSelection(pView)
 
 
-    def constrainCropSize(self, rotationMatrix, imgSize) -> tuple[float, float]:
+    def constrainCropSize(self, rotationMatrix: QTransform, imgSize: QSize) -> tuple[float, float]:
         rectSel = QRectF(0, 0, self._cropAspectRatio, 1.0)
-        rectSel = rotationMatrix.mapRect(rectSel)
+        rectSel = rotationMatrix.mapRect(rectSel) # Bounds
 
         sizeRatioH = imgSize.height() / rectSel.height()
         sizeRatioW = imgSize.width() / rectSel.width()
@@ -135,7 +136,7 @@ class CropTool(ViewTool):
         self._cropHeight = cropH
         return (cropW, cropH)
 
-    def constrainCropPos(self, poly, imgSize):
+    def constrainCropPos(self, poly: QPolygonF, imgSize: QSize):
         rect = poly.boundingRect()
         moveX, moveY = 0, 0
 
@@ -167,17 +168,14 @@ class CropTool(ViewTool):
         # Calculate selected area in image space
         mouse = self.mapPosToImage(mouseCoords)
         rect = QRect(-np.floor(cropW/2), -np.floor(cropH/2), round(cropW), round(cropH))
-        poly = rot.mapToPolygon(rect)
+        poly = rot.map(QPolygonF(rect))
         poly.translate(int(mouse.x()), int(mouse.y()))
 
         # Constrain selection position
         if self._toolbar.constrainToImage:
             self.constrainCropPos(poly, imgSize)
 
-        # Map selected polygon to viewport
-        poly = self._imgview.image.mapToParent(poly)
-        poly = self._imgview.mapFromScene(poly)
-        self._cropRect.setRect(poly.boundingRect())
+        self._cropRect.setCropPoly(poly, self._imgview)
 
     def updateSelection(self, mouseCoords: QPointF):
         self._lastCenter.setX(mouseCoords.x())
@@ -203,27 +201,14 @@ class CropTool(ViewTool):
         self._waitForConfirmation = False
         self.updateSelection(mousePos)
 
-    def getSelectionPoly(self, rect: QRect) -> QPolygonF:
-        poly = self._imgview.mapToScene(rect)
-        poly = self._imgview.image.mapFromParent(poly)
-
-        # Constrain polygon to image (again, to account for rounding errors)
-        if self._toolbar.constrainToImage:
-            imgSize = self._imgview.image.pixmap().size()
-            for i in range(poly.size()):
-                p = poly[i]
-                x = min(p.x(), imgSize.width())
-                x = max(x, 0)
-
-                y = min(p.y(), imgSize.height())
-                y = max(y, 0)
-                poly[i] = QPointF(x, y)
-
-        return poly
 
     def exportImage(self, selectionRect: QRect) -> bool:
         pixmap = self._imgview.image.pixmap()
         if not pixmap:
+            return False
+
+        poly = self._cropRect.cropPoly
+        if not poly:
             return False
 
         exportWidget = self._toolbar.exportWidget
@@ -234,7 +219,6 @@ class CropTool(ViewTool):
 
         self.tab.statusBar().showMessage("Exporting image...")
 
-        poly = self.getSelectionPoly(selectionRect)
         scaleFactor = self._targetHeight / self._cropHeight
         scaleConfig = exportWidget.getScaleConfig(scaleFactor)
         border = cv.BORDER_REPLICATE if self._toolbar.constrainToImage else cv.BORDER_CONSTANT
@@ -449,16 +433,31 @@ class ExportTask(export.ImageExportTask):
 
     @staticmethod
     def calcCutRect(poly: QPolygonF, pixmap: QPixmap) -> QRect:
-        pad  = 4
         rect = poly.boundingRect().toRect()
-
         if rect.right() < 0 or rect.left() >= pixmap.width() or rect.bottom() < 0 or rect.top() >= pixmap.height():
             raise EmptyRegionException()
 
+        # Try to pad so the resulting dimensions are even.
+        # This avoids padding of the crop region when downscaling with reduce.
+        pad = 4
+
         x = max(0, rect.x()-pad)
+        w = min(pixmap.width()-1,  rect.right()+pad) - x + 1
+        if w & 1:
+            if x > 0:
+                x -= 1
+                w += 1
+            elif x+w < pixmap.width():
+                w += 1
+
         y = max(0, rect.y()-pad)
-        w = min(pixmap.width(),  rect.right()+pad)  - x + 1
-        h = min(pixmap.height(), rect.bottom()+pad) - y + 1
+        h = min(pixmap.height()-1, rect.bottom()+pad) - y + 1
+        if h & 1:
+            if y > 0:
+                y -= 1
+                h += 1
+            elif y+h < pixmap.height():
+                h += 1
 
         rect.setRect(x, y, w, h)
         return rect
@@ -512,6 +511,25 @@ class ExportTask(export.ImageExportTask):
         self.rect.setCoords(x, y, x+w-1, y+h-1)
 
         return mat
+
+
+
+class SelectionRect(QGraphicsRectItem):
+    def __init__(self, x: float, y: float, w: float, h: float):
+        super().__init__(x, y, w, h)
+        self._cropPoly: QPolygonF = None
+
+    @property
+    def cropPoly(self):
+        return QPolygonF(self._cropPoly.sliced(0, 4))
+
+    def setCropPoly(self, poly: QPolygonF, imgview: ImgView):
+        self._cropPoly = poly
+
+        # Map selected polygon to viewport
+        polyMapped = imgview.image.mapToParent(poly)
+        polyMapped = imgview.mapFromScene(polyMapped)
+        self.setRect(polyMapped.boundingRect())
 
 
 

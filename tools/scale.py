@@ -166,6 +166,7 @@ class ScaleToolBar(QtWidgets.QToolBar):
             "fixed_smaller": FixedSideScaleMode(sizeFunc, False),
             "fixed_larger":  FixedSideScaleMode(sizeFunc, True),
             "factor":        FactorScaleMode(sizeFunc),
+            "factor_area":   AreaFactorScaleMode(sizeFunc),
             "pixel_count":   PixelCountScaleMode(sizeFunc),
             "quant_closest": QuantizedScaleMode(sizeFunc, QuantizedScaleMode.CLOSEST),
             "quant_wider":   QuantizedScaleMode(sizeFunc, QuantizedScaleMode.WIDER),
@@ -180,6 +181,7 @@ class ScaleToolBar(QtWidgets.QToolBar):
         self.cboScaleMode.addItem("Fixed Smaller Side", "fixed_smaller")
         self.cboScaleMode.addItem("Fixed Larger Side", "fixed_larger")
         self.cboScaleMode.addItem("Factor", "factor")
+        self.cboScaleMode.addItem("Area Factor", "factor_area")
         self.cboScaleMode.addItem("Pixel Count", "pixel_count")
         self.cboScaleMode.addItem("Quantized Closest", "quant_closest")
         self.cboScaleMode.addItem("Quantized Wider", "quant_wider")
@@ -282,7 +284,8 @@ class ScaleToolBar(QtWidgets.QToolBar):
                 self.selectedScaleMode.updateSize()
 
             w, h = self.targetSize
-            self.exportWidget.setExportSize(w, h)
+            rot = self.scaleTool._imgview.rotation
+            self.exportWidget.setExportSize(w, h, rot)
 
         self.exportWidget.updateSample()
 
@@ -582,6 +585,17 @@ class FactorScaleMode(ScaleMode):
         self.lblWidth.setText(f"{w} px")
         self.lblHeight.setText(f"{h} px")
         super().updateSize()
+
+
+class AreaFactorScaleMode(FactorScaleMode):
+    def __init__(self, sizeFunc):
+        super().__init__(sizeFunc)
+
+    def getScaleFunc(self):
+        scale = np.sqrt(round(self.spinFactor.value(), 3))
+        def func(imgWidth: int, imgHeight: int):
+            return (round(scale*imgWidth), round(scale*imgHeight))
+        return func
 
 
 class PixelCountScaleMode(ScaleMode):

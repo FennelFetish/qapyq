@@ -65,6 +65,7 @@ class BatchScale(QtWidgets.QWidget):
             "fixed_smaller": scale.FixedSideScaleMode(sizeFunc, False),
             "fixed_larger":  scale.FixedSideScaleMode(sizeFunc, True),
             "factor":        scale.FactorScaleMode(sizeFunc),
+            "factor_area":   scale.AreaFactorScaleMode(sizeFunc),
             "pixel_count":   scale.PixelCountScaleMode(sizeFunc),
             "quant_closest": scale.QuantizedScaleMode(sizeFunc, scale.QuantizedScaleMode.CLOSEST),
             "quant_wider":   scale.QuantizedScaleMode(sizeFunc, scale.QuantizedScaleMode.WIDER),
@@ -79,6 +80,7 @@ class BatchScale(QtWidgets.QWidget):
         self.cboScaleMode.addItem("Fixed Smaller Side", "fixed_smaller")
         self.cboScaleMode.addItem("Fixed Larger Side", "fixed_larger")
         self.cboScaleMode.addItem("Factor", "factor")
+        self.cboScaleMode.addItem("Area Factor", "factor_area")
         self.cboScaleMode.addItem("Pixel Count", "pixel_count")
         self.cboScaleMode.addItem("Quantized Closest", "quant_closest")
         self.cboScaleMode.addItem("Quantized Wider", "quant_wider")
@@ -219,7 +221,13 @@ class BatchScaleTask(BatchTask):
     @staticmethod
     def resize(mat: np.ndarray, scaleConfig: export.ScaleConfig, w: int, h: int) -> np.ndarray:
         srcHeight, srcWidth = mat.shape[:2]
-        interp = scaleConfig.getInterpolationMode(w > srcWidth or h > srcHeight)
+        upscale = w > srcWidth or h > srcHeight
+        interp = scaleConfig.getInterpolationMode(upscale)
+
+        # Interpolation mode "Area" already does low-pass filtering when cv.resize is used
+        if not upscale and scaleConfig.lpFilter and interp != cv.INTER_AREA:
+            mat = export.ImageExportTask.filterLowPass(mat, srcWidth, srcHeight, w, h)
+
         return cv.resize(mat, (w, h), interpolation=interp)
 
 

@@ -1,4 +1,4 @@
-import os, superqt, copy
+import os, superqt, copy, traceback
 from difflib import SequenceMatcher
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
@@ -206,9 +206,10 @@ class ExportWidget(QtWidgets.QWidget):
         return self.cboScalePreset.getScaleConfig(scaleFactor)
 
 
-    def setExportSize(self, width: int, height: int):
+    def setExportSize(self, width: int, height: int, rotation: float = 0.0):
         self.parser.width = width
         self.parser.height = height
+        self.parser.rotation = rotation
 
 
     def getExportPath(self, file: str) -> str:
@@ -255,6 +256,7 @@ class PathSettings(QtWidgets.QWidget):
     {{folder:/}}  Folder hierarchy from given path to image
     {{w}}         Width
     {{h}}         Height
+    {{rotation}}  Rotation in degrees
     {{region}}    Crop region number
     {{date}}      Date yyyymmdd
     {{time}}      Time hhmmss
@@ -471,6 +473,7 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
         self.width  = 0
         self.height = 0
         self.region = 0
+        self.rotation = 0.0
 
     def setImageDimension(self, pixmap: QtGui.QPixmap | None):
         if pixmap:
@@ -598,6 +601,7 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
             case "w": return str(self.width)
             case "h": return str(self.height)
             case "region": return str(self.region)
+            case "rotation": return f"{self.rotation:03.0f}"
 
             case "date": return datetime.now().strftime('%Y%m%d')
             case "time": return datetime.now().strftime('%H%M%S')
@@ -641,9 +645,10 @@ class ClickableTextEdit(QtWidgets.QPlainTextEdit):
 
 
 class ScaleConfig:
-    def __init__(self, interpUp: str, interpDown: str, modelPath: str | None = None):
+    def __init__(self, interpUp: str, interpDown: str, lpFilter: bool, modelPath: str | None = None):
         self.interpUp   = INTERP_MODES[interpUp]
         self.interpDown = INTERP_MODES[interpDown]
+        self.lpFilter   = lpFilter
         self.modelPath  = modelPath
 
     @property
@@ -681,6 +686,7 @@ class ScaleConfigFactory:
     def createConfig(presetData: dict, scaleFactor: float):
         interpUp   = ScaleModelSettings.getInterpUp(presetData)
         interpDown = ScaleModelSettings.getInterpDown(presetData)
+        lpFilter   = ScaleModelSettings.getLowPassFilter(presetData)
 
         scaleFactor = round(scaleFactor, 2)
         modelPath = None
@@ -692,7 +698,7 @@ class ScaleConfigFactory:
                     maxThreshold = threshold
                     modelPath = level.get(ScaleModelSettings.LEVELKEY_MODELPATH)
 
-        return ScaleConfig(interpUp, interpDown, modelPath)
+        return ScaleConfig(interpUp, interpDown, lpFilter, modelPath)
 
 
 class ScalePresetComboBox(QtWidgets.QComboBox):
@@ -755,6 +761,9 @@ class ScalePresetComboBox(QtWidgets.QComboBox):
 
 
 class ImageExportTask(QRunnable):
+    MIN_LP_SIGMA = 0.8  # Min downscale factor to apply gauss blur: 2.4
+
+
     class ExportTaskSignals(QObject):
         done     = Signal(str, str)
         progress = Signal(str)
@@ -802,7 +811,8 @@ class ImageExportTask(QRunnable):
             del matSrc
             del matDest
         except Exception as ex:
-            print(f"Export failed: {ex}")
+            print(f"Image export failed:")
+            traceback.print_exc()
             self.signals.fail.emit(str(ex))
         finally:
             del self.img
@@ -831,24 +841,105 @@ class ImageExportTask(QRunnable):
         mat.shape = (h, w, channels)
         return mat
 
+
     def resize(self, mat: np.ndarray) -> np.ndarray:
         srcHeight, srcWidth = mat.shape[:2]
-        dsize  = (self.targetWidth, self.targetHeight)
-        interp = self.scaleConfig.getInterpolationMode(self.targetWidth > srcWidth or self.targetHeight > srcHeight)
+        if srcWidth == self.targetWidth and srcHeight == self.targetHeight:
+            return mat
+
+        upscale = self.targetWidth > srcWidth or self.targetHeight > srcHeight
+        interp = self.scaleConfig.getInterpolationMode(upscale)
+
+        # Interpolation mode "Area" already does low-pass filtering when cv.resize is used
+        if not upscale and self.scaleConfig.lpFilter and interp != cv.INTER_AREA:
+            mat = self.filterLowPass(mat, srcWidth, srcHeight, self.targetWidth, self.targetHeight)
+
+        dsize = (self.targetWidth, self.targetHeight)
         return cv.resize(mat, dsize, interpolation=interp)
 
+
     def warpAffine(self, mat: np.ndarray, ptsSrc: list[list[float]], ptsDest: list[list[float]]) -> np.ndarray:
-        srcWidth  = self.distance(ptsSrc[1], ptsSrc[0])
-        srcHeight = self.distance(ptsSrc[2], ptsSrc[1])
+        srcWidth, srcHeight = self.calcPolySize(ptsSrc)
+        upscale = self.targetWidth > srcWidth or self.targetHeight > srcHeight
+
+        if not upscale and self.scaleConfig.lpFilter:
+            targetWidth, targetHeight = self.calcPolySize(ptsDest) # Account for rotation
+            mat = self.filterLowPass(mat, srcWidth, srcHeight, targetWidth, targetHeight)
 
         # https://docs.opencv.org/3.4/da/d6e/tutorial_py_geometric_transformations.html
         matrix = cv.getAffineTransform(np.float32(ptsSrc), np.float32(ptsDest))
         dsize  = (self.targetWidth, self.targetHeight)
-        interp = self.scaleConfig.getInterpolationMode(self.targetWidth > srcWidth or self.targetHeight > srcHeight)
+        interp = self.scaleConfig.getInterpolationMode(upscale)
         return cv.warpAffine(src=mat, M=matrix, dsize=dsize, flags=interp, borderMode=self.borderMode)
+
+    @classmethod
+    def calcPolySize(cls, points: list[list[float]]) -> tuple[float, float]:
+        w = cls.distance(points[1], points[0])
+        h = cls.distance(points[2], points[1])
+        return w, h
 
     @staticmethod
     def distance(p0: list[float], p1: list[float]) -> float:
         dx = p0[0] - p1[0]
         dy = p0[1] - p1[1]
         return np.sqrt(dx*dx + dy*dy)
+
+
+    @classmethod
+    def filterLowPass(cls, mat: np.ndarray, srcWidth: float, srcHeight: float, targetWidth: float, targetHeight: float):
+        # TODO: Properly account for (arbitrary) rotation. Sigma should be a bit higher, max at 45deg.
+        downScaleX = srcWidth  / targetWidth
+        downScaleY = srcHeight / targetHeight
+
+        # https://scikit-image.org/docs/stable/api/skimage.transform.html#skimage.transform.pyramid_reduce
+        sigmaX = 2 * downScaleX / 6
+        sigmaY = 2 * downScaleY / 6
+
+        if sigmaX < cls.MIN_LP_SIGMA or sigmaY < cls.MIN_LP_SIGMA:
+            #print(f"skip blur, scale factor x:{downScaleX}, y:{downScaleY}, gauss sigma x:{sigmaX} / y:{sigmaY}")
+            return mat
+
+        ksize = (
+            2 * int(np.ceil(3*sigmaY)) + 1,
+            2 * int(np.ceil(3*sigmaX)) + 1
+        )
+
+        #print(f"downscaling by x:{downScaleX} / y:{downScaleY}, gauss sigma x:{sigmaX} / y:{sigmaY} @ kernel size {ksize}")
+        mat = cv.GaussianBlur(mat, ksize, sigmaX=sigmaX, sigmaY=sigmaY)
+        return mat
+
+
+    # def _tryReduce(self, mat: np.ndarray, ptsSrc: list[list[float]]) -> np.ndarray:
+    #     channels = mat.shape[2] if len(mat.shape) > 2  else 1
+
+    #     srcWidth, srcHeight = self.calcPolySize(ptsSrc)
+    #     areaFactor = np.sqrt((self.targetWidth * self.targetHeight) / (srcWidth * srcHeight))
+    #     factor = int(0.9 / areaFactor) # TODO: Only powers of 2 matter for antialiasing
+    #     print(f"reduce factor: {factor}")
+
+    #     if factor < 2:
+    #         return mat
+
+    #     h, w = mat.shape[:2]
+    #     padW: int = (-w) % factor
+    #     padH: int = (-h) % factor
+    #     if padW or padH:
+    #         mat = cv.copyMakeBorder(mat, 0, padH, 0, padW, borderType=cv.BORDER_REPLICATE)
+    #         # TODO: Divide padding region by padding size to prevent skewing the mean
+    #         print(f"Padded to {mat.shape[1]}x{mat.shape[0]} (padW={padW}, padH={padH})")
+
+    #     reduceW = mat.shape[1] // factor
+    #     reduceH = mat.shape[0] // factor
+    #     print(f"scaleFactor: {areaFactor}, reducing from {mat.shape[1]}x{mat.shape[0]} to {reduceW}x{reduceH}")
+
+    #     mat = mat.reshape(reduceH, factor, reduceW, factor, channels).mean(axis=(1,3)).round().astype(np.uint8)
+
+    #     reduceW -= padW / factor
+    #     reduceH -= padH / factor
+    #     for i, p in enumerate(ptsSrc):
+    #         x, y = p
+    #         p[0] = (np.ceil(p[0]) / w * reduceW) - 0.5
+    #         p[1] = (np.ceil(p[1]) / h * reduceH) - 0.5
+    #         print(f"  P[{i}] from {x} / {y}  to  {p[0]} / {p[1]}")
+
+    #     return mat

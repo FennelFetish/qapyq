@@ -29,6 +29,7 @@ class CropToolBar(QtWidgets.QToolBar):
         self.addWidget(widget)
 
         self.setMaximumWidth(180)
+        self.cboSizePresets.selectFirstPreset()
 
 
     def _buildTargetSize(self):
@@ -54,7 +55,6 @@ class CropToolBar(QtWidgets.QToolBar):
 
         self.cboSizePresets = SizePresetComboBox()
         self.cboSizePresets.presetSelected.connect(self.selectSizePreset)
-        self.cboSizePresets.selectFirstPreset()
 
         layout = QtWidgets.QGridLayout()
         layout.setContentsMargins(1, 1, 1, 1)
@@ -207,6 +207,7 @@ class CropToolBar(QtWidgets.QToolBar):
         self.slideRot.setValue(int(rot*10))
         self._cropTool._imgview.rotation = rot
         self._cropTool._imgview.updateImageTransform()
+        self.updateExport()
 
     @property
     def rotation(self) -> float:
@@ -240,5 +241,5 @@ class CropToolBar(QtWidgets.QToolBar):
 
 
     def updateExport(self):
-        self.exportWidget.setExportSize(self.spinW.value(), self.spinH.value())
+        self.exportWidget.setExportSize(self.spinW.value(), self.spinH.value(), self.rotation)
         self.exportWidget.updateSample()
