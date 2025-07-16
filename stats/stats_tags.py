@@ -498,7 +498,6 @@ class TagStatsLayout(StatsLayout):
 
     def _buildFilesMenu(self, parent) -> QtWidgets.QMenu:
         menu = super()._buildFilesMenu(parent)
-        menu.addSeparator()
 
         actFocus = menu.addAction("Focus in New Tab")
         actFocus.triggered.connect(self._openNewTabWithFocus)

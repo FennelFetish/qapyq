@@ -15,7 +15,6 @@ from config import Config
 
 # TODO: Context menu "copy cell content" for all tabs
 
-# TODO: Add menu entry: With Files -> Add to Selection
 # TODO: Highlight images in gallery for selected rows
 
 
@@ -67,7 +66,7 @@ class StatsLayout(QtWidgets.QVBoxLayout):
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 1)
-        self.addWidget(splitter)
+        self.addWidget(splitter, 1)
 
     def _buildTableGroup(self, name: str):
         layout = QtWidgets.QVBoxLayout()
@@ -129,11 +128,21 @@ class StatsLayout(QtWidgets.QVBoxLayout):
     def _buildFilesMenu(self, parent) -> QtWidgets.QMenu:
         menu = QtWidgets.QMenu("Files", parent)
 
-        actOpenInNewTab = menu.addAction("Open in New Tab")
-        actOpenInNewTab.triggered.connect(self._loadFilesInNewTab)
+        actSelect = menu.addAction("Select")
+        actSelect.triggered.connect(self._selectFiles)
+
+        actSelectAdd = menu.addAction("Select (Append)")
+        actSelectAdd.triggered.connect(self._selectFilesAppend)
+
+        menu.addSeparator()
 
         actRemove = menu.addAction("Unload")
         actRemove.triggered.connect(self._unloadFiles)
+
+        menu.addSeparator()
+
+        actOpenInNewTab = menu.addAction("Open in New Tab")
+        actOpenInNewTab.triggered.connect(self._loadFilesInNewTab)
 
         return menu
 
@@ -295,6 +304,18 @@ class StatsLayout(QtWidgets.QVBoxLayout):
             filesSet = set(filesGen)
             self.tab.filelist.filterFiles(lambda file: file not in filesSet)
             # TODO: Reload data and restore selection
+
+    @Slot()
+    def _selectFiles(self):
+        filesGen = self.getListedFiles()
+        if filesGen is not None:
+            self.tab.filelist.setSelection(filesGen, updateCurrent=True)
+
+    @Slot()
+    def _selectFilesAppend(self):
+        filesGen = self.getListedFiles()
+        if filesGen is not None:
+            self.tab.filelist.setSelection(filesGen, updateCurrent=True, clearCurrentSelection=False)
 
 
 

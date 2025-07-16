@@ -3,6 +3,8 @@ from ui.tab import ImgTab
 from .stats_tags import TagStats
 from .stats_json import JsonStats
 from .stats_imgsize import ImageSizeStats
+from .stats_mask import MaskStats
+#from .stats_metric import MetricStats
 from .stats_filesuffix import FileSuffixStats
 from .stats_folders import FolderStats
 
@@ -30,6 +32,8 @@ class StatsContainer(QtWidgets.QTabWidget):
             "tags":       TagStats(tab),
             "json":       JsonStats(tab),
             "imgsize":    ImageSizeStats(tab),
+            "mask":       MaskStats(tab),
+            #"metrics":    MetricStats(tab),
             "filesuffix": FileSuffixStats(tab),
             "folders":    FolderStats(tab)
         }
@@ -37,6 +41,8 @@ class StatsContainer(QtWidgets.QTabWidget):
         self.addTab(self.statWidgets["tags"], "Tag Count")
         self.addTab(self.statWidgets["json"], "JSON Keys")
         self.addTab(self.statWidgets["imgsize"], "Image Size")
+        self.addTab(self.statWidgets["mask"], "Mask")
+        #self.addTab(self.statWidgets["metrics"], "Metrics")
         self.addTab(self.statWidgets["filesuffix"], "File Suffix")
         self.addTab(self.statWidgets["folders"], "Folders")
 

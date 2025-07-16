@@ -443,8 +443,10 @@ class FileList:
         if len(self.selection) != numSelected:
             self.notifySelectionChanged()
 
-    def setSelection(self, files: Iterable[str], updateCurrent=False):
-        self.selection.clear()
+    def setSelection(self, files: Iterable[str], updateCurrent=False, clearCurrentSelection=True):
+        if clearCurrentSelection:
+            self.selection.clear()
+
         self.selection.update(files)
 
         if updateCurrent:
