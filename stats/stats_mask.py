@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 from enum import Enum
+from typing import Generator
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
@@ -157,60 +158,54 @@ class MaskStatsLoadTask(StatsLoadTask):
         self.numBins = max(numBins-2, 1)
         self.loadFunc = loadFunc
 
+
     def runLoad(self) -> tuple[list[MaskData], MaskSummary]:
         summary = MaskSummary()
 
         maskArea: dict[str, float] = dict()
-        for file, value in self.map_auto(self.files, self.loadFunc):
+        for file, value in self.map_auto(self.files, self.loadFunc, chunkSize=32):
             maskArea[file] = value
             summary.addFile(value)
 
-        bins = []
+        bins = list[MaskData]()
         values = sorted(maskArea.items(), key=lambda x: x[1])
-        idxFirstExisting, idxFirstFract, idxLastFract = self.loadFunc.getValueRanges(values)
 
-        if idxFirstExisting > 0:
-            # Add non-existing masks
-            if binVals := values[:idxFirstExisting]:
-                bins.append( MaskData(binVals) )
-
-        if idxFirstFract >= 0:
-            # Add completely black masks
-            if binVals := values[idxFirstExisting:idxFirstFract]:
-                bins.append( MaskData(binVals) )
-
-            # Add masks with a fractional area value
-            valMin = values[idxFirstFract][1]
-            valMax = values[idxLastFract][1]
-
-            binStep = (valMax - valMin) / self.numBins
-            #binStep = max(binStep, 0.001)
-
-            idxBinStart = idxFirstFract
-            valBinEnd   = values[idxFirstFract][1] + binStep
-            for i in range(idxFirstFract, idxLastFract+1):
-                val = values[i][1]
-                if val > valBinEnd:
-                    if binVals := values[idxBinStart:i]:
-                        bins.append(MaskData(binVals))
-
-                    idxBinStart = i
-                    valBinEnd = val + binStep
-
-            if binVals := values[idxBinStart:idxLastFract+1]:
-                bins.append(MaskData(binVals))
-
-        # Add completely white masks
-        if binVals := values[idxLastFract+1:]:
+        idxFirstExisting = next((i for i, val in enumerate(values) if val[1] > -0.1), len(values))
+        if binVals := values[:idxFirstExisting]:
+            # Add non-existing masks to separate bin
             bins.append(MaskData(binVals))
-
-        if idxFirstExisting < 0:
-            values = []
-        elif idxFirstExisting > 0:
             values = values[idxFirstExisting:]
+
+        for needsBinning, rangeValues in self.loadFunc.getValueRanges(values):
+            if needsBinning:
+                for binVals in self.makeBins(rangeValues):
+                    bins.append(MaskData(binVals))
+            else:
+                bins.append(MaskData(rangeValues))
 
         summary.finalize(values, len(bins))
         return bins, summary
+
+
+    def makeBins(self, values: list[tuple[str, float]]) -> Generator[list[tuple[str, float]]]:
+        valMin = values[0][1]
+        valMax = values[-1][1]
+
+        binStep = (valMax - valMin) / self.numBins
+        #binStep = max(binStep, 0.001)
+
+        idxBinStart = 0
+        valBinEnd = valMin + binStep
+        for i, (file, val) in enumerate(values):
+            if val > valBinEnd:
+                if binVals := values[idxBinStart:i]:
+                    yield binVals
+
+                idxBinStart = i
+                valBinEnd = val + binStep
+
+        if binVals := values[idxBinStart:]:
+            yield binVals
 
 
 
@@ -222,14 +217,13 @@ class MaskLoadFunctor:
     def __call__(self, file: str) -> tuple[str, float]:
         self.parser.setup(file)
         maskPath = self.parser.parsePath(self.pathTemplate, overwriteFiles=True)
-        if os.path.exists(maskPath):
-            return self._processMask(file, maskPath)
-        return file, -1.0
+        val = self._processMask(maskPath) if os.path.exists(maskPath) else -1.0
+        return file, val
 
-    def _processMask(self, file: str, maskPath: str) -> tuple[str, float]:
+    def _processMask(self, maskPath: str) -> float:
         raise NotImplementedError()
 
-    def getValueRanges(self, values: list[tuple[str, float]]) -> tuple[int, int, int]:
+    def getValueRanges(self, values: list[tuple[str, float]]) -> Generator[tuple[bool, list[tuple[str, float]]]]:
         raise NotImplementedError()
 
 
@@ -237,34 +231,42 @@ class MaskAreaLoadFunctor(MaskLoadFunctor):
     def __init__(self, pathTemplate: str):
         super().__init__(pathTemplate)
 
-    def _processMask(self, file: str, maskPath: str) -> tuple[str, float]:
+    def _processMask(self, maskPath: str) -> float:
         import cv2 as cv
         mat = cv.imread(maskPath, cv.IMREAD_GRAYSCALE)
         count = cv.countNonZero(mat)
 
         h, w = mat.shape
         filledArea = count / (w * h)
-        return file, filledArea
+        return filledArea
 
-    def getValueRanges(self, values: list[tuple[str, float]]) -> tuple[int, int, int]:
-        it = enumerate(data[1] for data in values)
+    def getValueRanges(self, values: list[tuple[str, float]]) -> Generator[tuple[bool, list[tuple[str, float]]]]:
+        if not values:
+            return
 
-        idxFirstExisting = next((i for i, val in it if val > -0.1), -1)
-        if idxFirstExisting < 0 or values[idxFirstExisting][1] >= 1.0:
-            return idxFirstExisting, -1, -1
+        if values[0][1] >= 1.0 or values[-1][1] <= 0.0:
+            # All masks are completely white or black
+            yield False, values
+            return
 
-        if values[idxFirstExisting][1] > 0.0:
-            idxFirstFract = idxFirstExisting
-        else:
-            idxFirstFract = next((i for i, val in it if val > 0.0), idxFirstExisting)
+        idxFirstFract = next(i for i, val in enumerate(values) if val[1] > 0.0)
+        if idxFirstFract > 0:
+            # Completely black masks
+            yield False, values[:idxFirstFract]
 
         if values[idxFirstFract][1] >= 1.0:
-            return idxFirstExisting, -1, -1
+            # No fractional area masks, rest is completely white
+            yield False, values[idxFirstFract:]
+            return
 
-        itReverse = enumerate(data[1] for data in reversed(values))
-        idxLastFract = next((len(values)-1-i for i, val in itReverse if val < 1.0), idxFirstFract)
+        # Fractional area masks
+        idxFirstWhite = next(len(values)-i for i, val in enumerate(reversed(values)) if val[1] < 1.0)
+        yield True, values[idxFirstFract:idxFirstWhite]
 
-        return idxFirstExisting, idxFirstFract, idxLastFract
+        if idxFirstWhite < len(values):
+            # The remaining are completely white masks
+            yield False, values[idxFirstWhite:]
+
 
 
 class MaskRegionLoadFunctor(MaskLoadFunctor):
@@ -272,7 +274,7 @@ class MaskRegionLoadFunctor(MaskLoadFunctor):
         super().__init__(pathTemplate)
         self.blackRegions = blackRegions
 
-    def _processMask(self, file: str, maskPath: str) -> tuple[str, float]:
+    def _processMask(self, maskPath: str) -> float:
         import cv2 as cv
         mat = cv.imread(maskPath, cv.IMREAD_GRAYSCALE)
 
@@ -282,16 +284,11 @@ class MaskRegionLoadFunctor(MaskLoadFunctor):
 
         numRegions, labels = cv.connectedComponents(mat, None, 8, cv.CV_16U)
         numRegions -= 1
-        return file, numRegions
+        return numRegions
 
-    def getValueRanges(self, values: list[tuple[str, float]]) -> tuple[int, int, int]:
-        it = enumerate(data[1] for data in values)
-
-        idxFirstExisting = next((i for i, val in it if val > -0.1), -1)
-        if idxFirstExisting < 0:
-            return -1, -1, -1
-
-        return idxFirstExisting, idxFirstExisting, len(values)-1
+    def getValueRanges(self, values: list[tuple[str, float]]) -> Generator[tuple[bool, list[tuple[str, float]]]]:
+        if values:
+            yield True, values
 
 
 
