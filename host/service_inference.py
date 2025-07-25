@@ -123,3 +123,14 @@ class InferenceService(Service):
             "h": h,
             "img": imgUpscaled
         }
+
+
+    @msghandler("token_count_borders")
+    def tokenCountWithBorders(self, msg: dict):
+        tokenizer = self.backendLoader.getBackend(msg["config"])
+        count, borders = tokenizer.countWithChunkBorders(msg["text"])
+        return {
+            "cmd": msg["cmd"],
+            "count": count,
+            "borders": borders
+        }

@@ -136,7 +136,7 @@ class InferenceProcConfig:
 
 
 class InferenceProcess(QObject):
-    queueStart = Signal(object)
+    queueStart = Signal()
     queueWrite = Signal(int, dict, object)
     processReady = Signal(object, bool)
     processEnded = Signal(object)
@@ -204,7 +204,7 @@ class InferenceProcess(QObject):
         if wait:
             self.awaitTask(self._startProcess)
         else:
-            self.queueStart.emit(None)
+            self.queueStart.emit()
 
     @Slot()
     def _startProcess(self):
@@ -418,6 +418,14 @@ class InferenceProcess(QObject):
             "h": h
         })
         return (answer["w"], answer["h"], answer["img"]) if answer else (0, 0, b"")
+
+    def countTokensWithBorders(self, config: dict, text: str) -> tuple[int, list[int]]:
+        answer = self._query({
+            "cmd": "token_count_borders",
+            "config": config,
+            "text": text
+        })
+        return answer["count"], answer["borders"]
 
 
     def _query(self, msg: dict, serviceId=Service.ID.INFERENCE) -> dict[str, Any]:

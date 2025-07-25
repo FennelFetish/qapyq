@@ -125,11 +125,12 @@ class TagSettingsWidget(superqt.QCollapsible):
     def setSupportsRatingAndChars(self, support: bool):
         widgets = (
             self.lblRating, self.chkIncludeRating, self.lblChars, self.chkIncludeChar, self.lblCharsThreshold,
-            self.spinCharThreshold, self.cboCharThresholdMode, self.chkCharOnlyMax
+            self.spinCharThreshold, self.cboCharThresholdMode, self.chkCharOnlyMax, self.chkIncludeGeneral
         )
 
         for widget in widgets:
             widget.setEnabled(support)
+        self._onCharOnlyMaxToggled()
 
 
     @Slot()

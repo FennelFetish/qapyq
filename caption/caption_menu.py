@@ -13,6 +13,7 @@ class RulesLoadMode(Enum):
 
 
 class CaptionMenu(QtWidgets.QMenu):
+    countTokensToggled = Signal(bool)
     previewToggled = Signal(bool)
     rulesSettingsUpdated = Signal()
 
@@ -26,6 +27,13 @@ class CaptionMenu(QtWidgets.QMenu):
 
 
     def _build(self):
+        self.addSection("Tokenizer")
+
+        actCountTokens = self.addAction("Count Tokens (CLIP)")
+        actCountTokens.setCheckable(True)
+        actCountTokens.setChecked(Config.captionCountTokens)
+        actCountTokens.toggled.connect(self.countTokensToggled.emit)
+
         self.addSection("Caption Rules")
 
         self._buildOnNewTabSubmenu()
@@ -55,7 +63,7 @@ class CaptionMenu(QtWidgets.QMenu):
         actPreview = self.addAction("Show refined preview")
         actPreview.setCheckable(True)
         actPreview.setChecked(Config.captionShowPreview)
-        actPreview.toggled.connect(self.previewToggled)
+        actPreview.toggled.connect(self.previewToggled.emit)
 
 
     def _buildOnNewTabSubmenu(self):

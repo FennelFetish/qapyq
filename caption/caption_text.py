@@ -136,6 +136,9 @@ class NavigationTextEdit(QtWidgets.QPlainTextEdit):
 
 
 class CaptionTextEdit(NavigationTextEdit):
+    LINE_COLOR = "#B0FF1616"
+    LINE_WIDTH = 2.0
+
     captionReplaced = Signal()
     focusChanged = Signal()
 
@@ -145,9 +148,18 @@ class CaptionTextEdit(NavigationTextEdit):
         self.ctx: CaptionContext = context
         self.ctx.separatorChanged.connect(self._onSeparatorChanged)
 
+        self._verticalLinePos: list[int] | None = None
+        self._penLine = QtGui.QPen(self.LINE_COLOR)
+        self._penLine.setWidthF(self.LINE_WIDTH)
+
+        # When a character is removed by typing, it will repaint this widget with the shorter text before new line indexes arrive.
+        # Clear the lines because their indexes could be out of bounds.
+        self.textChanged.connect(self._clearVerticalLines)
+
 
     def setCaption(self, text: str):
         self.captionReplaced.emit()
+        self._verticalLinePos = None
         super().setCaption(text)
 
 
@@ -197,3 +209,30 @@ class CaptionTextEdit(NavigationTextEdit):
     def focusOutEvent(self, event: QtGui.QFocusEvent):
         super().focusOutEvent(event)
         self.focusChanged.emit()
+
+
+    def setVerticalLines(self, linePos: list[int] | None):
+        self._verticalLinePos = linePos
+        self.viewport().update()
+
+    @Slot()
+    def _clearVerticalLines(self):
+        self._verticalLinePos = None
+
+
+    def paintEvent(self, e: QtGui.QPaintEvent):
+        if self._verticalLinePos:
+            painter = QtGui.QPainter(self.viewport())
+            painter.setPen(self._penLine)
+            cursor = self.textCursor()
+
+            for pos in self._verticalLinePos:
+                cursor.setPosition(pos)
+                rect = self.cursorRect(cursor)
+                x  = rect.x() + 1
+                y0 = rect.y() + 2
+                y1 = rect.y() + rect.height() - 2
+                painter.drawLine(x, y0, x, y1)
+
+        # Call parent method last: Text cursor must be drawn on top of lines.
+        super().paintEvent(e)

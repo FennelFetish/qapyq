@@ -9,10 +9,13 @@ from .caption_context import CaptionContext
 from .caption_menu import CaptionMenu, RulesLoadMode
 from .caption_bubbles import CaptionBubbles
 from .caption_text import CaptionTextEdit
+from .caption_tokens import CaptionTokens
 from .caption_highlight import HighlightState
 from .caption_multi_edit import CaptionMultiEdit
 from .caption_tab import MultiEditSupport
 
+
+# TODO: Refined preview is not updated when Caption Window is opened. It shows state from last file.
 
 class CaptionContainer(QtWidgets.QWidget):
     def __init__(self, tab):
@@ -39,6 +42,8 @@ class CaptionContainer(QtWidgets.QWidget):
 
         self.multiEdit = CaptionMultiEdit(self.filelist)
 
+        self.tokens = CaptionTokens(self.ctx)
+
         self.captionMenu = CaptionMenu(self, self.ctx)
         self.captionMenu.rulesSettingsUpdated.connect(self._onRulesSettingsUpdated)
 
@@ -48,6 +53,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.ctx.controlUpdated.connect(self._onControlUpdated)
         self.ctx.needsRulesApplied.connect(self.applyRulesIfAuto)
 
+        self.captionMenu.countTokensToggled.connect(self.tokens.setActive)
         self.captionMenu.previewToggled.connect(self._onPreviewToggled)
 
         self._loadRules()
@@ -139,6 +145,13 @@ class CaptionContainer(QtWidgets.QWidget):
         col += 1
         self.chkAutoApply = QtWidgets.QCheckBox("Auto Apply")
         layout.addWidget(self.chkAutoApply, 0, col)
+        layout.setColumnStretch(col, 0)
+
+        col += 1
+        layout.setColumnStretch(col, 1)
+
+        col += 1
+        layout.addWidget(self.tokens, 0, col)
         layout.setColumnStretch(col, 0)
 
         col += 1

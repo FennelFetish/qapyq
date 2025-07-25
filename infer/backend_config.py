@@ -184,6 +184,11 @@ class BackendLoader:
                 from .upscale import UpscaleBackend
                 return UpscaleBackend(config)
 
+            # Tokenizer
+            case "tokens":
+                from .tokens import Tokens
+                return Tokens(config)
+
         raise ValueError(f"Unknown backend: '{backendName}'")
 
 

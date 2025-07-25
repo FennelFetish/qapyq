@@ -118,6 +118,7 @@ class Config:
 
     # Caption
     captionRulesLoadMode    = "previous"
+    captionCountTokens      = False
     captionShowPreview      = False
 
     # Gallery
@@ -195,6 +196,7 @@ class Config:
         cls.inferHosts            = data.get("infer_hosts", cls.inferHosts)
 
         cls.captionRulesLoadMode  = data.get("caption_rules_load_mode", cls.captionRulesLoadMode)
+        cls.captionCountTokens    = bool(data.get("caption_count_tokens", cls.captionCountTokens))
         cls.captionShowPreview    = bool(data.get("caption_show_preview", cls.captionShowPreview))
 
         cls.galleryThumbnailSize    = int(data.get("gallery_thumbnail_size", cls.galleryThumbnailSize))
@@ -253,6 +255,7 @@ class Config:
         data["infer_hosts"]                 = cls.inferHosts
 
         data["caption_rules_load_mode"]     = cls.captionRulesLoadMode
+        data["caption_count_tokens"]        = cls.captionCountTokens
         data["caption_show_preview"]        = cls.captionShowPreview
 
         data["gallery_thumbnail_size"]      = cls.galleryThumbnailSize

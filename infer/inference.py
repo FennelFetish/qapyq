@@ -17,6 +17,8 @@ class Inference(metaclass=Singleton):
         self._procs: dict[str, InferenceProcess] = dict()
         self._procsInUse: set[InferenceProcess] = set()
 
+        self._tokenizerProc: InferenceProcess | None = None
+
 
     def createSession(self, maxProcesses: int = -1) -> InferenceSession:
         prioHosts = sorted(Config.inferHosts.items(), key=lambda item: item[1].get("priority", 1.0), reverse=True)
@@ -106,6 +108,29 @@ class Inference(metaclass=Singleton):
                 names.append(proc.procCfg.hostName)
                 proc.execAwaitable.emit(lambda proc=proc: proc.kill())
         return names
+
+
+    def getTokenizerProcess(self):
+        with QMutexLocker(self._mutex):
+            if not self._tokenizerProc:
+                self._tokenizerProc = InferenceProcess(InferenceProcConfig(LOCAL_NAME))
+                self._tokenizerProc.processEnded.connect(self._onTokenizerProcessEnded, Qt.ConnectionType.QueuedConnection)
+                self._tokenizerProc.start()
+            return self._tokenizerProc
+
+    def quitTokenizerProcess(self):
+        with QMutexLocker(self._mutex):
+            if self._tokenizerProc:
+                self._tokenizerProc.stop()
+
+    @Slot()
+    def _onTokenizerProcessEnded(self, proc: InferenceProcess):
+        def remove():
+            proc.shutdown()
+            with QMutexLocker(self._mutex):
+                self._tokenizerProc = None
+
+        QThreadPool.globalInstance().start(remove)
 
 
 
