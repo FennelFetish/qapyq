@@ -47,6 +47,9 @@ class CaptionTokens(QtWidgets.QLabel):
 
     @Slot()
     def _onDone(self, file: str, count: int, borders: list[int]):
+        if not self._active:
+            return
+
         if file != self.filelist.getCurrentFile():
             text = ""
             borders = None
@@ -59,8 +62,9 @@ class CaptionTokens(QtWidgets.QLabel):
 
     @Slot()
     def _onFail(self, error: str):
-        self.setText("Tokenizer Error")
-        self.setStyleSheet(f"color: {qtlib.COLOR_RED}")
+        if self._active:
+            self.setText("Tokenizer Error")
+            self.setStyleSheet(f"color: {qtlib.COLOR_RED}")
 
 
 

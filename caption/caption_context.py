@@ -82,7 +82,9 @@ class CaptionContext(QtWidgets.QTabWidget):
         match self.multiEditSupport:
             case MultiEditSupport.Disabled:        checked, enabled = False, False
             case MultiEditSupport.PreferDisabled:  checked, enabled = False, True
-            case MultiEditSupport.Full:            checked, enabled = self._multiEditReactivate, True
+            case MultiEditSupport.Full:
+                checked = self._multiEditReactivate and bool(self.tab.filelist.selectedFiles)
+                enabled = True
 
         try:
             self._tabSwitching = True

@@ -15,8 +15,6 @@ from .caption_multi_edit import CaptionMultiEdit
 from .caption_tab import MultiEditSupport
 
 
-# TODO: Refined preview is not updated when Caption Window is opened. It shows state from last file.
-
 class CaptionContainer(QtWidgets.QWidget):
     def __init__(self, tab):
         super().__init__()
@@ -72,14 +70,11 @@ class CaptionContainer(QtWidgets.QWidget):
 
 
     def _build(self, ctx):
-        row = 0
-        splitter = QtWidgets.QSplitter(Qt.Orientation.Vertical)
-        splitter.setHandleWidth(12)
-        splitter.addWidget(ctx)
-        splitter.setStretchFactor(row, 1)
-        self._splitter = splitter
+        splitterBottom = QtWidgets.QSplitter(Qt.Orientation.Vertical)
+        splitterBottom.setHandleWidth(12)
+        self._splitter = splitterBottom
 
-        row += 1
+        row = 0
         self.txtRulesPreview = HoverTextEdit(self)
         self.txtRulesPreview.setReadOnly(True)
         qtlib.setMonospace(self.txtRulesPreview, 1.1)
@@ -87,8 +82,7 @@ class CaptionContainer(QtWidgets.QWidget):
         qtlib.setTextEditHeight(self.txtRulesPreview, 2, "min")
         self.txtRulesPreview.hoverTextChanged.connect(lambda: self.ctx.controlUpdated.emit())
         self.txtRulesPreview.hide()
-        splitter.addWidget(self.txtRulesPreview)
-        splitter.setStretchFactor(row, 1)
+        splitterBottom.addWidget(self.txtRulesPreview)
 
         row += 1
         self.bubbles = CaptionBubbles(self.ctx, showWeights=False, showRemove=True, editable=False)
@@ -105,15 +99,23 @@ class CaptionContainer(QtWidgets.QWidget):
 
         bubbleScrollArea = QtWidgets.QScrollArea(widgetResizable=True)
         bubbleScrollArea.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
-        bubbleScrollArea.setMinimumHeight(34) # TODO: Dynamic?
+        bubbleScrollArea.setMinimumHeight(34)
         bubbleScrollArea.setWidget(self.bubbles)
-        splitter.addWidget(bubbleScrollArea)
-        splitter.setStretchFactor(row, 1)
+        splitterBottom.addWidget(bubbleScrollArea)
 
         row += 1
         qtlib.setMonospace(self.txtCaption, 1.2)
-        splitter.addWidget(self.txtCaption)
-        splitter.setStretchFactor(row, 1)
+        splitterBottom.addWidget(self.txtCaption)
+
+        splitterBottom.setSizes((50, 125, 110)) # Relative initial size for: preview, bubbles, text
+
+        splitter = QtWidgets.QSplitter(Qt.Orientation.Vertical)
+        splitter.setHandleWidth(12)
+        splitter.addWidget(ctx)
+        splitter.addWidget(splitterBottom)
+
+        bottomSize = 200 if Config.captionShowPreview else 130
+        splitter.setSizes((400, bottomSize))
 
         mainLayout = QtWidgets.QVBoxLayout()
         mainLayout.setContentsMargins(0, 0, 0, 0)
@@ -122,6 +124,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.setLayout(mainLayout)
 
         self._onDestLockChanged(self.btnDestLocked.isChecked())
+
 
     def _buildBottomRow(self):
         layout = QtWidgets.QGridLayout()
@@ -379,20 +382,17 @@ class CaptionContainer(QtWidgets.QWidget):
 
             splitterSizes = self._splitter.sizes()
             idx = self._splitter.indexOf(self.txtRulesPreview)
-            splitterSizes[idx] = self.txtRulesPreview.minimumHeight()
+            splitterSizes[idx] = self.txtRulesPreview.minimumHeight() * 2
             self._splitter.setSizes(splitterSizes)
 
     def _updatePreview(self, text: str):
-        if not self.txtRulesPreview.isVisible():
+        if self.txtRulesPreview.isHidden():
             return
 
         textNew = self.ctx.rulesProcessor().process(text)
         self.txtRulesPreview.setPlainText(textNew)
         self.ctx.highlight.highlight(textNew, self.captionSeparator, self.txtRulesPreview)
 
-
-    def getHoveredCaption(self) -> str:
-        return self.txtRulesPreview.hoverText if self.txtRulesPreview.isVisible() else ""
 
     def isHovered(self, text: str) -> bool:
         return self.txtRulesPreview.isVisible() and self.txtRulesPreview.isHovered(text)
@@ -521,7 +521,7 @@ class CaptionContainer(QtWidgets.QWidget):
         if selectedFiles:
             activate = self.btnMultiEdit.isChecked() or (
                 self.ctx.multiEditSupport == MultiEditSupport.Full
-                and not self.btnMultiEdit.isVisible()
+                and self.btnMultiEdit.isHidden()
             )
 
             self.btnMultiEdit.setText(str(len(selectedFiles)))
@@ -585,7 +585,7 @@ class CaptionContainer(QtWidgets.QWidget):
     def _multiEditToggle(self, state: bool):
         #self.chkSkipOnSave.setEnabled(not state)
         if state:
-            if not self.multiEdit.active:
+            if (not self.multiEdit.active) and self.filelist.selectedFiles:
                 self._multiEditActivate(self.filelist.selectedFiles)
         elif self.multiEdit.active:
             self.multiEdit.clear()
