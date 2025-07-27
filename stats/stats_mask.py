@@ -1,10 +1,12 @@
 from __future__ import annotations
 import os
 from enum import Enum
-from typing import Generator
+from typing import Generator, NamedTuple
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
+import cv2 as cv
+import lib.imagerw as imagerw
 import lib.qtlib as qtlib
 from ui.tab import ImgTab
 from ui.export_settings import PathSettings, ExportVariableParser
@@ -17,6 +19,14 @@ class MaskStatType(Enum):
     Area            = "area"
     RegionsWhite    = "regions_white"
     RegionsBlack    = "regions_black"
+
+
+STAT_NAMES = {
+    MaskStatType.Area: "Area ",
+    MaskStatType.RegionsWhite: "Regions ",
+    MaskStatType.RegionsBlack: "Regions "
+}
+
 
 
 class MaskStats(QtWidgets.QWidget):
@@ -41,30 +51,45 @@ class MaskStats(QtWidgets.QWidget):
         topLayout.addWidget(self._buildOptions())
         topLayout.addWidget(self._buildMaskSource(), 1)
 
-        self._layout = StatsLayout(tab, "Masks", self.proxyModel, self.table)
+        self._layout = StatsLayout(tab, "Mask Buckets", self.proxyModel, self.table)
         self._layout.insertLayout(0, topLayout)
         self._layout.setStatsWidget(self._buildStats())
         self.setLayout(self._layout)
 
 
     def _buildOptions(self):
-        layout = QtWidgets.QFormLayout()
+        layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
+        row = 0
         self.cboStatsType = QtWidgets.QComboBox()
         self.cboStatsType.addItem("White Area", MaskStatType.Area)
         self.cboStatsType.addItem("White Region Count", MaskStatType.RegionsWhite)
         self.cboStatsType.addItem("Black Region Count", MaskStatType.RegionsBlack)
-        layout.addRow("Stats Type:", self.cboStatsType)
+        layout.addWidget(QtWidgets.QLabel("Stats Type:"), row, 0)
+        layout.addWidget(self.cboStatsType, row, 1)
 
-        self.spinBins = QtWidgets.QSpinBox()
-        self.spinBins.setRange(1, 1000)
-        self.spinBins.setValue(20)
-        layout.addRow("Max Bins:", self.spinBins)
+        row += 1
+        self.chkThreshold = QtWidgets.QCheckBox("Threshold:")
+        self.chkThreshold.setToolTip("Binarize the mask with the given threshold color.")
+        self.chkThreshold.toggled.connect(self._onThresholdToggled)
+        layout.addWidget(self.chkThreshold, row, 0)
+
+        self.spinThreshold = QtWidgets.QDoubleSpinBox()
+        self.spinThreshold.setRange(0.0, 1.0)
+        self.spinThreshold.setSingleStep(0.1)
+        self.spinThreshold.setValue(0.5)
+        self.spinThreshold.setEnabled(False)
+        layout.addWidget(self.spinThreshold, row, 1)
 
         groupBox = QtWidgets.QGroupBox("Options")
         groupBox.setLayout(layout)
         return groupBox
+
+    @Slot()
+    def _onThresholdToggled(self, state: bool):
+        self.spinThreshold.setEnabled(state)
+
 
     def _buildMaskSource(self):
         config = Config.exportPresets.get(self.EXPORT_PRESET_KEY, {})
@@ -74,8 +99,9 @@ class MaskStats(QtWidgets.QWidget):
         self.maskPathSettings.pathTemplate = config.get("path_template", defaultPathTemplate)
         self.maskPathSettings.setAsInput()
 
-        layout = QtWidgets.QHBoxLayout()
+        layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.maskPathSettings)
+        layout.addStretch()
 
         groupBox = QtWidgets.QGroupBox("Mask Path")
         groupBox.setLayout(layout)
@@ -86,9 +112,9 @@ class MaskStats(QtWidgets.QWidget):
         loadBox = StatsLoadGroupBox(self._createTask)
         loadBox.dataLoaded.connect(self._onDataLoaded)
 
-        self.lblNumFiles = loadBox.addLabel("Files:")
+        self.lblNumMasks = loadBox.addLabel("Masks:")
         self.lblNumMissing = loadBox.addLabel("Missing Masks:")
-        self.lblNumBins = loadBox.addLabel("Bins:")
+        self.lblNumBins = loadBox.addLabel("Buckets:")
         self.lblMin = loadBox.addLabel("Min:")
         self.lblMax = loadBox.addLabel("Max:")
         self.lblMean = loadBox.addLabel("Average:")
@@ -101,16 +127,20 @@ class MaskStats(QtWidgets.QWidget):
         self.saveExportPreset()
         pathTemplate = self.maskPathSettings.pathTemplate
 
-        match self.cboStatsType.currentData():
-            case MaskStatType.Area:         loadFunc = MaskAreaLoadFunctor(pathTemplate)
-            case MaskStatType.RegionsWhite: loadFunc = MaskRegionLoadFunctor(pathTemplate)
-            case MaskStatType.RegionsBlack: loadFunc = MaskRegionLoadFunctor(pathTemplate, blackRegions=True)
+        threshold: int | None = None
+        if self.chkThreshold.isChecked():
+            threshold = round(self.spinThreshold.value() * 255)
+
+        statsType = self.cboStatsType.currentData()
+        match statsType:
+            case MaskStatType.Area:         loadFunc = MaskAreaLoadFunctor(pathTemplate, threshold)
+            case MaskStatType.RegionsWhite: loadFunc = MaskRegionLoadFunctor(pathTemplate,threshold)
+            case MaskStatType.RegionsBlack: loadFunc = MaskRegionLoadFunctor(pathTemplate, threshold, blackRegions=True)
             case _:
-                raise ValueError(f"Unknown mask stats type: {self.cboStatsType.currentData()}")
+                raise ValueError(f"Unknown mask stats type: {statsType}")
 
         files = self.tab.filelist.getFiles().copy()
-        numBins = self.spinBins.value()
-        return MaskStatsLoadTask(files, numBins, loadFunc)
+        return MaskStatsLoadTask(statsType, files, loadFunc)
 
 
     @Slot()
@@ -119,7 +149,7 @@ class MaskStats(QtWidgets.QWidget):
         self.table.sortByColumn(0, Qt.SortOrder.AscendingOrder)
         self.table.resizeColumnsToContents()
 
-        self.lblNumFiles.setText(str(summary.numFiles))
+        self.lblNumMasks.setText(str(summary.numMasks))
         self.lblNumMissing.setText(str(summary.numMissing))
         self.lblNumBins.setText(str(summary.numBins))
         self.lblMin.setText(f"{summary.min:.3f}")
@@ -151,162 +181,198 @@ class MaskStats(QtWidgets.QWidget):
 
 
 
+class MaskValue(NamedTuple):
+    file: str
+    value: float
+
+    def sortKey(self) -> float:
+        return self.value
+
+
+
 class MaskStatsLoadTask(StatsLoadTask):
-    def __init__(self, files: list[str], numBins: int, loadFunc: MaskLoadFunctor):
+    def __init__(self, statsType: MaskStatType, files: list[str], loadFunc: MaskLoadFunctor):
         super().__init__("Mask")
+        self.statsType = statsType
         self.files = files
-        self.numBins = max(numBins-2, 1)
         self.loadFunc = loadFunc
 
 
     def runLoad(self) -> tuple[list[MaskData], MaskSummary]:
-        summary = MaskSummary()
+        summary = MaskSummary(self.statsType)
 
-        maskArea: dict[str, float] = dict()
-        for file, value in self.map_auto(self.files, self.loadFunc, chunkSize=32):
-            maskArea[file] = value
+        values: list[MaskValue] = list()
+        for file, value in self.map_auto(self.files, self.loadFunc, chunkSize=24):
+            values.append(MaskValue(file, value))
             summary.addFile(value)
 
+        values.sort(key=MaskValue.sortKey)
         bins = list[MaskData]()
-        values = sorted(maskArea.items(), key=lambda x: x[1])
 
-        idxFirstExisting = next((i for i, val in enumerate(values) if val[1] > -0.1), len(values))
+        idxFirstExisting = next((i for i, val in enumerate(values) if val.value > -0.1), len(values))
         if binVals := values[:idxFirstExisting]:
             # Add non-existing masks to separate bin
             bins.append(MaskData(binVals))
             values = values[idxFirstExisting:]
 
-        for needsBinning, rangeValues in self.loadFunc.getValueRanges(values):
-            if needsBinning:
-                for binVals in self.makeBins(rangeValues):
-                    bins.append(MaskData(binVals))
-            else:
-                bins.append(MaskData(rangeValues))
+        for rangeValues in self.loadFunc.getValueRanges(values):
+            bins.append(MaskData(rangeValues))
 
         summary.finalize(values, len(bins))
         return bins, summary
 
 
-    def makeBins(self, values: list[tuple[str, float]]) -> Generator[list[tuple[str, float]]]:
-        valMin = values[0][1]
-        valMax = values[-1][1]
 
-        binStep = (valMax - valMin) / self.numBins
-        #binStep = max(binStep, 0.001)
+def makeBins(values: list[MaskValue], numBins: int) -> Generator[list[MaskValue]]:
+    valMin = values[0].value
+    valMax = values[-1].value
 
-        idxBinStart = 0
-        valBinEnd = valMin + binStep
-        for i, (file, val) in enumerate(values):
-            if val > valBinEnd:
-                if binVals := values[idxBinStart:i]:
-                    yield binVals
+    binStep = (valMax - valMin) / numBins
+    #binStep = max(binStep, 0.001)
 
-                idxBinStart = i
-                valBinEnd = val + binStep
+    idxBinStart = 0
+    valBinEnd = valMin + binStep
+    for i, val in enumerate(values):
+        if val.value > valBinEnd:
+            if binVals := values[idxBinStart:i]:
+                yield binVals
 
-        if binVals := values[idxBinStart:]:
-            yield binVals
+            idxBinStart = i
+            valBinEnd = val.value + binStep
+
+    if binVals := values[idxBinStart:]:
+        yield binVals
+
+
+def makeBinsPerValue(values: list[MaskValue]) -> Generator[list[MaskValue]]:
+    currentVal = values[0].value
+    idxBinStart = 0
+
+    for i, val in enumerate(values):
+        if val.value > currentVal:
+            if binVals := values[idxBinStart:i]:
+                yield binVals
+
+            currentVal = val.value
+            idxBinStart = i
+
+    if binVals := values[idxBinStart:]:
+        yield binVals
 
 
 
 class MaskLoadFunctor:
-    def __init__(self, pathTemplate: str):
+    def __init__(self, pathTemplate: str, threshold: int | None):
         self.pathTemplate = pathTemplate
         self.parser = ExportVariableParser()
+        self.threshold = threshold
 
     def __call__(self, file: str) -> tuple[str, float]:
         self.parser.setup(file)
         maskPath = self.parser.parsePath(self.pathTemplate, overwriteFiles=True)
-        val = self._processMask(maskPath) if os.path.exists(maskPath) else -1.0
+
+        if not os.path.isfile(maskPath):
+            return file, -1
+
+        mat = imagerw.loadMatBGR(maskPath, rgb=True)
+        if len(mat.shape) > 2:
+            mat = mat[..., 0].copy() # First channel (red), make copy to allow inplace operations
+
+        val = self._processMask(mat)
         return file, val
 
-    def _processMask(self, maskPath: str) -> float:
+    def _processMask(self, mat) -> float:
         raise NotImplementedError()
 
-    def getValueRanges(self, values: list[tuple[str, float]]) -> Generator[tuple[bool, list[tuple[str, float]]]]:
+    def getValueRanges(self, values: list[MaskValue]) -> Generator[list[MaskValue]]:
         raise NotImplementedError()
 
 
 class MaskAreaLoadFunctor(MaskLoadFunctor):
-    def __init__(self, pathTemplate: str):
-        super().__init__(pathTemplate)
+    def __init__(self, pathTemplate: str, threshold: int | None, numBins: int = 20):
+        super().__init__(pathTemplate, threshold)
+        self.numBins = max(numBins-2, 1)
 
-    def _processMask(self, maskPath: str) -> float:
-        import cv2 as cv
-        mat = cv.imread(maskPath, cv.IMREAD_GRAYSCALE)
+    def _processMask(self, mat) -> float:
+        if self.threshold is not None:
+            cv.threshold(mat, self.threshold, 255, cv.THRESH_BINARY, dst=mat)
+
         count = cv.countNonZero(mat)
 
         h, w = mat.shape
         filledArea = count / (w * h)
         return filledArea
 
-    def getValueRanges(self, values: list[tuple[str, float]]) -> Generator[tuple[bool, list[tuple[str, float]]]]:
+    def getValueRanges(self, values: list[MaskValue]) -> Generator[list[MaskValue]]:
         if not values:
             return
 
-        if values[0][1] >= 1.0 or values[-1][1] <= 0.0:
+        if values[0].value >= 1.0 or values[-1].value <= 0.0:
             # All masks are completely white or black
-            yield False, values
+            yield values
             return
 
-        idxFirstFract = next(i for i, val in enumerate(values) if val[1] > 0.0)
+        idxFirstFract = next(i for i, val in enumerate(values) if val.value > 0.0)
         if idxFirstFract > 0:
             # Completely black masks
-            yield False, values[:idxFirstFract]
+            yield values[:idxFirstFract]
 
-        if values[idxFirstFract][1] >= 1.0:
+        if values[idxFirstFract].value >= 1.0:
             # No fractional area masks, rest is completely white
-            yield False, values[idxFirstFract:]
+            yield values[idxFirstFract:]
             return
 
         # Fractional area masks
-        idxFirstWhite = next(len(values)-i for i, val in enumerate(reversed(values)) if val[1] < 1.0)
-        yield True, values[idxFirstFract:idxFirstWhite]
+        idxFirstWhite = next(len(values)-i for i, val in enumerate(reversed(values)) if val.value < 1.0)
+        yield from makeBins(values[idxFirstFract:idxFirstWhite], self.numBins)
 
         if idxFirstWhite < len(values):
             # The remaining are completely white masks
-            yield False, values[idxFirstWhite:]
+            yield values[idxFirstWhite:]
 
 
 
 class MaskRegionLoadFunctor(MaskLoadFunctor):
-    def __init__(self, pathTemplate: str, blackRegions=False):
-        super().__init__(pathTemplate)
+    def __init__(self, pathTemplate: str, threshold: int | None, blackRegions=False):
+        super().__init__(pathTemplate, threshold)
         self.blackRegions = blackRegions
 
-    def _processMask(self, maskPath: str) -> float:
-        import cv2 as cv
-        mat = cv.imread(maskPath, cv.IMREAD_GRAYSCALE)
+        if blackRegions:
+            self.threshold = 1 if threshold is None else max(threshold, 1)
 
+    def _processMask(self, mat) -> float:
         if self.blackRegions:
-            cv.threshold(mat, 1, 255, cv.THRESH_BINARY, dst=mat)
+            cv.threshold(mat, self.threshold, 255, cv.THRESH_BINARY, dst=mat)
             cv.bitwise_not(mat, dst=mat)
+        elif self.threshold is not None:
+            cv.threshold(mat, self.threshold, 255, cv.THRESH_BINARY, dst=mat)
 
         numRegions, labels = cv.connectedComponents(mat, None, 8, cv.CV_16U)
         numRegions -= 1
         return numRegions
 
-    def getValueRanges(self, values: list[tuple[str, float]]) -> Generator[tuple[bool, list[tuple[str, float]]]]:
+    def getValueRanges(self, values: list[MaskValue]) -> Generator[list[MaskValue]]:
         if values:
-            yield True, values
+            yield from makeBinsPerValue(values)
 
 
 
 class MaskData:
-    def __init__(self, fileValues: list[tuple[str, float]]):
-        self.files: set[str] = set(x[0] for x in fileValues)
+    def __init__(self, fileValues: list[MaskValue]):
+        self.files: set[str] = set(val.file for val in fileValues)
 
-        self.min = min((x[1] for x in fileValues), default=0)
-        self.max = max((x[1] for x in fileValues), default=0)
+        self.min = min((val.value for val in fileValues), default=0)
+        self.max = max((val.value for val in fileValues), default=0)
 
 
 
 class MaskSummary:
-    def __init__(self):
+    def __init__(self, statsType: MaskStatType = None):
+        self.statsType = statsType
         self.reset()
 
     def reset(self):
-        self.numFiles = 0
+        self.numMasks = 0
         self.numMissing = 0
         self.numBins = 0
 
@@ -316,22 +382,22 @@ class MaskSummary:
         self.median = 0
 
     def addFile(self, value: float):
-        self.numFiles += 1
-
         if value >= 0.0:
+            self.numMasks += 1
             self.min = min(self.min, value)
             self.max = max(self.max, value)
         else:
             self.numMissing += 1
 
-    def finalize(self, sortedItems: list[tuple[str, float]], numBins: int) -> MaskSummary:
+    def finalize(self, sortedItems: list[MaskValue], numBins: int) -> MaskSummary:
+        self.numBins = numBins
+
         if not sortedItems:
             self.min = self.max = 0
             return self
 
-        self.numBins = numBins
-        self.mean = sum(x[1] for x in sortedItems) / len(sortedItems)
-        self.median = sortedItems[len(sortedItems) // 2][1]
+        self.mean = sum(val.value for val in sortedItems) / len(sortedItems)
+        self.median = sortedItems[len(sortedItems) // 2].value
         return self
 
 
@@ -344,11 +410,13 @@ class MaskModel(QAbstractItemModel):
         self.font = qtlib.getMonospaceFont()
         self.colorRed = QtGui.QColor(qtlib.COLOR_RED)
 
+        self.statsName: str = ""
         self.maskBins: list[MaskData] = list()
         self.summary = MaskSummary()
 
     def reload(self, maskBins: list[MaskData], summary: MaskSummary):
         self.beginResetModel()
+        self.statsName = STAT_NAMES.get(summary.statsType, "")
         self.maskBins = maskBins
         self.summary = summary
         self.endResetModel()
@@ -394,8 +462,8 @@ class MaskModel(QAbstractItemModel):
             return super().headerData(section, orientation, role)
 
         match section:
-            case 0: return "Bin Min"
-            case 1: return "Bin Max"
+            case 0: return f"{self.statsName}Min"
+            case 1: return f"{self.statsName}Max"
             case 2: return "Count"
         return None
 
