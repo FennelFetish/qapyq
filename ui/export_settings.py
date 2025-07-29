@@ -6,7 +6,6 @@ from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QRunnable, QObject
 import cv2 as cv
 import numpy as np
 from PIL import Image
-from datetime import datetime
 from lib import qtlib, template_parser
 from infer.model_settings import ModelSettingsWindow, ScaleModelSettings
 from config import Config
@@ -594,19 +593,13 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
 
     @override
     def _getImgProperties(self, var: str) -> str | None:
-        if value := super()._getImgProperties(var):
-            return value
-
         match var:
             case "w": return str(self.width)
             case "h": return str(self.height)
             case "region": return str(self.region)
             case "rotation": return f"{self.rotation:03.0f}"
 
-            case "date": return datetime.now().strftime('%Y%m%d')
-            case "time": return datetime.now().strftime('%H%M%S')
-
-        return None
+        return super()._getImgProperties(var)
 
 
 

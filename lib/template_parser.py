@@ -1,5 +1,6 @@
 import re, os, random
 from typing import Tuple, List, Callable
+from datetime import datetime
 from PySide6 import QtWidgets, QtGui
 from .captionfile import CaptionFile
 from . import qtlib
@@ -165,14 +166,19 @@ class TemplateVariableParser:
 
         else:
             value = self._getImgProperties(var)
+            if value is None:
+                value = self._getMoreValues(var)
 
-        if value:
-            for func in funcs:
-                value = self._applyFunction(value, func) # Don't strip func (avoid changing arguments with spaces)
+        if not value:
+            self.missingVars.add(var)
+            value = ""
+
+        for func in funcs:
+            value = self._applyFunction(value, func) # Don't strip func (avoid changing arguments with spaces)
+
+        if value or optional:
             return value
-
-        self.missingVars.add(var)
-        return "" if optional else "{{" + varOrig + "}}"
+        return "{{" + varOrig + "}}"
 
 
     def _readTextFile(self) -> str | None:
@@ -224,6 +230,35 @@ class TemplateVariableParser:
         return None
 
 
+    def _getMoreValues(self, var: str) -> str | None:
+        match var:
+            case "date":
+                return datetime.now().strftime('%Y%m%d')
+            case "time":
+                return datetime.now().strftime('%H%M%S')
+
+        if args := self._matchNameGetArgs(var, "static"):
+            return args[0]
+
+        if args := self._matchNameGetArgs(var, "coinflip"):
+            valTrue  = self._getFuncArg(args, 0, "1")
+            valFalse = self._getFuncArg(args, 1, "0")
+            chance   = self._getFuncArgInt(args, 2, 2)
+            return valTrue if random.random() < 1/chance else valFalse
+
+        return None
+
+
+    @staticmethod
+    def _matchNameGetArgs(var: str, expectedName: str) -> list[str] | None:
+        if not var.startswith(expectedName):
+            return None
+
+        name, *args = var.split(":")
+        if len(name.strip()) == len(expectedName):
+            return args or [""]
+        return None
+
     @staticmethod
     def _getFuncArg(args: list[str], index: int, default):
         if len(args) > index and args[index]:
@@ -236,6 +271,7 @@ class TemplateVariableParser:
             return int( cls._getFuncArg(args, index, default) )
         except ValueError:
             return default
+
 
     def _applyFunction(self, value: str, func: str) -> str:
         func, *args = func.split(":")
@@ -252,6 +288,8 @@ class TemplateVariableParser:
                 return value.strip()
             case "oneline":
                 return value.replace("\n", "").replace("\r", "")
+            case "default":
+                return value if (value or not args) else args[0]
 
             case "replace":
                 if len(args) > 1 and args[0]:
