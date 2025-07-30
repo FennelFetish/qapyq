@@ -509,6 +509,7 @@ class CaptionContainer(QtWidgets.QWidget):
     def onFileChanged(self, currentFile: str):
         if not self.multiEdit.active:
             self.loadCaption()
+            self.txtCaption.document().clearUndoRedoStacks()
             self.applyRulesIfAuto()
 
         # The generate tab needs the caption text for variables, so initialize and update it here.
@@ -536,15 +537,22 @@ class CaptionContainer(QtWidgets.QWidget):
         else:
             self.btnMultiEdit.hide()
             self.btnMultiEdit.setChecked(False)
-
-            if self.multiEdit.active:
-                self.multiEdit.clear()
-                self.loadCaption()
+            self._multiEditDeactivate()
 
 
     def keyPressEvent(self, event: QtGui.QKeyEvent):
         if event.matches(QtGui.QKeySequence.StandardKey.Save):
             self.saveCaption()
+            event.accept()
+            return
+
+        if event.matches(QtGui.QKeySequence.StandardKey.Undo):
+            self.txtCaption.undo()
+            event.accept()
+            return
+
+        if event.matches(QtGui.QKeySequence.StandardKey.Redo):
+            self.txtCaption.redo()
             event.accept()
             return
 
@@ -564,7 +572,24 @@ class CaptionContainer(QtWidgets.QWidget):
         edited = self.multiEdit.isEdited
         loadFunc = self._multiEditLoadApplyRules if self.isAutoApplyRules() else self._loadCaption
         text = self.multiEdit.loadCaptions(selectedFiles, loadFunc)
+        self.txtCaption.setUndoRedoEnabled(False)
         self._setCaptionUnedited(text, edited)
+
+    def _multiEditDeactivate(self):
+        if self.multiEdit.active:
+            self.multiEdit.clear()
+            self.loadCaption()
+            self.txtCaption.setUndoRedoEnabled(True)
+
+    @Slot()
+    def _multiEditToggle(self, state: bool):
+        #self.chkSkipOnSave.setEnabled(not state)
+        if state:
+            if (not self.multiEdit.active) and self.filelist.selectedFiles:
+                self._multiEditActivate(self.filelist.selectedFiles)
+        else:
+            self._multiEditDeactivate()
+
 
     @Slot()
     def _multiEditEnsureFullPresence(self, index: int):
@@ -580,16 +605,6 @@ class CaptionContainer(QtWidgets.QWidget):
         self._multiEditHighlightImages(index)
 
         self.btnSave.setChanged(True)
-
-    @Slot()
-    def _multiEditToggle(self, state: bool):
-        #self.chkSkipOnSave.setEnabled(not state)
-        if state:
-            if (not self.multiEdit.active) and self.filelist.selectedFiles:
-                self._multiEditActivate(self.filelist.selectedFiles)
-        elif self.multiEdit.active:
-            self.multiEdit.clear()
-            self.loadCaption()
 
 
     @Slot()
@@ -667,6 +682,8 @@ class HoverTextEdit(QtWidgets.QPlainTextEdit):
         super().__init__()
         self.setMouseTracking(True)
         self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+
+        self.setUndoRedoEnabled(False)
 
         self.container = container
         self.hoverText = ""

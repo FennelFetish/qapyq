@@ -112,7 +112,7 @@ class GalleryGrid(QtWidgets.QWidget):
     def reloadCaptions(self):
         # TODO: Thread. Invalidate all and only load visible.
         for item in self.fileItems.values():
-            item.loadCaption()
+            item.loadCaption(True)
 
 
     @contextmanager

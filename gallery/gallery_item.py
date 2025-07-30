@@ -5,6 +5,7 @@ from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import QSize, Qt, Slot, QPoint
 from lib.filelist import DataKeys
 from lib import qtlib
+from caption.caption_text import NavigationTextEdit
 
 # Imported at the bottom because of circular dependency
 # from .gallery_grid import GalleryGrid
@@ -121,7 +122,7 @@ class GalleryItem(QtWidgets.QWidget):
         self.setMinimumSize(size, size)
 
 
-    def loadCaption(self):
+    def loadCaption(self, reset: bool):
         pass
 
     def takeFocus(self):
@@ -373,13 +374,13 @@ class GalleryListItem(GalleryItem):
         layout.addWidget(self.btnSave, row, 2)
 
         self.btnReload = QtWidgets.QPushButton("Reload")
-        self.btnReload.clicked.connect(self.loadCaption)
+        self.btnReload.clicked.connect(self._reloadCaption)
         self.btnReload.setFixedHeight(self.HEADER_HEIGHT)
         self.btnReload.hide()
         layout.addWidget(self.btnReload, row, 3)
 
         row += 1
-        self.txtCaption = QtWidgets.QPlainTextEdit()
+        self.txtCaption = NavigationTextEdit(", ")
         self.txtCaption.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.MinimumExpanding)
         qtlib.setMonospace(self.txtCaption)
         qtlib.setShowWhitespace(self.txtCaption)
@@ -405,7 +406,11 @@ class GalleryListItem(GalleryItem):
 
 
     @Slot()
-    def loadCaption(self):
+    def _reloadCaption(self):
+        self.loadCaption(False)
+
+    @override
+    def loadCaption(self, reset: bool):
         # Will load caption when painted
         if not self._built:
             return
@@ -414,8 +419,11 @@ class GalleryListItem(GalleryItem):
         if caption is None:
             caption = ""
 
-        self.txtCaption.setPlainText(caption)
+        self.txtCaption.setCaption(caption)
         self._captionLoaded = True
+
+        if reset:
+            self.txtCaption.document().clearUndoRedoStacks()
 
         self.btnSave.hide()
         self.btnReload.hide()
@@ -427,7 +435,7 @@ class GalleryListItem(GalleryItem):
 
     @Slot()
     def _saveCaption(self):
-        text = self.txtCaption.toPlainText()
+        text = self.txtCaption.getCaption()
         if self.gallery.captionSrc.saveCaption(self.file, text):
             self.btnSave.hide()
             self.btnReload.hide()
@@ -462,7 +470,7 @@ class GalleryListItem(GalleryItem):
         if not self._built:
             self._build()
         if not self._captionLoaded:
-            self.loadCaption()
+            self.loadCaption(True)
 
         painter = QtGui.QPainter(self)
         if not painter.isActive():

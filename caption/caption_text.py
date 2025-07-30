@@ -6,14 +6,19 @@ from lib.util import stripCountPadding
 class NavigationTextEdit(QtWidgets.QPlainTextEdit):
     def __init__(self, separator: str):
         super().__init__()
+        #self.setTabChangesFocus(True)
         self.separator = separator
 
     def getCaption(self) -> str:
         return self.toPlainText()
 
     def setCaption(self, text: str):
-        self.setPlainText(text)
-        self.moveCursor(QtGui.QTextCursor.MoveOperation.End)
+        cursor = self.textCursor()
+        cursor.beginEditBlock()
+        cursor.movePosition(cursor.MoveOperation.Start, cursor.MoveMode.MoveAnchor)
+        cursor.movePosition(cursor.MoveOperation.End, cursor.MoveMode.KeepAnchor)
+        cursor.insertText(text)
+        cursor.endEditBlock()
 
 
     def appendToCaption(self, text: str):

@@ -3,7 +3,7 @@ from typing import Iterable, Generator, Generic, TypeVar, Optional
 from itertools import zip_longest
 from PySide6 import QtWidgets
 from PySide6.QtCore import Slot
-from PySide6.QtGui import QColor, QTextCursor, QTextCharFormat
+from PySide6.QtGui import QColor, QTextCharFormat, QTextLayout
 from lib import qtlib, util, colors
 from lib.util import stripCountPadding
 
@@ -64,18 +64,24 @@ class HighlightState:
         self.lastCaptions.clear()
         self.lastPresence.clear()
 
-    def getAndUpdate(self, captions: list[str], presence: list[float] | None) -> list[bool]:
+    def getAndUpdate(self, captions: list[str], presence: list[float] | None) -> list[int | None]:
         if presence is None:
             presence = list()
 
         sameCaptions = [
-            (presNew == presOld) and (capNew == capOld)
+            None if (presNew == presOld) and (capNew == capOld) else self._lenDiff(capNew, capOld)
             for capNew, capOld, presNew, presOld in zip_longest(captions, self.lastCaptions, presence, self.lastPresence)
         ]
 
         self.lastCaptions = captions
         self.lastPresence = presence
         return sameCaptions
+
+    @staticmethod
+    def _lenDiff(capNew: str | None, capOld: str | None) -> int:
+        if capNew is None or capOld is None:
+            return 0  # For captions at the end: Offset is not needed anymore, reformat all
+        return len(capNew) - len(capOld)
 
 
 
@@ -118,23 +124,30 @@ class CaptionHighlight:
         separator = separator.strip()
         splitCaptions = text.split(separator)
 
+        keepFormatOffset = 0
         formats = self.charFormats
         matchNode = self.matchNode
 
         if state:
             presenceList = self.data.getPresence()
-            sameCaptions = state.getAndUpdate(splitCaptions, presenceList)
+            captionLengthOffsets = state.getAndUpdate(splitCaptions, presenceList)
         else:
             presenceList = self.data.getTotalPresence(splitCaptions)
-            sameCaptions = None
+            captionLengthOffsets = None
 
         with HighlightContext(txtWidget) as HL:
             start = 0
 
             for i, caption in enumerate(splitCaptions):
-                if sameCaptions and sameCaptions[i]:
-                    start += len(caption) + len(separator)
-                    continue
+                if captionLengthOffsets:
+                    offset = captionLengthOffsets[i]
+                    if offset is None:
+                        end = start + len(caption) + len(separator)
+                        HL.keepFormat(start, end, keepFormatOffset)
+                        start = end
+                        continue
+                    else:
+                        keepFormatOffset += offset
 
                 presence = presenceList[i] if presenceList else 1.0
                 captionStrip, padLeft, padRight = stripCountPadding(caption)
@@ -277,7 +290,6 @@ class CaptionHighlight:
 class HighlightContext:
     def __init__(self, txtWidget: QtWidgets.QPlainTextEdit):
         self.txtWidget = txtWidget
-        self.cursor = self.txtWidget.textCursor()
         self.partialPresenceColors: dict[tuple[int, int, int, bool], QTextCharFormat] = dict()
 
         textBrush = txtWidget.palette().text()
@@ -289,14 +301,17 @@ class HighlightContext:
         self.hoverFormat.setForeground(textBrush)
         self.hoverFormat.setFontUnderline(True)
 
+        self._textLayout = txtWidget.document().firstBlock().layout()
+        self._prevFormatRanges = self._textLayout.formats()
+        self._formatRanges: dict[int, QTextLayout.FormatRange] = dict()
+
+
     def __enter__(self):
-        self.txtWidget.blockSignals(True)
-        self.cursor.beginEditBlock()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.cursor.endEditBlock()
-        self.txtWidget.blockSignals(False)
+        self._textLayout.setFormats(list(self._formatRanges.values()))
+        self.txtWidget.viewport().repaint()
         return False
 
 
@@ -317,12 +332,32 @@ class HighlightContext:
         return mutedFormat
 
     def highlight(self, format: QTextCharFormat, start: int, length: int):
-        if length <= 0:
+        if length <= 0 or format == self.clearFormat:
             return
 
-        self.cursor.setPosition(start)
-        self.cursor.setPosition(start+length, QTextCursor.MoveMode.KeepAnchor)
-        self.cursor.setCharFormat(format)
+        range = QTextLayout.FormatRange()
+        range.format = format
+        range.start  = start
+        range.length = length
+        self._formatRanges[start] = range
+
+    def keepFormat(self, start: int, end: int, offset: int):
+        start -= offset
+        end -= offset
+
+        removeIndices = list[int]()
+        for i, range in enumerate(self._prevFormatRanges):
+            if range.start < start:
+                continue
+            elif (range.start + range.length) > end:
+                break
+
+            range.start += offset
+            self._formatRanges[range.start] = range
+            removeIndices.append(i)
+
+        for i in reversed(removeIndices):
+            del self._prevFormatRanges[i]
 
 
 
