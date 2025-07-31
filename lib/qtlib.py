@@ -1,3 +1,5 @@
+from typing import Any, Callable, Iterable
+from contextlib import contextmanager
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QRect
 import numpy as np
@@ -581,10 +583,13 @@ class BaseColorScrollArea(QtWidgets.QScrollArea):
 
 
 class RowScrollArea(BaseColorScrollArea):
-    def __init__(self, widget: QtWidgets.QWidget):
+    def __init__(self, widget: QtWidgets.QWidget, canHaveInvisible: bool = False):
         super().__init__(widget)
+        self.hasInvisible = canHaveInvisible
 
     def _getItemIndexAtY(self, y: int, compareBottom: bool) -> int:
+        'Does not handle invisible items.'
+
         layout: QtWidgets.QLayout = self.widget().layout()
         rowY = QRect.bottom if compareBottom else QRect.top
 
@@ -603,12 +608,39 @@ class RowScrollArea(BaseColorScrollArea):
         #assert(lo == hi)
         return lo
 
+    def _getNextItemIndex(self, y: int, scrollDown: bool) -> int:
+        layout: QtWidgets.QLayout = self.widget().layout()
+        rowY = QRect.bottom if scrollDown else QRect.top
+
+        row = lastRow = -1
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            if item.widget().isVisible():
+                lastRow = row
+                row = i
+
+                if rowY(item.geometry()) >= y:
+                    break
+
+        if scrollDown:
+            return next((
+                i for i in range(row+1, layout.count())
+                if (item := layout.itemAt(i)) and item.widget().isVisible()
+            ),
+            layout.count())
+        else:
+            return lastRow
+
+
     def wheelEvent(self, event: QtGui.QWheelEvent):
         scrollBar = self.verticalScrollBar()
         scrollDown = event.angleDelta().y() < 0
 
-        row = self._getItemIndexAtY(scrollBar.value(), scrollDown)
-        row += 1 if scrollDown else -1
+        if self.hasInvisible:
+            row = self._getNextItemIndex(scrollBar.value(), scrollDown)
+        else:
+            row = self._getItemIndexAtY(scrollBar.value(), scrollDown)
+            row += 1 if scrollDown else -1
 
         if row <= 0:
             y = 0
@@ -677,3 +709,123 @@ class CheckableListWidget(QtWidgets.QListWidget):
 
     def getCheckboxItem(self, item: QtWidgets.QListWidgetItem) -> CheckboxItemWidget:
         return self.itemWidget(item)
+
+
+
+class LayoutFilter(QtWidgets.QHBoxLayout):
+    class FilterTextEdit(QtWidgets.QLineEdit):
+        def __init__(self):
+            super().__init__()
+            self.setPlaceholderText("Filter")
+            setMonospace(self)
+
+        def keyPressEvent(self, event: QtGui.QKeyEvent):
+            match event.key():
+                case Qt.Key.Key_Escape:
+                    self.clear()
+                    event.accept()
+                    return
+
+            super().keyPressEvent(event)
+
+
+    def __init__(self, layout: QtWidgets.QLayout, textGetter: Callable[[Any], Iterable[str]]):
+        super().__init__()
+        self._filterLayout = layout
+        self._textGetter: Callable[[QtWidgets.QWidget], Iterable[str]] = textGetter
+
+        import re
+        self._filterPattern: re.Pattern | None = None
+
+        self._numVisible: int = -1
+        self._statusName: str = "Rows"
+        self._lblStatus: QtWidgets.QLabel | None = None
+        self._updatesDisabled: bool = False
+
+        self.txtFilter = LayoutFilter.FilterTextEdit()
+        self.txtFilter.textChanged.connect(self.setFilterText)
+
+        btnClearFilter = BubbleRemoveButton()
+        btnClearFilter.setToolTip("Clear Filter")
+        btnClearFilter.clicked.connect(self.txtFilter.clear)
+
+        self.addWidget(btnClearFilter)
+        self.addSpacing(2)
+        self.addWidget(self.txtFilter)
+
+
+    @property
+    def numVisible(self) -> int:
+        if self._filterPattern is None:
+            return self._filterLayout.count()
+        return self._numVisible
+
+
+    @Slot()
+    def setFilterText(self, filterText: str):
+        if filterText:
+            import re
+            self._filterPattern = re.compile(filterText, re.IGNORECASE)
+        else:
+            self._filterPattern = None
+
+        self.update()
+
+    @Slot()
+    def clearFilterText(self):
+        self.txtFilter.clear()
+
+    def setStatusLabel(self, name: str, label: QtWidgets.QLabel):
+        self._statusName = name
+        self._lblStatus = label
+        self.updateStatus()
+
+
+    def _checkTexts(self, widget: QtWidgets.QWidget) -> bool:
+        return any(
+            self._filterPattern.search(text) is not None
+            for text in self._textGetter(widget)
+        )
+
+    def update(self):
+        filterFunc = self._checkTexts if self._filterPattern is not None else bool
+        self._numVisible = 0
+
+        for i in range(self._filterLayout.count()):
+            item = self._filterLayout.itemAt(i)
+            if item and (widget := item.widget()):
+                visible = filterFunc(widget)
+                widget.setVisible(visible)
+                if visible:
+                    self._numVisible += 1
+
+        self.updateStatus()
+
+    def updateStatus(self):
+        if self._updatesDisabled or self._lblStatus is None:
+            return
+
+        numTotal = self._filterLayout.count()
+        numVisible = self.numVisible
+
+        text = f"{numTotal} {self._statusName}"
+        if numTotal == 1:
+            text = text.rstrip("s")
+
+        if numVisible < numTotal:
+            text = f"Showing {numVisible} / " + text
+            color = COLOR_GREEN if numVisible > 0 else COLOR_RED
+            self._lblStatus.setStyleSheet(f"color: {color}")
+        else:
+            self._lblStatus.setStyleSheet("")
+
+        self._lblStatus.setText(text)
+
+    @contextmanager
+    def postponeUpdates(self):
+        try:
+            self._updatesDisabled = True
+            yield self
+        finally:
+            self._updatesDisabled = False
+            self.updateStatus()

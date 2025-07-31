@@ -1,5 +1,6 @@
 from __future__ import annotations
 import re, ast, operator
+from itertools import chain
 from typing import Generator, Callable, ForwardRef, Any
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker
@@ -50,20 +51,42 @@ class CaptionConditionals(CaptionTab):
         reorderWidget = ManualStartReorderWidget()
         reorderWidget.setLayout(self._layout)
         reorderWidget.orderChanged.connect(lambda: self.ctx.controlUpdated.emit())
-        scrollArea = qtlib.RowScrollArea(reorderWidget)
+        scrollArea = qtlib.RowScrollArea(reorderWidget, True)
         scrollArea.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
 
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(scrollArea)
-
-        btnAddRule = QtWidgets.QPushButton("✚ Add Conditional Rule")
-        btnAddRule.clicked.connect(lambda: self.addRule())
-        layout.addWidget(btnAddRule)
-
+        layout.addWidget(self._buildBar())
         self.setLayout(layout)
 
+    def _buildBar(self):
+        barLayout = QtWidgets.QHBoxLayout()
+        barLayout.setContentsMargins(0, 1, 0, 1)
+        barLayout.setSpacing(0)
+
+        btnAddRule = QtWidgets.QPushButton("✚ Add Conditional Rule")
+        btnAddRule.clicked.connect(self.addRule)
+        barLayout.addWidget(btnAddRule, 1)
+
+        self.lblStatus = QtWidgets.QLabel()
+        barLayout.addWidget(self.lblStatus, 2, Qt.AlignmentFlag.AlignCenter)
+
+        self.filter = qtlib.LayoutFilter(self._layout, self._getFilterTexts)
+        self.filter.setStatusLabel("Conditional Rules", self.lblStatus)
+        barLayout.addLayout(self.filter, 1)
+
+        frame = QtWidgets.QFrame()
+        frame.setFrameStyle(QtWidgets.QFrame.Shape.Panel | QtWidgets.QFrame.Shadow.Sunken)
+        frame.setLayout(barLayout)
+        return frame
+
+
+    @staticmethod
+    def _getFilterTexts(rule: ConditionalRule) -> Generator[str]:
+        for entry in chain(rule.ruleConditions, rule.ruleActions):
+            yield from entry.params.getFilterTexts()
 
     @property
     def rules(self) -> Generator[ConditionalRule]:
@@ -73,11 +96,13 @@ class CaptionConditionals(CaptionTab):
                 yield widget
 
 
+    @Slot()
     def addRule(self) -> ConditionalRule:
         rule = ConditionalRule()
         rule.ruleUpdated.connect(lambda: self.ctx.controlUpdated.emit())
         rule.removeClicked.connect(self.removeRule)
         self._layout.addWidget(rule)
+        self.filter.updateStatus()
         self.ctx.controlUpdated.emit()
         return rule
 
@@ -85,6 +110,7 @@ class CaptionConditionals(CaptionTab):
     def removeRule(self, rule: ConditionalRule):
         self._layout.removeWidget(rule)
         rule.deleteLater()
+        self.filter.updateStatus()
         self.ctx.controlUpdated.emit()
 
     def clearRules(self):
@@ -92,6 +118,9 @@ class CaptionConditionals(CaptionTab):
             item = self._layout.takeAt(i)
             if item and (widget := item.widget()):
                 widget.deleteLater()
+
+        self.filter.clearFilterText()
+        self.filter.updateStatus()
 
 
     def getFilterRules(self) -> Generator[ConditionalFilterRule]:
@@ -113,10 +142,11 @@ class CaptionConditionals(CaptionTab):
 
     def loadFromPreset(self, preset: CaptionPreset):
         with QSignalBlocker(self):
-            self.clearRules()
-            for presetRule in preset.conditionals:
-                ruleWidget = self.addRule()
-                ruleWidget.loadFromPreset(presetRule)
+            with self.filter.postponeUpdates():
+                self.clearRules()
+                for presetRule in preset.conditionals:
+                    ruleWidget = self.addRule()
+                    ruleWidget.loadFromPreset(presetRule)
 
 
 
@@ -545,6 +575,10 @@ class RuleParams(QtWidgets.QHBoxLayout):
     @property
     def definitionKey(self) -> str:
         return self.cboDefinitions.currentData()
+
+    def getFilterTexts(self) -> Generator[str]:
+        for i in range(self._definition.numParams):
+            yield self.txtParams[i].text()
 
     def createFunc(self):
         params = [txt.text() for txt in self.txtParams[:self._definition.numParams]]

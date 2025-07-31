@@ -30,24 +30,11 @@ class CaptionGroups(CaptionTab):
 
 
     def _build(self):
-        layout = QtWidgets.QGridLayout()
+        layout = QtWidgets.QVBoxLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignBottom)
         layout.setSpacing(0)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setColumnStretch(0, 0)
-        layout.setColumnStretch(1, 0)
-        layout.setColumnStretch(2, 1)
-        layout.setColumnStretch(3, 0)
-        layout.setColumnStretch(4, 0)
-        layout.setColumnStretch(5, 0)
-        layout.setColumnStretch(6, 0)
-        layout.setColumnMinimumWidth(0, 40)
-        layout.setColumnMinimumWidth(1, 12)
-        layout.setColumnMinimumWidth(3, 12)
-        layout.setColumnMinimumWidth(5, 12)
-        layout.setColumnMinimumWidth(6, 40)
 
-        row = 0
         self.groupLayout = QtWidgets.QVBoxLayout()
         self.groupLayout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.groupLayout.setContentsMargins(0, 0, 0, 0)
@@ -56,25 +43,46 @@ class CaptionGroups(CaptionTab):
         groupReorderWidget = ManualStartReorderWidget()
         groupReorderWidget.setLayout(self.groupLayout)
         groupReorderWidget.orderChanged.connect(self._emitUpdatedApplyRules)
-        scrollGroup = qtlib.RowScrollArea(groupReorderWidget)
+        scrollGroup = qtlib.RowScrollArea(groupReorderWidget, True)
         scrollGroup.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
-        layout.addWidget(scrollGroup, row, 0, 1, 7)
 
-        row += 1
-        layout.addWidget(Trash(), row, 0)
+        layout.addWidget(scrollGroup)
+        layout.addWidget(self._buildBar())
+        self.setLayout(layout)
+
+    def _buildBar(self):
+        barLayout = QtWidgets.QHBoxLayout()
+        barLayout.setContentsMargins(0, 1, 0, 1)
+        barLayout.setSpacing(0)
+
+        barLayout.addWidget(Trash())
+        barLayout.addSpacing(12)
 
         btnAddGroup = QtWidgets.QPushButton("✚ Add Group")
         btnAddGroup.clicked.connect(self.addGroup)
-        layout.addWidget(btnAddGroup, row, 2)
+        barLayout.addWidget(btnAddGroup, 1)
+
+        barLayout.addSpacing(4)
 
         btnOpenWildcards = QtWidgets.QPushButton("Wildcards...")
         btnOpenWildcards.setMinimumWidth(100)
         btnOpenWildcards.clicked.connect(self._openWildcardWindow)
-        layout.addWidget(btnOpenWildcards, row, 4)
+        barLayout.addWidget(btnOpenWildcards, 1)
 
-        layout.addWidget(Trash(), row, 6)
+        self.lblStatus = QtWidgets.QLabel()
+        barLayout.addWidget(self.lblStatus, 4, Qt.AlignmentFlag.AlignCenter)
 
-        self.setLayout(layout)
+        self.filter = qtlib.LayoutFilter(self.groupLayout, self._getFilterTexts)
+        self.filter.setStatusLabel("Groups", self.lblStatus)
+        barLayout.addLayout(self.filter, 2)
+
+        barLayout.addSpacing(12)
+        barLayout.addWidget(Trash())
+
+        frame = QtWidgets.QFrame()
+        frame.setFrameStyle(QtWidgets.QFrame.Shape.Panel | QtWidgets.QFrame.Shadow.Sunken)
+        frame.setLayout(barLayout)
+        return frame
 
 
     @Slot()
@@ -83,6 +91,11 @@ class CaptionGroups(CaptionTab):
         if win.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             self.wildcards = win.wildcards
             self.ctx.controlUpdated.emit()
+
+    @staticmethod
+    def _getFilterTexts(group: CaptionControlGroup):
+        yield group.name
+        yield from group.captionsExpandWildcards
 
 
     @property
@@ -103,12 +116,14 @@ class CaptionGroups(CaptionTab):
     def addGroup(self):
         group = self._createGroup()
         self.groupLayout.addWidget(group)
+        self.filter.updateStatus()
         self.ctx.controlUpdated.emit()
         return group
 
     def addGroupAt(self, index: int):
         group = self._createGroup()
         self.groupLayout.insertWidget(index, group)
+        self.filter.updateStatus()
         self.ctx.controlUpdated.emit()
         return group
 
@@ -123,6 +138,7 @@ class CaptionGroups(CaptionTab):
         if dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes:
             self.groupLayout.removeWidget(group)
             group.deleteLater()
+            self.filter.updateStatus()
             self._emitUpdatedApplyRules()
 
     def removeAllGroups(self):
@@ -131,6 +147,8 @@ class CaptionGroups(CaptionTab):
             if widget := item.widget():
                 widget.deleteLater()
 
+        self.filter.clearFilterText()
+        self.filter.updateStatus()
         self.ctx.controlUpdated.emit()
 
 
@@ -154,16 +172,17 @@ class CaptionGroups(CaptionTab):
     def loadFromPreset(self, preset: CaptionPreset):
         self.wildcards = dict(preset.wildcards)
 
-        self.removeAllGroups()
-        for group in preset.groups:
-            groupWidget: CaptionControlGroup = self.addGroup()
-            groupWidget.name = group.name
-            groupWidget.color = group.color
-            groupWidget.exclusivity = group.exclusivity
-            groupWidget.combineTags = group.combineTags
-            groupWidget.addAllCaptions(group.captions)
+        with self.filter.postponeUpdates():
+            self.removeAllGroups()
+            for group in preset.groups:
+                groupWidget: CaptionControlGroup = self.addGroup()
+                groupWidget.name = group.name
+                groupWidget.color = group.color
+                groupWidget.exclusivity = group.exclusivity
+                groupWidget.combineTags = group.combineTags
+                groupWidget.addAllCaptions(group.captions)
 
-            self._nextGroupHue = util.get_hue(group.color) + self.HUE_OFFSET
+                self._nextGroupHue = util.get_hue(group.color) + self.HUE_OFFSET
 
 
 
@@ -574,6 +593,7 @@ class Trash(QtWidgets.QLabel):
         self.setToolTip("Drag tags here to delete them")
 
         self.setHover(False)
+        self.setMinimumWidth(40)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasText():
