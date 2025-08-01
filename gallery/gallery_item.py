@@ -4,6 +4,7 @@ from typing_extensions import override
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import QSize, Qt, Slot, QPoint
 from lib.filelist import DataKeys
+from lib.captionfile import FileTypeSelector
 from lib import qtlib
 from caption.caption_text import NavigationTextEdit
 
@@ -22,6 +23,18 @@ DATA_ICONS = {
     DataKeys.CropState: ImageIcon.Crop,
     DataKeys.MaskState: ImageIcon.Mask
 }
+
+
+
+class GalleryContext:
+    def __init__(self, captionSrc: FileTypeSelector):
+        self.captionSrc = captionSrc
+        self.captionsEnabled: bool = False
+
+    def loadCaption(self, file: str) -> str:
+        caption = self.captionSrc.loadCaption(file)
+        return "" if caption is None else caption
+
 
 
 class GalleryItem(QtWidgets.QWidget):
@@ -65,6 +78,7 @@ class GalleryItem(QtWidgets.QWidget):
         self._height = self._pixmap.height() if self._pixmap else self.MIN_HEIGHT
 
         self.ready = self._pixmap is not None
+        self.reloadCaption = True
 
         if imgSize := filelist.getData(file, DataKeys.ImageSize):
             self.setImageSize(imgSize[0], imgSize[1])
@@ -121,9 +135,6 @@ class GalleryItem(QtWidgets.QWidget):
         size = self.gallery.thumbnailSize
         self.setMinimumSize(size, size)
 
-
-    def loadCaption(self, reset: bool):
-        pass
 
     def takeFocus(self):
         pass
@@ -279,16 +290,23 @@ class GalleryGridItem(GalleryItem):
 
     def __init__(self, gallery, file):
         super().__init__(gallery, file)
+        self.labelText = self.filename
 
     @staticmethod
     def getSpacing() -> int:
         return 4
+
+    def loadCaption(self):
+        self.labelText = self.gallery.ctx.loadCaption(self.file) if self.gallery.ctx.captionsEnabled else self.filename
+        self.reloadCaption = False
 
 
     @override
     def paintEvent(self, event):
         if not self.PEN_TEXT:
             self._initPens()
+        if self.reloadCaption:
+            self.loadCaption()
 
         painter = QtGui.QPainter(self)
         if not painter.isActive():
@@ -297,7 +315,7 @@ class GalleryGridItem(GalleryItem):
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
 
-        x = self.BORDER_SIZE/2
+        x = self.BORDER_SIZE // 2
         y = x
         w = self.width() - self.BORDER_SIZE
         h = self.height() - self.BORDER_SIZE
@@ -311,7 +329,7 @@ class GalleryGridItem(GalleryItem):
                 imgH = 0
             else:
                 aspect = self._pixmap.height() / self._pixmap.width()
-                imgH = w * aspect
+                imgH = round(w * aspect)
                 painter.drawPixmap(x, y, w, imgH, self._pixmap)
         else:
             if self.ready:
@@ -324,11 +342,14 @@ class GalleryGridItem(GalleryItem):
         self.paintIcons(painter, x+4, y+4)
         self.paintBorder(painter, x, y, w, h)
 
-        # Draw filename
+        # Draw label
         textY = y + imgH + self.TEXT_SPACING
-        textRect = painter.fontMetrics().boundingRect(self.BORDER_SIZE, textY, w-self.BORDER_SIZE, self.TEXT_MAX_HEIGHT, self.TEXT_FLAGS, self.filename)
+        textRect = painter.fontMetrics().boundingRect(self.BORDER_SIZE, textY, w-self.BORDER_SIZE, self.TEXT_MAX_HEIGHT, self.TEXT_FLAGS, self.labelText)
+        if textRect.height() > self.TEXT_MAX_HEIGHT:
+            textRect.setHeight(self.TEXT_MAX_HEIGHT)
+
         painter.setPen(pen)
-        painter.drawText(textRect, self.filename, self.TEXT_OPT)
+        painter.drawText(textRect, self.labelText, self.TEXT_OPT)
         painter.end()
 
         self._height = y + imgH + self.BORDER_SIZE + self.TEXT_SPACING + textRect.height() + self.TEXT_SPACING
@@ -345,8 +366,6 @@ class GalleryListItem(GalleryItem):
         self.gridLayout = QtWidgets.QGridLayout()
 
         super().__init__(gallery, file)
-        self._captionLoaded = False
-
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.MinimumExpanding)
 
 
@@ -409,18 +428,14 @@ class GalleryListItem(GalleryItem):
     def _reloadCaption(self):
         self.loadCaption(False)
 
-    @override
     def loadCaption(self, reset: bool):
         # Will load caption when painted
         if not self._built:
             return
 
-        caption = self.gallery.captionSrc.loadCaption(self.file)
-        if caption is None:
-            caption = ""
-
+        caption = self.gallery.ctx.loadCaption(self.file)
         self.txtCaption.setCaption(caption)
-        self._captionLoaded = True
+        self.reloadCaption = False
 
         if reset:
             self.txtCaption.document().clearUndoRedoStacks()
@@ -436,7 +451,7 @@ class GalleryListItem(GalleryItem):
     @Slot()
     def _saveCaption(self):
         text = self.txtCaption.getCaption()
-        if self.gallery.captionSrc.saveCaption(self.file, text):
+        if self.gallery.ctx.captionSrc.saveCaption(self.file, text):
             self.btnSave.hide()
             self.btnReload.hide()
 
@@ -469,7 +484,7 @@ class GalleryListItem(GalleryItem):
             self._initPens()
         if not self._built:
             self._build()
-        if not self._captionLoaded:
+        if self.reloadCaption:
             self.loadCaption(True)
 
         painter = QtGui.QPainter(self)
@@ -479,7 +494,7 @@ class GalleryListItem(GalleryItem):
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
 
-        x = self.BORDER_SIZE/2
+        x = self.BORDER_SIZE // 2
         y = x
         w = self.width() - self.BORDER_SIZE
         h = self.height() - self.BORDER_SIZE
@@ -491,7 +506,7 @@ class GalleryListItem(GalleryItem):
         if self._pixmap is not None:
             if not self._pixmap.isNull():
                 aspect = self._pixmap.height() / self._pixmap.width()
-                imgH = imgW * aspect
+                imgH = round(imgW * aspect)
                 painter.drawPixmap(x, y, imgW, imgH, self._pixmap)
         elif self.ready:
             ThumbnailCache.updateThumbnail(self.gallery.filelist, self, self.file)

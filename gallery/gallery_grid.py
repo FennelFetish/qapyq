@@ -10,7 +10,7 @@ from ui.tab import ImgTab
 from .gallery_header import GalleryHeader
 
 # Imported at the bottom because of circular dependency
-# from .gallery_item import GalleryItem, GalleryGridItem, GalleryListItem, ImageIcon
+# from .gallery_item import GalleryItem, GalleryGridItem, GalleryListItem, GalleryContext, ImageIcon
 
 
 class GalleryGrid(QtWidgets.QWidget):
@@ -22,12 +22,13 @@ class GalleryGrid(QtWidgets.QWidget):
     reloaded        = Signal()
     thumbnailLoaded = Signal()
     loadingProgress = Signal()
+    highlighted     = Signal()
 
 
     def __init__(self, tab: ImgTab, captionSource: FileTypeSelector):
         super().__init__()
         self.tab = tab
-        self.captionSrc = captionSource
+        self.ctx = GalleryContext(captionSource)
         self.filelist = tab.filelist
         self.fileItems: dict[str, GalleryItem] = {}
         self.itemClass = GalleryGridItem
@@ -85,6 +86,10 @@ class GalleryGrid(QtWidgets.QWidget):
     def selectedItem(self) -> GalleryItem |  None:
         return self._selectedItem
 
+    @property
+    def highlightCount(self) -> int:
+        return len(self._highlightedFiles)
+
 
     def setViewMode(self, mode: str):
         newItemClass = GalleryListItem if mode==self.VIEW_MODE_LIST else GalleryGridItem
@@ -110,9 +115,9 @@ class GalleryGrid(QtWidgets.QWidget):
             item.onThumbnailSizeUpdated()
 
     def reloadCaptions(self):
-        # TODO: Thread. Invalidate all and only load visible.
         for item in self.fileItems.values():
-            item.loadCaption(True)
+            item.reloadCaption = True
+            item.update()
 
 
     @contextmanager
@@ -408,6 +413,7 @@ class GalleryGrid(QtWidgets.QWidget):
 
         self._highlightedFiles.clear()
         self._highlightedFiles.update(files)
+        self.highlighted.emit()
 
 
 
@@ -580,4 +586,4 @@ class GalleryLoadTask(QObject):
 
 
 
-from .gallery_item import GalleryItem, GalleryGridItem, GalleryListItem, ImageIcon
+from .gallery_item import GalleryItem, GalleryGridItem, GalleryListItem, GalleryContext, ImageIcon

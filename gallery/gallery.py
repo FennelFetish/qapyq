@@ -19,6 +19,8 @@ class Gallery(QtWidgets.QWidget):
         self.galleryGrid = None
         self.rowToHeader: list[int] = list()
 
+        self._switchingMode = False
+
         self.gridUpdateTimer = QTimer()
         self.gridUpdateTimer.setSingleShot(True)
         self.gridUpdateTimer.setInterval(100)
@@ -75,10 +77,15 @@ class Gallery(QtWidgets.QWidget):
         return widget
 
     def _build(self):
+        self.chkCaptions = QtWidgets.QCheckBox("Captions:")
+        self.chkCaptions.toggled.connect(self.onCaptionsToggled)
+
         self.captionSrc = FileTypeSelector()
+        self.captionSrc.setEnabled(False)
         self.captionSrc.fileTypeUpdated.connect(self.onCaptionSourceChanged)
 
         self.btnReloadCaptions = qtlib.SaveButton("↻")
+        self.btnReloadCaptions.setEnabled(False)
         self.btnReloadCaptions.setFixedWidth(28)
         self.btnReloadCaptions.clicked.connect(self.reloadCaptions)
 
@@ -102,7 +109,8 @@ class Gallery(QtWidgets.QWidget):
         self.galleryGrid.reloaded.connect(self.scrollTop)
         self.galleryGrid.reloaded.connect(self.queueGridUpdate)
         self.galleryGrid.thumbnailLoaded.connect(self.queueGridUpdate)
-        self.galleryGrid.loadingProgress.connect(self.onLoadProgress)
+        self.galleryGrid.loadingProgress.connect(self.updateStatusBar)
+        self.galleryGrid.highlighted.connect(self.updateStatusBar)
         self.galleryGrid.fileChanged.connect(self.ensureVisible)
         self.scrollArea.setWidget(self.galleryGrid)
 
@@ -115,7 +123,7 @@ class Gallery(QtWidgets.QWidget):
         layout.setColumnStretch(4, 0)
         layout.setColumnMinimumWidth(1, 6)
         layout.addWidget(self.cboFolders, 0, 0)
-        layout.addWidget(QtWidgets.QLabel("Captions:"), 0, 2)
+        layout.addWidget(self.chkCaptions, 0, 2)
         layout.addLayout(self.captionSrc, 0, 3)
         layout.addWidget(self.btnReloadCaptions, 0, 4)
         layout.addWidget(self.scrollArea, 1, 0, 1, 5)
@@ -123,8 +131,30 @@ class Gallery(QtWidgets.QWidget):
 
 
     @Slot()
+    def onCaptionsToggled(self, state: bool):
+        self.galleryGrid.ctx.captionsEnabled = state
+        self.captionSrc.setEnabled(state)
+        self.btnReloadCaptions.setEnabled(state)
+
+        if state:
+            self.btnReloadCaptions.setChanged(True)
+        elif not self._switchingMode:
+            self.reloadCaptions()
+
+    @Slot()
     def onViewModeChanged(self, index: int):
         mode = self.cboViewMode.itemData(index)
+        if mode == GalleryGrid.VIEW_MODE_LIST:
+            self.chkCaptions.setChecked(True)
+            self.chkCaptions.setEnabled(False)
+        else:
+            try:
+                self._switchingMode = True
+                self.chkCaptions.setChecked(False)
+                self.chkCaptions.setEnabled(True)
+            finally:
+                self._switchingMode = False
+
         self.galleryGrid.setViewMode(mode)
         self.scrollToSelection()
         self.btnReloadCaptions.setChanged(False)
@@ -141,8 +171,7 @@ class Gallery(QtWidgets.QWidget):
 
     @Slot()
     def onCaptionSourceChanged(self):
-        if self.cboViewMode.currentData() == GalleryGrid.VIEW_MODE_LIST:
-            self.btnReloadCaptions.setChanged(True)
+        self.btnReloadCaptions.setChanged(True)
 
     @Slot()
     def reloadCaptions(self):
@@ -151,26 +180,22 @@ class Gallery(QtWidgets.QWidget):
 
 
     @Slot()
-    def onLoadProgress(self):
-        self.updateStatusBar(self.cboFolders.count())
-
-    def updateStatusBar(self, numFolders: int):
+    def updateStatusBar(self):
         filelist = self.galleryGrid.filelist
 
-        selectionText = ""
-        numSelectedFiles = len(filelist.selectedFiles)
-        if numSelectedFiles > 0:
-            selectionText = f"  ({numSelectedFiles} Selected)"
+        msgs = list[str]()
+        if numSelectedFiles := len(filelist.selectedFiles):
+            msgs.append(f"{numSelectedFiles} Selected")
+        if self.galleryGrid.highlightCount:
+            msgs.append(f"{self.galleryGrid.highlightCount} Highlighted")
+        msgsText = "".join(("  (", ", ".join(msgs), ")")) if msgs else ""
 
-        # TODO: Show number of highlighted files
-
-        loadText = ""
         loadPercent = self.galleryGrid.getLoadPercent()
-        if loadPercent < 1.0:
-            loadText = f"  (Loading Gallery: {100*loadPercent:.1f} %)"
+        loadText = f"  (Loading Gallery: {100*loadPercent:.1f} %)" if loadPercent < 1.0 else ""
 
         numFiles = filelist.getNumFiles()
-        self.statusBar.showMessage(f"{numFiles} Images in {numFolders} Folders{selectionText}{loadText}")
+        numFolders = self.cboFolders.count()
+        self.statusBar.showMessage(f"{numFiles} Images in {numFolders} Folders{msgsText}{loadText}")
 
 
     def resizeEvent(self, event):
@@ -208,7 +233,7 @@ class Gallery(QtWidgets.QWidget):
                 self.rowToHeader.append(header.row)
 
         self.updateComboboxFolder(self.scrollArea.verticalScrollBar().value())
-        self.updateStatusBar(len(headers))
+        self.updateStatusBar()
 
     @Slot()
     def onFolderSelected(self, index):
@@ -250,7 +275,7 @@ class Gallery(QtWidgets.QWidget):
 
 
     def onFileSelectionChanged(self, selectedFiles: set[str]):
-        self.updateStatusBar(self.cboFolders.count())
+        self.updateStatusBar()
 
     def highlightFiles(self, files: list[str]):
         self.galleryGrid.highlightFiles(files)
