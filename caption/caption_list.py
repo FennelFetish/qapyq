@@ -374,7 +374,6 @@ class CaptionEntry(QtWidgets.QWidget):
         self.txtKey = QtWidgets.QLabel(keyText)
         self.txtKey.setTextFormat(Qt.TextFormat.PlainText)
         self.txtKey.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
-        self.txtKey.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         qtlib.setMonospace(self.txtKey)
         self._setKeyColor(self.txtKey, keyType)
         layout.addWidget(self.txtKey, 0, 1, Qt.AlignmentFlag.AlignTop)

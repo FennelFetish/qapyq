@@ -242,6 +242,8 @@ class ReorderWidget(QtWidgets.QWidget):
                 if max(dx, dy) < self.dragStartMinDistance:
                     event.ignore()
                     return
+
+                pos = self._startDragPos
                 self._startDragPos = None
 
         if widget := self.widgetUnderCursor(pos): # Only drag direct children
@@ -279,18 +281,22 @@ class ReorderWidget(QtWidgets.QWidget):
 
 
     def _findDropIndex(self, e: QtGui.QDragMoveEvent) -> int:
-        posX = e.position().x() + e.source().width()
+        source: QtWidgets.QWidget = e.source()
+        posX = e.position().x() + source.width()
         posY = e.position().y()
         layout = self.layout()
         spacing = layout.spacing() / 2
 
         i = 0
         for n in range(layout.count()):
-            ele = layout.itemAt(n).widget()
-            if posY < ele.y() - spacing:
-                break
-            if posX > ele.x() + ele.width():
-                i = n
+            item = layout.itemAt(n)
+            widget = item.widget()
+            if widget and (widget.isVisible() or widget is source):
+                rect = item.geometry()
+                if posY < rect.top() - spacing:
+                    break
+                if posX > rect.right():
+                    i = n
         return i
 
 

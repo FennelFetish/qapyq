@@ -18,6 +18,11 @@ class NavigationTextEdit(QtWidgets.QPlainTextEdit):
         cursor.movePosition(cursor.MoveOperation.Start, cursor.MoveMode.MoveAnchor)
         cursor.movePosition(cursor.MoveOperation.End, cursor.MoveMode.KeepAnchor)
         cursor.insertText(text)
+
+        # Further text input is merged with this edit block. Ctrl+Z would remove the typed text, plus this inserted text.
+        # Add and delete a space char to avoid merging the commands in the undo stack.
+        cursor.insertText(" ")
+        cursor.deletePreviousChar()
         cursor.endEditBlock()
 
 
