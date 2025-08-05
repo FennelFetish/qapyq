@@ -53,6 +53,7 @@ class CaptionConditionals(CaptionTab):
         reorderWidget.orderChanged.connect(lambda: self.ctx.controlUpdated.emit())
         scrollArea = qtlib.RowScrollArea(reorderWidget, True)
         scrollArea.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
+        reorderWidget.enableBorderScroll(scrollArea)
 
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)

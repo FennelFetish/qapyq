@@ -1,6 +1,6 @@
 from typing import Iterable, Callable
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Signal, QSize, QRect, QMimeData, QTimer
+from PySide6.QtCore import Qt, Signal, QSize, QRect, QPoint, QMimeData, QTimer
 import numpy as np
 import lib.qtlib as qtlib
 
@@ -108,6 +108,7 @@ class FlowLayout(QtWidgets.QLayout):
 # All places that use dropEvent() must postpone the action using QTimer.singleShot
 class ReorderWidget(QtWidgets.QWidget):
     COLOR_FACTORS = [1.6, 1.9, 2.0, 1.0] # BGRA
+    SCROLL_OFFSET = 12
 
     orderChanged = Signal()
     receivedDrop = Signal(str)
@@ -115,9 +116,11 @@ class ReorderWidget(QtWidgets.QWidget):
     def __init__(self, giveDrop=False, takeDrop=False):
         super().__init__()
         self.setAcceptDrops(True)
-        self._startDragPos = None
-        self._dragWidgetIndex = -1
-        self._dragTarget = None
+
+        self._dragStartPos: QPoint | None = None
+        self._dragTarget: QtWidgets.QWidget | None = None
+        self._dragOrigIndex: int = -1
+        self._dragCurrentIndex: int = -1
 
         self.dataCallback: Callable[[QtWidgets.QWidget], str] | None = None # Returns the dropped text for a child widget
 
@@ -127,6 +130,13 @@ class ReorderWidget(QtWidgets.QWidget):
         self.dragStartMinDistance: int = 0
         self.showCursorPicture = True
 
+        self._scrollArea: QtWidgets.QScrollArea | None = None
+        self.scrollBorderSize = 40
+
+
+    def enableBorderScroll(self, scrollArea: QtWidgets.QScrollArea):
+        self._scrollArea = scrollArea
+
 
     def _createDragTarget(self, pixmap: QtGui.QPixmap, index: int):
         pixmap = self._adjustColor(pixmap)
@@ -134,6 +144,7 @@ class ReorderWidget(QtWidgets.QWidget):
         self._dragTarget.setPixmap(pixmap)
         self.layout().addWidget(self._dragTarget)
         self.layout().insertWidget(index, self._dragTarget)
+        self._dragCurrentIndex = index
 
     def _adjustColor(self, pixmap: QtGui.QPixmap):
         image = pixmap.toImage()
@@ -144,15 +155,6 @@ class ReorderWidget(QtWidgets.QWidget):
         matF *= self.COLOR_FACTORS
         matF.clip(0.0, 255.0, mat, casting="unsafe")
 
-        # Add border
-        # col = QtWidgets.QApplication.palette().color(QtGui.QPalette.ColorRole.Highlight)
-        # borderColor = [float(col.blue()), float(col.green()), float(col.red()), 255.0]
-        # h, w = mat.shape[:2]
-        # mat[0, :, ...]   = borderColor # Top
-        # mat[h-1, :, ...] = borderColor # Bottom
-        # mat[:, 0, ...]   = borderColor # Left
-        # mat[:, w-1, ...] = borderColor # Right
-
         image = qtlib.numpyToQImage(mat)
         image.setDevicePixelRatio(pixelRatio)
         return pixmap.fromImageInPlace(image)
@@ -162,6 +164,7 @@ class ReorderWidget(QtWidgets.QWidget):
         self._dragTarget.hide()
         self._dragTarget.deleteLater()
         self._dragTarget = None
+        self._dragCurrentIndex = -1
 
 
     def _startDrag(self, widget: QtWidgets.QWidget):
@@ -176,9 +179,9 @@ class ReorderWidget(QtWidgets.QWidget):
         if self.showCursorPicture:
             drag.setPixmap(pixmap)
 
-        layout: FlowLayout = self.layout()
-        self._dragWidgetIndex = layout.indexOf(widget)
-        self._createDragTarget(pixmap, self._dragWidgetIndex)
+        layout = self.layout()
+        self._dragOrigIndex = layout.indexOf(widget)
+        self._createDragTarget(pixmap, self._dragOrigIndex)
         widget.hide()
 
         actions = Qt.DropAction.CopyAction
@@ -210,7 +213,7 @@ class ReorderWidget(QtWidgets.QWidget):
         QTimer.singleShot(0, self.orderChanged.emit)
 
 
-    def widgetUnderCursor(self, pos) -> QtWidgets.QWidget | None:
+    def widgetUnderCursor(self, pos: QPoint) -> QtWidgets.QWidget | None:
         layout = self.layout()
         for i in range(layout.count()):
             item = layout.itemAt(i)
@@ -226,46 +229,71 @@ class ReorderWidget(QtWidgets.QWidget):
         return False
 
 
-    def mouseMoveEvent(self, event):
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent):
         if event.buttons() != Qt.MouseButton.LeftButton:
             event.ignore()
             return
 
         pos = event.position().toPoint()
         if self.dragStartMinDistance > 0:
-            if not self._startDragPos:
-                self._startDragPos = pos
+            if not self._dragStartPos:
+                self._dragStartPos = pos
                 event.ignore()
                 return
             else:
-                dx, dy = abs(pos.x() - self._startDragPos.x()), abs(pos.y() - self._startDragPos.y())
+                dx, dy = abs(pos.x() - self._dragStartPos.x()), abs(pos.y() - self._dragStartPos.y())
                 if max(dx, dy) < self.dragStartMinDistance:
                     event.ignore()
                     return
 
-                pos = self._startDragPos
-                self._startDragPos = None
+                pos = self._dragStartPos
+                self._dragStartPos = None
 
         if widget := self.widgetUnderCursor(pos): # Only drag direct children
             self._startDrag(widget)
             event.accept()
 
-    def dragEnterEvent(self, event):
+    def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
         if event.mimeData().hasText():
             event.accept()
 
-    def dragLeaveEvent(self, event):
+    def dragLeaveEvent(self, event: QtGui.QDragLeaveEvent):
         if self._dragTarget:
-            self.layout().insertWidget(self._dragWidgetIndex, self._dragTarget)
+            # DragLeaveEvents can also arrive if the cursor enters grandchild widgets with acceptDrops enabled.
+            # This can cause jitter. Only reset drag target if the cursor left the widget.
+            cursorPos = self.mapFromGlobal(QtGui.QCursor.pos())
+            if not self.rect().contains(cursorPos):
+                self._dragCurrentIndex = self._dragOrigIndex
+                self.layout().insertWidget(self._dragOrigIndex, self._dragTarget)
+
         event.accept()
 
-    def dragMoveEvent(self, event):
+
+    def dragMoveEvent(self, event: QtGui.QDragMoveEvent):
         if self._dragTarget:
-            index = self._findDropIndex(event)
-            self.layout().insertWidget(index, self._dragTarget)
+            if not self._dragTarget.geometry().contains(event.pos()):
+                index = self._findDropIndex(event)
+                if index >= 0 and index != self._dragCurrentIndex:
+                    self._dragCurrentIndex = index
+                    self.layout().insertWidget(index, self._dragTarget)
+
+            if self._scrollArea:
+                self._dragScroll(event.pos())
+
         event.accept()
 
-    def dropEvent(self, event):
+    def _dragScroll(self, mousePos: QPoint):
+        vScrollBar = self._scrollArea.verticalScrollBar()
+        scrollPos = vScrollBar.value()
+        y = mousePos.y() - scrollPos
+
+        if y < self.scrollBorderSize:
+            vScrollBar.setValue(scrollPos - self.SCROLL_OFFSET)
+        elif y > self._scrollArea.rect().bottom() - self.scrollBorderSize:
+            vScrollBar.setValue(scrollPos + self.SCROLL_OFFSET)
+
+
+    def dropEvent(self, event: QtGui.QDropEvent):
         if self._dragTarget:
             # Dropped into same widget
             action = Qt.DropAction.CopyAction
@@ -281,22 +309,85 @@ class ReorderWidget(QtWidgets.QWidget):
 
 
     def _findDropIndex(self, e: QtGui.QDragMoveEvent) -> int:
-        source: QtWidgets.QWidget = e.source()
-        posX = e.position().x() + source.width()
-        posY = e.position().y()
         layout = self.layout()
-        spacing = layout.spacing() / 2
+        source: QtWidgets.QWidget = e.source()
+        x, y = e.position().toTuple()
 
-        i = 0
-        for n in range(layout.count()):
-            item = layout.itemAt(n)
-            widget = item.widget()
-            if widget and (widget.isVisible() or widget is source):
-                rect = item.geometry()
-                if posY < rect.top() - spacing:
+        def nextVisibleIndex(index: int, offset: int, max: int) -> int:
+            for k in range(index, max+offset, offset):
+                widget = layout.itemAt(k).widget()
+                if (not widget.isHidden()) or (widget is source) or (widget is self._dragTarget):
+                    return k
+            raise IndexError()
+
+        # Binary search
+        lo = 0
+        hi = max(layout.count()-1, 0)
+
+        # I think Drag&Drop grabs the inputs from the OS. Check max iteration count, just in case, to prevent freezing the OS.
+        maxIt = 1000
+        while lo < hi and maxIt > 0:
+            maxIt -= 1
+
+            try:
+                lo = nextVisibleIndex(lo, 1, hi)
+                hi = nextVisibleIndex(hi, -1, lo)
+                if lo == hi:
                     break
-                if posX > rect.right():
-                    i = n
+
+                i = (lo+hi) // 2
+
+                try:
+                    i = nextVisibleIndex(i, -1, lo)
+                except IndexError:
+                    lo = i+1
+                    i = nextVisibleIndex(lo, 1, hi)
+            except IndexError:
+                return -1
+
+            rect = layout.itemAt(i).geometry()
+            if rect.bottom() < y:
+                lo = i+1 # Continue in upper half
+            elif rect.top() > y:
+                hi = i   # Continue in lower half
+            else:
+                if rect.right() < x:
+                    lo = i+1 # Continue in upper half
+                else:
+                    hi = i   # Continue in lower half
+
+        assert(lo == hi)
+        i = lo
+
+        # Prevent moving to start of line when aiming between lines
+        rect = layout.itemAt(i).geometry()
+        if y < rect.top() or y > rect.bottom():
+            return -1
+
+        # Additional checks to prevent jitter when neighboring elements have different sizes.
+        # For filtered layouts with sparse visible indexes, this may jitter once before the elements are made neighbors.
+        move = i - self._dragCurrentIndex
+        if abs(move) == 1:
+            srcRect = self._dragTarget.geometry()
+            dw = (rect.width()  - srcRect.width())  // 2
+            dh = (rect.height() - srcRect.height()) // 2
+
+            if move > 0:
+                if dw > 0:
+                    # Prevent jitter with short element at end of previous row
+                    if rect.top() > srcRect.bottom():
+                        dw = rect.width()
+                    if x <= rect.left() + dw:
+                        return -1
+
+                if dh > 0 and y <= rect.top() + dh:
+                    return -1
+            else:
+                if dw > 0 and x > rect.right() - dw:
+                    return -1
+                if dh > 0 and y > rect.bottom() - dh:
+                    return -1
+
         return i
 
 
@@ -311,6 +402,7 @@ class ManualStartReorderWidget(ReorderWidget):
             e.accept()
 
     def mouseMoveEvent(self, e):
+        # Disable parent method
         pass
 
 

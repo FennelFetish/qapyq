@@ -45,6 +45,7 @@ class CaptionGroups(CaptionTab):
         groupReorderWidget.orderChanged.connect(self._emitUpdatedApplyRules)
         scrollGroup = qtlib.RowScrollArea(groupReorderWidget, True)
         scrollGroup.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
+        groupReorderWidget.enableBorderScroll(scrollGroup)
 
         layout.addWidget(scrollGroup)
         layout.addWidget(self._buildBar())
@@ -240,6 +241,7 @@ class CaptionControlGroup(QtWidgets.QWidget):
         self.chkCombine.toggled.connect(self._onCombineToggled)
 
         self.lblCombineWords = QtWidgets.QLabel()
+        self.lblCombineWords.setMinimumWidth(10)
         qtlib.setMonospace(self.lblCombineWords, 0.8)
 
         btnAddCaption = QtWidgets.QPushButton("Add Tag")
