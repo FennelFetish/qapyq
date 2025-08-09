@@ -1,9 +1,10 @@
 from __future__ import annotations
 from typing import Iterable, Generator, Generic, TypeVar, Optional
+from collections import defaultdict
 from itertools import zip_longest
 from PySide6 import QtWidgets
 from PySide6.QtCore import Slot
-from PySide6.QtGui import QColor, QTextCharFormat, QTextLayout
+from PySide6.QtGui import QColor, QTextCharFormat, QTextLayout, QTextBlock
 from lib import qtlib, util, colors
 from lib.util import stripCountPadding
 
@@ -86,6 +87,8 @@ class HighlightState:
 
 
 class CaptionHighlight:
+    SEPS = ",.:;"
+
     def __init__(self, dataSource: HighlightDataSource):
         self.data = dataSource
         self.data.connectClearCache(self.clearCache)
@@ -99,6 +102,8 @@ class CaptionHighlight:
 
         self._focusFormat = QTextCharFormat()
         self._focusFormat.setForeground(qtlib.getHighlightColor(COLOR_FOCUS_DEFAULT))
+
+        self._trans = str.maketrans({c: self.SEPS[0] for c in self.SEPS[1:]})
 
 
     @property
@@ -120,25 +125,44 @@ class CaptionHighlight:
         return self._cachedMatcherNode
 
 
+    @staticmethod
+    def _duplicateLinebreakPresence(presenceList: list[float] | None, newlines: list[int]):
+        if presenceList:
+            for nl in newlines[:-1]:
+                presenceList.insert(nl, presenceList[nl-1])  # nl is > 0
+
     def highlight(self, text: str, separator: str, txtWidget: QtWidgets.QPlainTextEdit, state: HighlightState | None = None):
         separator = separator.strip()
-        splitCaptions = text.split(separator)
 
-        keepFormatOffset = 0
+        splitCaptions = list[str]()
+        newlines = list[int]()
+        for line in text.splitlines():
+            splitCaptions.extend(line.split(separator))
+            newlines.append(len(splitCaptions))
+
         formats = self.charFormats
         matchNode = self.matchNode
 
         if state:
             presenceList = self.data.getPresence()
+            self._duplicateLinebreakPresence(presenceList, newlines)
             captionLengthOffsets = state.getAndUpdate(splitCaptions, presenceList)
         else:
             presenceList = self.data.getTotalPresence(splitCaptions)
+            self._duplicateLinebreakPresence(presenceList, newlines)
             captionLengthOffsets = None
 
         with HighlightContext(txtWidget) as HL:
+            keepFormatOffset = 0
+            currentLine = 0
             start = 0
 
             for i, caption in enumerate(splitCaptions):
+                if i >= newlines[currentLine]:
+                    currentLine += 1
+                    HL.setBlock(currentLine)
+                    keepFormatOffset = 0
+
                 if captionLengthOffsets:
                     offset = captionLengthOffsets[i]
                     if offset is None:
@@ -151,52 +175,37 @@ class CaptionHighlight:
 
                 presence = presenceList[i] if presenceList else 1.0
                 captionStrip, padLeft, padRight = stripCountPadding(caption)
-
-                # Format left padding including left separator
-                sepStart = max(start - len(separator), 0)
-                HL.highlight(HL.clearFormat, sepStart, start-sepStart+padLeft)
                 start += padLeft
 
                 if format := formats.get(captionStrip):
-                    format = HL.checkPresence(format, presence)
-                    HL.highlight(format, start, len(captionStrip))
+                    HL.highlight(format, presence, start, len(captionStrip))
 
                 elif self.data.isHovered(captionStrip):
-                    format = HL.checkPresence(HL.hoverFormat, presence)
-                    HL.highlight(format, start, len(captionStrip))
+                    HL.highlight(HL.hoverFormat, presence, start, len(captionStrip))
 
                 else:
-                    # Try highlighting partial matches and combined tags
-                    captionWords = captionStrip.split(" ")
-                    if matcherFormats := matchNode.match(captionWords):
-                        pos = start
-                        for i, word in enumerate(captionWords):
-                            if matchFormat := matcherFormats.get(i):
-                                format = HL.checkPresence(matchFormat.charFormat, presence)
-                            else:
-                                format = HL.checkPresence(HL.clearFormat, presence)
+                    startPos = start
+                    for captionPart in captionStrip.translate(self._trans).split(self.SEPS[0]):
+                        # Try highlighting partial matches and combined tags
+                        captionWords = captionPart.split(" ")
+                        if matcherFormats := matchNode.match(captionWords):
+                            pos = startPos
+                            for i, word in enumerate(captionWords):
+                                # Format word
+                                if matchFormat := matcherFormats.get(i):
+                                    HL.highlight(matchFormat.charFormat, presence, pos, len(word))
+                                elif presence < 1.0:
+                                    HL.highlight(HL.clearFormat, presence, pos, len(word))
 
-                            # Format word
-                            HL.highlight(format, pos, len(word))
-                            pos += len(word)
+                                pos += len(word) + 1
 
-                            # Format space
-                            if i < len(captionWords) - 1:
-                                HL.highlight(HL.clearFormat, pos, 1)
-                                pos += 1
+                        # No color specified
+                        elif presence < 1.0:
+                            HL.highlight(HL.clearFormat, presence, startPos, len(captionPart))
 
-                    # No color specified
-                    else:
-                        format = HL.checkPresence(HL.clearFormat, presence)
-                        HL.highlight(format, start, len(captionStrip))
+                        startPos += len(captionPart) + 1
 
-                start += len(captionStrip)
-
-                # Format right padding
-                rightLen = min(padRight, len(text)-start)
-                HL.highlight(HL.clearFormat, start, rightLen)
-
-                start += padRight + len(separator)
+                start += len(captionStrip) + padRight + len(separator)
 
 
     def update(self):
@@ -301,19 +310,35 @@ class HighlightContext:
         self.hoverFormat.setForeground(textBrush)
         self.hoverFormat.setFontUnderline(True)
 
-        self._textLayout = txtWidget.document().firstBlock().layout()
-        self._prevFormatRanges = self._textLayout.formats()
-        self._formatRanges: dict[int, QTextLayout.FormatRange] = dict()
+        self._doc = txtWidget.document()
+        self._block: QTextBlock = self._doc.firstBlock()
+
+        self._blockFormatRanges: dict[int, dict[int, QTextLayout.FormatRange]] = defaultdict(dict)
+
+        self._prevBlockFormatRanges: dict[int, list[QTextLayout.FormatRange]] = dict()
+        for i in range(self._doc.blockCount()):
+            block = self._doc.findBlockByNumber(i)
+            self._prevBlockFormatRanges[i] = block.layout().formats().copy()
+            self._prevBlockFormatRanges[i].reverse() # Reverse for faster deletion
 
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self._textLayout.setFormats(list(self._formatRanges.values()))
+        for i in range(self._doc.blockCount()):
+            layout = self._doc.findBlockByNumber(i).layout()
+            if rangeDict := self._blockFormatRanges.get(i):
+                layout.setFormats(list(rangeDict.values()))
+            else:
+                layout.clearFormats()
+
         self.txtWidget.viewport().repaint()
         return False
 
+
+    def setBlock(self, index: int):
+        self._block = self._doc.findBlockByNumber(index)
 
     def checkPresence(self, format: QTextCharFormat, presence: float) -> QTextCharFormat:
         if presence >= 1.0:
@@ -331,33 +356,36 @@ class HighlightContext:
 
         return mutedFormat
 
-    def highlight(self, format: QTextCharFormat, start: int, length: int):
-        if length <= 0 or format == self.clearFormat:
+    def highlight(self, format: QTextCharFormat, presence: float, start: int, length: int):
+        if length <= 0:
             return
 
+        blockNr = self._block.blockNumber()
+        start -= self._block.position()
+
         range = QTextLayout.FormatRange()
-        range.format = format
+        range.format = self.checkPresence(format, presence)
         range.start  = start
         range.length = length
-        self._formatRanges[start] = range
+
+        self._blockFormatRanges[blockNr][start] = range
 
     def keepFormat(self, start: int, end: int, offset: int):
-        start -= offset
-        end -= offset
+        blockNr = self._block.blockNumber()
+        start -= self._block.position() + offset
+        end   -= self._block.position() + offset
 
-        removeIndices = list[int]()
-        for i, range in enumerate(self._prevFormatRanges):
+        prevRanges = self._prevBlockFormatRanges[blockNr]
+        maxIndex = len(prevRanges)-1
+        for i, range in enumerate(reversed(prevRanges)):
             if range.start < start:
                 continue
             elif (range.start + range.length) > end:
                 break
 
             range.start += offset
-            self._formatRanges[range.start] = range
-            removeIndices.append(i)
-
-        for i in reversed(removeIndices):
-            del self._prevFormatRanges[i]
+            self._blockFormatRanges[blockNr][range.start] = range
+            del prevRanges[maxIndex-i]
 
 
 
