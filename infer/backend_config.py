@@ -46,7 +46,7 @@ BackendsCaption = {
     "InternVL":         BackendDef("internvl2",     BackendTypes.TRANSFORMERS),
     #"InternVL2/2.5 VLLM":BackendDef("internvl2-vllm",BackendTypes.VLLM),
     "JoyCaption":       BackendDef("joycaption",    BackendTypes.TRANSFORMERS),
-    "MiniCPM-V-2.6":    BackendDef("minicpm",       BackendTypes.LLAMA_CPP),
+    "MiniCPM-V":        BackendDef("minicpm",       BackendTypes.LLAMA_CPP),
     "Molmo":            BackendDef("molmo",         BackendTypes.TRANSFORMERS),
     #"Molmo VLLM":       BackendDef("molmo-vllm",    BackendTypes.VLLM),
     "Moondream":        BackendDef("moondream",     BackendTypes.LLAMA_CPP),

@@ -523,6 +523,13 @@ class InferenceProcess(QObject):
             if self._readLength == 0:
                 headerBuffer = self.proc.read(Protocol.HEADER_LENGTH)
                 srv, length, reqId = struct.unpack("!HII", headerBuffer.data())
+
+                if srv > Service.ID.INFERENCE and length > 0xFFFF:
+                    line = self.proc.readLine(16384)
+                    line = str(headerBuffer, "utf-8") + str(line, "utf-8")
+                    print(f"WARNING: Message from inference process looks like log output: '{line.strip()}'")
+                    return 0, None
+
                 buffer = self.proc.read(length)
 
                 if buffer.length() < length:
