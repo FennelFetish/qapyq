@@ -73,8 +73,6 @@ class PromptWidget(QtWidgets.QWidget):
 
         self.signals.presetListUpdated.connect(self._onPresetListChanged)
 
-    def enableHighlighting(self):
-        self.promptsHighlighter = PromptsHighlighter(self.txtPrompts)
 
     def hideSystemPrompt(self):
         self.lblSystemPrompt.hide()
@@ -237,6 +235,7 @@ class PromptsHighlighter(QtGui.QSyntaxHighlighter):
         self.formats = qtlib.ColorCharFormats()
         self.formats.addFormat(self.formats.defaultFormat)
 
+    # Not used
     def highlightBlock(self, text: str) -> None:
         formatIndex = self.previousBlockState()
         if formatIndex < 0:
@@ -264,20 +263,25 @@ class PromptsHighlighter(QtGui.QSyntaxHighlighter):
 
     @staticmethod
     def highlightPromptSeparators(textEdit: QtWidgets.QPlainTextEdit):
-        format = QtGui.QTextCharFormat()
-        qtlib.setBoldFormat(format)
+        doc = textEdit.document()
+        for b in range(doc.blockCount()):
+            block = doc.findBlockByNumber(b)
+            line = block.text()
 
-        text = textEdit.toPlainText()
-        cursor = textEdit.textCursor()
-
-        lineStartPos = 0
-        for line in text.splitlines(True):
             if line.startswith("---") or line.startswith("==="):
-                cursor.setPosition(lineStartPos)
-                cursor.setPosition(lineStartPos+len(line), QtGui.QTextCursor.MoveMode.KeepAnchor)
+                format = QtGui.QTextCharFormat()
+                qtlib.setBoldFormat(format)
 
                 isHidden = line.lstrip("-=").lstrip().startswith("?")
                 format.setFontItalic(isHidden)
                 format.setFontUnderline(line.startswith("="))
-                cursor.mergeCharFormat(format)
-            lineStartPos += len(line)
+
+                formatRange = QtGui.QTextLayout.FormatRange()
+                formatRange.format = format
+                formatRange.start  = 0
+                formatRange.length = len(line)
+
+                layout = block.layout()
+                formats = layout.formats()
+                formats.append(formatRange)
+                layout.setFormats(formats)

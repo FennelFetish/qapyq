@@ -55,7 +55,6 @@ class CaptionGenerate(CaptionTab):
 
         row = 0
         self.promptWidget = PromptWidget("promptCaptionPresets", "promptCaptionDefault")
-        self.promptWidget.enableHighlighting()
         qtlib.setTextEditHeight(self.promptWidget.txtSystemPrompt, 3, "min")
         qtlib.setTextEditHeight(self.promptWidget.txtPrompts, 3, "min")
         self.promptWidget.lblPrompts.setText("Prompt(s) Template:")

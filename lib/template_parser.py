@@ -1,5 +1,6 @@
 import re, os, random
 from typing import Tuple, List, Callable
+from collections import defaultdict
 from datetime import datetime
 from PySide6 import QtWidgets, QtGui
 from .captionfile import CaptionFile
@@ -436,19 +437,39 @@ class TemplateVariableParser:
 
 
 class VariableHighlighter:
+    class FormatRanges:
+        def __init__(self, textEdit: QtWidgets.QPlainTextEdit):
+            self.textEdit = textEdit
+            self.doc = textEdit.document()
+            self.ranges: dict[int, list[QtGui.QTextLayout.FormatRange]] = defaultdict(list)
+
+        def setFormatRange(self, start: int, end: int, format):
+            startBlock = self.doc.findBlock(start)
+            endBlock   = self.doc.findBlock(end)
+            for i in range(startBlock.blockNumber(), endBlock.blockNumber()+1):
+                block = self.doc.findBlockByNumber(i)
+                formatRange = QtGui.QTextLayout.FormatRange()
+                formatRange.format = format
+                formatRange.start  = max(start - block.position(), 0)
+                formatRange.length = min(end - block.position(), block.length()) - formatRange.start
+                self.ranges[i].append(formatRange)
+
+        def apply(self):
+            for i in range(self.doc.blockCount()):
+                layout = self.doc.findBlockByNumber(i).layout()
+                if ranges := self.ranges.get(i):
+                    layout.setFormats(ranges)
+                else:
+                    layout.clearFormats()
+
+
     def __init__(self):
         self.formats = qtlib.ColorCharFormats()
 
     def highlight(self, source: QtWidgets.QPlainTextEdit, target: QtWidgets.QPlainTextEdit, positions, disabled=False) -> None:
-        sourceCursor = source.textCursor()
-        sourceCursor.setPosition(0)
-        sourceCursor.beginEditBlock()
+        sourceRanges = self.FormatRanges(source)
+        targetRanges = self.FormatRanges(target)
 
-        targetCursor = target.textCursor()
-        targetCursor.setPosition(0)
-        targetCursor.beginEditBlock()
-
-        defaultFormat = self.formats.defaultFormat
         varIndex = 0
         for srcStart, srcEnd, targetStart, targetEnd in positions:
             format = self.formats.getFormat(varIndex)
@@ -457,48 +478,11 @@ class VariableHighlighter:
             if disabled:
                 format = qtlib.toDisabledFormat(format)
 
-            # Source (Variables)
-            qtlib.setBoldFormat(format)
-            sourceCursor.setPosition(srcStart, QtGui.QTextCursor.MoveMode.KeepAnchor)
-            sourceCursor.setCharFormat(defaultFormat)
+            boldFormat = QtGui.QTextCharFormat(format)
+            qtlib.setBoldFormat(boldFormat)
 
-            sourceCursor.setPosition(srcStart)
-            sourceCursor.setPosition(srcEnd, QtGui.QTextCursor.MoveMode.KeepAnchor)
-            sourceCursor.setCharFormat(format)
-            sourceCursor.setPosition(srcEnd)
+            sourceRanges.setFormatRange(srcStart, srcEnd, boldFormat)
+            targetRanges.setFormatRange(targetStart, targetEnd, format)
 
-            # Target (Replacement)
-            qtlib.setBoldFormat(format, False)
-            targetCursor.setPosition(targetStart, QtGui.QTextCursor.MoveMode.KeepAnchor)
-            targetCursor.setCharFormat(defaultFormat)
-
-            targetCursor.setPosition(targetStart)
-            targetCursor.setPosition(targetEnd, QtGui.QTextCursor.MoveMode.KeepAnchor)
-            targetCursor.setCharFormat(format)
-            targetCursor.setPosition(targetEnd)
-
-        sourceCursor.movePosition(QtGui.QTextCursor.MoveOperation.End, QtGui.QTextCursor.MoveMode.KeepAnchor)
-        sourceCursor.setCharFormat(defaultFormat)
-        sourceCursor.endEditBlock()
-
-        targetCursor.movePosition(QtGui.QTextCursor.MoveOperation.End, QtGui.QTextCursor.MoveMode.KeepAnchor)
-        targetCursor.setCharFormat(defaultFormat)
-        targetCursor.endEditBlock()
-
-
-
-if __name__ == "__main__":
-    parser = TemplateVariableParser("/home/rem/Pictures/red-tree-with-eyes.jpeg")
-    parser.stripAround = True
-    parser.stripMultiWhitespace = True
-
-    input = "    {{folder}} is a {{!bla}} inside    a {{!boo}}.\nCaption:    {{nothing}}     {{captions.caption_round3}}.\n\n\nTags:            {{tags.tags}}     "
-    output = parser.parse(input)
-    print(f"'{output}'\n")
-
-    output, positions = parser.parseWithPositions(input)
-    print(f"'{output}'")
-
-    print("\nPositions:")
-    for varStart, varEnd, outStart, outEnd in positions:
-        print(f"'{input[varStart:varEnd]}' => '{output[outStart:outEnd]}'")
+        sourceRanges.apply()
+        targetRanges.apply()
