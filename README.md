@@ -38,6 +38,7 @@
 - **Image/Mask Editor**: Prepare images for training
   - Crop and save parts of images
   - Scale images, optionally using AI upscale models
+  - Dynamic save paths with template variables
   - Manually edit masks with multiple layers
   - Support for pressure-sensitive drawing pens
   - Record masking operations into macros
@@ -49,13 +50,14 @@
   - *Focus Mode* where one key stroke adds a tag, saves the file and skips to the next image
   - Tag grouping, merging, sorting, filtering and replacement rules
   - Colored text highlighting
+  - CLIP Token Counter
   - Automated captioning with support for grounding
   - Prompt presets
   - Multi-turn conversations with each answer saved to different entries in a `.json` file
   - Further refinement with LLMs
 
 - **Stats/Filters**: Summarize your data and get an overview
-  - List all tags, image resolutions or size of concept folders
+  - List all tags, image resolutions, masked regions, or size of concept folders
   - Filter images and create subsets
   - Combine and chain filters
   - Export the summaries as CSV
