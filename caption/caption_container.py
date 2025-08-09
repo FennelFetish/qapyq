@@ -101,6 +101,10 @@ class CaptionContainer(QtWidgets.QWidget):
         bubbleScrollArea.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
         bubbleScrollArea.setMinimumHeight(34)
         bubbleScrollArea.setWidget(self.bubbles)
+
+        self.bubbles.scrollBorderSize = 12
+        self.bubbles.scrollBorderSpeed = 2
+        self.bubbles.enableBorderScroll(bubbleScrollArea)
         splitterBottom.addWidget(bubbleScrollArea)
 
         row += 1
@@ -123,7 +127,7 @@ class CaptionContainer(QtWidgets.QWidget):
         mainLayout.addWidget(self._buildBottomRow())
         self.setLayout(mainLayout)
 
-        self._onDestLockChanged(self.btnDestLocked.isChecked())
+        self._onDestLockChanged(self.btnDestUnlocked.isChecked())
 
 
     def _buildBottomRow(self):
@@ -195,13 +199,13 @@ class CaptionContainer(QtWidgets.QWidget):
         layout.setColumnStretch(col, 0)
 
         col += 1
-        self.btnDestLocked = qtlib.ToggleButton("🔒")
-        self.btnDestLocked.setToolTip("Sync destination to source")
-        self.btnDestLocked.setChecked(True)
-        qtlib.setMonospace(self.btnDestLocked, 1.2)
-        self.btnDestLocked.setFixedWidth(26)
-        self.btnDestLocked.toggled.connect(self._onDestLockChanged)
-        layout.addWidget(self.btnDestLocked, 0, col)
+        self.btnDestUnlocked = qtlib.ToggleButton("🔒")
+        self.btnDestUnlocked.setToolTip("Toggle: Save to different destination")
+        self.btnDestUnlocked.setChecked(False)
+        qtlib.setMonospace(self.btnDestUnlocked, 1.2)
+        self.btnDestUnlocked.setFixedWidth(26)
+        self.btnDestUnlocked.toggled.connect(self._onDestLockChanged)
+        layout.addWidget(self.btnDestUnlocked, 0, col)
 
         col += 1
         self.btnSave = qtlib.SaveButton("Save To:")
@@ -214,12 +218,16 @@ class CaptionContainer(QtWidgets.QWidget):
         self.destSelector = FileTypeSelector()
         self.destSelector.type = FileTypeSelector.TYPE_TAGS
         self.destSelector.setTextFieldFixedWidth(140)
-        layout.addLayout(self.destSelector, 0, col)
+        self.destSelector.setContentsMargins(0, 0, 0, 0)
+
+        self.destSelectorWidget = QtWidgets.QWidget()
+        self.destSelectorWidget.setLayout(self.destSelector)
+        layout.addWidget(self.destSelectorWidget, 0, col)
         layout.setColumnStretch(col, 0)
 
         col += 1
         self.chkSkipOnSave = qtlib.ToggleButton("⏭️")
-        self.chkSkipOnSave.setToolTip("Skip to next (selected) image after saving, without looping.\nOnly active in Single Edit Mode.")
+        self.chkSkipOnSave.setToolTip("Toggle: Skip to next (selected) image after saving, without looping.\nOnly active in Single Edit Mode.")
         self.chkSkipOnSave.setChecked(False)
         qtlib.setMonospace(self.chkSkipOnSave, 1.2)
         self.chkSkipOnSave.setFixedWidth(26)
@@ -237,7 +245,7 @@ class CaptionContainer(QtWidgets.QWidget):
         h = self.btnApplyRules.height()
         if h > 10:
             self.btnMenu.setFixedHeight(h)
-            self.btnDestLocked.setFixedHeight(h)
+            self.btnDestUnlocked.setFixedHeight(h)
             self.chkSkipOnSave.setFixedHeight(h)
 
 
@@ -355,22 +363,28 @@ class CaptionContainer(QtWidgets.QWidget):
     def _onSourceChanged(self):
         self.btnReset.setChanged(True)
 
-        if self.btnDestLocked.isChecked():
+        if not self.btnDestUnlocked.isChecked():
             self._syncDestSelector()
 
     @Slot()
     def _onDestLockChanged(self, checked: bool):
         if checked:
-            self._syncDestSelector()
-            self.btnDestLocked.setText("🔒")
+            self.destSelectorWidget.setEnabled(True)
+            self.destSelectorWidget.show()
+            self.btnDestUnlocked.setText("🔓")
+            self.btnSave.setText("Save To:")
+            self.btnReset.setText("Reload From:")
         else:
-            self.destSelector.setEnabled(True)
-            self.btnDestLocked.setText("🔓")
+            self._syncDestSelector()
+            self.destSelectorWidget.hide()
+            self.btnDestUnlocked.setText("🔒")
+            self.btnSave.setText("Save")
+            self.btnReset.setText("Reload")
 
     def _syncDestSelector(self):
         self.destSelector.type = self.srcSelector.type
         self.destSelector.name = self.srcSelector.name
-        self.destSelector.setEnabled(False)
+        self.destSelectorWidget.setEnabled(False)
 
 
     @Slot()

@@ -108,7 +108,6 @@ class FlowLayout(QtWidgets.QLayout):
 # All places that use dropEvent() must postpone the action using QTimer.singleShot
 class ReorderWidget(QtWidgets.QWidget):
     COLOR_FACTORS = [1.6, 1.9, 2.0, 1.0] # BGRA
-    SCROLL_OFFSET = 12
 
     orderChanged = Signal()
     receivedDrop = Signal(str)
@@ -132,6 +131,7 @@ class ReorderWidget(QtWidgets.QWidget):
 
         self._scrollArea: QtWidgets.QScrollArea | None = None
         self.scrollBorderSize = 40
+        self.scrollBorderSpeed = 12
 
 
     def enableBorderScroll(self, scrollArea: QtWidgets.QScrollArea):
@@ -288,9 +288,9 @@ class ReorderWidget(QtWidgets.QWidget):
         y = mousePos.y() - scrollPos
 
         if y < self.scrollBorderSize:
-            vScrollBar.setValue(scrollPos - self.SCROLL_OFFSET)
+            vScrollBar.setValue(scrollPos - self.scrollBorderSpeed)
         elif y > self._scrollArea.rect().bottom() - self.scrollBorderSize:
-            vScrollBar.setValue(scrollPos + self.SCROLL_OFFSET)
+            vScrollBar.setValue(scrollPos + self.scrollBorderSpeed)
 
 
     def dropEvent(self, event: QtGui.QDropEvent):
