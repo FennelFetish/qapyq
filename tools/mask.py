@@ -2,7 +2,7 @@ import os
 from typing import ForwardRef
 from typing_extensions import override
 from PySide6.QtCore import Qt, Slot, Signal, QEvent, QRunnable, QObject, QThreadPool
-from PySide6.QtGui import QImage, QPainter, QTabletEvent, QPointingDevice
+from PySide6.QtGui import QImage, QPainter, QTabletEvent, QPointingDevice, QKeySequence
 from PySide6 import QtWidgets
 import cv2 as cv
 import numpy as np
@@ -411,7 +411,12 @@ class MaskTool(ViewTool):
 
 
     def onKeyPress(self, event):
-        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+        if event.matches(QKeySequence.StandardKey.Undo):
+            self._toolbar.undoHistory()
+        elif event.matches(QKeySequence.StandardKey.Redo):
+            self._toolbar.redoHistory()
+
+        elif event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             match event.key():
                 case Qt.Key.Key_E:
                     self.exportMask()
