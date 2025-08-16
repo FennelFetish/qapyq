@@ -132,6 +132,9 @@ class SlideshowTool(ViewTool):
         self._oldPixmap = None
         self.onFileChanged(currentFile)
 
+    def onFileSelectionChanged(self, selectedFiles: set[str]):
+        self.resetHistory()
+
 
     def getToolbar(self):
         return self._toolbar
@@ -141,6 +144,7 @@ class SlideshowTool(ViewTool):
         self.tab.statusBar().hide()
         self._toolbar.startHideTimeout()
         self.tab.filelist.addListener(self)
+        self.tab.filelist.addSelectionListener(self)
 
         self._cursor = imgview.cursor()
 
@@ -155,6 +159,7 @@ class SlideshowTool(ViewTool):
         self.resetHistory()
         self.tab.statusBar().show()
         self.tab.filelist.removeListener(self)
+        self.tab.filelist.removeSelectionListener(self)
 
         imgview.setCursor(self._cursor)
         self._cursor = None
@@ -296,7 +301,7 @@ class SlideshowToolbar(QtWidgets.QToolBar):
             self.btnPlay.setChanged(False)
         else:
             timer.start()
-            self.btnPlay.setText("❚❚")
+            self.btnPlay.setText("■") # ❚❚
             self.btnPlay.setChanged(True)
 
     def startHideTimeout(self):
