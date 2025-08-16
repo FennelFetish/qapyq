@@ -151,11 +151,8 @@ class ImgItem(QGraphicsPixmapItem):
             self.setPixmap(QPixmap())
             return False
 
-        pixmap = QPixmap(path)
-        if pixmap.isNull():
-            try: pixmap = QPixmap.fromImage(imagerw.loadQImagePIL(path))
-            except: pass
-
+        image = imagerw.loadQImage(path)
+        pixmap = QPixmap.fromImage(image)
         self.setPixmap(pixmap)
         if pixmap.isNull():
             print(f"Failed to load image: {path}")

@@ -5,8 +5,6 @@ import lib.imagerw as imagerw
 
 
 class ImageFile:
-    MIME_TYPES = ["image/png", "image/jpeg"]
-
     def __init__(self, file: str, data: bytearray | None = None):
         self.file = file
         self.data = data
@@ -66,22 +64,21 @@ class ImageFile:
         return imagerw.loadImagePIL(source, forceRGB, allowGreyscale, allowAlpha)
 
     def getURI(self) -> str:
-        import base64, mimetypes
-        mimetype = mimetypes.guess_type(self.file)[0]
-        if mimetype in self.MIME_TYPES:
-            if self.data:
-                imgData = self.data
-            else:
-                return f"file://{self.file}"
+        import base64
 
-        else:
-            buffer = BytesIO()
-            img = self.openPIL()
+        # URI could be f"file://{self.file}",
+        # but always load image with PIL to apply sRGB color profile and exif rotation.
+        img = self.openPIL()
+        buffer = BytesIO()
+
+        if img.mode.upper().endswith("A"):
             img.save(buffer, format='PNG', optimize=False, compress_level=0)
-            imgData = buffer.getvalue()
             mimetype = "image/png"
+        else:
+            img.save(buffer, format='JPEG', optimize=False, quality=95)
+            mimetype = "image/jpeg"
 
-        base64Data = base64.b64encode(imgData).decode('utf-8')
+        base64Data = base64.b64encode(buffer.getvalue()).decode('utf-8')
         return "".join(("data:", mimetype, ";base64,", base64Data))
 
 

@@ -2,7 +2,8 @@
 try: import pillow_jxl
 except: pass
 
-from PIL import Image
+from io import BytesIO
+from PIL import Image, ImageCms, ImageOps
 PIL_READ_EXTENSIONS = set(ext for ext, format in Image.registered_extensions().items() if format in Image.OPEN)
 
 
@@ -54,11 +55,35 @@ def _readSizePIL(imgPath: str) -> tuple[int, int]:
     with Image.open(imgPath) as img:
         return img.size
 
+def _readImagePIL(source) -> Image.Image:
+    with Image.open(source) as img:
+        normalizeColorSpacePIL(img)
+        ImageOps.exif_transpose(img, in_place=True)
+        return img
+
+
+__srgbProfile = None
+def _getSrgbProfile():
+    global __srgbProfile
+    if __srgbProfile is None:
+        __srgbProfile = ImageCms.createProfile('sRGB')
+    return __srgbProfile
+
+def normalizeColorSpacePIL(img: Image.Image):
+    try:
+        if iccProfile := img.info.get('icc_profile'):
+            profile = ImageCms.ImageCmsProfile(BytesIO(iccProfile))
+            profileName = ImageCms.getProfileName(profile)
+            if "srgb" not in profileName.lower():
+                ImageCms.profileToProfile(img, profile, _getSrgbProfile(), inPlace=True)
+    except Exception as ex:
+        print(f"WARNING: Error while verifying image color profile: {ex} ({type(ex).__name__})")
+
 
 
 # Qt/PySide6 is optional on headless inference servers
 try:
-    from PySide6.QtGui import QImageReader, QImage
+    from PySide6.QtGui import QImageReader, QImage, QColorSpace
     from PySide6.QtCore import QSize
     from PIL import ImageQt
 
@@ -74,27 +99,59 @@ try:
         except:
             return (-1, -1)
 
-    def loadQImagePIL(imgPath: str) -> ImageQt.ImageQt:
-        with Image.open(imgPath) as img:
-            return ImageQt.ImageQt(img)
+    def loadQImage(imgPath: str) -> QImage | ImageQt.ImageQt:
+        reader = QImageReader(imgPath)
+        reader.setAutoTransform(True)
+
+        image = reader.read()
+        if image.isNull():
+            try:
+                image = ImageQt.ImageQt(_readImagePIL(imgPath))
+            except:
+                pass
+        else:
+            normalizeColorSpace(image)
+
+        return image
 
     def thumbnailQImage(imgPath: str, maxWidth: int) -> tuple[QImage | ImageQt.ImageQt, tuple[int, int]]:
         reader = QImageReader(imgPath)
         w, h = reader.size().toTuple()
 
         if w >= 0:
-            targetWidth = min(maxWidth, w)
-            targetHeight = round(targetWidth * (h / w))
+            targetWidth = max(maxWidth, round(maxWidth * (w/h))) # Account for possible EXIF rotation
+            targetWidth = min(targetWidth, w)
+            targetHeight = round(targetWidth * (h/w))
             reader.setScaledSize(QSize(targetWidth, targetHeight))
+            reader.setAutoTransform(True)
             reader.setQuality(100)
             qimage = reader.read()
+            normalizeColorSpace(qimage)
         else:
             with Image.open(imgPath) as img:
                 w, h = img.size
-                img.thumbnail((maxWidth, -1), resample=Image.Resampling.BOX)
+                targetWidth = max(maxWidth, round(maxWidth * (w/h))) # Account for possible EXIF rotation
+                targetWidth = min(targetWidth, w)
+                img.thumbnail((targetWidth, -1), resample=Image.Resampling.BOX)
+                normalizeColorSpacePIL(img)
+                ImageOps.exif_transpose(img, in_place=True)
                 qimage = ImageQt.ImageQt(img)
 
+        # Swap original size when rotated
+        newW, newH = qimage.size().toTuple()
+        if (w > h) != (newW > newH):
+            w, h = h, w
+        elif newW > maxWidth * 1.25:
+            qimage = qimage.scaledToWidth(maxWidth) # TransformationMode.FastTransformation by default
+
         return qimage, (w, h)
+
+    def normalizeColorSpace(qimage: QImage):
+        colorSpace = qimage.colorSpace()
+        if not colorSpace.isValid():
+            qimage.setColorSpace(QColorSpace.NamedColorSpace.SRgb)
+        elif colorSpace != QColorSpace.NamedColorSpace.SRgb:
+            qimage.convertToColorSpace(QColorSpace.NamedColorSpace.SRgb)
 
 except:
     QT_READ_EXTENSIONS = set[str]()
@@ -105,10 +162,10 @@ except:
 READ_EXTENSIONS = frozenset(PIL_READ_EXTENSIONS | QT_READ_EXTENSIONS)
 
 
-# FIXME: RGB images with 3 channels are loaded in RGBA mode
+# FIXME: Some RGB images with 3 channels are loaded in RGBA mode
 
 def loadImagePIL(source, forceRGB=False, allowGreyscale=True, allowAlpha=True):
-    img = Image.open(source)
+    img = _readImagePIL(source)
     if convertMode := _getConversionMode(img.mode, forceRGB, allowGreyscale, allowAlpha):
         img = img.convert(convertMode)
     return img
@@ -127,7 +184,6 @@ def loadMatBGR(imgPath: str, rgb=False, forceRGB=False, allowGreyscale=True, all
 
 def decodeMatBGR(data: bytes | bytearray, rgb=False, forceRGB=False, allowGreyscale=True, allowAlpha=True):
     import numpy as np
-    from io import BytesIO
     with loadImagePIL(BytesIO(data), forceRGB, allowGreyscale, allowAlpha) as img:
         mat = np.array(img)
 
