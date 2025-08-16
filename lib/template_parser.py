@@ -338,6 +338,10 @@ class TemplateVariableParser:
                 val2 = self._getValue(key)
                 return sep.join(val for v in (value, val2) if (val := v.strip()))
 
+            case "nodup":
+                sep = self._getFuncArg(args, 0, ", ")
+                return self._funcSplitProcess(value, sep, self._funcRemoveDuplicates)
+
             case "nosubsets":
                 if len(args) > 0 and args[0]:
                     val2 = self._getValue(args[0])
@@ -374,6 +378,10 @@ class TemplateVariableParser:
         random.shuffle(shuffleElements)
         keepElements.extend(shuffleElements)
         return keepElements
+
+    def _funcRemoveDuplicates(self, elements: list[str]) -> list[str]:
+        seen = set[str]()
+        return [e for e in elements if not (e in seen or seen.add(e))]
 
     def _createFuncRemoveSubsets(self, otherValue: str, otherSeps: str, wordSeps: str):
         sep = otherSeps[0]
