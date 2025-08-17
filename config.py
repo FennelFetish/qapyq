@@ -5,6 +5,7 @@ class Config:
     guiScale                = 1.0
     qtStyle                 = "Fusion"
     toolbarPosition         = "Top"
+    exifTransform           = False
 
     # Font
     fontMonospace           = "res/font/DejaVuSansMono.ttf"
@@ -157,6 +158,7 @@ class Config:
         cls.qtStyle               = data.get("qt_style", cls.qtStyle)
         cls.toolbarPosition       = data.get("toolbar_position", cls.toolbarPosition)
         cls.fontMonospace         = data.get("font_monospace", cls.fontMonospace)
+        cls.exifTransform         = bool(data.get("exif_transform", cls.exifTransform))
 
         cls.pathExport            = data.get("path_export", cls.pathExport)
         cls.pathDebugLoad         = data.get("path_debug_load", cls.pathDebugLoad)
@@ -216,6 +218,7 @@ class Config:
         data["qt_style"]                    = cls.qtStyle
         data["toolbar_position"]            = cls.toolbarPosition
         data["font_monospace"]              = cls.fontMonospace
+        data["exif_transform"]              = cls.exifTransform
 
         data["path_export"]                 = cls.pathExport
         data["path_debug_load"]             = cls.pathDebugLoad
