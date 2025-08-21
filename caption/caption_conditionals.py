@@ -547,6 +547,7 @@ class RuleParams(QtWidgets.QHBoxLayout):
 
         # Update existing text fields
         for i, txt in enumerate(self.txtParams[0:numParams]):
+            txt.setPlaceholderText(params[i])
             txt.setToolTip(params[i])
             txt.show()
         for txt in self.txtParams[numParams:]:
@@ -559,6 +560,7 @@ class RuleParams(QtWidgets.QHBoxLayout):
             txt = QtWidgets.QLineEdit()
             qtlib.setMonospace(txt)
             txt.setMinimumWidth(50)
+            txt.setPlaceholderText(params[i])
             txt.setToolTip(params[i])
             txt.textChanged.connect(lambda: self.signalUpdate.emit())
 
