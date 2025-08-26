@@ -31,6 +31,7 @@
   - Open multiple tabs
   - Zoom/pan and fullscreen mode
   - Gallery with thumbnails and optionally captions
+  - Semantic image sorting by prompt similarity
   - Compare two images
   - Measure size, area and pixel distances
   - Slideshow
@@ -78,11 +79,16 @@
 
 
 ## Supported Models
-- **Tagging**
+These are the supported architectures with links to the original models.<br>
+Find more specialized finetuned models on [huggingface.co](https://huggingface.co/models).
+
+- **Tagging**<br>
+  Generate keyword captions for images.
   - [JoyTag](https://github.com/fpgaminer/joytag)
   - [WD (onnx)](https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3) (eva02 recommended)
 
-- **Captioning**
+- **Captioning**<br>
+  Generate complete-sentence captions for images.
   - [Florence-2](https://huggingface.co/collections/microsoft/florence-6669f44df0d87d9c3bfb76de)
   - [Gemma3 (GGUF)](https://huggingface.co/collections/unsloth/gemma-3-67d12b7e8816ec6efa7e4e5b)
   - [InternVL2](https://huggingface.co/collections/OpenGVLab/internvl-20-667d3961ab5eb12c7ed1463e), [InternVL2.5](https://huggingface.co/collections/OpenGVLab/internvl25-673e1019b66e2218f68d7c1c), [InternVL2.5-MPO](https://huggingface.co/collections/OpenGVLab/internvl25-mpo-6753fed98cd828219b12f849), [InternVL3](https://huggingface.co/collections/OpenGVLab/internvl3-67f7f690be79c2fe9d74fe9d)
@@ -94,14 +100,17 @@
   - [Qwen2-VL](https://huggingface.co/collections/Qwen/qwen2-vl-66cee7455501d7126940800d)
   - [Qwen2.5-VL](https://huggingface.co/collections/Qwen/qwen25-vl-6795ffac22b334a837c0f9a5) (needs transformers 4.49 manually installed)
 
-- **LLM**
+- **LLM**<br>
+  Transform existing captions/tags.
   - Models in GGUF format with embedded chat template (llama-cpp backend).
 
-- **Upscaling**
+- **Upscaling**<br>
+  Resize images to higher resolutions.
   - Model architectures supported by the [spandrel](https://github.com/chaiNNer-org/spandrel?tab=readme-ov-file#model-architecture-support) backend.
   - Find more models at [openmodeldb.info](https://openmodeldb.info/).
 
-- **Masking**
+- **Masking**<br>
+  Generate greyscale masks.
   - Box Detection
     - YOLO/Adetailer detection models
       - Search for YOLO models on [huggingface.co](https://huggingface.co/models?pipeline_tag=object-detection).
@@ -111,6 +120,12 @@
     - [InSPyReNet](https://github.com/plemeri/InSPyReNet/blob/main/docs/model_zoo.md) (Plus_Ultra)
     - [RMBG-2.0](https://huggingface.co/briaai/RMBG-2.0)
     - [Florence-2](https://huggingface.co/collections/microsoft/florence-6669f44df0d87d9c3bfb76de)
+
+- **Embedding**<br>
+  Sort images based on text prompts.
+  - [CLIP](https://huggingface.co/openai/clip-vit-large-patch14)
+  - [SigLIP](https://huggingface.co/google/siglip2-so400m-patch14-384)
+  - [SigLIP (ONNX)](https://huggingface.co/onnx-community/siglip2-so400m-patch14-384-ONNX), [SigLIP2-giant-opt (ONNX)](https://huggingface.co/onnx-community/siglip2-giant-opt-patch16-384-ONNX)<br>(recommended: largest text model + fp16 vision model)
 
 
 ## Setup

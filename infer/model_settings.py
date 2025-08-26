@@ -2,9 +2,14 @@ import os.path
 from typing import Mapping
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QSignalBlocker
-from .backend_config import BackendDef, BackendTypes, BackendPathModes, BackendsCaption, BackendsTag, BackendsLLM, BackendsMask, BackendsUpscale
 from config import Config
 from lib import qtlib
+
+from .embedding import embedding_common as embed
+from .backend_config import (
+    BackendDef, BackendTypes, BackendPathModes,
+    BackendsCaption, BackendsTag, BackendsLLM, BackendsMask, BackendsUpscale, BackendsEmbedding
+)
 
 
 class ModelSettingsSignals(QObject):
@@ -34,6 +39,7 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
         self.llmSettings     = LLMModelSettings("inferLLMPresets", BackendsLLM)
         self.scaleSettings   = ScaleModelSettings("inferScalePresets", BackendsUpscale)
         self.maskSettings    = MaskModelSettings("inferMaskPresets", BackendsMask)
+        self.embedSettings   = EmbeddingModelSettings("inferEmbeddingPresets", BackendsEmbedding)
 
         self.tabWidget = QtWidgets.QTabWidget()
         self.tabWidget.addTab(self.captionSettings, "Caption")
@@ -41,6 +47,7 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
         self.tabWidget.addTab(self.llmSettings, "LLM")
         self.tabWidget.addTab(self.scaleSettings, "Scale")
         self.tabWidget.addTab(self.maskSettings, "Mask")
+        self.tabWidget.addTab(self.embedSettings, "Embedding")
         self.setCentralWidget(self.tabWidget)
 
     def closeEvent(self, event):
@@ -59,11 +66,12 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
             return
 
         match configAttr:
-            case "inferCaptionPresets": index, widget = 0, win.captionSettings
-            case "inferTagPresets":     index, widget = 1, win.tagSettings
-            case "inferLLMPresets":     index, widget = 2, win.llmSettings
-            case "inferScalePresets":   index, widget = 3, win.scaleSettings
-            case "inferMaskPresets":    index, widget = 4, win.maskSettings
+            case "inferCaptionPresets":     index, widget = 0, win.captionSettings
+            case "inferTagPresets":         index, widget = 1, win.tagSettings
+            case "inferLLMPresets":         index, widget = 2, win.llmSettings
+            case "inferScalePresets":       index, widget = 3, win.scaleSettings
+            case "inferMaskPresets":        index, widget = 4, win.maskSettings
+            case "inferEmbeddingPresets":   index, widget = 5, win.embedSettings
             case _: return
 
         win.tabWidget.setCurrentIndex(index)
@@ -139,8 +147,10 @@ class BaseSettingsWidget(QtWidgets.QWidget):
         self._onBackendChanged(self.cboBackend.currentIndex())
 
     def _buildBase(self, layout: QtWidgets.QGridLayout, row: int) -> int:
+        self.lblPath = QtWidgets.QLabel("Model Path:")
+        layout.addWidget(self.lblPath, row, 0)
+
         self.txtPath = QtWidgets.QLineEdit()
-        layout.addWidget(QtWidgets.QLabel("Model Path:"), row, 0)
         layout.addWidget(self.txtPath, row, 1, 1, 5)
 
         btnChooseModel = QtWidgets.QPushButton("Choose...")
@@ -227,12 +237,13 @@ class BaseSettingsWidget(QtWidgets.QWidget):
     def _onBackendChanged(self, index) -> None:
         pass
 
-    def _choosePath(self, target: QtWidgets.QLineEdit, altTarget: QtWidgets.QLineEdit | None = None) -> None:
+    def _choosePath(self, target: QtWidgets.QLineEdit, altTarget: QtWidgets.QLineEdit | None = None, pathModeOverride=None) -> None:
         path = target.text()
         if not path and altTarget:
             path = altTarget.text()
 
-        if self.backendPathMode == BackendPathModes.FILE:
+        pathMode = pathModeOverride or self.backendPathMode
+        if pathMode == BackendPathModes.FILE:
             path, filter = QtWidgets.QFileDialog.getOpenFileName(self, "Choose model file", path)
         else:
             path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose model directory", path)
@@ -248,6 +259,7 @@ class BaseSettingsWidget(QtWidgets.QWidget):
         for i in range(self.cboBackend.count()):
             if self.cboBackend.itemData(i).name == backend:
                 self.cboBackend.setCurrentIndex(i)
+                break
 
         self.txtPath.setText(settings.get("model_path", ""))
 
@@ -392,9 +404,9 @@ class CaptionModelSettings(LLMModelSettings):
         for w in (self.lblVisGpuLayers, self.spinVisGpuLayers):
             w.setEnabled(not enabled)
 
-    def _choosePath(self, target: QtWidgets.QLineEdit, altTarget: QtWidgets.QLineEdit | None = None):
+    def _choosePath(self, target: QtWidgets.QLineEdit, altTarget: QtWidgets.QLineEdit | None = None, pathModeOverride=None):
         altTarget = self.txtProjectorPath if target == self.txtPath else self.txtPath
-        super()._choosePath(target, altTarget)
+        super()._choosePath(target, altTarget, pathModeOverride)
 
     def fromDict(self, settings: dict) -> None:
         super().fromDict(settings)
@@ -445,9 +457,9 @@ class TagModelSettings(BaseSettingsWidget):
         for w in [self.lblTagListPath, self.txtTagListPath, self.btnChooseTagList]:
             w.setEnabled(enabled)
 
-    def _choosePath(self, target: QtWidgets.QLineEdit, altTarget: QtWidgets.QLineEdit | None = None):
+    def _choosePath(self, target: QtWidgets.QLineEdit, altTarget: QtWidgets.QLineEdit | None = None, pathModeOverride=None):
         altTarget = self.txtTagListPath if target == self.txtPath else self.txtPath
-        super()._choosePath(target, altTarget)
+        super()._choosePath(target, altTarget, pathModeOverride)
 
 
     def fromDict(self, settings: dict) -> None:
@@ -659,3 +671,113 @@ class ScaleModelSettings(BaseSettingsWidget):
             self.KEY_LPFILTER:    self.chkLpFilter.isChecked(),
             self.KEY_LEVELS:      levels
         }
+
+
+
+class EmbeddingModelSettings(BaseSettingsWidget):
+    def __init__(self, configAttr: str, backends: Mapping[str, BackendDef]):
+        super().__init__(configAttr, backends)
+
+    def build(self, layout: QtWidgets.QGridLayout, row: int):
+        row += 1
+        layout.setRowMinimumHeight(row, 12)
+
+        row += 1
+        self.lblTextModel = QtWidgets.QLabel("Text Model:")
+        layout.addWidget(self.lblTextModel, row, 0)
+
+        self.txtTextModel = QtWidgets.QLineEdit()
+        layout.addWidget(self.txtTextModel, row, 1, 1, 5)
+
+        self.btnChooseTextModel = QtWidgets.QPushButton("Choose...")
+        self.btnChooseTextModel.clicked.connect(lambda: self._choosePath(self.txtTextModel, self.txtVisionModel, BackendPathModes.FILE))
+        layout.addWidget(self.btnChooseTextModel, row, 6)
+
+        row += 1
+        self.lblVisionModel = QtWidgets.QLabel("Vision Model:")
+        layout.addWidget(self.lblVisionModel, row, 0)
+
+        self.txtVisionModel = QtWidgets.QLineEdit()
+        layout.addWidget(self.txtVisionModel, row, 1, 1, 5)
+
+        self.btnChooseVisionModel = QtWidgets.QPushButton("Choose...")
+        self.btnChooseVisionModel.clicked.connect(lambda: self._choosePath(self.txtVisionModel, self.txtTextModel, BackendPathModes.FILE))
+        layout.addWidget(self.btnChooseVisionModel, row, 6)
+
+        row += 1
+        layout.setRowMinimumHeight(row, 12)
+
+        row += 1
+        self.lblProcessing = QtWidgets.QLabel("Image Processing:")
+        layout.addWidget(self.lblProcessing, row, 0)
+
+        self.cboProcessing = QtWidgets.QComboBox()
+        for key, method in embed.PROCESSING.items():
+            self.cboProcessing.addItem(method.name, key)
+        layout.addWidget(self.cboProcessing, row, 1, 1, 5)
+
+        row += 1
+        self.lblAggregate = QtWidgets.QLabel("Patch Aggregate:")
+        layout.addWidget(self.lblAggregate, row, 0)
+
+        self.cboAggregate = QtWidgets.QComboBox()
+        for key, aggregate in embed.AGGREGATE.items():
+            self.cboAggregate.addItem(aggregate.name, key)
+        layout.addWidget(self.cboAggregate, row, 1, 1, 5)
+
+
+    @property
+    def backendNeedsSeparateModels(self):
+        return self.backendType == BackendTypes.ONNX
+
+    @Slot()
+    def _onBackendChanged(self, index):
+        super()._onBackendChanged(index)
+        enabled = self.backendNeedsSeparateModels
+        self.lblPath.setText("Config Folder:" if enabled else "Model Path:")
+
+        widgets = (
+            self.lblTextModel, self.txtTextModel, self.btnChooseTextModel,
+            self.lblVisionModel, self.txtVisionModel, self.btnChooseVisionModel,
+            self.lblProcessing, self.cboProcessing, self.lblAggregate, self.cboAggregate
+        )
+        for widget in widgets:
+            widget.setEnabled(enabled)
+
+
+    def fromDict(self, settings: dict) -> None:
+        super().fromDict(settings)
+        if self.backendNeedsSeparateModels:
+            self.txtTextModel.setText(settings.get("text_model_path", ""))
+            self.txtVisionModel.setText(settings.get("vision_model_path", ""))
+
+            sampleCfg: dict = settings.get(Config.INFER_PRESET_SAMPLECFG_KEY, {})
+
+            processing = sampleCfg.get(embed.CONFIG_KEY_PROCESSING, embed.DEFAULT_PROCESSING)
+            processingIndex = self.cboProcessing.findData(processing)
+            self.cboProcessing.setCurrentIndex(max(processingIndex, 0))
+
+            aggregate = sampleCfg.get(embed.CONFIG_KEY_AGGREGATE, embed.DEFAULT_AGGREGATE)
+            aggregateIndex = self.cboAggregate.findData(aggregate)
+            self.cboAggregate.setCurrentIndex(max(aggregateIndex, 0))
+
+        else:
+            self.txtTextModel.setText("")
+            self.txtVisionModel.setText("")
+            self.cboProcessing.setCurrentIndex(0)
+            self.cboAggregate.setCurrentIndex(0)
+
+
+    def toDict(self) -> dict:
+        settings = super().toDict()
+
+        if self.backendNeedsSeparateModels:
+            settings["text_model_path"] = self.txtTextModel.text().strip()
+            settings["vision_model_path"] = self.txtVisionModel.text().strip()
+
+            settings[Config.INFER_PRESET_SAMPLECFG_KEY] = {
+                embed.CONFIG_KEY_PROCESSING: self.cboProcessing.currentData(),
+                embed.CONFIG_KEY_AGGREGATE:  self.cboAggregate.currentData()
+            }
+
+        return settings
