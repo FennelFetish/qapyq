@@ -14,6 +14,7 @@ class Config:
     pathConfig              = "./qapyq_config.json"
     pathDefaultCaptionRules = "./user/default-caption-rules.json"
     pathMaskMacros          = "./user/mask-macros/"
+    pathEmbeddingCache      = "./.cache/embedding/"
     pathExport              = "."
     pathDebugLoad           = ""
 
@@ -95,6 +96,7 @@ class Config:
     inferLLMPresets         = dict()
     inferTagPresets         = dict()
     inferMaskPresets        = dict()
+    inferEmbeddingPresets   = dict()
 
     inferScalePresets       = {
         "Default": {
@@ -193,6 +195,8 @@ class Config:
         cls.inferTagPresets       = data.get("infer_tag_presets", cls.inferTagPresets)
         cls.inferMaskPresets      = data.get("infer_mask_presets", cls.inferMaskPresets)
         cls.inferScalePresets     = data.get("infer_scale_presets", cls.inferScalePresets)
+        cls.inferEmbeddingPresets = data.get("infer_embedding_presets", cls.inferEmbeddingPresets)
+
         cls.inferSelectedPresets  = data.get("infer_selected_presets", cls.inferSelectedPresets)
         cls.inferDevices          = data.get("infer_devices", cls.inferDevices)
         cls.inferHosts            = data.get("infer_hosts", cls.inferHosts)
@@ -253,6 +257,8 @@ class Config:
         data["infer_tag_presets"]           = cls.inferTagPresets
         data["infer_mask_presets"]          = cls.inferMaskPresets
         data["infer_scale_presets"]         = cls.inferScalePresets
+        data["infer_embedding_presets"]     = cls.inferEmbeddingPresets
+
         data["infer_selected_presets"]      = cls.inferSelectedPresets
         data["infer_devices"]               = cls.inferDevices
         data["infer_hosts"]                 = cls.inferHosts

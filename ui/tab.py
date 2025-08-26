@@ -49,7 +49,7 @@ class ImgTab(QtWidgets.QMainWindow):
     def onFileChanged(self, currentFile):
         name = os.path.basename(currentFile) if currentFile else self.EMPTY_TAB_TITLE
         if numFiles := len(self.filelist.files): # No lazy loading
-            fileNr = self.filelist.currentIndex + 1
+            fileNr = self.filelist.getCurrentNr() + 1
             name += f" ({fileNr}/{numFiles})"
 
         tabIndex = self.tabWidget.indexOf(self)

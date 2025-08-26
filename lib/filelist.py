@@ -1,20 +1,24 @@
 from typing import Iterable, Iterator, Any, Callable
 import os, enum
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from config import Config
 from lib.imagerw import READ_EXTENSIONS
 
 
+def naturalSort(key: Callable) -> Callable:
+    try:
+        import natsort as ns
+        return ns.natsort_keygen(key=key, alg=ns.ns.INT | ns.ns.PATH | ns.ns.GROUPLETTERS)
+    except:
+        print("natsort not installed. Numbered files might appear in wrong order.")
+        print("Run the setup script to install the missing natsort package.")
+        return key
+
+@naturalSort
 def sortKey(path: str):
     path, filename = os.path.split(path)
     return path, filename.lower()
 
-try:
-    import natsort as ns
-    sortKey = ns.natsort_keygen(key=sortKey, alg=ns.ns.INT | ns.ns.PATH | ns.ns.GROUPLETTERS)
-except:
-    print("natsort not installed. Numbered files might appear in wrong order.")
-    print("Run the setup script to install the missing natsort package.")
 
 
 class DataKeys:
@@ -29,6 +33,9 @@ class DataKeys:
     MaskLayers      = "mask_layers"         # list[MaskItem]
     MaskIndex       = "mask_selected_index" # int
     MaskState       = "mask_state"          # IconStates
+
+    Embedding       = "embedding"           # numpy vector (1xN)
+
 
     class IconStates(enum.Enum):
         Exists  = "exists"
@@ -51,6 +58,15 @@ def removeCommonRoot(path: str, commonRoot: str, allowEmpty=False) -> str:
     if (path := path[len(commonRoot):]) or allowEmpty:
         return path.lstrip("/\\")
     return "."
+
+
+def indexCycle(start: int, length: int, direction: int = 1) -> Iterable[int]:
+    if direction > 0:
+        yield from range(start+1, length)
+        yield from range(0, start)
+    else:
+        yield from range(start-1, -1, -1)
+        yield from range(length-1, start, -1)
 
 
 
@@ -107,11 +123,69 @@ class FileSelection:
 
 
 
+class FileOrder:
+    def __init__(self, filelist: 'FileList', mapFilePos: list[int], mapPosFile: list[int], folders: bool):
+        self.filelist = filelist
+        self.folders = folders
+        self.mapFilePos = mapFilePos
+        self.mapPosFile = mapPosFile
+
+    def __getitem__(self, index: int) -> int:
+        return self.mapFilePos[index]
+
+    def unmap(self, index: int) -> int:
+        return self.mapPosFile[index]
+
+    def unmapIter(self, indices: Iterable[int]) -> Iterable[int]:
+        return (self.mapPosFile[i] for i in indices)
+
+    def nextSelected(self, currentIndex: int, direction: int = 1) -> int:
+        files = self.filelist.files
+        selection = self.filelist.selection.files
+        currentIndex = self.mapFilePos[currentIndex]
+
+        for i in indexCycle(currentIndex, len(files), direction):
+            index = self.mapPosFile[i]
+            if files[index] in selection:
+                return index
+        return currentIndex
+
+    def removeIndices(self, sortedIndices: list[int], prevMappedIndex: int) -> int:
+        sortedMappedIndices = sorted(self.mapFilePos[i] for i in sortedIndices)
+
+        for index in reversed(sortedIndices):
+            del self.mapFilePos[index]
+
+        for mappedIndex in reversed(sortedMappedIndices):
+            del self.mapPosFile[mappedIndex]
+
+        # Adjust indices which are larger than any deleted index by subtracting the count of deleted indices which are smaller.
+        # If the deleted indices are [0, 5, 14] for example:
+        #     Subtract 1 from all elements larger than 0
+        #     Subtract 2 from all elements larger than 5
+        #     Subtract 3 from all elements larger than 14
+        # 14 is smaller than e.g. 25, there are 3 deleted indices below 25, therefore shift 25 by -3
+        # Complexity: O(n * log(i))
+        for i, ele in enumerate(self.mapFilePos):
+            shift = bisect_right(sortedMappedIndices, ele)
+            self.mapFilePos[i] = ele - shift
+
+        for i, ele in enumerate(self.mapPosFile):
+            shift = bisect_right(sortedIndices, ele)
+            self.mapPosFile[i] = ele - shift
+
+        prevMappedIndex -= bisect_right(sortedMappedIndices, prevMappedIndex)
+        return prevMappedIndex
+
+
+
 class FileList:
     def __init__(self):
         self.files: list[str] = []
         self.selection: FileSelection = FileSelection()  # Min 2 selected files, always includes current file
         self.fileData: dict[str, dict[str, Any]] = dict()
+        self.order: FileOrder | None = None
+
         self.currentFile: str = ""
         self.currentIndex: int = -1  # Index < 0 means: File set, but folder not yet scanned
         self.commonRoot: str = ""
@@ -130,9 +204,12 @@ class FileList:
         self.files = list()
         self.selection = FileSelection()
         self.fileData = dict()
+        self.order = None
+
         self.currentFile = ""
         self.currentIndex = -1
         self.commonRoot = ""
+
         self.listeners.clear()
         self.selectionListeners.clear()
         self.dataListeners.clear()
@@ -145,6 +222,8 @@ class FileList:
         self.files.clear()
         self.selection.clear()
         self.fileData.clear()
+        self.order = None
+
         for path in paths:
             if os.path.isdir(path):
                 self._walkPath(path, True)
@@ -163,6 +242,7 @@ class FileList:
         self.files.clear()
         self.selection.clear()
         self.fileData.clear()
+        self.order = None
 
         if copyFromFileList and copyKeys:
             def copyData(file: str):
@@ -191,7 +271,9 @@ class FileList:
             self.loadAll(paths)
             return
 
+        self.order = None
         self._lazyLoadFolder()
+
         for path in paths:
             if os.path.isdir(path):
                 self._walkPath(path, True)
@@ -212,12 +294,17 @@ class FileList:
 
     def filterFiles(self, predKeep: Callable[[str], bool]):
         currentFile = self.currentFile
+        currentMappedIndex = self.order[self.currentIndex] if self.order and self.currentIndex >= 0 else -1
+
         self.currentIndex = -1
         self.currentFile = ""
         numSelected = len(self.selection)
 
-        newFiles = []
-        for file in self.files:
+        removedIndices = list[int]()
+        prevMappedIndex = -1
+
+        newFiles = list[str]()
+        for i, file in enumerate(self.files):
             # Keep file
             if predKeep(file):
                 newFiles.append(file)
@@ -225,12 +312,31 @@ class FileList:
                     self.currentIndex = len(newFiles) - 1
                     self.currentFile  = file
 
+                    # When the file ist kept, there is no need for prevMappedIndex
+                    currentMappedIndex = -1
+                    prevMappedIndex = -1
+
+                elif self.order:
+                    mappedIndex = self.order[i]
+                    if mappedIndex < currentMappedIndex and mappedIndex > prevMappedIndex:
+                        prevMappedIndex = mappedIndex
+
             # Remove file
             else:
                 self.fileData.pop(file, None)
                 self.selection.discard(file)
                 if file == currentFile:
                     self.currentIndex = len(newFiles) - 1
+
+                if self.order:
+                    removedIndices.append(i)
+
+        if len(newFiles) < 2:
+            self.order = None
+        elif self.order:
+            prevMappedIndex = self.order.removeIndices(removedIndices, prevMappedIndex)
+            if not self.currentFile:
+                self.currentIndex = self.order.unmap(max(prevMappedIndex, 0))
 
         if not self.currentFile:
             if self.currentIndex >= 0:
@@ -261,7 +367,14 @@ class FileList:
         self._lazyLoadFolder()
         if self.selection:
             return self.selection.sorted[-1] == self.currentFile
-        return self.currentIndex == len(self.files) - 1  # True when no files loaded
+
+        currentIndex = self.order[self.currentIndex] if self.order else self.currentIndex
+        return currentIndex == len(self.files) - 1  # True when no files loaded
+
+    def getCurrentNr(self):
+        if self.order and self.currentIndex >= 0:
+            return self.order[self.currentIndex]
+        return self.currentIndex
 
     def getCurrentFile(self):
         return self.currentFile
@@ -309,20 +422,27 @@ class FileList:
 
     def _changeFile(self, indexOffset: int):
         if numFiles := len(self.files):
-            self.currentIndex = (self.currentIndex + indexOffset) % numFiles
+            if self.order:
+                index = (self.order[self.currentIndex] + indexOffset) % numFiles
+                self.currentIndex = self.order.unmap(index)
+            else:
+                self.currentIndex = (self.currentIndex + indexOffset) % numFiles
+
             self.currentFile = self.files[self.currentIndex]
             self.notifyFileChanged()
 
     def _changeSelectedFile(self, indexOffset: int):
         try:
-            sortedSelection = self.selection.sorted
+            if self.order:
+                self.currentIndex = self.order.nextSelected(self.currentIndex, indexOffset)
+            else:
+                sortedSelection = self.selection.sorted
+                index = bisect_left(sortedSelection, sortKey(self.currentFile), key=sortKey)
+                if index >= len(sortedSelection) or sortedSelection[index] != self.currentFile:
+                    raise ValueError("Current file not in selected files")
+                index = (index + indexOffset) % len(sortedSelection)
+                self.currentIndex = self.indexOf(sortedSelection[index]) # raises when not found
 
-            index = bisect_left(sortedSelection, sortKey(self.currentFile), key=sortKey)
-            if index >= len(sortedSelection) or sortedSelection[index] != self.currentFile:
-                raise ValueError("Current file not in selected files")
-            index = (index + indexOffset) % len(sortedSelection)
-
-            self.currentIndex = self.indexOf(sortedSelection[index]) # raises when not found
             self.currentFile = self.files[self.currentIndex]
             self.notifyFileChanged()
         except ValueError as ex:
@@ -331,37 +451,31 @@ class FileList:
 
     def setNextFolder(self):
         self._lazyLoadFolder()
-        currentFolder = os.path.dirname(self.currentFile)
         currentIndex = max(self.currentIndex, 0)
 
-        for i in range(currentIndex, len(self.files)):
-            if self._switchFolderProcessFile(i, currentFolder):
-                return
-
-        for i in range(0, currentIndex):
-            if self._switchFolderProcessFile(i, currentFolder):
-                return
+        if self.order:
+            indices = self.order.unmapIter(indexCycle(self.order[currentIndex], len(self.files)))
+        else:
+            indices = indexCycle(currentIndex, len(self.files))
+        self._switchFolder(indices)
 
     def setPrevFolder(self):
         self._lazyLoadFolder()
+        if self.order:
+            indices = self.order.unmapIter(indexCycle(self.order[self.currentIndex], len(self.files), -1))
+        else:
+            indices = indexCycle(self.currentIndex, len(self.files), -1)
+        self._switchFolder(indices)
+
+    def _switchFolder(self, indices: Iterable[int]):
         currentFolder = os.path.dirname(self.currentFile)
-
-        for i in range(self.currentIndex-1, -1, -1):
-            if self._switchFolderProcessFile(i, currentFolder):
+        for i in indices:
+            folder = os.path.dirname(self.files[i])
+            if folder != currentFolder:
+                self.currentIndex = i
+                self.currentFile = self.files[self.currentIndex]
+                self.notifyFileChanged()
                 return
-
-        for i in range(len(self.files)-1, self.currentIndex, -1):
-            if self._switchFolderProcessFile(i, currentFolder):
-                return
-
-    def _switchFolderProcessFile(self, index: int, currentFolder: str) -> bool:
-        folder = os.path.dirname(self.files[index])
-        if folder != currentFolder:
-            self.currentIndex = index
-            self.currentFile = self.files[self.currentIndex]
-            self.notifyFileChanged()
-            return True
-        return False
 
 
     def _lazyLoadFolder(self):
@@ -459,7 +573,7 @@ class FileList:
             self.selection.clear()
         self.notifySelectionChanged()
 
-    def _getFileRange(self, fileEnd: str) -> list[str] | None:
+    def _getFileRange(self, fileEnd: str) -> Iterable[str] | None:
         'Returns files from `currentFile` to `fileEnd`, including both.'
 
         try:
@@ -471,10 +585,13 @@ class FileList:
         indexStart = self.currentIndex
         if indexEnd == indexStart:
             return None
-        if indexEnd < indexStart:
-            indexStart, indexEnd = indexEnd, indexStart
 
-        return self.files[indexStart:indexEnd+1]
+        if self.order:
+            indexStart, indexEnd = sorted((self.order[indexStart], self.order[indexEnd]))
+            return (self.files[i] for i in self.order.unmapIter(range(indexStart, indexEnd+1)))
+        else:
+            indexStart, indexEnd = sorted((indexStart, indexEnd))
+            return (self.files[i] for i in range(indexStart, indexEnd+1))
 
     def selectFileRange(self, fileEnd: str):
         if rangeFiles := self._getFileRange(fileEnd):
@@ -505,6 +622,20 @@ class FileList:
         if self.selection:
             self.selection.clear()
             self.notifySelectionChanged()
+
+
+    def setOrder(self, mapFilePos: list[int], mapPosFile: list[int], folders: bool = True):
+        self.order = FileOrder(self, mapFilePos, mapPosFile, folders)
+
+    def getOrderedFiles(self) -> Iterable[str]:
+        files = self.getFiles()
+        return (files[i] for i in self.order.mapPosFile) if self.order else files
+
+    def clearOrder(self):
+        self.order = None
+
+    def isOrderWithFolders(self) -> bool:
+        return self.order.folders if self.order else True
 
 
     def addSelectionListener(self, listener):

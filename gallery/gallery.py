@@ -2,11 +2,12 @@ import time
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QSignalBlocker, QTimer
 from bisect import bisect_right
-from .gallery_grid import GalleryGrid, GalleryHeader
 import lib.qtlib as qtlib
 from lib.captionfile import FileTypeSelector
 from ui.tab import ImgTab
 from config import Config
+from .gallery_grid import GalleryGrid, GalleryHeader
+from .gallery_sort import GallerySortControl
 
 
 class Gallery(QtWidgets.QWidget):
@@ -16,40 +17,120 @@ class Gallery(QtWidgets.QWidget):
     def __init__(self, tab: ImgTab):
         super().__init__()
         self.tab = tab
-        self.galleryGrid = None
-        self.rowToHeader: list[int] = list()
 
+        self.rowToHeader: list[int] = list()
         self._switchingMode = False
 
-        self.gridUpdateTimer = QTimer()
-        self.gridUpdateTimer.setSingleShot(True)
-        self.gridUpdateTimer.setInterval(100)
-        self.gridUpdateTimer.timeout.connect(self.updateGrid)
-        self.lastGridUpdate = 0
+        # Initialize grid after delay: Wait for the window width to calculate column count
+        self._initTimer = QTimer(singleShot=True, interval=50)
+        self._initTimer.timeout.connect(self._initGrid)
 
-        self.chkFollowSelection = QtWidgets.QCheckBox("Follow Selection")
-        self.chkFollowSelection.setChecked(True)
+        self._gridUpdateTimer = QTimer(singleShot=True, interval=100)
+        self._gridUpdateTimer.timeout.connect(self.updateGrid)
+        self._lastGridUpdate = 0
 
-        self.cboViewMode = QtWidgets.QComboBox()
-        self.cboViewMode.addItem("Grid View", GalleryGrid.VIEW_MODE_GRID)
-        self.cboViewMode.addItem("List View", GalleryGrid.VIEW_MODE_LIST)
-        self.cboViewMode.currentIndexChanged.connect(self.onViewModeChanged)
+        layout = QtWidgets.QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addLayout(self._buildTopRow())
 
-        self.statusBar = QtWidgets.QStatusBar()
-        self.statusBar.addPermanentWidget(self.chkFollowSelection)
-        self.statusBar.addPermanentWidget(self._buildThumbnailSize())
-        self.statusBar.addPermanentWidget(self.cboViewMode)
+        self.galleryGrid: GalleryGrid
+        self.galleryGrid, self.scrollArea = self._buildScrollGrid(self.captionSrc)
+        layout.addWidget(self.scrollArea)
 
-        self._build()
+        self.sortControl = GallerySortControl(self.tab, self.galleryGrid)
+        layout.addWidget(self.sortControl)
+
+        self._buildStatusBar()
+        self.setLayout(layout)
+
         tab.filelist.addSelectionListener(self)
 
+
     def deleteLater(self):
-        if self.galleryGrid:
-            self.galleryGrid.deleteLater()
-            self.galleryGrid = None
+        self.galleryGrid.deleteLater()
+        self.galleryGrid = None
 
         super().deleteLater()
 
+
+    def _buildScrollGrid(self, captionSrc: FileTypeSelector):
+        scrollArea = GalleryScrollArea(self.tab)
+        scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scrollArea.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        scrollArea.setSizeAdjustPolicy(GalleryScrollArea.SizeAdjustPolicy.AdjustToContents)
+        scrollArea.setWidgetResizable(True)
+        scrollArea.verticalScrollBar().valueChanged.connect(self.updateComboboxFolder)
+
+        galleryGrid = GalleryGrid(self.tab, captionSrc)
+        galleryGrid.thumbnailSize = Config.galleryThumbnailSize
+        scrollArea.setWidget(galleryGrid)
+        return galleryGrid, scrollArea
+
+    @Slot()
+    def _initGrid(self):
+        self._initTimer.timeout.disconnect()
+        self._initTimer.deleteLater()
+        self._initTimer = None
+
+        # Slot onHeadersUpdated() needs access to cboFolders and scrollArea
+        self.galleryGrid.headersUpdated.connect(self.onHeadersUpdated)
+        self.galleryGrid.reloadImages()
+
+        self.galleryGrid.reloaded.connect(self.scrollTop)
+        #self.galleryGrid.reloaded.connect(self.queueGridUpdate)
+        #self.galleryGrid.thumbnailLoaded.connect(self.queueGridUpdate)
+        self.galleryGrid.loadingProgress.connect(self.updateStatusBar)
+        self.galleryGrid.highlighted.connect(self.updateStatusBar)
+        self.galleryGrid.fileChanged.connect(self.ensureVisible)
+
+
+    def _buildTopRow(self):
+        layout = QtWidgets.QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self.cboFolders = QtWidgets.QComboBox()
+        self.cboFolders.setMinimumWidth(100)
+        self.cboFolders.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored, QtWidgets.QSizePolicy.Policy.Preferred)
+        self.cboFolders.currentIndexChanged.connect(self.onFolderSelected)
+        qtlib.setMonospace(self.cboFolders)
+        layout.addWidget(self.cboFolders, 1)
+
+        layout.addSpacing(6)
+
+        self.chkCaptions = QtWidgets.QCheckBox("Captions:")
+        self.chkCaptions.toggled.connect(self.onCaptionsToggled)
+        layout.addWidget(self.chkCaptions)
+
+        self.captionSrc = FileTypeSelector()
+        self.captionSrc.setEnabled(False)
+        self.captionSrc.fileTypeUpdated.connect(self.onCaptionSourceChanged)
+        layout.addLayout(self.captionSrc)
+
+        self.btnReloadCaptions = qtlib.SaveButton("↻")
+        self.btnReloadCaptions.setEnabled(False)
+        self.btnReloadCaptions.setFixedWidth(28)
+        self.btnReloadCaptions.clicked.connect(self.reloadCaptions)
+        layout.addWidget(self.btnReloadCaptions)
+
+        return layout
+
+
+    def _buildStatusBar(self):
+        self.statusBar = QtWidgets.QStatusBar()
+
+        self.chkFollowSelection = QtWidgets.QCheckBox("Follow Selection")
+        self.chkFollowSelection.setChecked(True)
+        self.statusBar.addPermanentWidget(self.chkFollowSelection)
+
+        self.statusBar.addPermanentWidget(self._buildThumbnailSize())
+        self.statusBar.addPermanentWidget(self.sortControl.btnSort)
+
+        self.cboViewMode = QtWidgets.QComboBox()
+        self.cboViewMode.addItem("▦ Grid View", GalleryGrid.VIEW_MODE_GRID)
+        self.cboViewMode.addItem("▤ List View", GalleryGrid.VIEW_MODE_LIST)
+        self.cboViewMode.currentIndexChanged.connect(self.onViewModeChanged)
+        self.statusBar.addPermanentWidget(self.cboViewMode)
 
     def _buildThumbnailSize(self):
         layout = QtWidgets.QHBoxLayout()
@@ -75,59 +156,6 @@ class Gallery(QtWidgets.QWidget):
         widget.setLayout(layout)
         widget.setSizePolicy(QtWidgets.QSizePolicy.Policy.Maximum, QtWidgets.QSizePolicy.Policy.Maximum)
         return widget
-
-    def _build(self):
-        self.chkCaptions = QtWidgets.QCheckBox("Captions:")
-        self.chkCaptions.toggled.connect(self.onCaptionsToggled)
-
-        self.captionSrc = FileTypeSelector()
-        self.captionSrc.setEnabled(False)
-        self.captionSrc.fileTypeUpdated.connect(self.onCaptionSourceChanged)
-
-        self.btnReloadCaptions = qtlib.SaveButton("↻")
-        self.btnReloadCaptions.setEnabled(False)
-        self.btnReloadCaptions.setFixedWidth(28)
-        self.btnReloadCaptions.clicked.connect(self.reloadCaptions)
-
-        self.cboFolders = QtWidgets.QComboBox()
-        self.cboFolders.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored, QtWidgets.QSizePolicy.Policy.Preferred)
-        self.cboFolders.currentIndexChanged.connect(self.onFolderSelected)
-        qtlib.setMonospace(self.cboFolders)
-
-        self.scrollArea = GalleryScrollArea(self.tab)
-        self.scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.scrollArea.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        self.scrollArea.setSizeAdjustPolicy(GalleryScrollArea.SizeAdjustPolicy.AdjustToContents)
-        self.scrollArea.setWidgetResizable(True)
-        self.scrollArea.verticalScrollBar().valueChanged.connect(self.updateComboboxFolder)
-
-        self.galleryGrid = GalleryGrid(self.tab, self.captionSrc)
-        self.galleryGrid.thumbnailSize = Config.galleryThumbnailSize
-
-        self.galleryGrid.headersUpdated.connect(self.onHeadersUpdated)
-        self.galleryGrid.reloadImages() # Slot onHeadersUpdated() needs access to cboFolders and scrollArea
-        self.galleryGrid.reloaded.connect(self.scrollTop)
-        self.galleryGrid.reloaded.connect(self.queueGridUpdate)
-        self.galleryGrid.thumbnailLoaded.connect(self.queueGridUpdate)
-        self.galleryGrid.loadingProgress.connect(self.updateStatusBar)
-        self.galleryGrid.highlighted.connect(self.updateStatusBar)
-        self.galleryGrid.fileChanged.connect(self.ensureVisible)
-        self.scrollArea.setWidget(self.galleryGrid)
-
-        layout = QtWidgets.QGridLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setColumnStretch(0, 1)
-        layout.setColumnStretch(1, 0)
-        layout.setColumnStretch(2, 0)
-        layout.setColumnStretch(3, 0)
-        layout.setColumnStretch(4, 0)
-        layout.setColumnMinimumWidth(1, 6)
-        layout.addWidget(self.cboFolders, 0, 0)
-        layout.addWidget(self.chkCaptions, 0, 2)
-        layout.addLayout(self.captionSrc, 0, 3)
-        layout.addWidget(self.btnReloadCaptions, 0, 4)
-        layout.addWidget(self.scrollArea, 1, 0, 1, 5)
-        self.setLayout(layout)
 
 
     @Slot()
@@ -198,19 +226,22 @@ class Gallery(QtWidgets.QWidget):
         self.statusBar.showMessage(f"{numFiles} Images in {numFolders} Folders{msgsText}{loadText}")
 
 
-    def resizeEvent(self, event):
-        self.queueGridUpdate()
+    def resizeEvent(self, event: QtGui.QResizeEvent):
+        if self._initTimer:
+            self._initTimer.start()
+        else:
+            self.queueGridUpdate()
 
     @Slot()
     def queueGridUpdate(self):
         tNow = time.time()
-        tDiff = tNow - self.lastGridUpdate
-        self.lastGridUpdate = tNow
+        tDiff = tNow - self._lastGridUpdate
+        self._lastGridUpdate = tNow
 
         if tDiff > self.MIN_GRID_UPDATE_DELAY:
             self.updateGrid()
         else:
-            self.gridUpdateTimer.start()
+            self._gridUpdateTimer.start()
             self.scrollArea.setWidgetResizable(False) # Disable auto update because it can be laggy
 
     @Slot()
@@ -218,7 +249,7 @@ class Gallery(QtWidgets.QWidget):
         # Re-enable size update. Update scroll area size to fit window.
         self.scrollArea.setWidgetResizable(True)
 
-        if self.galleryGrid and self.isVisible():
+        if self.isVisible():
             self.galleryGrid.adjustGrid()
 
 
@@ -270,7 +301,7 @@ class Gallery(QtWidgets.QWidget):
                 self.scrollArea.verticalScrollBar().setValue(y)
 
     def scrollToSelection(self):
-        if self.galleryGrid and (selectedItem := self.galleryGrid.selectedItem):
+        if selectedItem := self.galleryGrid.selectedItem:
             self.ensureVisible(selectedItem, selectedItem.row, delay=True)
 
 

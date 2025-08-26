@@ -81,6 +81,12 @@ BackendsUpscale = {
     "Upscale":          BackendDef("upscale", BackendTypes.SPANDREL)
 }
 
+BackendsEmbedding = {
+    "CLIP":             BackendDef("clip", BackendTypes.TRANSFORMERS),
+    "SigLIP":           BackendDef("siglip", BackendTypes.TRANSFORMERS),
+    "SigLIP ONNX":      BackendDef("siglip-onnx", BackendTypes.ONNX, BackendPathModes.FOLDER),
+}
+
 
 
 class BackendLoader:
@@ -182,6 +188,17 @@ class BackendLoader:
             case "upscale":
                 from .upscale import UpscaleBackend
                 return UpscaleBackend(config)
+
+            # Embedding
+            case "clip":
+                from .embedding.clip import Clip
+                return Clip(config)
+            case "siglip":
+                from .embedding.siglip import Siglip
+                return Siglip(config)
+            case "siglip-onnx":
+                from .embedding.siglip_onnx import SiglipOnnx
+                return SiglipOnnx(config)
 
             # Tokenizer
             case "tokens":

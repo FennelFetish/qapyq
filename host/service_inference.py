@@ -9,6 +9,7 @@ class InferenceService(Service):
         self.backendLoader = BackendLoader()
         self.llmBackend = LastBackendLoader(self.backendLoader)
         self.tagBackend = LastBackendLoader(self.backendLoader)
+        self.embedBackend = LastBackendLoader(self.backendLoader)
 
         self.loop = MessageLoop(protocol)
 
@@ -30,6 +31,11 @@ class InferenceService(Service):
     @msghandler("setup_tag")
     def setupTag(self, msg: dict):
         self.tagBackend.getBackend(msg.get("config", {}))
+        return {"cmd": msg["cmd"]}
+
+    @msghandler("setup_embed")
+    def setupEmbedding(self, msg: dict):
+        self.embedBackend.getBackend(msg.get("config", {}))
         return {"cmd": msg["cmd"]}
 
     @msghandler("setup_masking", "setup_upscale")
@@ -134,3 +140,40 @@ class InferenceService(Service):
             "count": count,
             "borders": borders
         }
+
+
+    @msghandler("embed_text")
+    def embedText(self, msg: dict):
+        embedding = self.embedBackend.getBackend().embedTextNumpyBytes(msg["text"])
+        return {
+            "cmd": msg["cmd"],
+            "embedding": embedding
+        }
+
+    @msghandler("embed_img")
+    def embedImage(self, msg: dict):
+        imgFile = ImageFile.fromMsg(msg)
+        embeddings = self.embedBackend.getBackend().embedImagesNumpyBytes([imgFile])
+        return {
+            "cmd": msg["cmd"],
+            "embedding": embeddings[0]
+        }
+
+    @msghandler("embed_img_batch")
+    def embedImageBatch(self, msg: dict):
+        imgFiles = [ImageFile(path) for path in msg["imgs"]] # TODO: Use ImageCache
+        embeddings = self.embedBackend.getBackend().embedImagesNumpyBytes(imgFiles)
+        return {
+            "cmd": msg["cmd"],
+            "embeddings": embeddings
+        }
+
+    # @msghandler("embed_similarity")
+    # def embeddingSimilarity(self, msg: dict):
+    #     imgFile = ImageFile.fromMsg(msg)
+    #     backend = self.backendLoader.getBackend(msg["config"])
+    #     scores = backend.imgTextSimilarity(imgFile, msg["texts"])
+    #     return {
+    #         "cmd": msg["cmd"],
+    #         "scores": scores
+    #     }
