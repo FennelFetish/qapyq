@@ -40,8 +40,8 @@ PIL_CONVERT_MODES_NOALPHA = {
 }
 
 def _getConversionMode(mode: str, forceRGB=False, allowGreyscale=True, allowAlpha=True) -> str | None:
-    if forceRGB and mode != "RGB":
-        return "RGB"
+    if forceRGB:
+        return "RGB" if mode != "RGB" else None
 
     origMode = mode
     mode = PIL_CONVERT_MODES.get(mode, mode)
@@ -160,7 +160,6 @@ try:
 
         if w >= 0:
             if Config.exifTransform and _exifSwapSizeQt(reader):
-                reader.setAutoTransform(True)
                 targetHeight = min(maxWidth, h)
                 targetWidth = round(targetHeight * (w/h))
                 w, h = h, w
@@ -169,6 +168,7 @@ try:
                 targetHeight = round(targetWidth * (h/w))
 
             reader.setScaledSize(QSize(targetWidth, targetHeight))
+            reader.setAutoTransform(Config.exifTransform)
             reader.setQuality(100)
             qimage = reader.read()
             normalizeColorSpace(qimage)

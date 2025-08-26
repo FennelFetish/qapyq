@@ -617,6 +617,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.bubbles.updateBubbles()
         self._updatePreview(text)
         self._multiEditHighlightImages(index)
+        self.txtCaption.selectCaption(index)
 
         self.btnSave.setChanged(True)
 

@@ -152,7 +152,7 @@ class CaptionHighlight:
             self._duplicateLinebreakPresence(presenceList, newlines)
             captionLengthOffsets = None
 
-        with HighlightContext(txtWidget) as HL:
+        with HighlightContext(txtWidget, bool(captionLengthOffsets)) as HL:
             keepFormatOffset = 0
             currentLine = 0
             start = 0
@@ -297,7 +297,7 @@ class CaptionHighlight:
 
 
 class HighlightContext:
-    def __init__(self, txtWidget: QtWidgets.QPlainTextEdit):
+    def __init__(self, txtWidget: QtWidgets.QPlainTextEdit, reuseFormats: bool):
         self.txtWidget = txtWidget
         self.partialPresenceColors: dict[tuple[int, int, int, bool], QTextCharFormat] = dict()
 
@@ -316,10 +316,11 @@ class HighlightContext:
         self._blockFormatRanges: dict[int, dict[int, QTextLayout.FormatRange]] = defaultdict(dict)
 
         self._prevBlockFormatRanges: dict[int, list[QTextLayout.FormatRange]] = dict()
-        for i in range(self._doc.blockCount()):
-            block = self._doc.findBlockByNumber(i)
-            self._prevBlockFormatRanges[i] = block.layout().formats().copy()
-            self._prevBlockFormatRanges[i].reverse() # Reverse for faster deletion
+        if reuseFormats:
+            for i in range(self._doc.blockCount()):
+                block = self._doc.findBlockByNumber(i)
+                self._prevBlockFormatRanges[i] = block.layout().formats().copy()
+                self._prevBlockFormatRanges[i].reverse() # Reverse for faster deletion
 
 
     def __enter__(self):
