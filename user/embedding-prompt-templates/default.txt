@@ -1,0 +1,36 @@
+# Prompt only
+{}
+
+# Prompt at end
+a photo of {}
+a rendering of {}
+a cropped photo of {}
+a bad photo of {}
+a blurry photo of {}
+a distorted photo of {}
+a good photo of {}
+a close-up photo of {}
+a painting of {}
+a drawing of {}
+an illustration of {}
+an image of {}
+a screenshot of {}
+a caricature of {}
+a photo of the hard-to-see {}
+a low-res photo of {}
+a high-res photo of {}
+a stylish photo of {}
+a bland photo of {}
+a scene with {}
+
+# Prompt at start
+{} shown in a photo
+{} shown in a rendering
+{} shown in a cropped photo
+{} shown in a bad photo
+{} shown in a blurry photo
+{} shown in a distorted photo
+{} shown in a good photo
+{} shown in a close-up photo
+{} shown in an illustration
+{} shown in a painting

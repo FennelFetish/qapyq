@@ -14,6 +14,7 @@ class Config:
     pathConfig              = "./qapyq_config.json"
     pathDefaultCaptionRules = "./user/default-caption-rules.json"
     pathMaskMacros          = "./user/mask-macros/"
+    pathEmbeddingTemplates  = "./user/embedding-prompt-templates/"
     pathEmbeddingCache      = "./.cache/embedding/"
     pathExport              = "."
     pathDebugLoad           = ""

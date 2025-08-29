@@ -1,0 +1,5 @@
+*.*
+
+!.gitignore
+!default.txt
+!prompt-only.txt
