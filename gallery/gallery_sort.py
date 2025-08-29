@@ -13,18 +13,16 @@ from infer.embedding import embedding_common as embed
 from .gallery_grid import GalleryGrid
 
 
-# TODO: Use embeddings to find duplicate images
-
 EMBED_FAILED = object()
 
 
 class SortParams(NamedTuple):
-    preset: str
-    sampleCfg: dict
-    prompt: str
-    negPrompt: str
-    ascending: bool
-    byFolder: bool
+    preset: str         = ""
+    sampleCfg: dict     = {}
+    prompt: str         = ""
+    negPrompt: str      = ""
+    ascending: bool     = False
+    byFolder: bool      = True
 
     def needsReload(self, currentParams: "SortParams") -> bool:
         return (self.preset != currentParams.preset) or (self.sampleCfg != currentParams.sampleCfg)
@@ -35,7 +33,7 @@ class GallerySortControl(QtWidgets.QWidget):
     CONFIG_ATTR = "inferEmbeddingPresets"
     BUTTON_TEXT = "Sort" #"⇅"
 
-    DISABLED_PARAMS = SortParams("", {}, "", "", False, True)
+    DISABLED_PARAMS = SortParams()
 
     def __init__(self, tab: ImgTab, galleryGrid: GalleryGrid):
         super().__init__()
@@ -211,7 +209,7 @@ class GallerySortControl(QtWidgets.QWidget):
             return
 
         if not params.prompt:
-            self.resetSort(SortParams("", {}, "", "", False, params.byFolder))
+            self.resetSort(SortParams(byFolder=params.byFolder))
             return
 
         filelist = self.tab.filelist
@@ -302,12 +300,13 @@ class EmbedImagesTask(QRunnable):
 
     @staticmethod
     def printSettings(sampleCfg: dict):
-        processing = sampleCfg[embed.CONFIG_KEY_PROCESSING]
-        aggregate  = sampleCfg[embed.CONFIG_KEY_AGGREGATE]
-        print(f"Loading image embeddings with '{processing}' strategy (aggregate: {aggregate})")
+        processing = sampleCfg.get(embed.CONFIG_KEY_PROCESSING)
+        aggregate  = sampleCfg.get(embed.CONFIG_KEY_AGGREGATE)
+        if processing and aggregate:
+            print(f"Loading image embeddings with '{processing}' strategy (aggregate: {aggregate})")
 
     def run(self):
-        sampleCfg  = self.config[Config.INFER_PRESET_SAMPLECFG_KEY]
+        sampleCfg = self.config[Config.INFER_PRESET_SAMPLECFG_KEY]
         success = False
 
         try:
@@ -369,8 +368,9 @@ class EmbedImagesTask(QRunnable):
 
 
 
-# TODO: Load prompt templates from file and pass with config
 class UpdateSortTask(QRunnable):
+    PROMPT_SEP = "|"
+
     class Signals(QObject):
         done = Signal(list, list, tuple)
         fail = Signal()
@@ -380,13 +380,43 @@ class UpdateSortTask(QRunnable):
         self.setAutoDelete(True)
 
         self.signals = self.Signals()
-        self.config = copy.deepcopy(config)
+        self.config = self.loadPromptTemplates(config)
         self.params = params
         self.fileEmbeddings = fileEmbeddings
+
+
+    @staticmethod
+    def loadPromptTemplates(config: dict) -> dict:
+        config = copy.deepcopy(config)
+        sampleCfg: dict = config[Config.INFER_PRESET_SAMPLECFG_KEY]
+        promptTemplate = sampleCfg.pop(embed.CONFIG_KEY_PROMPT_TEMPLATE_FILE)
+
+        path = os.path.join(Config.pathEmbeddingTemplates, f"{promptTemplate}.txt")
+        path = os.path.abspath(path)
+        with open(path, "r") as file:
+            lines = file.readlines()
+
+        sampleCfg[embed.CONFIG_KEY_PROMPT_TEMPLATES] = [
+            line for l in lines
+            if (line := l.strip()) and (not line.startswith("#")) and ("{}" in line)
+        ]
+        return config
+
 
     def run(self):
         from infer.inference import Inference, InferenceProcess
         import numpy as np
+
+        def embedPrompt(proc: InferenceProcess, text: str) -> np.ndarray:
+            prompts = [prompt for p in text.split(self.PROMPT_SEP) if (prompt := p.strip())]
+            embeddings = []
+            for prompt in prompts:
+                data = proc.embedText(prompt)
+                embeddings.append(np.frombuffer(data, dtype=np.float32))
+
+            combined = np.max(embeddings, axis=0)
+            combined /= np.linalg.vector_norm(combined, axis=-1)
+            return combined
 
         def prepare(proc: InferenceProcess):
             proc.setupEmbedding(self.config)
@@ -396,14 +426,8 @@ class UpdateSortTask(QRunnable):
                 session.prepare(prepare)
                 proc = session.getFreeProc().proc
 
-                data = proc.embedText(self.params.prompt)
-                posPromptEmbedding = np.frombuffer(data, dtype=np.float32)
-
-                if self.params.negPrompt:
-                    data = proc.embedText(self.params.negPrompt)
-                    negPromptEmbedding = np.frombuffer(data, dtype=np.float32)
-                else:
-                    negPromptEmbedding = None
+                posPromptEmbedding = embedPrompt(proc, self.params.prompt)
+                negPromptEmbedding = embedPrompt(proc, self.params.negPrompt) if self.params.negPrompt else None
 
             calcScore = OffsetSimilarityScore(posPromptEmbedding, negPromptEmbedding)
             direction = 1.0 if self.params.ascending else -1.0
@@ -431,6 +455,7 @@ class UpdateSortTask(QRunnable):
         except:
             traceback.print_exc()
             self.signals.fail.emit()
+
 
     @staticmethod
     @naturalSort
@@ -512,16 +537,18 @@ class EmbeddingCache:
         modelPath = os.path.normcase(os.path.realpath(config["model_path"]))
         if not os.path.isdir(modelPath):
             modelPath = os.path.dirname(modelPath)
+        cacheDir = os.path.basename(modelPath)
 
-        sampleCfg  = config[Config.INFER_PRESET_SAMPLECFG_KEY]
-        processing = sampleCfg[embed.CONFIG_KEY_PROCESSING]
-        aggregate  = sampleCfg[embed.CONFIG_KEY_AGGREGATE]
+        sampleCfg: dict = config[Config.INFER_PRESET_SAMPLECFG_KEY]
+        processing = sampleCfg.get(embed.CONFIG_KEY_PROCESSING)
+        aggregate  = sampleCfg.get(embed.CONFIG_KEY_AGGREGATE)
 
-        cacheDir = "_".join((
-            os.path.basename(modelPath),
-            embed.PROCESSING[processing].cacheSuffix,
-            embed.AGGREGATE[aggregate].cacheSuffix
-        ))
+        if processing and aggregate:
+            cacheDir = "_".join((
+                cacheDir,
+                embed.PROCESSING[processing].cacheSuffix,
+                embed.AGGREGATE[aggregate].cacheSuffix
+            ))
 
         return os.path.join(Config.pathEmbeddingCache, cacheDir)
 

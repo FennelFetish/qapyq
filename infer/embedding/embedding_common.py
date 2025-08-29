@@ -26,3 +26,7 @@ AGGREGATE = {
 
 DEFAULT_AGGREGATE = "mean"
 CONFIG_KEY_AGGREGATE = "embed_aggregate"
+
+
+CONFIG_KEY_PROMPT_TEMPLATE_FILE = "prompt_template_file"
+CONFIG_KEY_PROMPT_TEMPLATES = "prompt_templates"

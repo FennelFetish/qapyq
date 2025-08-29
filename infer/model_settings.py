@@ -677,8 +677,17 @@ class ScaleModelSettings(BaseSettingsWidget):
 class EmbeddingModelSettings(BaseSettingsWidget):
     def __init__(self, configAttr: str, backends: Mapping[str, BackendDef]):
         super().__init__(configAttr, backends)
+        self._loadedProcessing: str = ""
 
     def build(self, layout: QtWidgets.QGridLayout, row: int):
+        row += 1
+        layout.addWidget(QtWidgets.QLabel("Prompt Templates:"), row, 0)
+
+        self.cboPromptTemplate = QtWidgets.QComboBox()
+        for name in self._loadPromptTemplates():
+            self.cboPromptTemplate.addItem(name)
+        layout.addWidget(self.cboPromptTemplate, row, 1, 1, 5)
+
         row += 1
         layout.setRowMinimumHeight(row, 12)
 
@@ -725,6 +734,13 @@ class EmbeddingModelSettings(BaseSettingsWidget):
             self.cboAggregate.addItem(aggregate.name, key)
         layout.addWidget(self.cboAggregate, row, 1, 1, 5)
 
+    def _loadPromptTemplates(self):
+        basePath = os.path.abspath(Config.pathEmbeddingTemplates)
+        for root, dirs, files in os.walk(basePath):
+            root = os.path.normpath(root)
+            for path in (os.path.join(root, f) for f in files if f.endswith(".txt")):
+                name, ext = os.path.splitext( os.path.relpath(path, basePath) )
+                yield name
 
     @property
     def backendNeedsSeparateModels(self):
@@ -744,18 +760,30 @@ class EmbeddingModelSettings(BaseSettingsWidget):
         for widget in widgets:
             widget.setEnabled(enabled)
 
+        if enabled:
+            processing = self._loadedProcessing or embed.DEFAULT_PROCESSING
+            processingIndex = self.cboProcessing.findData(processing)
+            self.cboProcessing.setCurrentIndex(max(processingIndex, 0))
+        else:
+            self.cboProcessing.setCurrentIndex(0)
+
 
     def fromDict(self, settings: dict) -> None:
         super().fromDict(settings)
+        sampleCfg: dict = settings.get(Config.INFER_PRESET_SAMPLECFG_KEY, {})
+
+        promptTemplate = sampleCfg.get(embed.CONFIG_KEY_PROMPT_TEMPLATE_FILE, "default")
+        promptTemplateIndex = self.cboPromptTemplate.findText(promptTemplate)
+        self.cboPromptTemplate.setCurrentIndex(max(promptTemplateIndex, 0))
+
         if self.backendNeedsSeparateModels:
             self.txtTextModel.setText(settings.get("text_model_path", ""))
             self.txtVisionModel.setText(settings.get("vision_model_path", ""))
 
-            sampleCfg: dict = settings.get(Config.INFER_PRESET_SAMPLECFG_KEY, {})
-
             processing = sampleCfg.get(embed.CONFIG_KEY_PROCESSING, embed.DEFAULT_PROCESSING)
             processingIndex = self.cboProcessing.findData(processing)
             self.cboProcessing.setCurrentIndex(max(processingIndex, 0))
+            self._loadedProcessing = processing
 
             aggregate = sampleCfg.get(embed.CONFIG_KEY_AGGREGATE, embed.DEFAULT_AGGREGATE)
             aggregateIndex = self.cboAggregate.findData(aggregate)
@@ -766,18 +794,22 @@ class EmbeddingModelSettings(BaseSettingsWidget):
             self.txtVisionModel.setText("")
             self.cboProcessing.setCurrentIndex(0)
             self.cboAggregate.setCurrentIndex(0)
+            self._loadedProcessing = ""
 
 
     def toDict(self) -> dict:
         settings = super().toDict()
 
+        sampleCfg = {
+            embed.CONFIG_KEY_PROMPT_TEMPLATE_FILE: self.cboPromptTemplate.currentText()
+        }
+
         if self.backendNeedsSeparateModels:
             settings["text_model_path"] = self.txtTextModel.text().strip()
             settings["vision_model_path"] = self.txtVisionModel.text().strip()
 
-            settings[Config.INFER_PRESET_SAMPLECFG_KEY] = {
-                embed.CONFIG_KEY_PROCESSING: self.cboProcessing.currentData(),
-                embed.CONFIG_KEY_AGGREGATE:  self.cboAggregate.currentData()
-            }
+            sampleCfg[embed.CONFIG_KEY_PROCESSING] = self.cboProcessing.currentData()
+            sampleCfg[embed.CONFIG_KEY_AGGREGATE]  = self.cboAggregate.currentData()
 
+        settings[Config.INFER_PRESET_SAMPLECFG_KEY] = sampleCfg
         return settings

@@ -2,12 +2,10 @@ import torch
 from transformers import CLIPConfig, CLIPModel, CLIPProcessor
 from host.imagecache import ImageFile
 from infer.devmap import DevMap
-from .backend_embedding import EmbeddingBackend
+from .backend_embedding import TorchEmbeddingBackend
 
 
-class Clip(EmbeddingBackend):
-    CONFIG_PATH = "./res/tokenizer/clip-vit-large-patch14/"
-
+class Clip(TorchEmbeddingBackend):
     def __init__(self, config: dict):
         super().__init__(config)
 
@@ -20,6 +18,9 @@ class Clip(EmbeddingBackend):
         self.dtype = torch.float16 if torch.device.type != "cpu" else torch.float32
         self.model = self.model.to(self.device, self.dtype).eval()
 
+        # No speedup, or slower
+        #self.imgFeatures = torch.compile(self.model.get_image_features, mode="reduce-overhead")
+
 
     def _loadModelSafetensors(self, modelPath: str):
         from safetensors import safe_open
@@ -29,7 +30,8 @@ class Clip(EmbeddingBackend):
             for key in f.keys():
                 stateDict[key] = f.get_tensor(key)
 
-        config: CLIPConfig = CLIPConfig.from_pretrained(self.CONFIG_PATH)
+        configPath = "./res/tokenizer/clip-vit-large-patch14/"
+        config: CLIPConfig = CLIPConfig.from_pretrained(configPath)
         model = CLIPModel(config)
         keys = model.load_state_dict(stateDict, strict=False)
 

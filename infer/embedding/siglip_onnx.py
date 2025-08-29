@@ -9,8 +9,8 @@ from PIL import Image
 from host.imagecache import ImageFile
 from infer.devmap import DevMap
 from config import Config
-from .backend_embedding import TEXT_TEMPLATES
-from . import embedding_common
+from .backend_embedding import EmbeddingBackend
+from . import embedding_common as embed
 
 
 def debugSave(mat: np.ndarray, filename: str, patchname: str):
@@ -28,11 +28,13 @@ def normalizeRowsInPlace(mat: np.ndarray):
 
 
 
-class SiglipOnnx:
+class SiglipOnnx(EmbeddingBackend):
     MAX_LENGTH = 64
-    OUTPUT = ["pooler_output"]
+    OUTPUT_NAMES = ["pooler_output"]
 
     def __init__(self, config: dict):
+        super().__init__(config)
+
         self.modelPath = config["model_path"]
         self.textModelPath = config["text_model_path"]
         self.visionModelPath = config["vision_model_path"]
@@ -68,14 +70,10 @@ class SiglipOnnx:
         self.imageEmbedStrategy = self.getEmbedStrategy(config)
 
 
-    def setConfig(self, config: dict):
-        pass
-
-
     def getEmbedStrategy(self, config: dict) -> "ImageEmbeddingStrategy":
         sampleCfg = config[Config.INFER_PRESET_SAMPLECFG_KEY]
-        processing: str = sampleCfg[embedding_common.CONFIG_KEY_PROCESSING]
-        aggregate: str  = sampleCfg[embedding_common.CONFIG_KEY_AGGREGATE]
+        processing: str = sampleCfg[embed.CONFIG_KEY_PROCESSING]
+        aggregate: str  = sampleCfg[embed.CONFIG_KEY_AGGREGATE]
 
         match processing.strip():
             case "center-crop":             return CenterCropEmbedding(self)
@@ -115,13 +113,14 @@ class SiglipOnnx:
             texts, return_tensors="np",
             max_length=self.MAX_LENGTH, padding='max_length', truncation=True,
         )
-        # shape: (num texts, max length)
+
+        # Need to make a new dict for some reason.
+        # input_ids shape: (num texts, max length)
         return {"input_ids": inputs["input_ids"]}
 
     def embedTextNumpyBytes(self, text: str) -> bytes:
-        texts = [tpl.format(text) for tpl in TEXT_TEMPLATES]
-        inputs = self.tokenize(texts)
-        textFeatures: np.ndarray = self.textModel.run(self.OUTPUT, inputs)[0]
+        inputs = self.tokenize(self.getTexts(text))
+        textFeatures: np.ndarray = self.textModel.run(self.OUTPUT_NAMES, inputs)[0]
         textFeatures = np.mean(textFeatures, axis=0)
         normalizeRowsInPlace(textFeatures)
         return textFeatures.tobytes()
@@ -178,7 +177,7 @@ class SinglePatchEmbeddingStrategy(ImageEmbeddingStrategy):
             images = [self.loadSinglePatch(imgFile) for imgFile in imgFiles]
             inputs = np.stack(images, axis=0)
 
-        imageFeatures: np.ndarray = self.backend.imageModel.run(SiglipOnnx.OUTPUT, {"pixel_values": inputs})[0]  # (images, dims)
+        imageFeatures: np.ndarray = self.backend.imageModel.run(SiglipOnnx.OUTPUT_NAMES, {"pixel_values": inputs})[0]  # (images, dims)
         normalizeRowsInPlace(imageFeatures)
         return imageFeatures
 
@@ -227,8 +226,7 @@ class CenterCropEmbedding(SinglePatchEmbeddingStrategy):
 
 class MultiPatchEmbeddingStrategy(ImageEmbeddingStrategy):
     AGGREGATE_FUNCS: dict[str, Callable] = {
-        "sum":  np.sum,
-        "mean": np.mean,
+        "mean": np.sum, # Sum is equivalent to np.mean when also normalizing afterwards, but skips the division
         "max":  np.max
     }
 
@@ -246,7 +244,7 @@ class MultiPatchEmbeddingStrategy(ImageEmbeddingStrategy):
             filePatchCount.append(len(filePatches))
 
         inputs = np.stack(patches, axis=0)
-        imageFeatures: np.ndarray = self.backend.imageModel.run(SiglipOnnx.OUTPUT, {"pixel_values": inputs})[0]
+        imageFeatures: np.ndarray = self.backend.imageModel.run(SiglipOnnx.OUTPUT_NAMES, {"pixel_values": inputs})[0]
 
         patchEmbeddingsPerImage = np.split(imageFeatures, np.cumsum(filePatchCount[:-1]))
         for imgPatchFeatures in patchEmbeddingsPerImage:
@@ -260,13 +258,22 @@ class MultiPatchEmbeddingStrategy(ImageEmbeddingStrategy):
 
 
 class MultiPatchEmbedding(MultiPatchEmbeddingStrategy):
-    MIN_STRIDE = 24
     MIN_OVERLAP = 1.0 + 0.125
 
     def __init__(self, backend: SiglipOnnx, aggregate: str, oddPatchesX=False, oddPatchesY=False):
         super().__init__(backend, aggregate)
         self.oddPatchesX = 1 if oddPatchesX else 0
         self.oddPatchesY = 1 if oddPatchesY else 0
+
+        self.minStrideX = int(self._size.width  * (self.MIN_OVERLAP-1))
+        self.minStrideY = int(self._size.height * (self.MIN_OVERLAP-1))
+
+        # Minimum size difference required for rounding up
+        # to the next odd patch count while respecting the minimum stride.
+        # https://www.desmos.com/calculator/mryb7c1dmn
+        self.minDiffOddX = self.minStrideX * 2
+        self.minDiffOddY = self.minStrideY * 2
+
 
     def loadPatches(self, imgFile: ImageFile) -> list[np.ndarray]:
         img = imgFile.openPIL(forceRGB=True)
@@ -278,12 +285,12 @@ class MultiPatchEmbedding(MultiPatchEmbeddingStrategy):
 
         # When the size difference is small, squish the image and use only one patch (for speedup)
         dw = w - targetW
-        if abs(dw) < self.MIN_STRIDE:
+        if abs(dw) < self.minStrideX:
             w = targetW
             dw = 0
 
         dh = h - targetH
-        if abs(dh) < self.MIN_STRIDE:
+        if abs(dh) < self.minStrideY:
             h = targetH
             dh = 0
 
@@ -294,13 +301,10 @@ class MultiPatchEmbedding(MultiPatchEmbeddingStrategy):
         if dw > 0:
             assert dh == 0
             numPatches = int(np.ceil(self.MIN_OVERLAP * w/targetW))
-            numPatches |= self.oddPatchesX # Round up to next odd number
+            if dw >= self.minDiffOddX:
+                numPatches |= self.oddPatchesX # Round up to next odd number
 
             stride = dw // (numPatches-1)
-            while stride < self.MIN_STRIDE:
-                numPatches -= 1
-                stride = dw // (numPatches-1)
-
             #print(f"{imgFile.file}: landscape image {origW}x{origH} -> {w}x{h}, patches={numPatches} @ stride={stride}")
             for x in range(0, dw+1, stride):
                 patches.append(mat[:, x:x+targetW, :].copy())
@@ -309,13 +313,10 @@ class MultiPatchEmbedding(MultiPatchEmbeddingStrategy):
         elif dh > 0:
             assert dw == 0
             numPatches = int(np.ceil(self.MIN_OVERLAP * h/targetH))
-            numPatches |= self.oddPatchesY # Round up to next odd number
+            if dh >= self.minDiffOddY:
+                numPatches |= self.oddPatchesY # Round up to next odd number
 
             stride = dh // (numPatches-1)
-            while stride < self.MIN_STRIDE:
-                numPatches -= 1
-                stride = dh // (numPatches-1)
-
             #print(f"{imgFile.file}: portrait image {origW}x{origH} -> {w}x{h}, patches={numPatches} @ stride={stride}")
             for y in range(0, dh+1, stride):
                 patches.append(mat[y:y+targetH, :, :].copy())
