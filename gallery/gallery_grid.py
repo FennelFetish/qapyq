@@ -1,7 +1,7 @@
 from __future__ import annotations
 import os
 from contextlib import contextmanager
-from typing import NamedTuple
+from typing import Iterable, NamedTuple
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Signal, Slot, QRect, QPoint, QObject, QTimer, QEvent
 from lib.captionfile import FileTypeSelector
@@ -98,9 +98,7 @@ class GalleryGrid(QtWidgets.QWidget):
         self.itemClass = newItemClass
 
         self.clearLayout()
-
         self._layout.setSpacing(newItemClass.getSpacing())
-        self.columns = self.calcColumnCount()
 
         self.reloadImages()
         self.reloaded.emit()
@@ -156,12 +154,11 @@ class GalleryGrid(QtWidgets.QWidget):
             self.clearTask()
             itemsKeep = self.fileItems.keys() & self.filelist.getFiles()
 
-        self._loadGrid(itemsKeep)
+        self._loadGrid(self.filelist.getOrderedFiles(), itemsKeep, self.filelist.isOrderWithFolders())
 
 
-    def _loadGrid(self, itemsKeep: set[str]):
+    def _loadGrid(self, files: Iterable[str], itemsKeep: set[str], groupByFolders: bool):
         currentFile = self.filelist.getCurrentFile()
-        files = self.filelist.getFiles()
 
         # Take all headers and remove unneded GalleryItems from layout and 'self.fileItems'
         headers: dict[str, GalleryHeader] = dict()
@@ -178,15 +175,17 @@ class GalleryGrid(QtWidgets.QWidget):
 
         row = col = 0
         currentDir = ""
-        currentHeader: HeaderInfo = None
+        currentHeader: HeaderInfo = None if groupByFolders else HeaderInfo()
         emptyLastRow = False
+
+        self.columns = self.calcColumnCount()
 
         # Assign each file and header to row and column in grid.
         # Reuse existing GalleryItems/GalleryHeaders and immediately move them to their new place.
         # Add a CreateTask for new files and headers.
         for file in files:
             dirname = os.path.dirname(file)
-            if currentDir != dirname:
+            if groupByFolders and currentDir != dirname:
                 currentDir = dirname
 
                 currentHeader = HeaderInfo()
@@ -247,8 +246,8 @@ class GalleryGrid(QtWidgets.QWidget):
 
 
     def getLoadPercent(self) -> float:
-        if self._loadTask and len(self.filelist.files) > 0:
-            return len(self.fileItems) / len(self.filelist.files)
+        if self._loadTask and self.filelist.getNumFiles() > 0:
+            return len(self.fileItems) / self.filelist.getNumFiles()
         return 1.0
 
 
@@ -366,17 +365,9 @@ class GalleryGrid(QtWidgets.QWidget):
         self.fileChanged.emit(item, item.row, False)
 
     def onFileListChanged(self, currentFile: str):
-        # When files are appended, the selection is kept.
-        # When files are removed, update the selection.
-        # The gallery should scroll to the selection instead of the top.
-        if (selectedItem := self._selectedItem) and selectedItem.file != currentFile:
-            selectedItem.selected = False
-            if selectedItem := self.fileItems.get(currentFile):
-                selectedItem.selected = True
-                self._selectedItem = selectedItem
-
         self.reloadImages(clear=False)
-        if selectedItem:
+
+        if (selectedItem := self._selectedItem):
             self.fileChanged.emit(selectedItem, selectedItem.row, True)
         else:
             self.reloaded.emit()

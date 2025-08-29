@@ -1,6 +1,7 @@
 from __future__ import annotations
 import sys, struct, msgpack, copy, traceback
 from typing import Any, Callable
+from collections import defaultdict
 from threading import Condition
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QThread, QProcess, QProcessEnvironment, QByteArray, QMutex, QMutexLocker
 from host.protocol import Protocol, Service
@@ -155,8 +156,7 @@ class InferenceProcess(QObject):
         self.proc: QProcess = None
         self._ready: bool | None = None
 
-        self.currentLLMConfig = dict()
-        self.currentTagConfig = dict()
+        self.currentConfigs: dict[str, dict] = defaultdict(dict)
 
         # Mutex protects proc and config
         self._mutex = QMutex()
@@ -247,8 +247,7 @@ class InferenceProcess(QObject):
 
     def stop(self, wait=False):
         with QMutexLocker(self._mutex):
-            self.currentLLMConfig = dict()
-            self.currentTagConfig = dict()
+            self.currentConfigs.clear()
 
             if self.proc:
                 self.queueWrite.emit(self.procCfg.hostServiceId, {"cmd": "quit"}, None)
@@ -273,15 +272,19 @@ class InferenceProcess(QObject):
 
     def setupCaption(self, config: dict):
         config = self.procCfg.translateConfig(config, ["model_path", "proj_path"])
-        self._setup(config, "setup_caption", "currentLLMConfig")
+        self._setup(config, "setup_caption", "LLM")
 
     def setupTag(self, config: dict):
         config = self.procCfg.translateConfig(config, ["model_path", "csv_path"])
-        self._setup(config, "setup_tag", "currentTagConfig")
+        self._setup(config, "setup_tag", "tag")
 
     def setupLLM(self, config: dict):
         config = self.procCfg.translateConfig(config, ["model_path"])
-        self._setup(config, "setup_llm", "currentLLMConfig")
+        self._setup(config, "setup_llm", "LLM")
+
+    def setupEmbedding(self, config: dict):
+        config = self.procCfg.translateConfig(config, ["model_path", "text_model_path", "vision_model_path"])
+        self._setup(config, "setup_embed", "embed")
 
     def setupMasking(self, config: dict):
         config = self.procCfg.translateConfig(config, ["model_path"])
@@ -298,14 +301,14 @@ class InferenceProcess(QObject):
         })
 
 
-    def _setup(self, config: dict, cmd: str, configAttr: str):
+    def _setup(self, config: dict, cmd: str, configKey: str):
         msg = {
             "cmd": cmd,
             "config": config
         }
 
         try:
-            self._updateBackend(config, configAttr)
+            self._updateBackend(config, configKey)
             future = ProcFuture()
             self.queueWrite.emit(Service.ID.INFERENCE, msg, future)
 
@@ -318,8 +321,8 @@ class InferenceProcess(QObject):
             self.stop()
             raise
 
-    def _updateBackend(self, config: dict, configAttr: str) -> None:
-        currentConfig: dict = getattr(self, configAttr)
+    def _updateBackend(self, config: dict, configKey: str) -> None:
+        currentConfig: dict = self.currentConfigs[configKey]
         diff = ( True for k, v in currentConfig.items() if config.get(k) != v )
         if any(diff):
             self.stop(wait=True)
@@ -329,7 +332,7 @@ class InferenceProcess(QObject):
         currentConfig = copy.deepcopy(config)
         if Config.INFER_PRESET_SAMPLECFG_KEY in currentConfig:
             del currentConfig[Config.INFER_PRESET_SAMPLECFG_KEY]
-        setattr(self, configAttr, currentConfig)
+        self.currentConfigs[configKey] = currentConfig
 
 
     def clearImageCache(self):
@@ -426,6 +429,33 @@ class InferenceProcess(QObject):
             "text": text
         })
         return answer["count"], answer["borders"]
+
+
+    def embedText(self, text: str) -> bytes:
+        return self._queryKey("embedding", {
+            "cmd": "embed_text",
+            "text": text
+        })
+
+    def embedImage(self, imgPath: str) -> bytes:
+        return self._queryKey("embedding", {
+            "cmd": "embed_img",
+            "img": imgPath
+        })
+
+    def embedImageBatch(self, imgPaths: list[str]) -> list[bytes]:
+        return self._queryKey("embeddings", {
+            "cmd": "embed_img_batch",
+            "imgs": imgPaths
+        })
+
+    def embeddingSimilarity(self, config: dict, imgPath: str, texts: list[str]) -> list[float]:
+        return self._queryKey("scores", {
+            "cmd": "embed_similarity",
+            "config": config,
+            "img": imgPath,
+            "texts": texts
+        })
 
 
     def _query(self, msg: dict, serviceId=Service.ID.INFERENCE) -> dict[str, Any]:
