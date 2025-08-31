@@ -1,14 +1,15 @@
+from __future__ import annotations
 import os, copy, time, traceback
 from typing import Any, NamedTuple
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject, QThreadPool, QTimer, QSignalBlocker
-from infer.model_settings import ModelSettingsWindow
+from PySide6 import QtWidgets, QtGui
+from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject, QThreadPool, QTimer, QSignalBlocker, QMutex, QMutexLocker
 import lib.qtlib as qtlib
-from lib.filelist import DataKeys, naturalSort
+from lib.filelist import FileList, DataKeys, naturalSort
 from ui.tab import ImgTab
 from config import Config
+from infer.model_settings import ModelSettingsWindow
 from infer.embedding import embedding_common as embed
 from .gallery_grid import GalleryGrid
 
@@ -16,15 +17,31 @@ from .gallery_grid import GalleryGrid
 EMBED_FAILED = object()
 
 
-class SortParams(NamedTuple):
-    preset: str         = ""
-    sampleCfg: dict     = {}
-    prompt: str         = ""
-    negPrompt: str      = ""
-    ascending: bool     = False
-    byFolder: bool      = True
+class TextPrompt(NamedTuple):
+    pos: str = ""
+    neg: str = ""
 
-    def needsReload(self, currentParams: "SortParams") -> bool:
+    def __bool__(self):
+        return bool(self.pos)
+
+class ImagePrompt(dict[str, Any]):
+    def setEmbeddings(self, filelist: FileList):
+        for file in self.keys():
+            self[file] = filelist.getData(file, DataKeys.Embedding)
+
+    @staticmethod
+    def fromList(files: list[str]) -> ImagePrompt:
+        return ImagePrompt((f, None) for f in files)
+
+
+class SortParams(NamedTuple):
+    preset: str = ""
+    sampleCfg: dict = {}
+    prompt: TextPrompt | ImagePrompt = TextPrompt()
+    ascending: bool = False
+    byFolder: bool = True
+
+    def needsReload(self, currentParams: SortParams) -> bool:
         return (self.preset != currentParams.preset) or (self.sampleCfg != currentParams.sampleCfg)
 
 
@@ -86,14 +103,14 @@ class GallerySortControl(QtWidgets.QWidget):
         self.txtPrompt.setPlaceholderText("Positive Prompt")
         qtlib.setMonospace(self.txtPrompt)
         self.txtPrompt.setMinimumWidth(200)
-        self.txtPrompt.editingFinished.connect(self.updateSort)
+        self.txtPrompt.editingFinished.connect(self.updateSortByText)
         layout.addWidget(self.txtPrompt, 3)
 
         self.txtNegPrompt = QtWidgets.QLineEdit()
         self.txtNegPrompt.setPlaceholderText("Negative Prompt")
         qtlib.setMonospace(self.txtNegPrompt)
         self.txtNegPrompt.setMinimumWidth(200)
-        self.txtNegPrompt.editingFinished.connect(self.updateSort)
+        self.txtNegPrompt.editingFinished.connect(self.updateSortByText)
         layout.addWidget(self.txtNegPrompt, 2)
 
         self.chkByFolder = QtWidgets.QCheckBox("By Folders")
@@ -103,12 +120,25 @@ class GallerySortControl(QtWidgets.QWidget):
 
         self.setLayout(layout)
 
+        palette = self.txtPrompt.palette()
+        self._textColorNormal = palette.color(QtGui.QPalette.ColorGroup.Normal, QtGui.QPalette.ColorRole.Text)
+        self._textColorMuted  = palette.color(QtGui.QPalette.ColorGroup.Disabled, QtGui.QPalette.ColorRole.Text)
+
+
+    def _setTextPromptMuted(self, muted: bool):
+        color = self._textColorMuted if muted else self._textColorNormal
+        palette = self.txtPrompt.palette()
+        palette.setColor(QtGui.QPalette.ColorRole.Text, color)
+
+        self.txtPrompt.setPalette(palette)
+        self.txtNegPrompt.setPalette(palette)
+
 
     @Slot()
     def _showModelSettings(self):
         ModelSettingsWindow.openInstance(self, self.CONFIG_ATTR, self.cboModelPreset.currentText())
 
-    def reloadPresetList(self, selectName: str = None):
+    def reloadPresetList(self, selectName: str | None = None):
         self.cboModelPreset.clear()
 
         presets: dict = getattr(Config, self.CONFIG_ATTR)
@@ -157,6 +187,9 @@ class GallerySortControl(QtWidgets.QWidget):
             self.txtPrompt.setFocus()
             self.updateSort()
         else:
+            if self._taskEmbed:
+                self._taskEmbed.abort()
+
             self.resetSort(self.DISABLED_PARAMS)
             filelist = self.tab.filelist
             for file in filelist.getFiles():
@@ -188,29 +221,59 @@ class GallerySortControl(QtWidgets.QWidget):
             self._paramsRequested = params
 
             self.tab.filelist.clearOrder()
-            self.galleryGrid.reloadImages()
+            self.galleryGrid.reloadImages(folders=params.byFolder)
+
+    @Slot()
+    def updateSortByText(self):
+        prompt = TextPrompt(self.txtPrompt.text().strip(), self.txtNegPrompt.text().strip())
+        self.setRequestedParams(prompt)
+        self._setTextPromptMuted(False)
+        self.applySort()
+
+    def updateSortByImage(self, files: list[str]):
+        prompt = ImagePrompt.fromList(files)
+        self.setRequestedParams(prompt)
+        self._setTextPromptMuted(True)
+
+        if self.btnSort.isChecked():
+            self.applySort()
+        else:
+            self.btnSort.setChecked(True)
 
     @Slot()
     def updateSort(self):
+        if self._paramsRequested.prompt:
+            self.setRequestedParams(self._paramsRequested.prompt)
+            self.applySort()
+        else:
+            # TODO: Remember last prompt (image prompt)?
+            self.updateSortByText()
+
+    def setRequestedParams(self, prompt: TextPrompt | ImagePrompt):
         preset = self.cboModelPreset.currentText().strip()
         config = Config.inferEmbeddingPresets[preset]
 
         params = SortParams(
             preset      = preset,
             sampleCfg   = config[Config.INFER_PRESET_SAMPLECFG_KEY],
-            prompt      = self.txtPrompt.text().strip(),
-            negPrompt   = self.txtNegPrompt.text().strip(),
+            prompt      = prompt,
             ascending   = self.btnAscending.isChecked(),
             byFolder    = self.chkByFolder.isChecked()
         )
         self._paramsRequested = params
 
+    @Slot()
+    def applySort(self):
         if self._taskEmbed or self._taskSort:
             return
 
+        params = self._paramsRequested
         if not params.prompt:
             self.resetSort(SortParams(byFolder=params.byFolder))
             return
+
+        preset = self.cboModelPreset.currentText().strip()
+        config = Config.inferEmbeddingPresets[preset]
 
         filelist = self.tab.filelist
         filesNoEmbedding = list[str]()
@@ -238,6 +301,9 @@ class GallerySortControl(QtWidgets.QWidget):
 
         # No missing embeddings. All files contained.
         elif fileEmbeddings:
+            if isinstance(params.prompt, ImagePrompt):
+                params.prompt.setEmbeddings(filelist)
+
             assert len(fileEmbeddings) == filelist.getNumFiles()
             self._taskSort = UpdateSortTask(config, params, fileEmbeddings)
             self._taskSort.signals.done.connect(self._onSortDone, Qt.ConnectionType.QueuedConnection)
@@ -260,7 +326,7 @@ class GallerySortControl(QtWidgets.QWidget):
         self._taskEmbed = None
 
         if success and self.btnSort.isChecked():
-            self._paramsCurrent = SortParams(preset, sampleCfg, "", "", False, True)
+            self._paramsCurrent = SortParams(preset=preset, sampleCfg=sampleCfg)
             QTimer.singleShot(0, self.updateSort)
 
 
@@ -286,6 +352,8 @@ class GallerySortControl(QtWidgets.QWidget):
 
 
 class EmbedImagesTask(QRunnable):
+    CACHED = "CACHED"
+
     class Signals(QObject):
         fileDone = Signal(str, object, int, int)
         finished = Signal(str, dict, bool)
@@ -294,75 +362,106 @@ class EmbedImagesTask(QRunnable):
         super().__init__()
         self.setAutoDelete(True)
         self.signals = self.Signals()
+
         self.config = copy.deepcopy(config)
         self.preset = preset
-        self.files = files
+        self.files  = files
 
-    @staticmethod
-    def printSettings(sampleCfg: dict):
+        self.aborted = False
+        self._mutex = QMutex()
+
+
+    def isAborted(self) -> bool:
+        with QMutexLocker(self._mutex):
+            return self.aborted
+
+    def abort(self):
+        with QMutexLocker(self._mutex):
+            self.aborted = True
+
+
+    def loadFromCache(self, cache: EmbeddingCache) -> int:
+        numFromCache = 0
+        t = time.monotonic_ns()
+
+        for i, file in enumerate(self.files):
+            embedding = cache.load(file)
+            if embedding is not None:
+                numFromCache += 1
+                self.files[i] = self.CACHED
+                self.signals.fileDone.emit(file, embedding, 0, 1)
+
+        if numFromCache > 0:
+            t = (time.monotonic_ns() - t) / 1000000
+            print(f"Loaded {numFromCache}/{len(self.files)} embeddings from cache in {t:.2f} ms")
+
+        return numFromCache
+
+
+    def createEmbeddings(self, cache: EmbeddingCache, numFromCache: int):
+        from infer.inference import Inference
+        from infer.inference_proc import InferenceProcess
+        import numpy as np
+
+        t = 0
+        def prepareCb():
+            nonlocal t
+            t = time.monotonic_ns()
+
+        def prepare(proc: InferenceProcess):
+            proc.setupEmbedding(self.config)
+
+        def check(file: str, proc: InferenceProcess):
+            return None if file is self.CACHED else lambda: proc.embedImage(file)
+
+        numFiles = len(self.files) - numFromCache
+        numLoaded = 0
+
+        with Inference().createSession() as session:
+            session.prepare(prepare, prepareCb)
+
+            for fileNr, (file, results, exception) in enumerate(session.queueFiles(self.files, check)):
+                try:
+                    if exception:
+                        raise exception
+
+                    if results:
+                        data = results[0]["embedding"]
+                        embedding = np.frombuffer(data, dtype=np.float32)
+                        cache.store(file, embedding)
+                        numLoaded += 1
+                    else:
+                        raise ValueError("Empty result")
+
+                except Exception as ex:
+                    print(f"Failed to load embedding: {ex} ({type(ex).__name__})")
+                    embedding = EMBED_FAILED
+
+                self.signals.fileDone.emit(file, embedding, fileNr, numFiles)
+
+                if self.isAborted():
+                    break
+
+        t = (time.monotonic_ns() - t) / 1000000
+        tPerFile = t / numFiles
+        print(f"Created {numLoaded}/{numFiles} embeddings in {t:.2f} ms ({tPerFile:.2f} ms per file)")
+
+
+    def run(self):
+        sampleCfg: dict = self.config[Config.INFER_PRESET_SAMPLECFG_KEY]
         processing = sampleCfg.get(embed.CONFIG_KEY_PROCESSING)
         aggregate  = sampleCfg.get(embed.CONFIG_KEY_AGGREGATE)
         if processing and aggregate:
             print(f"Loading image embeddings with '{processing}' strategy (aggregate: {aggregate})")
 
-    def run(self):
-        sampleCfg = self.config[Config.INFER_PRESET_SAMPLECFG_KEY]
         success = False
-
         try:
-            from infer.inference import Inference, InferenceChain
-            from infer.inference_proc import InferenceProcess
-            import numpy as np
-
-            t = time.monotonic_ns()
-            def prepareCb():
-                nonlocal t
-                t = time.monotonic_ns()
-
-            def prepare(proc: InferenceProcess):
-                proc.setupEmbedding(self.config)
-
             with EmbeddingCache(self.config) as cache:
-                numLoaded = 0
-                numFromCache = 0
+                numFromCache = self.loadFromCache(cache)
+                if numFromCache < len(self.files):
+                    self.createEmbeddings(cache, numFromCache)
 
-                def check(file: str, proc: InferenceProcess):
-                    embedding = cache.load(file)
-                    if embedding is not None:
-                        nonlocal numFromCache
-                        numFromCache += 1
-                        return InferenceChain.result({"embedding": embedding})
-                    return lambda: proc.embedImage(file)
-
-                with Inference().createSession() as session:
-                    session.prepare(prepare, prepareCb)
-                    self.printSettings(sampleCfg)
-
-                    numFiles = len(self.files)
-                    for fileNr, (file, results, exception) in enumerate(session.queueFiles(self.files, check, all=True)):
-                        try:
-                            if exception:
-                                raise exception
-
-                            if results:
-                                data = results[0]["embedding"]
-                                embedding = np.frombuffer(data, dtype=np.float32)
-                                cache.store(file, embedding)
-                                numLoaded += 1
-                            else:
-                                raise ValueError("Empty result")
-
-                        except Exception as ex:
-                            print(f"Failed to load embedding: {ex} ({type(ex).__name__})")
-                            embedding = EMBED_FAILED
-
-                        self.signals.fileDone.emit(file, embedding, fileNr, numFiles)
-
-                t = (time.monotonic_ns() - t) / 1000000
-                tPerFile = t / numFiles
-                print(f"Loaded {numLoaded}/{numFiles} embeddings ({numFromCache} from cache) in {t:.3f} ms ({tPerFile:.3f} ms per file)")
-                success = True
-
+            success = True
         finally:
             self.signals.finished.emit(self.preset, sampleCfg, success)
 
@@ -380,15 +479,13 @@ class UpdateSortTask(QRunnable):
         self.setAutoDelete(True)
 
         self.signals = self.Signals()
-        self.config = self.loadPromptTemplates(config)
+        self.config = copy.deepcopy(config)
         self.params = params
         self.fileEmbeddings = fileEmbeddings
 
 
-    @staticmethod
-    def loadPromptTemplates(config: dict) -> dict:
-        config = copy.deepcopy(config)
-        sampleCfg: dict = config[Config.INFER_PRESET_SAMPLECFG_KEY]
+    def loadPromptTemplates(self):
+        sampleCfg: dict = self.config[Config.INFER_PRESET_SAMPLECFG_KEY]
         promptTemplate = sampleCfg.pop(embed.CONFIG_KEY_PROMPT_TEMPLATE_FILE)
 
         path = os.path.join(Config.pathEmbeddingTemplates, f"{promptTemplate}.txt")
@@ -400,34 +497,52 @@ class UpdateSortTask(QRunnable):
             line for l in lines
             if (line := l.strip()) and (not line.startswith("#")) and ("{}" in line)
         ]
-        return config
 
-
-    def run(self):
+    def buildTextPrompt(self, prompt: TextPrompt) -> tuple:
         from infer.inference import Inference, InferenceProcess
         import numpy as np
 
-        def embedPrompt(proc: InferenceProcess, text: str) -> np.ndarray:
+        self.loadPromptTemplates()
+        def prepare(proc: InferenceProcess):
+            proc.setupEmbedding(self.config)
+
+        def embedTextPrompt(proc: InferenceProcess, text: str) -> np.ndarray:
             prompts = [prompt for p in text.split(self.PROMPT_SEP) if (prompt := p.strip())]
             embeddings = []
             for prompt in prompts:
                 data = proc.embedText(prompt)
                 embeddings.append(np.frombuffer(data, dtype=np.float32))
 
-            combined = np.max(embeddings, axis=0)
+            #combined = np.max(embeddings, axis=0)
+            combined = np.sum(embeddings, axis=0)
             combined /= np.linalg.vector_norm(combined, axis=-1)
             return combined
 
-        def prepare(proc: InferenceProcess):
-            proc.setupEmbedding(self.config)
+        with Inference().createSession(1) as session:
+            session.prepare(prepare)
+            proc = session.getFreeProc().proc
 
+            posPromptEmbedding = embedTextPrompt(proc, prompt.pos)
+            negPromptEmbedding = embedTextPrompt(proc, prompt.neg) if prompt.neg else None
+            return posPromptEmbedding, negPromptEmbedding
+
+
+    def buildImagePrompt(self, prompt: ImagePrompt) -> tuple:
+        import numpy as np
+
+        embeddings = list(prompt.values())
+        #combined = np.max(embeddings, axis=0)
+        combined = np.sum(embeddings, axis=0)
+        combined /= np.linalg.vector_norm(combined, axis=-1)
+        return combined, None
+
+
+    def run(self):
         try:
-            with Inference().createSession(1) as session:
-                session.prepare(prepare)
-                proc = session.getFreeProc().proc
-
-                posPromptEmbedding = embedPrompt(proc, self.params.prompt)
-                negPromptEmbedding = embedPrompt(proc, self.params.negPrompt) if self.params.negPrompt else None
+            if isinstance(self.params.prompt, TextPrompt):
+                posPromptEmbedding, negPromptEmbedding = self.buildTextPrompt(self.params.prompt)
+            else:
+                posPromptEmbedding, negPromptEmbedding = self.buildImagePrompt(self.params.prompt)
 
             calcScore = OffsetSimilarityScore(posPromptEmbedding, negPromptEmbedding)
             direction = 1.0 if self.params.ascending else -1.0

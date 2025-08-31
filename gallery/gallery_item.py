@@ -31,6 +31,9 @@ class GalleryContext:
         self.captionSrc = captionSrc
         self.captionsEnabled: bool = False
 
+        from .gallery_sort import GallerySortControl
+        self.gallerySort: GallerySortControl = None
+
     def loadCaption(self, file: str) -> str:
         caption = self.captionSrc.loadCaption(file)
         return "" if caption is None else caption
@@ -537,6 +540,9 @@ class GalleryItemMenu(QtWidgets.QMenu):
             actClearSelection.setEnabled(False)
             strFiles = "File"
 
+        actSemanticSort = self.addAction(f"Sort by Similarity to Selected {strFiles}")
+        actSemanticSort.triggered.connect(self._sortBySimilarity)
+
         actNewTab = self.addAction(f"Open Selected {strFiles} in New Tab")
         actNewTab.triggered.connect(self._openFilesInNewTab)
 
@@ -544,6 +550,12 @@ class GalleryItemMenu(QtWidgets.QMenu):
 
         actUnloadSelection = self.addAction(f"Unload Selected {strFiles}")
         actUnloadSelection.triggered.connect(self._unloadSelectedFiles)
+
+    @Slot()
+    def _sortBySimilarity(self):
+        filelist = self.gallery.filelist
+        files = list(filelist.selectedFiles) if filelist.selectedFiles else [filelist.getCurrentFile()]
+        self.gallery.ctx.gallerySort.updateSortByImage(files)
 
     @Slot()
     def _openFilesInNewTab(self):

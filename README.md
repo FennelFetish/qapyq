@@ -31,7 +31,7 @@
   - Open multiple tabs
   - Zoom/pan and fullscreen mode
   - Gallery with thumbnails and optionally captions
-  - Semantic image sorting by prompt similarity
+  - Semantic image sorting with text prompts
   - Compare two images
   - Measure size, area and pixel distances
   - Slideshow
@@ -122,7 +122,7 @@ Find more specialized finetuned models on [huggingface.co](https://huggingface.c
     - [Florence-2](https://huggingface.co/collections/microsoft/florence-6669f44df0d87d9c3bfb76de)
 
 - **Embedding**<br>
-  Sort images based on text prompts.
+  Sort images by their similarity to a prompt.
   - [CLIP](https://huggingface.co/openai/clip-vit-large-patch14)
   - [SigLIP](https://huggingface.co/google/siglip2-so400m-patch14-384)
   - [SigLIP (ONNX)](https://huggingface.co/onnx-community/siglip2-so400m-patch14-384-ONNX), [SigLIP2-giant-opt (ONNX)](https://huggingface.co/onnx-community/siglip2-giant-opt-patch16-384-ONNX)<br>(recommended: largest text model + fp16 vision model)
@@ -159,7 +159,7 @@ New dependencies may be added. If the program fails to start or crashes, run the
 More information is available in the [Wiki](https://github.com/FennelFetish/qapyq/wiki).<br>
 Use the page index on the right side to find topics and navigate the Wiki.
 
-How to setup AI models for automatic captioning and masking: [Model Setup](https://github.com/FennelFetish/qapyq/wiki/Setup#model-setup)
+How to setup and configure AI models: [Model Setup](https://github.com/FennelFetish/qapyq/wiki/Setup#model-setup)
 
 How to use qapyq: [User Guide](https://github.com/FennelFetish/qapyq/wiki/User-Guide)
 
