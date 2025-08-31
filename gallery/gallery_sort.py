@@ -1,10 +1,11 @@
 from __future__ import annotations
 import os, copy, time, traceback
-from typing import Any, NamedTuple
+from typing import NamedTuple
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject, QThreadPool, QTimer, QSignalBlocker, QMutex, QMutexLocker
+import numpy as np
 import lib.qtlib as qtlib
 from lib.filelist import FileList, DataKeys, naturalSort
 from ui.tab import ImgTab
@@ -24,7 +25,7 @@ class TextPrompt(NamedTuple):
     def __bool__(self):
         return bool(self.pos)
 
-class ImagePrompt(dict[str, Any]):
+class ImagePrompt(dict[str, np.ndarray | None]):
     def setEmbeddings(self, filelist: FileList):
         for file in self.keys():
             self[file] = filelist.getData(file, DataKeys.Embedding)
@@ -35,14 +36,13 @@ class ImagePrompt(dict[str, Any]):
 
 
 class SortParams(NamedTuple):
-    preset: str = ""
-    sampleCfg: dict = {}
-    prompt: TextPrompt | ImagePrompt = TextPrompt()
-    ascending: bool = False
-    byFolder: bool = True
+    config: dict                        = {}
+    prompt: TextPrompt | ImagePrompt    = TextPrompt()
+    ascending: bool                     = False
+    byFolder: bool                      = True
 
     def needsReload(self, currentParams: SortParams) -> bool:
-        return (self.preset != currentParams.preset) or (self.sampleCfg != currentParams.sampleCfg)
+        return self.config != currentParams.config
 
 
 
@@ -251,16 +251,18 @@ class GallerySortControl(QtWidgets.QWidget):
 
     def setRequestedParams(self, prompt: TextPrompt | ImagePrompt):
         preset = self.cboModelPreset.currentText().strip()
-        config = Config.inferEmbeddingPresets[preset]
+        config = Config.inferEmbeddingPresets.get(preset)
 
-        params = SortParams(
-            preset      = preset,
-            sampleCfg   = config[Config.INFER_PRESET_SAMPLECFG_KEY],
-            prompt      = prompt,
-            ascending   = self.btnAscending.isChecked(),
-            byFolder    = self.chkByFolder.isChecked()
-        )
-        self._paramsRequested = params
+        if config is None:
+            print("Sort failed: No embedding model configured")
+            self._paramsRequested = SortParams(byFolder=self.chkByFolder.isChecked())
+        else:
+            self._paramsRequested = SortParams(
+                config      = copy.deepcopy(config),
+                prompt      = prompt,
+                ascending   = self.btnAscending.isChecked(),
+                byFolder    = self.chkByFolder.isChecked()
+            )
 
     @Slot()
     def applySort(self):
@@ -272,14 +274,11 @@ class GallerySortControl(QtWidgets.QWidget):
             self.resetSort(SortParams(byFolder=params.byFolder))
             return
 
-        preset = self.cboModelPreset.currentText().strip()
-        config = Config.inferEmbeddingPresets[preset]
-
         filelist = self.tab.filelist
         filesNoEmbedding = list[str]()
-        fileEmbeddings = list[tuple[int, str, Any]]()
+        fileEmbeddings = list[tuple[int, str, np.ndarray]]()
 
-        # Reload all image embeddings if preset was changed
+        # Reload all image embeddings if config was changed
         if params.needsReload(self._paramsCurrent):
             filesNoEmbedding = filelist.getFiles().copy()
         else:
@@ -292,7 +291,7 @@ class GallerySortControl(QtWidgets.QWidget):
                     fileEmbeddings.append((i, file, embedding))
 
         if filesNoEmbedding:
-            self._taskEmbed = EmbedImagesTask(config, params.preset, filesNoEmbedding)
+            self._taskEmbed = EmbedImagesTask(params.config, filesNoEmbedding)
             self._taskEmbed.signals.fileDone.connect(self._onFileEmbedDone, Qt.ConnectionType.QueuedConnection)
             self._taskEmbed.signals.finished.connect(self._onEmbeddingsDone, Qt.ConnectionType.QueuedConnection)
 
@@ -305,7 +304,7 @@ class GallerySortControl(QtWidgets.QWidget):
                 params.prompt.setEmbeddings(filelist)
 
             assert len(fileEmbeddings) == filelist.getNumFiles()
-            self._taskSort = UpdateSortTask(config, params, fileEmbeddings)
+            self._taskSort = UpdateSortTask(params, fileEmbeddings)
             self._taskSort.signals.done.connect(self._onSortDone, Qt.ConnectionType.QueuedConnection)
             self._taskSort.signals.fail.connect(self._onSortFail, Qt.ConnectionType.QueuedConnection)
 
@@ -321,12 +320,12 @@ class GallerySortControl(QtWidgets.QWidget):
         self.btnSort.setText(f"{self.BUTTON_TEXT} ({progress}%)")
 
     @Slot()
-    def _onEmbeddingsDone(self, preset: str, sampleCfg: dict, success: bool):
+    def _onEmbeddingsDone(self, config: dict, success: bool):
         self.btnSort.setText(self.BUTTON_TEXT)
         self._taskEmbed = None
 
         if success and self.btnSort.isChecked():
-            self._paramsCurrent = SortParams(preset=preset, sampleCfg=sampleCfg)
+            self._paramsCurrent = SortParams(config=config)
             QTimer.singleShot(0, self.updateSort)
 
 
@@ -356,15 +355,14 @@ class EmbedImagesTask(QRunnable):
 
     class Signals(QObject):
         fileDone = Signal(str, object, int, int)
-        finished = Signal(str, dict, bool)
+        finished = Signal(dict, bool)
 
-    def __init__(self, config: dict, preset: str, files: list[str]):
+    def __init__(self, config: dict, files: list[str]):
         super().__init__()
         self.setAutoDelete(True)
         self.signals = self.Signals()
 
         self.config = copy.deepcopy(config)
-        self.preset = preset
         self.files  = files
 
         self.aborted = False
@@ -401,7 +399,6 @@ class EmbedImagesTask(QRunnable):
     def createEmbeddings(self, cache: EmbeddingCache, numFromCache: int):
         from infer.inference import Inference
         from infer.inference_proc import InferenceProcess
-        import numpy as np
 
         t = 0
         def prepareCb():
@@ -463,7 +460,7 @@ class EmbedImagesTask(QRunnable):
 
             success = True
         finally:
-            self.signals.finished.emit(self.preset, sampleCfg, success)
+            self.signals.finished.emit(self.config, success)
 
 
 
@@ -474,12 +471,12 @@ class UpdateSortTask(QRunnable):
         done = Signal(list, list, tuple)
         fail = Signal()
 
-    def __init__(self, config: dict, params: SortParams, fileEmbeddings: list[tuple[int, str, Any]]):
+    def __init__(self, params: SortParams, fileEmbeddings: list[tuple[int, str, np.ndarray]]):
         super().__init__()
         self.setAutoDelete(True)
 
         self.signals = self.Signals()
-        self.config = copy.deepcopy(config)
+        self.config = copy.deepcopy(params.config) # Modified
         self.params = params
         self.fileEmbeddings = fileEmbeddings
 
@@ -498,9 +495,8 @@ class UpdateSortTask(QRunnable):
             if (line := l.strip()) and (not line.startswith("#")) and ("{}" in line)
         ]
 
-    def buildTextPrompt(self, prompt: TextPrompt) -> tuple:
+    def buildTextPrompt(self, prompt: TextPrompt) -> tuple[np.ndarray, np.ndarray | None]:
         from infer.inference import Inference, InferenceProcess
-        import numpy as np
 
         self.loadPromptTemplates()
         def prepare(proc: InferenceProcess):
@@ -527,9 +523,7 @@ class UpdateSortTask(QRunnable):
             return posPromptEmbedding, negPromptEmbedding
 
 
-    def buildImagePrompt(self, prompt: ImagePrompt) -> tuple:
-        import numpy as np
-
+    def buildImagePrompt(self, prompt: ImagePrompt) -> tuple[np.ndarray, None]:
         embeddings = list(prompt.values())
         #combined = np.max(embeddings, axis=0)
         combined = np.sum(embeddings, axis=0)
@@ -584,14 +578,13 @@ class UpdateSortTask(QRunnable):
 
 
 class SimilarityScore(ABC):
-    def __init__(self, posEmbedding, negEmbedding):
-        import numpy as np
-        self.pos: np.ndarray = posEmbedding
-        self.neg: np.ndarray = negEmbedding
+    def __init__(self, posEmbedding: np.ndarray, negEmbedding: np.ndarray | None):
+        self.pos = posEmbedding
+        self.neg = negEmbedding
 
         self._func = self.scorePos if negEmbedding is None else self.scorePosNeg
 
-    def __call__(self, imgEmbedding) -> float:
+    def __call__(self, imgEmbedding: np.ndarray) -> float:
         return self._func(imgEmbedding)
 
     def scorePos(self, imgEmbedding) -> float:
@@ -606,7 +599,6 @@ class CosineSimilarityScore(SimilarityScore):
     def __init__(self, posEmbedding, negEmbedding):
         super().__init__(posEmbedding, negEmbedding)
         if self.neg is not None:
-            import numpy as np
             self.pos = self.pos - self.neg
             self.pos /= np.linalg.vector_norm(self.pos)
 
@@ -638,14 +630,11 @@ class EmbeddingCache:
     def __init__(self, config: dict):
         self.cachePath = self._getCachePath(config)
 
-        self.embeddings: dict[str, dict[str, Any]] = defaultdict(dict)
+        self.embeddings: dict[str, dict[str, np.ndarray]] = defaultdict(dict)
         self.changedFolders: set[str] = set()
 
         import hashlib
         self.hashFunc = hashlib.md5
-
-        import numpy as np
-        self.np = np
 
     @staticmethod
     def _getCachePath(config: dict) -> str:
@@ -678,7 +667,7 @@ class EmbeddingCache:
             cacheFile = self.getCacheFile(folder)
             cacheFileNoPrefix = cacheFile.removeprefix(f".{os.sep}")
             print(f"Update embedding cache: {cacheFileNoPrefix} ({len(folderDict)} entries)")
-            self.np.save(cacheFile, folderDict)
+            np.save(cacheFile, folderDict)
         return False
 
 
@@ -697,7 +686,7 @@ class EmbeddingCache:
         return folderKey, fileKey
 
 
-    def load(self, file: str) -> Any | None:
+    def load(self, file: str) -> np.ndarray | None:
         folderKey, fileKey = self.getKeys(file)
         folderDict = self.embeddings.get(folderKey)
         if folderDict is None:
@@ -705,12 +694,12 @@ class EmbeddingCache:
             if not os.path.exists(cacheFile):
                 return None
 
-            folderDict = self.np.load(cacheFile, allow_pickle=True).item()
+            folderDict = np.load(cacheFile, allow_pickle=True).item()
             self.embeddings[folderKey] = folderDict
 
         return folderDict.get(fileKey)
 
-    def store(self, file: str, embedding: Any):
+    def store(self, file: str, embedding: np.ndarray):
         folderKey, fileKey = self.getKeys(file)
         folderDict = self.embeddings[folderKey]
         if fileKey not in folderDict:
