@@ -40,6 +40,7 @@ class Gallery(QtWidgets.QWidget):
 
         self.sortControl = GallerySortControl(self.tab, self.galleryGrid)
         layout.addWidget(self.sortControl)
+        self.galleryGrid.ctx.gallerySort = self.sortControl
 
         self._buildStatusBar()
         self.setLayout(layout)

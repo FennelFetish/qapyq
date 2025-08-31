@@ -142,7 +142,7 @@ class GalleryGrid(QtWidgets.QWidget):
                 widget.deleteLater()
 
 
-    def reloadImages(self, clear=True):
+    def reloadImages(self, clear=True, folders=True):
         self._selectedItem = None
         self._highlightedFiles.clear()
 
@@ -154,7 +154,8 @@ class GalleryGrid(QtWidgets.QWidget):
             self.clearTask()
             itemsKeep = self.fileItems.keys() & self.filelist.getFiles()
 
-        self._loadGrid(self.filelist.getOrderedFiles(), itemsKeep, self.filelist.isOrderWithFolders())
+        groupByFolders = folders and self.filelist.isOrderWithFolders()
+        self._loadGrid(self.filelist.getOrderedFiles(), itemsKeep, groupByFolders)
 
 
     def _loadGrid(self, files: Iterable[str], itemsKeep: set[str], groupByFolders: bool):
