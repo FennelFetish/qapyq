@@ -47,6 +47,10 @@ def setMonospace(textWidget, fontSizeFactor=1.0, bold=False):
         font.setPointSizeF(font.pointSizeF() * fontSizeFactor)
     textWidget.setFont(font)
 
+def setFontBold(widget, bold: bool = True):
+    font = widget.font()
+    font.setBold(bold)
+    widget.setFont(font)
 
 
 def setTextEditHeight(textEdit, numRows, mode=None):
@@ -497,9 +501,26 @@ class MenuComboBox(QtWidgets.QComboBox):
     def __init__(self, title: str = None):
         super().__init__()
         self.menu = QtWidgets.QMenu(title)
+        self._currentAction: QtGui.QAction | None = None
+        self._actions: dict[int, tuple[str, QtGui.QAction]] = dict()
         self._nextIndex = 0
 
+    def _updateCurrentAction(self):
+        if self._currentAction:
+            setFontBold(self._currentAction, False)
+
+        if currentEntry := self._actions.get(self.currentIndex()):
+            text, action = currentEntry
+            if text == self.currentText():
+                setFontBold(action)
+                self.menu.setActiveAction(action)
+                self._currentAction = action
+                return
+
+        self._currentAction = None
+
     def showPopup(self):
+        self._updateCurrentAction()
         self.menu.setMinimumWidth(self.width())
         point = self.mapToGlobal(self.rect().topLeft())
         self.menu.exec_(point)
@@ -507,13 +528,7 @@ class MenuComboBox(QtWidgets.QComboBox):
 
 
     def addItem(self, text: str, userData=None):
-        super().addItem(text, userData)
-
-        index = self._nextIndex
-        self._nextIndex += 1
-
-        act = self.menu.addAction(text)
-        act.triggered.connect(lambda checked, i=index: self.setCurrentIndex(i))
+        self.addSubmenuItem(self.menu, text, "", userData)
 
     def addItems(self, items: list[str]):
         for item in items:
@@ -532,19 +547,23 @@ class MenuComboBox(QtWidgets.QComboBox):
         return submenu
 
     def addSubmenuItem(self, submenu: QtWidgets.QMenu, text: str, prefix: str, userData=None):
-        super().addItem(prefix + text, userData)
+        itemText = prefix + text
+        super().addItem(itemText, userData)
 
         index = self._nextIndex
         self._nextIndex += 1
 
         act = submenu.addAction(text)
         act.triggered.connect(lambda checked, i=index: self.setCurrentIndex(i))
+        self._actions[index] = (itemText, act)
 
     def addSeparator(self):
         self.menu.addSeparator()
 
     def clear(self):
         super().clear()
+        self._currentAction = None
+        self._actions.clear()
         self.menu.clear()
         self._nextIndex = 0
 
