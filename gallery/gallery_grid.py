@@ -355,15 +355,17 @@ class GalleryGrid(QtWidgets.QWidget):
 
 
     def onFileChanged(self, currentFile: str):
-        item = self.fileItems[currentFile]
+        # Can be None when still building grid
+        item = self.fileItems.get(currentFile)
 
         if self._selectedItem:
             self._selectedItem.selected = False
-        item.selected = True
         self._selectedItem = item
 
-        item.takeFocus()
-        self.fileChanged.emit(item, item.row, False)
+        if item:
+            item.selected = True
+            item.takeFocus()
+            self.fileChanged.emit(item, item.row, False)
 
     def onFileListChanged(self, currentFile: str):
         self.reloadImages(clear=False)
@@ -376,7 +378,8 @@ class GalleryGrid(QtWidgets.QWidget):
     def onFileSelectionChanged(self, selectedFiles: set[str]):
         toggleFiles = self._selectedFiles.symmetric_difference(selectedFiles)
         for file in toggleFiles:
-            self.fileItems[file].selectedSecondary ^= True
+            if item := self.fileItems.get(file):
+                item.selectedSecondary ^= True
         self._selectedFiles = selectedFiles.copy()
 
         self.highlightFiles([])
@@ -399,9 +402,9 @@ class GalleryGrid(QtWidgets.QWidget):
     def highlightFiles(self, files: list[str]):
         toggleFiles = self._highlightedFiles.symmetric_difference(files)
         for file in toggleFiles:
-            item = self.fileItems[file]
-            item.highlight ^= True
-            item.update()
+            if item := self.fileItems.get(file):
+                item.highlight ^= True
+                item.update()
 
         self._highlightedFiles.clear()
         self._highlightedFiles.update(files)
