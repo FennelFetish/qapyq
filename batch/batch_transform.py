@@ -8,7 +8,7 @@ from infer.prompt import PromptWidget, PromptsHighlighter
 from lib import qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
-from .batch_task import BatchInferenceTask, BatchTaskHandler, BatchUtil
+from .batch_task import BatchInferenceTask, BatchTaskHandler
 from .batch_log import BatchLog
 
 
@@ -19,15 +19,14 @@ TRANSFORM_OVERWRITE_MODE_MISSING = "missing"
 class BatchTransform(QtWidgets.QWidget):
     def __init__(self, tab, logWidget: BatchLog, bars):
         super().__init__()
-        self.tab = tab
         self.logWidget = logWidget
-        self.taskHandler = BatchTaskHandler(bars, "Transform", self.createTask)
+        self.taskHandler = BatchTaskHandler("Transform", bars, tab.filelist, self.getConfirmOps, self.createTask)
 
         self.inferSettings = InferencePresetWidget("inferLLMPresets")
 
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self._buildLLMSettings())
-        layout.addWidget(self.taskHandler.btnStart)
+        layout.addLayout(self.taskHandler.startButtonLayout)
         self.setLayout(layout)
 
         self._parser = None
@@ -129,7 +128,7 @@ class BatchTransform(QtWidgets.QWidget):
             PromptsHighlighter.highlightPromptSeparators(self.txtPromptPreview)
 
 
-    def _confirmStart(self) -> bool:
+    def getConfirmOps(self) -> list[str]:
         ops = [f"Use '{self.inferSettings.getSelectedPresetName()}' to transform Captions"]
 
         targetName = self.destSelector.name.strip()
@@ -147,20 +146,17 @@ class BatchTransform(QtWidgets.QWidget):
         if self.spinRounds.value() > 1:
             ops.append(f"Do {self.spinRounds.value()} rounds of transformations")
 
-        return BatchUtil.confirmStart("Transform", self.tab.filelist.getNumFiles(), ops, self)
+        return ops
 
 
-    def createTask(self) -> BatchInferenceTask | None:
-        if not self._confirmStart():
-            return None
-
+    def createTask(self, files: list[str]) -> BatchInferenceTask:
         storeName = self.destSelector.name.strip()
         rounds = self.spinRounds.value()
         prompts = self.promptWidget.getParsedPrompts(storeName, rounds)
 
         log = self.logWidget.addEntry("Transform", BatchLog.GROUP_CAPTION)
         configs = self.inferSettings.getRemoteInferenceConfig()
-        task = BatchTransformTask(log, self.tab.filelist, configs)
+        task = BatchTransformTask(log, files, configs)
         task.prompts = prompts
         task.systemPrompt = self.promptWidget.systemPrompt.strip()
 
@@ -173,8 +169,8 @@ class BatchTransform(QtWidgets.QWidget):
 
 
 class BatchTransformTask(BatchInferenceTask):
-    def __init__(self, log, filelist, configs: RemoteInferenceConfig):
-        super().__init__("transform", log, filelist)
+    def __init__(self, log, files, configs: RemoteInferenceConfig):
+        super().__init__("transform", log, files)
         self.prompts      = None
         self.systemPrompt = None
         self.configs      = configs

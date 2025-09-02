@@ -9,7 +9,7 @@ from infer.prompt import PromptWidget, PromptsHighlighter
 from lib import qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
-from .batch_task import BatchInferenceTask, BatchTaskHandler, BatchUtil
+from .batch_task import BatchInferenceTask, BatchTaskHandler
 from .batch_log import BatchLog
 
 
@@ -20,9 +20,8 @@ CAPTION_OVERWRITE_MODE_MISSING = "missing"
 class BatchCaption(QtWidgets.QWidget):
     def __init__(self, tab, logWidget: BatchLog, bars):
         super().__init__()
-        self.tab = tab
         self.logWidget = logWidget
-        self.taskHandler = BatchTaskHandler(bars, "Caption", self.createTask)
+        self.taskHandler = BatchTaskHandler("Caption", bars, tab.filelist, self.getConfirmOps, self.createTask)
 
         self.inferSettings = InferencePresetWidget()
         self.tagSettings = TagPresetWidget()
@@ -33,7 +32,7 @@ class BatchCaption(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.captionGroup)
         layout.addWidget(self.tagGroup)
-        layout.addWidget(self.taskHandler.btnStart)
+        layout.addLayout(self.taskHandler.startButtonLayout)
         self.setLayout(layout)
 
         self._parser = None
@@ -159,7 +158,7 @@ class BatchCaption(QtWidgets.QWidget):
             PromptsHighlighter.highlightPromptSeparators(self.txtPromptPreview)
 
 
-    def _confirmStart(self) -> bool:
+    def getConfirmOps(self) -> list[str]:
         ops = []
 
         targetName = self.destCaption.name.strip()
@@ -191,15 +190,12 @@ class BatchCaption(QtWidgets.QWidget):
                 tagText = qtlib.htmlRed(tagText + " and overwrite the content!")
             ops.append(tagText)
 
-        return BatchUtil.confirmStart("Caption", self.tab.filelist.getNumFiles(), ops, self)
+        return ops
 
 
-    def createTask(self) -> BatchInferenceTask | None:
-        if not self._confirmStart():
-            return None
-
+    def createTask(self, files: list[str]) -> BatchInferenceTask:
         log = self.logWidget.addEntry("Caption", BatchLog.GROUP_CAPTION)
-        task = BatchCaptionTask(log, self.tab.filelist)
+        task = BatchCaptionTask(log, files)
 
         if self.captionGroup.isChecked():
             storeName = self.destCaption.name.strip()
@@ -223,8 +219,8 @@ class BatchCaption(QtWidgets.QWidget):
 
 
 class BatchCaptionTask(BatchInferenceTask):
-    def __init__(self, log, filelist):
-        super().__init__("caption", log, filelist)
+    def __init__(self, log, files):
+        super().__init__("caption", log, files)
         self.prompts      = None
         self.systemPrompt = None
         self.configs: RemoteInferenceConfig = None

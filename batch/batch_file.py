@@ -11,7 +11,7 @@ from lib import qtlib
 from lib.filelist import FileList
 import lib.imagerw as imagerw
 import ui.export_settings as export
-from .batch_task import BatchTask, BatchTaskHandler, BatchUtil
+from .batch_task import BatchTask, BatchTaskHandler
 from .batch_log import BatchLog
 
 
@@ -34,7 +34,7 @@ class BatchFile(QtWidgets.QWidget):
         super().__init__()
         self.tab = tab
         self.logWidget = logWidget
-        self.taskHandler = BatchTaskHandler(bars, "File", self.createTask)
+        self.taskHandler = BatchTaskHandler("File", bars, tab.filelist, self.getConfirmOps, self.createTask)
 
         self.destinationSettings = FileDestinationSettings(tab)
         self.imageSettings = FileImageSettings()
@@ -49,7 +49,7 @@ class BatchFile(QtWidgets.QWidget):
         layout.addWidget(self.captionSettings, 1, 1)
         layout.addWidget(self.maskSettings, 2, 0, 1, 2)
         layout.setRowStretch(3, 1)
-        layout.addWidget(self.taskHandler.btnStart, 4, 0, 1, 2)
+        layout.addLayout(self.taskHandler.startButtonLayout, 4, 0, 1, 2)
 
         self.setLayout(layout)
 
@@ -59,7 +59,7 @@ class BatchFile(QtWidgets.QWidget):
         self.maskSettings.onFileChanged(currentFile)
 
 
-    def _confirmStart(self) -> bool:
+    def getConfirmOps(self) -> list[str]:
         pathTemplate = self.destinationSettings.destinationPathTemplate
         ops = []
 
@@ -129,13 +129,10 @@ class BatchFile(QtWidgets.QWidget):
         else:
             ops.append(f"Skip captions")
 
-        return BatchUtil.confirmStart("File", self.tab.filelist.getNumFiles(), ops, self)
+        return ops
 
 
-    def createTask(self) -> BatchTask | None:
-        if not self._confirmStart():
-            return None
-
+    def createTask(self, files: list[str]) -> BatchTask:
         self.destinationSettings.saveExportPreset()
         self.maskSettings.saveExportPreset()
 
@@ -144,7 +141,7 @@ class BatchFile(QtWidgets.QWidget):
             basePath = self.tab.filelist.commonRoot
 
         log = self.logWidget.addEntry("File")
-        task = BatchFileTask(log, self.tab.filelist)
+        task = BatchFileTask(log, files)
         task.destPathTemplate = self.destinationSettings.destinationPathTemplate
 
         task.mode        = self.destinationSettings.mode
@@ -483,8 +480,8 @@ class FileMaskSettings(QtWidgets.QGroupBox):
 
 
 class BatchFileTask(BatchTask):
-    def __init__(self, log, filelist):
-        super().__init__("file", log, filelist)
+    def __init__(self, log, files):
+        super().__init__("file", log, files)
 
         self.mode              = Mode.Move
         self.destPathTemplate  = ""

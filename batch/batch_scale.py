@@ -10,7 +10,7 @@ import tools.scale as scale
 import ui.export_settings as export
 from infer.inference import InferenceChain
 from infer.inference_proc import InferenceProcess
-from .batch_task import BatchTask, BatchInferenceTask, BatchTaskHandler, BatchUtil
+from .batch_task import BatchTask, BatchInferenceTask, BatchTaskHandler
 from .batch_log import BatchLog
 
 
@@ -21,7 +21,7 @@ class BatchScale(QtWidgets.QWidget):
         super().__init__()
         self.tab = tab
         self.logWidget = logWidget
-        self.taskHandler = BatchTaskHandler(bars, "Scale", self.createTask)
+        self.taskHandler = BatchTaskHandler("Scale", bars, tab.filelist, self.getConfirmOps, self.createTask)
 
         self._imageSize = None
         self.scaleModes = {}
@@ -50,7 +50,7 @@ class BatchScale(QtWidgets.QWidget):
         layout.addWidget(self._buildScaleMode(), 0, 0)
         layout.addWidget(self._buildExportSettings(), 1, 0)
         layout.addWidget(self._buildPathSettings(), 0, 1, 3, 1)
-        layout.addWidget(self.taskHandler.btnStart, 3, 0, 1, 2)
+        layout.addLayout(self.taskHandler.startButtonLayout, 3, 0, 1, 2)
 
         self.setLayout(layout)
 
@@ -155,7 +155,7 @@ class BatchScale(QtWidgets.QWidget):
         self.pathSettings.updatePreview()
 
 
-    def _confirmStart(self) -> bool:
+    def getConfirmOps(self) -> list[str]:
         ops = [f"Resize the images using the '{self.cboScaleMode.currentText()}' mode"]
 
         if self.pathSettings.overwriteFiles:
@@ -163,7 +163,7 @@ class BatchScale(QtWidgets.QWidget):
         else:
             ops.append("Save images using new filenames with an increasing counter")
 
-        return BatchUtil.confirmStart("Scale", self.tab.filelist.getNumFiles(), ops, self)
+        return ops
 
     def saveExportPreset(self):
         Config.exportPresets[self.EXPORT_PRESET_KEY] = {
@@ -172,10 +172,7 @@ class BatchScale(QtWidgets.QWidget):
         }
 
 
-    def createTask(self) -> BatchTask | None:
-        if not self._confirmStart():
-            return None
-
+    def createTask(self, files: list[str]) -> BatchTask:
         self.saveExportPreset()
 
         log = self.logWidget.addEntry("Scale")
@@ -183,13 +180,13 @@ class BatchScale(QtWidgets.QWidget):
         scaleConfigFactory = self.cboScalePreset.getScaleConfigFactory()
 
         taskClass = BatchInferenceScaleTask if scaleConfigFactory.needsInference() else BatchScaleTask
-        return taskClass(log, self.tab.filelist, scaleFunc, scaleConfigFactory, self.pathSettings)
+        return taskClass(log, files, scaleFunc, scaleConfigFactory, self.pathSettings)
 
 
 
 class BatchScaleTask(BatchTask):
-    def __init__(self, log, filelist, scaleFunc: Callable, scaleConfigFactory: export.ScaleConfigFactory, pathSettings: export.PathSettings):
-        super().__init__("scale", log, filelist)
+    def __init__(self, log, files, scaleFunc: Callable, scaleConfigFactory: export.ScaleConfigFactory, pathSettings: export.PathSettings):
+        super().__init__("scale", log, files)
         self.scaleFunc      = scaleFunc
         self.scaleConfig    = scaleConfigFactory.getScaleConfig(1.0) # Only use interpolation mode
         self.pathTemplate   = pathSettings.pathTemplate
@@ -233,8 +230,8 @@ class BatchScaleTask(BatchTask):
 
 
 class BatchInferenceScaleTask(BatchInferenceTask):
-    def __init__(self, log, filelist, scaleFunc: Callable, scaleConfigFactory: export.ScaleConfigFactory, pathSettings: export.PathSettings):
-        super().__init__("scale", log, filelist)
+    def __init__(self, log, files, scaleFunc: Callable, scaleConfigFactory: export.ScaleConfigFactory, pathSettings: export.PathSettings):
+        super().__init__("scale", log, files)
         self.scaleFunc      = scaleFunc
         self.scaleConfigs   = scaleConfigFactory
         self.pathTemplate   = pathSettings.pathTemplate

@@ -1,4 +1,4 @@
-import traceback, time
+import traceback, time, enum
 from typing import Iterable, Callable, Any
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Signal, Slot, QRunnable, QObject, QMutex, QMutexLocker, QThreadPool
@@ -6,6 +6,25 @@ from infer.inference import Inference, InferenceChain, InferenceSetupException
 from lib.filelist import FileList
 import lib.qtlib as qtlib
 from .batch_log import BatchLogEntry, BatchTaskAbortedException
+
+
+class BatchTaskFileSelection(enum.IntEnum):
+    All      = 0
+    Selected = 1
+    Current  = 2
+
+    def getFiles(self, filelist: FileList) -> list[str]:
+        match self:
+            case self.All:
+                files = filelist.getFiles().copy()
+            case self.Selected:
+                files = list(filelist.selection.sorted)
+            case self.Current:
+                files = []
+
+        if (not files) and filelist.currentFile:
+            files.append(filelist.currentFile)
+        return files
 
 
 class BatchTask(QRunnable):
@@ -16,19 +35,17 @@ class BatchTask(QRunnable):
         fail = Signal(str, object)      # error message, TimeUpdate
 
 
-    def __init__(self, name: str, log: BatchLogEntry, filelist: FileList):
+    def __init__(self, name: str, log: BatchLogEntry, files: list[str]):
         super().__init__()
         self.setAutoDelete(False)
         self.signals = BatchTask.Signals()
 
         self.name     = name
         self.log      = log
+        self.files    = files
+
         self._mutex   = QMutex()
         self._aborted = False
-
-        self.files = filelist.getFiles().copy()
-        if len(self.files) == 0 and filelist.currentFile:
-            self.files.append(filelist.currentFile)
 
 
     def abort(self):
@@ -124,8 +141,8 @@ class BatchTask(QRunnable):
 
 
 class BatchInferenceTask(BatchTask):
-    def __init__(self, name: str, log: BatchLogEntry, filelist: FileList):
-        super().__init__(name, log, filelist)
+    def __init__(self, name: str, log: BatchLogEntry, files: list[str]):
+        super().__init__(name, log, files)
         self.session = None
 
     def abort(self):
@@ -306,13 +323,19 @@ class BatchTaskHandler(QObject):
     started = Signal()
     finished = Signal()
 
-    def __init__(self, bars: tuple, name: str, taskFactory: Callable[[], BatchTask | None]):
+    def __init__(
+        self, name: str, bars: tuple,
+        filelist: FileList,
+        confirmOps: Callable[[], list[str]],
+        taskFactory: Callable[[list[str]], BatchTask]
+    ):
         super().__init__()
         self.name = name.capitalize()
+        self.filelist = filelist
+        self.confirmOps = confirmOps
         self.taskFactory = taskFactory
 
-        self.btnStart = QtWidgets.QPushButton(f"Start Batch {self.name}")
-        self.btnStart.clicked.connect(self.startStop)
+        self.startButtonLayout = self._buildStartButtonLayout()
 
         self.progressBar: BatchProgressBar = bars[0]
         self.statusBar: qtlib.ColoredMessageStatusBar = bars[1]
@@ -323,6 +346,26 @@ class BatchTaskHandler(QObject):
         self._tabActive = False
         self._lastMessage: str | tuple[str, bool] | None = None
         self._lastUpdate: BatchProgressUpdate | None = None
+
+
+    def _buildStartButtonLayout(self) -> QtWidgets.QLayout:
+        layout = QtWidgets.QHBoxLayout()
+
+        self.btnStart = QtWidgets.QPushButton(f"▶  Start Batch {self.name} (All Files)")
+        self.btnStart.clicked.connect(lambda: self.startStop(BatchTaskFileSelection.All))
+        layout.addWidget(self.btnStart, 2)
+
+        self.btnStartSelected = QtWidgets.QPushButton(f"▷  Start (Selected Files)")
+        self.btnStartSelected.setMinimumWidth(200)
+        self.btnStartSelected.clicked.connect(lambda: self.startStop(BatchTaskFileSelection.Selected))
+        layout.addWidget(self.btnStartSelected, 1)
+
+        self.btnStartCurrent = QtWidgets.QPushButton(f"▷  Start (Current File)")
+        self.btnStartCurrent.setMinimumWidth(200)
+        self.btnStartCurrent.clicked.connect(lambda: self.startStop(BatchTaskFileSelection.Current))
+        layout.addWidget(self.btnStartCurrent, 1)
+
+        return layout
 
 
     def setTabActive(self, active: bool):
@@ -352,19 +395,29 @@ class BatchTaskHandler(QObject):
                 self.progressBar.reset()
 
 
-    @Slot()
-    def startStop(self):
+    def startStop(self, fileSelection: BatchTaskFileSelection):
+        parent = self.btnStart.parentWidget()
+
         if self._task:
-            parent = self.btnStart.parentWidget()
             if BatchUtil.confirmAbort(parent) and self._task: # Recheck task (may have finished in the meantime)
                 self.btnStart.setText("Aborting...")
                 self._task.abort()
             return
 
         try:
-            task = self.taskFactory()
-            if not task:
-                return
+            confirmOps = self.confirmOps()
+        except Exception as ex:
+            print(f"Batch confirmation failed: {ex}")
+            return
+
+        files = fileSelection.getFiles(self.filelist)
+        if not files:
+            return
+        if not BatchUtil.confirmStart(self.name, len(files), confirmOps, parent):
+            return
+
+        try:
+            task = self.taskFactory(files)
         except BatchTaskAbortedException:
             return
 
@@ -373,8 +426,11 @@ class BatchTaskHandler(QObject):
         task.signals.done.connect(self.onFinished, Qt.ConnectionType.QueuedConnection)
         task.signals.fail.connect(self.onFail, Qt.ConnectionType.QueuedConnection)
 
-        self._task = task
         self.btnStart.setText("Abort")
+        self.btnStartSelected.setEnabled(False)
+        self.btnStartCurrent.setEnabled(False)
+
+        self._task = task
         QThreadPool.globalInstance().start(task)
         self.started.emit()
 
@@ -434,7 +490,9 @@ class BatchTaskHandler(QObject):
 
         self.finished.emit()
         self._task = None
-        self.btnStart.setText(f"Start Batch {self.name}")
+        self.btnStart.setText(f"▶  Start Batch {self.name} (All Files)")
+        self.btnStartSelected.setEnabled(True)
+        self.btnStartCurrent.setEnabled(True)
 
 
 

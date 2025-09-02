@@ -9,7 +9,7 @@ from infer.prompt import PromptWidget
 from lib import qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
-from .batch_task import BatchTask, BatchTaskHandler, BatchUtil
+from .batch_task import BatchTask, BatchTaskHandler
 from .batch_log import BatchLog
 
 
@@ -51,9 +51,8 @@ WRITE_MODE_TEXT = {
 class BatchApply(QtWidgets.QWidget):
     def __init__(self, tab, logWidget: BatchLog, bars):
         super().__init__()
-        self.tab = tab
         self.logWidget = logWidget
-        self.taskHandler = BatchTaskHandler(bars, "Apply", self.createTask)
+        self.taskHandler = BatchTaskHandler("Apply", bars, tab.filelist, self.getConfirmOps, self.createTask)
 
         self.writeSettings = self._buildWriteSettings()
         self.backupSettings = self._buildBackupSettings()
@@ -62,7 +61,7 @@ class BatchApply(QtWidgets.QWidget):
         layout.addWidget(self._buildFormatSettings())
         layout.addWidget(self.writeSettings)
         layout.addWidget(self.backupSettings)
-        layout.addWidget(self.taskHandler.btnStart)
+        layout.addLayout(self.taskHandler.startButtonLayout)
         self.setLayout(layout)
 
         self._parser = None
@@ -276,7 +275,7 @@ class BatchApply(QtWidgets.QWidget):
             self._highlighter.highlight(self.promptWidget.txtPrompts, self.txtPreview, varPositions)
 
 
-    def _confirmStart(self) -> bool:
+    def getConfirmOps(self) -> list[str]:
         ops = []
 
         if self.backupSettings.isChecked():
@@ -297,16 +296,13 @@ class BatchApply(QtWidgets.QWidget):
         if self.chkDeleteJson.isChecked():
             ops.append(qtlib.htmlRed('Delete all .json files!'))
 
-        return BatchUtil.confirmStart("Apply", self.tab.filelist.getNumFiles(), ops, self)
+        return ops
 
 
-    def createTask(self) -> BatchTask | None:
-        if not self._confirmStart():
-            return None
-
+    def createTask(self, files: list[str]) -> BatchTask:
         log = self.logWidget.addEntry("Apply", BatchLog.GROUP_CAPTION)
         template = self.promptWidget.prompts
-        task = BatchApplyTask(log, self.tab.filelist, template)
+        task = BatchApplyTask(log, files, template)
 
         if self.backupSettings.isChecked():
             task.backupType = self.backupDestSelector.type
@@ -324,8 +320,8 @@ class BatchApply(QtWidgets.QWidget):
 
 
 class BatchApplyTask(BatchTask):
-    def __init__(self, log, filelist, template: str):
-        super().__init__("apply", log, filelist)
+    def __init__(self, log, files, template: str):
+        super().__init__("apply", log, files)
         self.template    = template
         self.stripAround = True
         self.stripMulti  = True

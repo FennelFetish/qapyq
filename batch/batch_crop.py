@@ -12,7 +12,7 @@ import lib.imagerw as imagerw
 from infer.inference import InferenceChain
 import ui.export_settings as export
 from ui.size_preset import SizeBucket, SizePresetWidget
-from .batch_task import BatchTask, BatchInferenceTask, BatchTaskHandler, BatchUtil
+from .batch_task import BatchTask, BatchInferenceTask, BatchTaskHandler
 from .batch_log import BatchLog
 
 
@@ -45,7 +45,7 @@ class BatchCrop(QtWidgets.QWidget):
         super().__init__()
         self.tab = tab
         self.logWidget = logWidget
-        self.taskHandler = BatchTaskHandler(bars, "Crop", self.createTask)
+        self.taskHandler = BatchTaskHandler("Crop", bars, tab.filelist, self.getConfirmOps, self.createTask)
 
         self.inputPathParser = export.ExportVariableParser()
         self.outputPathParser = export.ExportVariableParser()
@@ -78,7 +78,7 @@ class BatchCrop(QtWidgets.QWidget):
         layout.addWidget(self._buildOutputImage(), 2, 1)
         layout.addWidget(QtWidgets.QWidget(), 3, 1)
 
-        layout.addWidget(self.taskHandler.btnStart, 4, 0, 1, 2)
+        layout.addLayout(self.taskHandler.startButtonLayout, 4, 0, 1, 2)
 
         self.setLayout(layout)
 
@@ -289,7 +289,7 @@ class BatchCrop(QtWidgets.QWidget):
             self.cboInputMacro.setCurrentIndex(index)
 
 
-    def _confirmStart(self) -> bool:
+    def getConfirmOps(self) -> list[str]:
         ops = []
 
         match self.cboInputMaskMode.currentData():
@@ -324,7 +324,7 @@ class BatchCrop(QtWidgets.QWidget):
             case OutputMaskType.Alpha:
                 ops.append("Save the cropped mask as the alpha channel in the cropped images")
 
-        return BatchUtil.confirmStart("Crop", self.tab.filelist.getNumFiles(), ops, self)
+        return ops
 
 
     def saveExportPreset(self):
@@ -344,10 +344,7 @@ class BatchCrop(QtWidgets.QWidget):
         }
 
 
-    def createTask(self) -> BatchTask | None:
-        if not self._confirmStart():
-            return None
-
+    def createTask(self, files: list[str]) -> BatchTask:
         self.saveExportPreset()
 
         taskClass = BatchCropTask
@@ -379,7 +376,7 @@ class BatchCrop(QtWidgets.QWidget):
                 raise ValueError("Invalid output mask type")
 
         log = self.logWidget.addEntry("Crop")
-        task = taskClass(log, self.tab.filelist, maskSrcFunc, maskDestFunc, self.outputImagePathSettings)
+        task = taskClass(log, files, maskSrcFunc, maskDestFunc, self.outputImagePathSettings)
 
         task.combined      = not self.chkMultipleOutputs.isChecked()
         task.allowUpscale  = self.chkAllowUpscale.isChecked()
@@ -718,9 +715,9 @@ class BaseBatchCropTask:
 
 
 class BatchCropTask(BaseBatchCropTask, BatchTask):
-    def __init__(self, log, filelist, maskSrcFunc: MaskSource, maskDestFunc: Callable, imgPathSettings: export.PathSettings):
+    def __init__(self, log, files, maskSrcFunc: MaskSource, maskDestFunc: Callable, imgPathSettings: export.PathSettings):
         BaseBatchCropTask.__init__(self, maskDestFunc, imgPathSettings)
-        BatchTask.__init__(self, "crop", log, filelist)
+        BatchTask.__init__(self, "crop", log, files)
         self.maskSrcFunc  = maskSrcFunc
 
     def runProcessFile(self, imgFile: str) -> str | None:
@@ -736,9 +733,9 @@ class BatchCropTask(BaseBatchCropTask, BatchTask):
 
 
 class BatchInferenceCropTask(BaseBatchCropTask, BatchInferenceTask):
-    def __init__(self, log, filelist, macro: MaskingMacro, maskDestFunc: Callable, imgPathSettings: export.PathSettings):
+    def __init__(self, log, files, macro: MaskingMacro, maskDestFunc: Callable, imgPathSettings: export.PathSettings):
         BaseBatchCropTask.__init__(self, maskDestFunc, imgPathSettings)
-        BatchInferenceTask.__init__(self, "crop", log, filelist)
+        BatchInferenceTask.__init__(self, "crop", log, files)
         self.macro = macro
 
     def runPrepare(self, proc):

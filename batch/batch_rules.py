@@ -12,7 +12,7 @@ from ui.edit_table import EditableTable
 from ui.flow_layout import FlowLayout, SortedStringFlowWidget, ManualStartReorderWidget
 from lib import qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
-from .batch_task import BatchTask, BatchTaskHandler, BatchUtil
+from .batch_task import BatchTask, BatchTaskHandler
 from .batch_log import BatchLog
 
 
@@ -23,7 +23,7 @@ class BatchRules(QtWidgets.QWidget):
         super().__init__()
         self.tab = tab
         self.logWidget = logWidget
-        self.taskHandler = BatchTaskHandler(bars, "Rules", self.createTask)
+        self.taskHandler = BatchTaskHandler("Rules", bars, tab.filelist, self.getConfirmOps, self.createTask)
 
         self.bannedSeparator = ", "
         self.captionFile: CaptionFile = None
@@ -43,7 +43,7 @@ class BatchRules(QtWidgets.QWidget):
 
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(splitter)
-        layout.addWidget(self.taskHandler.btnStart)
+        layout.addLayout(self.taskHandler.startButtonLayout)
 
         self.setLayout(layout)
 
@@ -429,7 +429,7 @@ class BatchRules(QtWidgets.QWidget):
         self.highlight.highlight(text, self.txtSeparator.text(), self.txtPreview)
 
 
-    def _confirmStart(self) -> bool:
+    def getConfirmOps(self) -> list[str]:
         loadKey = f"{self.srcSelector.type}.{self.srcSelector.name.strip()}"
         ops = [
             f"Load values from .json files [{loadKey}]",
@@ -444,15 +444,12 @@ class BatchRules(QtWidgets.QWidget):
             storeText = qtlib.htmlRed(storeText + " and overwrite the content!")
         ops.append(storeText)
 
-        return BatchUtil.confirmStart("Rules", self.tab.filelist.getNumFiles(), ops, self)
+        return ops
 
 
-    def createTask(self) -> BatchTask | None:
-        if not self._confirmStart():
-            return None
-
+    def createTask(self, files: list[str]) -> BatchTask:
         log = self.logWidget.addEntry("Rules", BatchLog.GROUP_CAPTION)
-        task = BatchRulesTask(log, self.tab.filelist, self.setupProcessor())
+        task = BatchRulesTask(log, files, self.setupProcessor())
         task.srcType = self.srcSelector.type
         task.srcKey  = self.srcSelector.name.strip()
         task.targetType = self.destSelector.type
@@ -556,8 +553,8 @@ class BatchRulesDataSource(HighlightDataSource):
 
 
 class BatchRulesTask(BatchTask):
-    def __init__(self, log, filelist, rulesProcessor: CaptionRulesProcessor):
-        super().__init__("rules", log, filelist)
+    def __init__(self, log, files, rulesProcessor: CaptionRulesProcessor):
+        super().__init__("rules", log, files)
         self.rulesProcessor = rulesProcessor
 
         self.srcType = ""

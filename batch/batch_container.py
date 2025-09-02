@@ -21,6 +21,7 @@ class BatchContainer(QtWidgets.QTabWidget):
 
         self.progressBar = BatchProgressBar()
         self.statusBar = qtlib.ColoredMessageStatusBar()
+        self.statusBar.setSizeGripEnabled(False)
         self.statusBar.addPermanentWidget(self.progressBar)
         bars = (self.progressBar, self.statusBar)
 

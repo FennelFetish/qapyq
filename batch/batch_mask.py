@@ -12,7 +12,7 @@ from lib.mask_macro import MaskingMacro, ChainedMacroRunner
 from lib.mask_macro_vis import MacroVisualization
 import lib.imagerw as imagerw
 import ui.export_settings as export
-from .batch_task import BatchTaskHandler, BatchTask, BatchInferenceTask, BatchUtil
+from .batch_task import BatchTaskHandler, BatchTask, BatchInferenceTask
 from .batch_log import BatchLog
 
 
@@ -43,7 +43,7 @@ class BatchMask(QtWidgets.QWidget):
         super().__init__()
         self.tab = tab
         self.logWidget = logWidget
-        self.taskHandler = BatchTaskHandler(bars, "Mask", self.createTask)
+        self.taskHandler = BatchTaskHandler("Mask", bars, tab.filelist, self.getConfirmOps, self.createTask)
 
         self.parser = export.ExportVariableParser()
         self.parser.setup(self.tab.filelist.getCurrentFile(), None)
@@ -72,7 +72,7 @@ class BatchMask(QtWidgets.QWidget):
         layout.addWidget(self._buildDestinationSettings(), 2, 0)
         self._onSrcModeChanged(self.cboSrcType.currentIndex())
 
-        layout.addWidget(self.taskHandler.btnStart, 3, 0)
+        layout.addLayout(self.taskHandler.startButtonLayout, 3, 0)
 
         self.setLayout(layout)
 
@@ -191,7 +191,7 @@ class BatchMask(QtWidgets.QWidget):
             self.macroVis.reload(path)
 
 
-    def _confirmStart(self) -> bool:
+    def getConfirmOps(self) -> list[str]:
         ops = [f"Generate masks using the '{self.cboMacro.currentText()}' macro"]
 
         if self.destPathSettings.skipExistingFiles:
@@ -228,7 +228,7 @@ class BatchMask(QtWidgets.QWidget):
         else:
             ops.append("Save images using new filenames with an increasing counter")
 
-        return BatchUtil.confirmStart("Mask", self.tab.filelist.getNumFiles(), ops, self)
+        return ops
 
 
     def saveExportPreset(self):
@@ -242,10 +242,7 @@ class BatchMask(QtWidgets.QWidget):
         }
 
 
-    def createTask(self) -> BatchTask | None:
-        if not self._confirmStart():
-            return None
-
+    def createTask(self, files: list[str]) -> BatchTask:
         self.saveExportPreset()
 
         saveMode = self.cboDestType.currentData()
@@ -255,7 +252,7 @@ class BatchMask(QtWidgets.QWidget):
 
         log = self.logWidget.addEntry("Mask")
         taskClass = BatchInferenceMaskTask if macro.needsInference() else BatchMaskTask
-        task = taskClass(log, self.tab.filelist, macro, saveMode, self.destPathSettings)
+        task = taskClass(log, files, macro, saveMode, self.destPathSettings)
 
         skipNonExistingSource = self.chkSkipNoInput.isChecked()
         srcMode: MaskSrcMode = self.cboSrcType.currentData()
@@ -403,9 +400,9 @@ class BaseBatchMaskTask:
 
 
 class BatchMaskTask(BaseBatchMaskTask, BatchTask):
-    def __init__(self, log, filelist, macro: MaskingMacro, saveMode: MaskDestMode, destPathSettings: export.PathSettings):
+    def __init__(self, log, files, macro: MaskingMacro, saveMode: MaskDestMode, destPathSettings: export.PathSettings):
         BaseBatchMaskTask.__init__(self, macro, saveMode, destPathSettings)
-        BatchTask.__init__(self, "mask", log, filelist)
+        BatchTask.__init__(self, "mask", log, files)
 
 
     def runProcessFile(self, imgFile: str) -> str | None:
@@ -446,9 +443,9 @@ class BatchMaskTask(BaseBatchMaskTask, BatchTask):
 
 
 class BatchInferenceMaskTask(BaseBatchMaskTask, BatchInferenceTask):
-    def __init__(self, log, filelist, macro: MaskingMacro, saveMode: MaskDestMode, destPathSettings: export.PathSettings):
+    def __init__(self, log, files, macro: MaskingMacro, saveMode: MaskDestMode, destPathSettings: export.PathSettings):
         BaseBatchMaskTask.__init__(self, macro, saveMode, destPathSettings)
-        BatchInferenceTask.__init__(self, "mask", log, filelist)
+        BatchInferenceTask.__init__(self, "mask", log, files)
 
     def runPrepare(self, proc):
         super().runPrepare()
