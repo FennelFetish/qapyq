@@ -372,9 +372,10 @@ class MaskSummary:
         self.reset()
 
     def reset(self):
-        self.numMasks = 0
+        self.numFiles   = 0
+        self.numMasks   = 0
         self.numMissing = 0
-        self.numBins = 0
+        self.numBins    = 0
 
         self.min  = 2**31
         self.max  = -self.min
@@ -382,6 +383,7 @@ class MaskSummary:
         self.median = 0
 
     def addFile(self, value: float):
+        self.numFiles += 1
         if value >= 0.0:
             self.numMasks += 1
             self.min = min(self.min, value)
@@ -430,7 +432,7 @@ class MaskModel(QAbstractItemModel):
         return len(self.maskBins)
 
     def columnCount(self, parent=QModelIndex()):
-        return 3
+        return 4
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         data: MaskData = self.maskBins[index.row()]
@@ -441,6 +443,11 @@ class MaskModel(QAbstractItemModel):
                     case 0: return f"{data.min:.3f}"
                     case 1: return f"{data.max:.3f}"
                     case 2: return len(data.files)
+                    case 3:
+                        percentage = 0
+                        if self.summary.numMasks > 0:
+                            percentage = len(data.files) / self.summary.numFiles
+                        return f"{percentage*100:.2f} %"
 
             case Qt.ItemDataRole.ForegroundRole:
                 if data.max < 0:
@@ -454,6 +461,7 @@ class MaskModel(QAbstractItemModel):
                     case 0: return data.min
                     case 1: return data.max
                     case 2: return len(data.files)
+                    case 3: return len(data.files) / self.summary.numFiles if self.summary.numFiles else 0.0
 
         return None
 
@@ -465,6 +473,7 @@ class MaskModel(QAbstractItemModel):
             case 0: return f"{self.statsName}Min"
             case 1: return f"{self.statsName}Max"
             case 2: return "Count"
+            case 3: return "Percentage"
         return None
 
     def index(self, row, column, parent=QModelIndex()):
@@ -491,6 +500,6 @@ class MaskProxyModel(StatsBaseProxyModel):
             match column:
                 case 0: return dataRight.min < dataLeft.min
                 case 1: return dataRight.max < dataLeft.max
-                case 2: return len(dataRight.files) < len(dataLeft.files)
+                case 2 | 3: return len(dataRight.files) < len(dataLeft.files)
 
         return super().lessThan(left, right)
