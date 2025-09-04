@@ -58,6 +58,15 @@ class MaskToolBar(QtWidgets.QToolBar):
         layout.setContentsMargins(1, 1, 1, 1)
 
         row = 0
+        self.spinOpacity = QtWidgets.QDoubleSpinBox()
+        self.spinOpacity.setRange(0.0, 1.0)
+        self.spinOpacity.setValue(0.5)
+        self.spinOpacity.setSingleStep(0.1)
+        self.spinOpacity.valueChanged.connect(self.maskTool.updateMaskOpacity)
+        layout.addWidget(QtWidgets.QLabel("Opacity:"), row, 0)
+        layout.addWidget(self.spinOpacity, row, 1)
+
+        row =+ 1
         self.cboLayer = QtWidgets.QComboBox()
         self.cboLayer.setEditable(True)
         self.cboLayer.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
@@ -274,6 +283,11 @@ class MaskToolBar(QtWidgets.QToolBar):
         widget.setLayout(layout)
         collapsible.addWidget(widget)
         return collapsible
+
+
+    @property
+    def opacity(self) -> float:
+        return self.spinOpacity.value()
 
 
     def setLayers(self, layers: list[MaskItem], selectedIndex: int):

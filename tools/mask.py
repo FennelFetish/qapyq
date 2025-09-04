@@ -17,11 +17,6 @@ from .mask_ops import MaskOperation
 
 MaskItem = ForwardRef("MaskItem")
 
-# Save layer names to file meta data
-# Undo/Redo with Ctrl+Z/Ctrl+Y, store vector data
-
-# TODO: Toggle color image for better visiblity of mask
-
 
 class MaskTool(ViewTool):
     BUTTON_MAIN = Qt.MouseButton.LeftButton
@@ -47,6 +42,7 @@ class MaskTool(ViewTool):
         mask.fill(Qt.GlobalColor.black)
 
         maskItem = MaskItem.new(name, mask)
+        maskItem.setOpacity(self._toolbar.opacity)
         maskItem.updateTransform(imgview.image)
         return maskItem
 
@@ -96,6 +92,7 @@ class MaskTool(ViewTool):
         for i, c in enumerate(indices):
             array = np.ascontiguousarray(maskMat[:, :, c])
             maskItem = MaskItem.load(f"Layer {i}", array)
+            maskItem.setOpacity(self._toolbar.opacity)
             maskItem.updateTransform(self._imgview.image)
             layers.append(maskItem)
         return layers
@@ -186,6 +183,11 @@ class MaskTool(ViewTool):
         else:
             self.setEdited()
 
+
+    @Slot()
+    def updateMaskOpacity(self, opacity: float):
+        for layer in self.layers:
+            layer.setOpacity(opacity)
 
     def setEdited(self):
         self.storeLayers()
@@ -442,7 +444,6 @@ class HistoryEntry:
 class MaskItem(QtWidgets.QGraphicsRectItem):
     def __init__(self, name: str):
         super().__init__()
-        self.setOpacity(0.55)
         self.name = name
         self.image: QImage = None
 
