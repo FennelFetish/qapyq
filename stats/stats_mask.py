@@ -445,7 +445,7 @@ class MaskModel(QAbstractItemModel):
                     case 2: return len(data.files)
                     case 3:
                         percentage = 0
-                        if self.summary.numMasks > 0:
+                        if self.summary.numFiles > 0:
                             percentage = len(data.files) / self.summary.numFiles
                         return f"{percentage*100:.2f} %"
 
