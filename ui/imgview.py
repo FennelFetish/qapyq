@@ -159,22 +159,21 @@ class ImgItem(QGraphicsPixmapItem):
             return False
         return True
 
-    def updateTransform(self, vpRect: QRectF, rotation):
+    def updateTransform(self, vpRect: QRectF, rotation: float):
         imgRect = self.boundingRect()
         if imgRect.width() == 0 or imgRect.height() == 0:
             return
 
-        vp_w, vp_h   = vpRect.width(), vpRect.height()
-        img_w, img_h = imgRect.width(), imgRect.height()
+        transform = QTransform().rotate(rotation)
+        transform.translate(-imgRect.width()/2, -imgRect.height()/2)
 
-        scale = min(vp_w/img_w, vp_h/img_h)
-        x = (-img_w * scale) / 2
-        y = (-img_h * scale) / 2
+        bbox = transform.mapRect(imgRect)
+        scale = min(
+            vpRect.width() / bbox.width(),
+            vpRect.height() / bbox.height()
+        )
 
-        transform = QTransform()
-        transform = transform.rotate(rotation)
-        transform = transform.translate(x, y)
-        transform = transform.scale(scale, scale)
+        transform *= QTransform.fromScale(scale, scale)
         self.setTransform(transform)
 
     def setSmooth(self, enabled: bool):
