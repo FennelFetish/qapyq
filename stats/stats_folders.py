@@ -347,6 +347,7 @@ class FolderProxyModel(StatsBaseProxyModel):
     def __init__(self):
         super().__init__()
         self.setFilterKeyColumn(0)
+        self.setRecursiveFilteringEnabled(True)
 
     @override
     def getFiles(self, sourceIndex: QModelIndex) -> set[str]:
