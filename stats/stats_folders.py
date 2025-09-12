@@ -68,10 +68,14 @@ class FolderStats(QtWidgets.QWidget):
     @Slot()
     def _adjustFolderColumns(self):
         for col in range(self.model.columnCount(QModelIndex())):
-            self.tree.resizeColumnToContents(col)
+            if col != 1:
+                self.tree.resizeColumnToContents(col)
 
         colWidth = self.tree.columnWidth(0) + 20
         self.tree.setColumnWidth(0, colWidth)
+
+        # Minimum width for "Subfolders" column
+        self.tree.setColumnWidth(1, 1)
 
 
 
@@ -160,14 +164,15 @@ class FolderData:
     def getSubfolder(self, row: int) -> FolderData:
         return self.subfolders[row]
 
-    def updateTree(self, totalFiles: int, avgFiles: float) -> int:
-        self.numFilesTotal = len(self.files)
+    def updateTree(self, totalFiles: int, avgFiles: float):
         for i, subfolder in enumerate(self.subfolders):
-            self.numFilesTotal += subfolder.updateTree(totalFiles, avgFiles)
+            subfolder.updateTree(totalFiles, avgFiles)
             subfolder.indexInParent = i
+            self.files.update(subfolder.files)
 
+        self.numFilesTotal = len(self.files)
         if self.numFilesTotal <= 0:
-            return 0
+            return
 
         for subfolder in self.subfolders:
             subfolder.percentOfParent = subfolder.numFilesTotal / self.numFilesTotal
@@ -179,7 +184,6 @@ class FolderData:
         self.repeats = avgFiles / self.numFilesTotal
         self.selfRepeats = avgFiles / len(self.files) if self.files else 0.0
 
-        return self.numFilesTotal
 
 
 class FolderSummary:
@@ -248,24 +252,26 @@ class FolderModel(QAbstractItemModel):
         return len(parent.subfolders)
 
     def columnCount(self, parent=QModelIndex()):
-        return 5
+        return 6
 
     def headerData(self, section: int, orientation: Qt.Orientation, role=Qt.ItemDataRole.DisplayRole) -> str | None:
         match role:
             case Qt.ItemDataRole.DisplayRole:
                 match section:
                     case 0: return "Folder"
-                    case 1: return "Images"
-                    case 2: return "% of Parent"
-                    case 3: return "% of Total"
-                    case 4: return "Repeats"
+                    case 1: return "Subfolders"
+                    case 2: return "Images"
+                    case 3: return "% of Parent"
+                    case 4: return "% of Total"
+                    case 5: return "Repeats"
 
             case Qt.ItemDataRole.ToolTipRole:
                 match section:
-                    case 1: return "Total image count inside folder and subfolders.\n(In parantheses): Images directly inside folder, without subfolders."
-                    case 2: return "Percentage of parent folder.\n(In parantheses): Percentage of own images without subfolders."
-                    case 3: return "Percentage of total.\n(In parantheses): Percentage of own images without subfolders."
-                    case 4: return "Estimate for balancing concepts. Average folder size divided by image count in folder and subfolders.\n(In parantheses): Average folder size divided by image count without subfolders."
+                    case 1: return "Number of direct subfolders"
+                    case 2: return "Total image count inside folder and subfolders.\n(In parantheses): Images directly inside folder, without subfolders."
+                    case 3: return "Percentage of parent folder.\n(In parantheses): Percentage of own images without subfolders."
+                    case 4: return "Percentage of total.\n(In parantheses): Percentage of own images without subfolders."
+                    case 5: return "Estimate for balancing concepts. Average folder size divided by image count in folder and subfolders.\n(In parantheses): Average folder size divided by image count without subfolders."
 
         return super().headerData(section, orientation, role)
 
@@ -308,22 +314,25 @@ class FolderModel(QAbstractItemModel):
                     case 0:
                         return folder.name
 
-                    case 1: # Images
+                    case 1: # Subfolders
+                        return str(len(folder.subfolders)) if folder.subfolders else ""
+
+                    case 2: # Images
                         if folder.subfolders and folder.files:
                             return f"{folder.numFilesTotal} ({len(folder.files)})"
                         return f"{folder.numFilesTotal}"
 
-                    case 2: # % of Parent
+                    case 3: # % of Parent
                         if folder.subfolders and folder.files:
                             return f"{100*folder.percentOfParent:.1f}% ({100*folder.selfPercentOfParent:.1f}%)"
                         return f"{100*folder.percentOfParent:.1f}%"
 
-                    case 3: # % of Total
+                    case 4: # % of Total
                         if folder.subfolders and folder.files:
                             return f"{100*folder.percentOfTotal:.1f}% ({100*folder.selfPercentOfTotal:.1f}%)"
                         return f"{100*folder.percentOfTotal:.1f}%"
 
-                    case 4: # Repeats
+                    case 5: # Repeats
                         if folder.subfolders and folder.files:
                             return f"{folder.repeats:.2f} ({folder.selfRepeats:.2f})"
                         return f"{folder.repeats:.2f}"
@@ -334,10 +343,11 @@ class FolderModel(QAbstractItemModel):
             case ExportCsv.ROLE_CSV:
                 match index.column():
                     case 0: return folder.path
-                    case 1: return folder.numFilesTotal
-                    case 2: return folder.percentOfParent
-                    case 3: return folder.percentOfTotal
-                    case 4: return folder.repeats
+                    case 1: return len(folder.subfolders)
+                    case 2: return folder.numFilesTotal
+                    case 3: return folder.percentOfParent
+                    case 4: return folder.percentOfTotal
+                    case 5: return folder.repeats
 
         return None
 
@@ -362,9 +372,11 @@ class FolderProxyModel(StatsBaseProxyModel):
             match column:
                 case 0:
                     return dataLeft.sortName < dataRight.sortName
-                case 1 | 2 | 3:
+                case 1:
+                    return len(dataLeft.subfolders) > len(dataRight.subfolders)
+                case 2 | 3 | 4:
                     return dataLeft.numFilesTotal > dataRight.numFilesTotal
-                case 4:
+                case 5:
                     return dataLeft.numFilesTotal < dataRight.numFilesTotal
 
         return super().lessThan(left, right)
