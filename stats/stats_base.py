@@ -59,14 +59,14 @@ class StatsLayout(QtWidgets.QVBoxLayout):
 
         self.groupFiles = self._buildFilesGroup(name)
 
-        splitter = QtWidgets.QSplitter()
-        splitter.addWidget(col1Widget)
-        splitter.addWidget(self._buildTableGroup(name))
-        splitter.addWidget(self.groupFiles)
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setStretchFactor(2, 1)
-        self.addWidget(splitter, 1)
+        self.splitter = QtWidgets.QSplitter()
+        self.splitter.addWidget(col1Widget)
+        self.splitter.addWidget(self._buildTableGroup(name))
+        self.splitter.addWidget(self.groupFiles)
+        self.splitter.setStretchFactor(0, 0)
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.setStretchFactor(2, 1)
+        self.addWidget(self.splitter, 1)
 
     def _buildTableGroup(self, name: str):
         layout = QtWidgets.QVBoxLayout()
@@ -533,7 +533,7 @@ class StatsLoadTask(QRunnable):
     class TerminatedException(Exception): pass
 
     NOTIFY_INTERVAL_NS = 1_000_000_000 // 20
-    MULTIPROC_TIMEOUT = 15.0
+    MULTIPROC_TIMEOUT = 8.0
 
     class Signals(QObject):
         progress = Signal(int, int)
