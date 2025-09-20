@@ -141,8 +141,11 @@ class StatsLayout(QtWidgets.QVBoxLayout):
 
         menu.addSeparator()
 
-        actOpenInNewTab = menu.addAction("Open in New Tab")
+        actOpenInNewTab = menu.addAction("Open Files in New Tab")
         actOpenInNewTab.triggered.connect(self._loadFilesInNewTab)
+
+        actOpenFolderInNewTab = menu.addAction("Open Folders in New Tab")
+        actOpenFolderInNewTab.triggered.connect(self._loadFoldersInNewTab)
 
         return menu
 
@@ -274,6 +277,7 @@ class StatsLayout(QtWidgets.QVBoxLayout):
     def hasListedFiles(self) -> bool:
         return self.listFiles.count() > 0
 
+
     @Slot()
     def _loadFilesInNewTab(self) -> ImgTab | None:
         filesGen = self.getListedFiles()
@@ -284,6 +288,21 @@ class StatsLayout(QtWidgets.QVBoxLayout):
         newTab = self.tab.mainWindow.addTab()
         newFilelist: FileList = newTab.filelist
         newFilelist.loadFilesFixed(filesGen, currentFilelist)
+        return newTab
+
+    @Slot()
+    def _loadFoldersInNewTab(self):
+        filesGen = self.getListedFiles()
+        if filesGen is None:
+            return None
+
+        currentFilelist = self.tab.filelist
+        folders = set(os.path.dirname(file) for file in filesGen)
+        files = (file for file in currentFilelist.getFiles() if os.path.dirname(file) in folders)
+
+        newTab = self.tab.mainWindow.addTab()
+        newFilelist: FileList = newTab.filelist
+        newFilelist.loadFilesFixed(files, currentFilelist)
         return newTab
 
     @Slot()
