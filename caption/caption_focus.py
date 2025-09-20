@@ -1,4 +1,4 @@
-from typing import Iterable
+from typing import Iterable, Callable
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QEvent, QTimer
 import lib.qtlib as qtlib
@@ -10,11 +10,18 @@ from .caption_container import CaptionContainer
 
 HELP = [
     "[1-9]: Select tag",
+    "Alt+[1-9]: Unselect tag",
     "[0]: Unselect all tags",
+    "[R]: Reload"
+]
+
+HELP2 = [
     "[Enter]: Save and skip to next (selected) image",
     "[Arrow Left/Right]: Navigate to previous/next (selected) image",
     "[Esc]: Disable shortcuts"
 ]
+
+HELP_SEP = "        "
 
 
 class CaptionFocus(CaptionTab):
@@ -76,10 +83,16 @@ class CaptionFocus(CaptionTab):
         row += 1
         layout.setRowMinimumHeight(row, 12)
 
-        lblHelp = QtWidgets.QLabel("        ".join(HELP))
+        lblHelp = QtWidgets.QLabel(HELP_SEP.join(HELP))
         lblHelp.setMinimumWidth(10)
         lblHelp.setEnabled(False)
         layout.addWidget(lblHelp, row, 0, 1, 4, Qt.AlignmentFlag.AlignCenter)
+
+        row += 1
+        lblHelp2 = QtWidgets.QLabel(HELP_SEP.join(HELP2))
+        lblHelp2.setMinimumWidth(10)
+        lblHelp2.setEnabled(False)
+        layout.addWidget(lblHelp2, row, 0, 1, 4, Qt.AlignmentFlag.AlignCenter)
 
         row += 1
         self.btnFocusEnable = FocusEnabledButton("Enable Keyboard Shortcuts")
@@ -173,39 +186,57 @@ class CaptionFocus(CaptionTab):
 
 
     @Slot()
-    def _onBubbleClicked(self, tag: str):
-        self.selectTag(tag, self.chkMutuallyExclusive.isChecked())
+    def _onBubbleClicked(self, tag: str, rightClick: bool):
+        if rightClick:
+            self.unselectTag(tag)
+        else:
+            self.selectTag(tag, self.chkMutuallyExclusive.isChecked())
 
-    def onNumberPressed(self, index: int):
+    def onNumberPressed(self, index: int, unselect: bool):
         if index == 0 and self.bubbles:
             self.unselectAllTags()
+
         elif index-1 < len(self.bubbles):
             tag = self.bubbles[index - 1].text
-            self.selectTag(tag, self.chkMutuallyExclusive.isChecked())
+            if unselect:
+                self.unselectTag(tag)
+            else:
+                self.selectTag(tag, self.chkMutuallyExclusive.isChecked())
 
     @Slot()
     def unselectAllTags(self):
         self.selectTag(None, True)
 
-    def selectTag(self, tag: str | None, exclusive: bool):
-        tagsSet = {bubble.text for bubble in self.bubbles}
+    def selectTag(self, selectTag: str | None, exclusive: bool):
+        def tagGen(tags: Iterable[str]):
+            focusTags = {bubble.text for bubble in self.bubbles}
+            exists = False
 
-        captions = []
-        exists = False
-        text = self.ctx.text.getCaption()
-        if text:
-            for current in text.split(self.separator.strip()):
-                current = current.strip()
-                if tag == current: # This is always False when removing all tags (tag=None)
+            for current in tags:
+                if selectTag == current: # This is always False when removing all tags (tag=None)
                     exists = True
-                    captions.append(current)
-                elif not exclusive or (current not in tagsSet):
-                    captions.append(current)
+                    yield current
+                elif not exclusive or (current not in focusTags):
+                    yield current
 
-        if tag and not exists:
-            captions.append(tag)
+            if selectTag and not exists:
+                yield selectTag
 
-        newText = self.separator.join(captions)
+        self._setCaption(tagGen)
+
+    def unselectTag(self, unselectTag: str):
+        def tagGen(tags: Iterable[str]):
+            for current in tags:
+                if unselectTag != current:
+                    yield current
+
+        self._setCaption(tagGen)
+
+    def _setCaption(self, tagGen: Callable[[Iterable[str]], Iterable[str]]):
+        text = self.ctx.text.getCaption()
+        tags = (tag.strip() for tag in text.split(self.separator.strip())) if text else ()
+
+        newText = self.separator.join(tagGen(tags))
         if newText != text:
             self.ctx.text.setCaption(newText)
             self.ctx.needsRulesApplied.emit()
@@ -230,7 +261,7 @@ class CaptionFocus(CaptionTab):
 
 
 class FocusBubble(QtWidgets.QFrame):
-    bubbleClicked = Signal(str)
+    bubbleClicked = Signal(str, bool)
 
     def __init__(self, text: str, shortcut: int, groupColor: str):
         super().__init__()
@@ -267,10 +298,15 @@ class FocusBubble(QtWidgets.QFrame):
 
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
-        if event.button() != Qt.MouseButton.LeftButton:
+        button = event.button()
+        if button == Qt.MouseButton.LeftButton:
+            rightClick = False
+        elif button == Qt.MouseButton.RightButton:
+            rightClick = True
+        else:
             return super().mousePressEvent(event)
 
-        self.bubbleClicked.emit(self.text)
+        self.bubbleClicked.emit(self.text, rightClick)
         event.accept()
 
 
@@ -319,9 +355,13 @@ class KeyEventFilter(QObject):
                 return True
             case Qt.Key.Key_Up | Qt.Key.Key_Down:
                 return True
+            case Qt.Key.Key_R:
+                self.focus.container.resetCaption()
+                return True
 
         if Qt.Key.Key_0 <= key <= Qt.Key.Key_9:
             index = key - Qt.Key.Key_0
-            self.focus.onNumberPressed(index)
+            unselect = bool(event.modifiers() & Qt.KeyboardModifier.AltModifier)
+            self.focus.onNumberPressed(index, unselect)
             return True
         return False
