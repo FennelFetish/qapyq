@@ -1,3 +1,4 @@
+import weakref
 from typing import Any, Callable, Iterable
 from contextlib import contextmanager
 from PySide6 import QtWidgets, QtGui
@@ -733,20 +734,26 @@ class CheckableListWidget(QtWidgets.QListWidget):
 
 class LayoutFilter(QtWidgets.QHBoxLayout):
     class FilterTextEdit(QtWidgets.QLineEdit):
-        def __init__(self):
+        def __init__(self, filter: 'LayoutFilter'):
             super().__init__()
             self.setPlaceholderText("Filter")
             setMonospace(self)
+            self.filter = weakref.ref(filter)
 
         def keyPressEvent(self, event: QtGui.QKeyEvent):
             match event.key():
                 case Qt.Key.Key_Escape:
                     self.clear()
+                    if (filter := self.filter()):
+                        filter.updated.emit()
+
                     event.accept()
                     return
 
             super().keyPressEvent(event)
 
+
+    updated = Signal()
 
     def __init__(self, layout: QtWidgets.QLayout, textGetter: Callable[[Any], Iterable[str]]):
         super().__init__()
@@ -761,12 +768,14 @@ class LayoutFilter(QtWidgets.QHBoxLayout):
         self._lblStatus: QtWidgets.QLabel | None = None
         self._updatesDisabled: bool = False
 
-        self.txtFilter = LayoutFilter.FilterTextEdit()
+        self.txtFilter = LayoutFilter.FilterTextEdit(self)
         self.txtFilter.textChanged.connect(self.setFilterText)
+        self.txtFilter.editingFinished.connect(self.updated.emit)
 
         btnClearFilter = BubbleRemoveButton()
         btnClearFilter.setToolTip("Clear Filter")
         btnClearFilter.clicked.connect(self.txtFilter.clear)
+        btnClearFilter.clicked.connect(self.updated.emit)
 
         self.addWidget(btnClearFilter)
         self.addSpacing(2)
@@ -806,6 +815,7 @@ class LayoutFilter(QtWidgets.QHBoxLayout):
             for text in self._textGetter(widget)
         )
 
+    @Slot()
     def update(self):
         filterFunc = self._checkTexts if self._filterPattern is not None else bool
         self._numVisible = 0

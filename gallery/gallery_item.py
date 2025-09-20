@@ -5,8 +5,11 @@ from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import QSize, Qt, Slot, QPoint
 from lib.filelist import DataKeys
 from lib.captionfile import FileTypeSelector
+from lib.util import CaptionSplitter
 from lib import qtlib
 from caption.caption_text import NavigationTextEdit
+from caption.caption_highlight import MatcherNode
+from caption.caption_filter import CaptionRulesProcessor, CaptionRulesSettings
 
 # Imported at the bottom because of circular dependency
 # from .gallery_grid import GalleryGrid
@@ -31,12 +34,52 @@ class GalleryContext:
         self.captionSrc = captionSrc
         self.captionsEnabled: bool = False
 
+        self.updateTextFlags()
+
         from .gallery_sort import GallerySortControl
         self.gallerySort: GallerySortControl = None
 
-    def loadCaption(self, file: str) -> str:
+        # self.captionHighlight: CaptionHighlight | None = None
+        self.filterNode: MatcherNode[bool] | None = None
+        self.splitter = CaptionSplitter()
+        self.separator = ", "
+
+        self.rulesProcessor: CaptionRulesProcessor | None = None
+        self.rulesSettings = CaptionRulesSettings()
+        self.rulesSettings.prefixSuffix = False
+
+    def updateTextFlags(self):
+        if self.captionsEnabled:
+            self.textFlags = Qt.AlignmentFlag.AlignHCenter | Qt.TextFlag.TextWordWrap
+            self.textOpt = QtGui.QTextOption()
+            self.textOpt.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+            self.textOpt.setWrapMode(QtGui.QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+        else:
+            self.textFlags = Qt.AlignmentFlag.AlignHCenter | Qt.TextFlag.TextWrapAnywhere
+            self.textOpt = QtGui.QTextOption()
+            self.textOpt.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+            self.textOpt.setWrapMode(QtGui.QTextOption.WrapMode.WrapAnywhere)
+
+    def loadCaption(self, file: str, filter=False) -> str:
         caption = self.captionSrc.loadCaption(file)
-        return "" if caption is None else caption
+        if caption is None:
+            return ""
+
+        if filter:
+            if self.filterNode:
+                tags = self.splitter.split(caption)
+                caption = self.separator.join(
+                    tag for tag in tags
+                    if self.filterNode.match(list(
+                        word for w in tag.split(" ")
+                        if (word := w.strip())
+                    ))
+                )
+
+            if self.rulesProcessor:
+                caption = self.rulesProcessor.process(caption, self.rulesSettings)
+
+        return caption
 
 
 
@@ -53,9 +96,6 @@ class GalleryItem(QtWidgets.QWidget):
     PEN_SECONDARY: QtGui.QPen = None
 
     BRUSH_HIGHLIGHT: QtGui.QBrush = None
-
-    TEXT_FLAGS = Qt.AlignmentFlag.AlignHCenter | Qt.TextFlag.TextWrapAnywhere
-    TEXT_OPT: QtGui.QTextOption = None
 
     MIN_HEIGHT = 200
 
@@ -99,10 +139,6 @@ class GalleryItem(QtWidgets.QWidget):
 
         cls.PEN_TEXT = QtGui.QPen(textColor)
         cls.PEN_TEXT_ERROR = QtGui.QPen(qtlib.COLOR_RED)
-
-        cls.TEXT_OPT = QtGui.QTextOption()
-        cls.TEXT_OPT.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        cls.TEXT_OPT.setWrapMode(QtGui.QTextOption.WrapMode.WrapAnywhere)
 
         cls.PEN_PRIMARY = QtGui.QPen(selectionColor)
         cls.PEN_PRIMARY.setStyle(Qt.PenStyle.SolidLine)
@@ -300,7 +336,12 @@ class GalleryGridItem(GalleryItem):
         return 4
 
     def loadCaption(self):
-        self.labelText = self.gallery.ctx.loadCaption(self.file) if self.gallery.ctx.captionsEnabled else self.filename
+        ctx = self.gallery.ctx
+        if ctx.captionsEnabled:
+            self.labelText = ctx.loadCaption(self.file, True)
+        else:
+            self.labelText = self.filename
+
         self.reloadCaption = False
 
 
@@ -346,13 +387,14 @@ class GalleryGridItem(GalleryItem):
         self.paintBorder(painter, x, y, w, h)
 
         # Draw label
+        ctx = self.gallery.ctx
         textY = y + imgH + self.TEXT_SPACING
-        textRect = painter.fontMetrics().boundingRect(self.BORDER_SIZE, textY, w-self.BORDER_SIZE, self.TEXT_MAX_HEIGHT, self.TEXT_FLAGS, self.labelText)
+        textRect = painter.fontMetrics().boundingRect(self.BORDER_SIZE, textY, w-self.BORDER_SIZE, self.TEXT_MAX_HEIGHT, ctx.textFlags, self.labelText)
         if textRect.height() > self.TEXT_MAX_HEIGHT:
             textRect.setHeight(self.TEXT_MAX_HEIGHT)
 
         painter.setPen(pen)
-        painter.drawText(textRect, self.labelText, self.TEXT_OPT)
+        painter.drawText(textRect, self.labelText, ctx.textOpt)
         painter.end()
 
         self._height = y + imgH + self.BORDER_SIZE + self.TEXT_SPACING + textRect.height() + self.TEXT_SPACING
@@ -426,6 +468,10 @@ class GalleryListItem(GalleryItem):
         self.setMinimumSize(size*2, size)
         self.gridLayout.setColumnMinimumWidth(0, self.gallery.thumbnailSize + 4)
 
+
+    @property
+    def captionEdited(self) -> bool:
+        return not (self.btnSave.isHidden() or self.btnReload.isHidden())
 
     @Slot()
     def _reloadCaption(self):

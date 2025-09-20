@@ -7,6 +7,7 @@ from ui.flow_layout import FlowLayout, ReorderWidget, ManualStartReorderWidget, 
 from .caption_tab import CaptionTab
 from .caption_preset import CaptionPreset, MutualExclusivity
 from .caption_wildcard import WildcardWindow, expandWildcards
+from .caption_highlight import MatcherNode
 
 
 # TODO?: Per group matching method:
@@ -71,11 +72,9 @@ class CaptionGroups(CaptionTab):
         barLayout.addWidget(btnOpenWildcards, 1)
 
         self.lblStatus = QtWidgets.QLabel()
-        barLayout.addWidget(self.lblStatus, 4, Qt.AlignmentFlag.AlignCenter)
+        barLayout.addWidget(self.lblStatus, 3, Qt.AlignmentFlag.AlignCenter)
 
-        self.filter = qtlib.LayoutFilter(self.groupLayout, self._getFilterTexts)
-        self.filter.setStatusLabel("Groups", self.lblStatus)
-        barLayout.addLayout(self.filter, 2)
+        barLayout.addLayout(self._buildFilter(), 2)
 
         barLayout.addSpacing(12)
         barLayout.addWidget(Trash())
@@ -85,6 +84,28 @@ class CaptionGroups(CaptionTab):
         frame.setLayout(barLayout)
         return frame
 
+    def _buildFilter(self):
+        self.filter = qtlib.LayoutFilter(self.groupLayout, self._getFilterTexts)
+        self.filter.setStatusLabel("Groups", self.lblStatus)
+        self.filter.updated.connect(self.ctx.controlUpdated.emit)
+        self.filter.updated.connect(self.updateGalleryFilter)
+
+        self.filterMenu = FilterMenu()
+        self.filterMenu.updated.connect(self.filter.update)
+        self.filterMenu.updated.connect(self.ctx.controlUpdated.emit)
+        self.filterMenu.updated.connect(self.updateGalleryFilter)
+
+        self.btnFilterSettings = QtWidgets.QPushButton("☰")
+        self.btnFilterSettings.setToolTip("Filter Settings")
+        self.btnFilterSettings.setFixedSize(36, 24)
+        self.btnFilterSettings.setMenu(self.filterMenu)
+
+        filterLayout = QtWidgets.QHBoxLayout()
+        filterLayout.addWidget(self.btnFilterSettings, 0)
+        filterLayout.addSpacing(6)
+        filterLayout.addLayout(self.filter)
+        return filterLayout
+
 
     @Slot()
     def _openWildcardWindow(self):
@@ -93,10 +114,11 @@ class CaptionGroups(CaptionTab):
             self.wildcards = win.wildcards
             self.ctx.controlUpdated.emit()
 
-    @staticmethod
-    def _getFilterTexts(group: CaptionControlGroup):
+    def _getFilterTexts(self, group: CaptionControlGroup):
         yield group.name
-        yield from group.captionsExpandWildcards
+
+        if not self.filterMenu.filterNamesOnly:
+            yield from group.captionsExpandWildcards
 
 
     @property
@@ -186,9 +208,24 @@ class CaptionGroups(CaptionTab):
                 self._nextGroupHue = util.get_hue(group.color) + self.HUE_OFFSET
 
 
+    def getGalleryFilterNode(self) -> MatcherNode[bool]:
+        filterNode = MatcherNode[bool]()
+        for group in filter(lambda g: g.enabled, self.groups):
+            for cap in group.captionsExpandWildcards:
+                words = [word for w in cap.split(" ") if (word := w.strip())]
+                filterNode.addWords(words, True)
 
-# TODO: Add preview for combine-tags (right to the combine checkbox, a disabled QLineEdit so it will not affect minimum window width).
-#       Only show it when hovering over the group.
+        return filterNode
+
+    @Slot()
+    def updateGalleryFilter(self):
+        if gallery := self.ctx.tab.getWindowContent("gallery"):
+            from gallery.gallery import Gallery
+            gallery: Gallery
+            gallery.onCaptionFilterUpdated()
+
+
+
 class CaptionControlGroup(QtWidgets.QWidget):
     def __init__(self, groups: CaptionGroups, name: str):
         super().__init__()
@@ -274,6 +311,10 @@ class CaptionControlGroup(QtWidgets.QWidget):
     @property
     def index(self) -> int:
         return self.groups.groupLayout.indexOf(self)
+
+    @property
+    def enabled(self) -> bool:
+        return not self.isHidden()
 
 
     def updateSelectedState(self, captions: set[str], force: bool):
@@ -585,6 +626,31 @@ class GroupMenu(QtWidgets.QMenu):
     def _addToFocus(self):
         focusTab = self.group.groups.ctx.focus
         focusTab.appendFocusTags(self.group.captionsExpandWildcards)
+
+
+class FilterMenu(QtWidgets.QMenu):
+    updated = Signal()
+
+    def __init__(self):
+        super().__init__()
+
+        self.actNamesOnly = self.addAction("Filter Group Names Only")
+        self.actNamesOnly.setCheckable(True)
+        self.actNamesOnly.triggered.connect(self.updated.emit)
+
+        self.actFilterHighlight = self.addAction("Filter Highlighting")
+        self.actFilterHighlight.setCheckable(True)
+        self.actFilterHighlight.setChecked(True)
+        self.actFilterHighlight.triggered.connect(self.updated.emit)
+
+    @property
+    def filterNamesOnly(self) -> bool:
+        return self.actNamesOnly.isChecked()
+
+    @property
+    def filterHighlight(self) -> bool:
+        return self.actFilterHighlight.isChecked()
+
 
 
 class Trash(QtWidgets.QLabel):

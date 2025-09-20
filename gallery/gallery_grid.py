@@ -398,6 +398,19 @@ class GalleryGrid(QtWidgets.QWidget):
                 iconState = self.filelist.getData(file, key)
                 widget.setIcon(key, iconState)
 
+        if (
+            self.ctx.captionsEnabled
+            and key == DataKeys.CaptionState
+            and self.filelist.getData(file, key) == DataKeys.IconStates.Saved
+            and (item := self.fileItems[file])
+        ):
+            if isinstance(item, GalleryListItem):
+                if not item.captionEdited:
+                    item.loadCaption(False)
+            else:
+                item.reloadCaption = True
+                item.update()
+
 
     def highlightFiles(self, files: list[str]):
         toggleFiles = self._highlightedFiles.symmetric_difference(files)

@@ -108,9 +108,18 @@ class Gallery(QtWidgets.QWidget):
         self.captionSrc.fileTypeUpdated.connect(self.onCaptionSourceChanged)
         layout.addLayout(self.captionSrc)
 
+        layout.addSpacing(2)
+
+        self.chkFilterCaptions = QtWidgets.QCheckBox("Filter")
+        self.chkFilterCaptions.setToolTip("Show only tags from visible groups and apply rules from Caption Window")
+        self.chkFilterCaptions.setEnabled(False)
+        self.chkFilterCaptions.toggled.connect(self.onCaptionFilterToggled)
+        layout.addWidget(self.chkFilterCaptions)
+
         self.btnReloadCaptions = qtlib.SaveButton("↻")
+        self.btnReloadCaptions.setToolTip("Reload Captions")
         self.btnReloadCaptions.setEnabled(False)
-        self.btnReloadCaptions.setFixedWidth(28)
+        self.btnReloadCaptions.setFixedWidth(30)
         self.btnReloadCaptions.clicked.connect(self.reloadCaptions)
         layout.addWidget(self.btnReloadCaptions)
 
@@ -162,18 +171,58 @@ class Gallery(QtWidgets.QWidget):
     @Slot()
     def onCaptionsToggled(self, state: bool):
         self.galleryGrid.ctx.captionsEnabled = state
+        self.galleryGrid.ctx.updateTextFlags()
+
         self.captionSrc.setEnabled(state)
         self.btnReloadCaptions.setEnabled(state)
+        self.chkFilterCaptions.setEnabled(state and self.cboViewMode.currentData() == GalleryGrid.VIEW_MODE_GRID)
 
         if state:
             self.btnReloadCaptions.setChanged(True)
         elif not self._switchingMode:
             self.reloadCaptions()
 
+    Slot()
+    def onCaptionFilterToggled(self, state: bool):
+        if self.cboViewMode.currentData() == GalleryGrid.VIEW_MODE_GRID:
+            self.reloadCaptions()
+
+    @Slot()
+    def onCaptionSourceChanged(self):
+        self.btnReloadCaptions.setChanged(True)
+
+    @Slot()
+    def reloadCaptions(self):
+        ctx = self.galleryGrid.ctx
+        ctx.filterNode     = None
+        ctx.rulesProcessor = None
+
+        if captionWin := self.tab.getWindowContent("caption"):
+            from caption.caption_context import CaptionContext
+            captionCtx: CaptionContext = captionWin.ctx
+            #ctx.captionHighlight = captionCtx.highlight
+
+            if self.chkFilterCaptions.isChecked():
+                ctx.filterNode      = captionCtx.groups.getGalleryFilterNode()
+                ctx.rulesProcessor  = captionCtx.rulesProcessor()
+                ctx.separator       = captionCtx.settings.separator
+
+        self.galleryGrid.reloadCaptions()
+        self.btnReloadCaptions.setChanged(False)
+
+    def onCaptionFilterUpdated(self):
+        'Called from Caption Window'
+        if self.chkCaptions.isChecked() and self.chkFilterCaptions.isChecked():
+            self.reloadCaptions()
+
+
     @Slot()
     def onViewModeChanged(self, index: int):
         mode = self.cboViewMode.itemData(index)
         if mode == GalleryGrid.VIEW_MODE_LIST:
+            self.chkFilterCaptions.setChecked(False)
+            self.chkFilterCaptions.setEnabled(False)
+
             self.chkCaptions.setChecked(True)
             self.chkCaptions.setEnabled(False)
         else:
@@ -197,16 +246,6 @@ class Gallery(QtWidgets.QWidget):
         self.lblThumbnailSize.setText(f"{size}")
         self.galleryGrid.setThumbnailSize(size)
         Config.galleryThumbnailSize = size
-
-    @Slot()
-    def onCaptionSourceChanged(self):
-        self.btnReloadCaptions.setChanged(True)
-
-    @Slot()
-    def reloadCaptions(self):
-        self.galleryGrid.reloadCaptions()
-        self.btnReloadCaptions.setChanged(False)
-
 
     @Slot()
     def updateStatusBar(self):

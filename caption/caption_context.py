@@ -150,7 +150,13 @@ class CaptionContextDataSource(HighlightDataSource):
         return self.ctx.settings.bannedCaptions
 
     def getGroups(self) -> Iterable[CaptionGroupData]:
+        highlightAll = not self.ctx.groups.filterMenu.filterHighlight
         return (
-            CaptionGroupData(group.captionsExpandWildcards, group.charFormat, group.color)
+            CaptionGroupData(
+                group.captionsExpandWildcards,
+                group.charFormat,
+                group.color
+            )
             for group in self.ctx.groups.groups
+            if highlightAll or group.enabled
         )
