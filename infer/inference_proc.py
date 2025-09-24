@@ -93,14 +93,14 @@ class AwaitableFunc:
 
 
 class InferenceProcConfig:
-    def __init__(self, hostName: str, configOverride: dict | None = None):
+    def __init__(self, hostName: str, cfgRemote: dict | None = None):
         self.hostName = hostName
 
         cfgLocal = Config.inferHosts.get(LOCAL_NAME, {})
         self.localBasePath: str = cfgLocal.get("model_base_path", "")
         self.remoteBasePath: str = ""
 
-        if hostName == LOCAL_NAME and not configOverride:
+        if not cfgRemote:
             self.remote = False
             self.hostServiceId = Service.ID.INFERENCE
             self.executable = sys.executable
@@ -108,8 +108,6 @@ class InferenceProcConfig:
         else:
             self.remote = True
             self.hostServiceId = Service.ID.HOST
-
-            cfgRemote: dict = configOverride or Config.inferHosts.get(hostName, {})
             self.remoteBasePath = cfgRemote.get("model_base_path", "")
 
             import shlex
@@ -483,8 +481,8 @@ class InferenceProcess(QObject):
             self._ready = state
             self.processReady.emit(self, state)
 
-    @Slot()
-    def _onProcessEnded(self, exitCode, exitStatus):
+    @Slot(int, QProcess.ExitStatus)
+    def _onProcessEnded(self, exitCode: int, exitStatus: QProcess.ExitStatus):
         print(f"Inference process '{self.procCfg.hostName}' ended. Exit code: {exitCode}, {exitStatus}")
 
         exception = InferenceException(self.procCfg.hostName, f"Process terminated")
@@ -506,7 +504,7 @@ class InferenceProcess(QObject):
                 self._ready = False
 
 
-    @Slot()
+    @Slot(int, dict, ProcFuture)
     def _writeMessage(self, serviceId: int, msg: dict, future: ProcFuture | None):
         reqId = self._nextReqId
         self._nextReqId += 1

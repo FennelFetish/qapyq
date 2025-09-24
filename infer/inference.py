@@ -20,23 +20,36 @@ class Inference(metaclass=Singleton):
         self._tokenizerProc: InferenceProcess | None = None
 
 
-    def createSession(self, maxProcesses: int = -1) -> InferenceSession:
-        prioHosts = sorted(Config.inferHosts.items(), key=lambda item: item[1].get("priority", 1.0), reverse=True)
-        if not prioHosts:
-            prioHosts.append((LOCAL_NAME, {"active": True}))
+    def _getHosts(self) -> list[tuple[str, dict]]:
+        hosts = dict[str, dict]()
+        for hostName, hostCfg in Config.inferHosts.items():
+            if not hostCfg.get("active"):
+                continue
 
+            if hostName != LOCAL_NAME:
+                hostCfg = hostCfg.copy()
+                hostCfg["remote"] = True
+
+            hosts[hostName] = hostCfg
+            procCount = hostCfg.get("proc_count", 1)
+            for i in range(2, procCount+1):
+                hosts[f"{hostName}[{i}]"] = hostCfg
+
+        if hosts:
+            return sorted(hosts.items(), key=lambda item: item[1].get("priority", 1.0), reverse=True)
+        return [(LOCAL_NAME, {})]
+
+
+    def createSession(self, maxProcesses: int = -1) -> InferenceSession:
         procStates: list[ProcState] = []
         hostnames = []
         with QMutexLocker(self._mutex):
-            for hostName, hostCfg in prioHosts:
-                if not hostCfg.get("active"):
-                    continue
-
+            for hostName, hostCfg in self._getHosts():
                 proc = self._procs.get(hostName)
                 if proc in self._procsInUse:
                     continue
                 if not proc:
-                    proc = self._procs[hostName] = self._createProc(hostName)
+                    proc = self._procs[hostName] = self._createProc(hostName, hostCfg)
 
                 self._procsInUse.add(proc)
 
@@ -66,14 +79,15 @@ class Inference(metaclass=Singleton):
                 self._procsInUse.discard(procState.proc)
 
 
-    def _createProc(self, hostName: str) -> InferenceProcess:
-        procCfg = InferenceProcConfig(hostName)
+    def _createProc(self, hostName: str, hostCfg: dict) -> InferenceProcess:
+        cfg = hostCfg if hostCfg.get("remote") else None
+        procCfg = InferenceProcConfig(hostName, cfg)
         proc = InferenceProcess(procCfg)
         proc.processEnded.connect(self._onProcessEnded, Qt.ConnectionType.QueuedConnection)
         proc.processStartFailed.connect(self._onProcessStartFailed, Qt.ConnectionType.QueuedConnection)
         return proc
 
-    @Slot()
+    @Slot(InferenceProcess)
     def _onProcessEnded(self, proc: InferenceProcess):
         with QMutexLocker(self._mutex):
             if proc in self._procsInUse:
@@ -86,7 +100,7 @@ class Inference(metaclass=Singleton):
 
         QThreadPool.globalInstance().start(remove)
 
-    @Slot()
+    @Slot(InferenceProcess)
     def _onProcessStartFailed(self, proc: InferenceProcess):
         with QMutexLocker(self._mutex):
             self._procsInUse.discard(proc)
@@ -123,7 +137,7 @@ class Inference(metaclass=Singleton):
             if self._tokenizerProc:
                 self._tokenizerProc.stop()
 
-    @Slot()
+    @Slot(InferenceProcess)
     def _onTokenizerProcessEnded(self, proc: InferenceProcess):
         def remove():
             proc.shutdown()
@@ -289,7 +303,7 @@ class InferenceSession:
             return min(self.readyProcs, key=ProcState.sortKey)
 
 
-    @Slot()
+    @Slot(InferenceProcess, bool)
     def _onProcReady(self, proc: InferenceProcess, state: bool):
         with self._condProc:
             if procState := next((p for p in self.procs if p.proc == proc), None):
@@ -565,7 +579,7 @@ class ImageUploader(QObject):
         self.imageDone.connect(self._imageDone, Qt.ConnectionType.QueuedConnection)
         self.uploadChunk.connect(self._uploadChunk, Qt.ConnectionType.QueuedConnection)
 
-    @Slot()
+    @Slot(str)
     def _queueFile(self, file: str):
         self.queue.append(file)
         self._queueNextFile(direct=True)
@@ -596,7 +610,7 @@ class ImageUploader(QObject):
         else:
             self.uploadChunk.emit()
 
-    @Slot()
+    @Slot(str)
     def _imageDone(self, file: str):
         self.inferProc.uncacheImage(file)
 

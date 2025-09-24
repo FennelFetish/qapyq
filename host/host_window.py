@@ -178,6 +178,19 @@ class LocalHostSettings(QtWidgets.QGroupBox):
         layout.setRowMinimumHeight(row, 20)
 
         row += 1
+        info = "The number of processes to spawn on this host. Multiplies VRAM usage."
+        layout.addWidget(QtWidgets.QLabel(info), row, 0, 1, 2)
+
+        row += 1
+        self.spinProcCount = QtWidgets.QSpinBox()
+        self.spinProcCount.setRange(1, 100)
+        layout.addWidget(QtWidgets.QLabel("Process Count:"), row, 0)
+        layout.addWidget(self.spinProcCount, row, 1)
+
+        row += 1
+        layout.setRowMinimumHeight(row, 20)
+
+        row += 1
         info = "This path is used to translate local model paths to remote paths."
         layout.addWidget(QtWidgets.QLabel(info), row, 0, 1, 2)
 
@@ -199,13 +212,15 @@ class LocalHostSettings(QtWidgets.QGroupBox):
 
     def fromDict(self, data: dict):
         self.spinPriority.setValue(data.get("priority", 2.0))
+        self.spinProcCount.setValue(data.get("proc_count", 1))
         self.txtModelBasePath.setText(data.get("model_base_path", ""))
 
     def toDict(self, active: bool) -> dict:
         return {
             "active": active,
             "priority": self.spinPriority.value(),
-            "model_base_path": self.txtModelBasePath.text()
+            "proc_count": self.spinProcCount.value(),
+            "model_base_path": self.txtModelBasePath.text().strip()
         }
 
 
@@ -233,6 +248,12 @@ class HostSettings(QtWidgets.QGroupBox):
         self.spinPriority.setRange(1.0, 100.0)
         layout.addWidget(QtWidgets.QLabel("Priority:"), row, 0)
         layout.addWidget(self.spinPriority, row, 1, 1, 2)
+
+        row += 1
+        self.spinProcCount = QtWidgets.QSpinBox()
+        self.spinProcCount.setRange(1, 100)
+        layout.addWidget(QtWidgets.QLabel("Process Count:"), row, 0)
+        layout.addWidget(self.spinProcCount, row, 1, 1, 2)
 
         row += 1
         self.txtModelBasePath = QtWidgets.QLineEdit()
@@ -291,6 +312,7 @@ class HostSettings(QtWidgets.QGroupBox):
 
     def fromDict(self, data: dict):
         self.spinPriority.setValue(data.get("priority", 1.0))
+        self.spinProcCount.setValue(data.get("proc_count", 1))
         self.spinQueueSize.setValue(data.get("queue_size", 3))
         self.txtCmd.setText(data.get("cmd", "ssh hostname /srv/qapyq/run-host.sh"))
         self.txtModelBasePath.setText(data.get("model_base_path", ""))
@@ -299,6 +321,7 @@ class HostSettings(QtWidgets.QGroupBox):
         return {
             "active": active,
             "priority": self.spinPriority.value(),
+            "proc_count": self.spinProcCount.value(),
             "queue_size": self.spinQueueSize.value(),
             "model_base_path": self.txtModelBasePath.text().strip(),
             "cmd": self.txtCmd.text().strip()
