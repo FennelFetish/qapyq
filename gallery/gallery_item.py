@@ -2,13 +2,13 @@ from __future__ import annotations
 import os
 from typing_extensions import override
 from PySide6 import QtGui, QtWidgets
-from PySide6.QtCore import QSize, Qt, Slot, QPoint
+from PySide6.QtCore import QSize, Qt, Slot, QPoint, QPointF, QTimer, QSignalBlocker
 from lib.filelist import DataKeys
 from lib.captionfile import FileTypeSelector
 from lib.util import CaptionSplitter
 from lib import qtlib
 from caption.caption_text import NavigationTextEdit
-from caption.caption_highlight import MatcherNode
+from caption.caption_highlight import CaptionHighlight, MatcherNode
 from caption.caption_filter import CaptionRulesProcessor, CaptionRulesSettings
 
 # Imported at the bottom because of circular dependency
@@ -39,7 +39,7 @@ class GalleryContext:
         from .gallery_sort import GallerySortControl
         self.gallerySort: GallerySortControl = None
 
-        # self.captionHighlight: CaptionHighlight | None = None
+        self.captionHighlight: CaptionHighlight | None = None
         self.filterNode: MatcherNode[bool] | None = None
         self.splitter = CaptionSplitter()
         self.separator = ", "
@@ -70,10 +70,7 @@ class GalleryContext:
                 tags = self.splitter.split(caption)
                 caption = self.separator.join(
                     tag for tag in tags
-                    if self.filterNode.match(list(
-                        word for w in tag.split(" ")
-                        if (word := w.strip())
-                    ))
+                    if self.filterNode.match(tag.split(" "))
                 )
 
             if self.rulesProcessor:
@@ -337,12 +334,53 @@ class GalleryGridItem(GalleryItem):
 
     def loadCaption(self):
         ctx = self.gallery.ctx
-        if ctx.captionsEnabled:
-            self.labelText = ctx.loadCaption(self.file, True)
-        else:
-            self.labelText = self.filename
-
+        self.labelText = ctx.loadCaption(self.file, True) if ctx.captionsEnabled else self.filename
         self.reloadCaption = False
+
+    def _layoutCaption(self, w: int) -> tuple[float, list[QtGui.QTextLayout]]:
+        ctx = self.gallery.ctx
+        layouts = list[QtGui.QTextLayout]()
+        totalHeight = 0.0
+
+        for line in filter(None, self.labelText.splitlines()):
+            textLayout = QtGui.QTextLayout(line)
+            textLayout.setCacheEnabled(True)
+            textLayout.setTextOption(ctx.textOpt)
+            layouts.append(textLayout)
+
+            if ctx.captionHighlight:
+                ctx.captionHighlight.highlightTextLayout(line, ctx.separator, textLayout)
+
+            textLayout.beginLayout()
+            while (line := textLayout.createLine()).isValid():
+                line.setLineWidth(w)
+                line.setPosition(QPointF(0, totalHeight))
+                totalHeight += line.height()
+                if totalHeight >= self.TEXT_MAX_HEIGHT:
+                    textLayout.endLayout()
+                    return self._addEllipsis(w, totalHeight, layouts)
+
+            textLayout.endLayout()
+
+        return totalHeight, layouts
+
+    def _addEllipsis(self, w: int, h: float, layouts: list[QtGui.QTextLayout]) -> tuple[float, list[QtGui.QTextLayout]]:
+        textLayout = QtGui.QTextLayout("…")
+        textLayout.setCacheEnabled(True)
+        textLayout.setTextOption(self.gallery.ctx.textOpt)
+
+        textLayout.beginLayout()
+        line = textLayout.createLine()
+        line.setLineWidth(w)
+
+        lineHeight = line.height()
+        h -= lineHeight * 0.4
+        line.setPosition(QPointF(0, h))
+        h += lineHeight
+
+        textLayout.endLayout()
+        layouts.append(textLayout)
+        return h, layouts
 
 
     @override
@@ -389,15 +427,26 @@ class GalleryGridItem(GalleryItem):
         # Draw label
         ctx = self.gallery.ctx
         textY = y + imgH + self.TEXT_SPACING
-        textRect = painter.fontMetrics().boundingRect(self.BORDER_SIZE, textY, w-self.BORDER_SIZE, self.TEXT_MAX_HEIGHT, ctx.textFlags, self.labelText)
-        if textRect.height() > self.TEXT_MAX_HEIGHT:
-            textRect.setHeight(self.TEXT_MAX_HEIGHT)
-
+        textW = w - self.BORDER_SIZE
         painter.setPen(pen)
-        painter.drawText(textRect, self.labelText, ctx.textOpt)
+
+        if ctx.captionsEnabled:
+            if self.labelText:
+                textH, textLayouts = self._layoutCaption(textW)
+                for textLayout in textLayouts:
+                    textLayout.draw(painter, QPoint(self.BORDER_SIZE, textY))
+            else:
+                textH = -2 * self.TEXT_SPACING
+        else:
+            textRect = painter.fontMetrics().boundingRect(self.BORDER_SIZE, textY, textW, self.TEXT_MAX_HEIGHT, ctx.textFlags, self.labelText)
+            if textRect.height() > self.TEXT_MAX_HEIGHT:
+                textRect.setHeight(self.TEXT_MAX_HEIGHT)
+            painter.drawText(textRect, self.labelText, ctx.textOpt)
+            textH = textRect.height()
+
         painter.end()
 
-        self._height = y + imgH + self.BORDER_SIZE + self.TEXT_SPACING + textRect.height() + self.TEXT_SPACING
+        self._height = y + imgH + self.TEXT_SPACING + textH + self.TEXT_SPACING + y
         self.setFixedHeight(int(self._height + 0.5))
 
 
@@ -444,7 +493,7 @@ class GalleryListItem(GalleryItem):
         layout.addWidget(self.btnReload, row, 3)
 
         row += 1
-        self.txtCaption = NavigationTextEdit(", ")
+        self.txtCaption = NavigationTextEdit(self.gallery.ctx.separator)
         self.txtCaption.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.MinimumExpanding)
         qtlib.setMonospace(self.txtCaption)
         qtlib.setShowWhitespace(self.txtCaption)
@@ -471,7 +520,7 @@ class GalleryListItem(GalleryItem):
 
     @property
     def captionEdited(self) -> bool:
-        return not (self.btnSave.isHidden() or self.btnReload.isHidden())
+        return not (self.btnSave.isHidden() and self.btnReload.isHidden())
 
     @Slot()
     def _reloadCaption(self):
@@ -482,20 +531,35 @@ class GalleryListItem(GalleryItem):
         if not self._built:
             return
 
-        caption = self.gallery.ctx.loadCaption(self.file)
-        self.txtCaption.setCaption(caption)
-        self.reloadCaption = False
+        ctx = self.gallery.ctx
+        caption = ctx.loadCaption(self.file)
+        self.txtCaption.separator = ctx.separator
+
+        # This loadCaption() method is called during repaint. Postpone highlighting to not repaint recursively.
+        with QSignalBlocker(self.txtCaption):
+            self.txtCaption.setCaption(caption)
+        QTimer.singleShot(0, self.updateCaptionHighlight)
 
         if reset:
             self.txtCaption.document().clearUndoRedoStacks()
 
         self.btnSave.hide()
         self.btnReload.hide()
+        self.reloadCaption = False
 
     @Slot()
     def _onCaptionChanged(self):
         self.btnSave.show()
         self.btnReload.show()
+        self.updateCaptionHighlight()
+
+    @Slot()
+    def updateCaptionHighlight(self):
+        ctx = self.gallery.ctx
+        if ctx.captionHighlight:
+            text = self.txtCaption.toPlainText()
+            ctx.captionHighlight.highlight(text, ctx.separator, self.txtCaption)
+
 
     @Slot()
     def _saveCaption(self):

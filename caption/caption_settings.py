@@ -9,17 +9,12 @@ from .caption_preset import CaptionPreset
 from config import Config
 
 
-# TODO?: Banned captions, per caption configurable matching method
-#        Strategy pattern defines what happens if banned caption is encountered
-#        --> Would probably be easier and more accurate to use LLM for such transformations
-
-
 class CaptionSettings(CaptionTab):
     def __init__(self, context):
         super().__init__(context)
 
-        self.bannedSeparator = ', '
         self._defaultPresetPath = Config.pathExport
+        self._emitUpdates = True
 
         self._build()
 
@@ -56,12 +51,12 @@ class CaptionSettings(CaptionTab):
         row += 1
         self.chkPrefixSeparator = QtWidgets.QCheckBox("Append separator to prefix")
         self.chkPrefixSeparator.setChecked(True)
-        self.chkPrefixSeparator.toggled.connect(lambda: self.ctx.controlUpdated.emit())
+        self.chkPrefixSeparator.toggled.connect(self._emitUpdate)
         layout.addWidget(self.chkPrefixSeparator, row, 1, Qt.AlignmentFlag.AlignTop)
 
         self.chkSuffixSeparator = QtWidgets.QCheckBox("Prepend separator to suffix")
         self.chkSuffixSeparator.setChecked(True)
-        self.chkSuffixSeparator.toggled.connect(lambda: self.ctx.controlUpdated.emit())
+        self.chkSuffixSeparator.toggled.connect(self._emitUpdate)
         layout.addWidget(self.chkSuffixSeparator, row, 2, Qt.AlignmentFlag.AlignTop)
 
         row += 1
@@ -69,12 +64,12 @@ class CaptionSettings(CaptionTab):
 
         self.chkRemoveDup = QtWidgets.QCheckBox("Remove Duplicates/Subsets")
         self.chkRemoveDup.setChecked(True)
-        self.chkRemoveDup.toggled.connect(lambda: self.ctx.controlUpdated.emit())
+        self.chkRemoveDup.toggled.connect(self._emitUpdate)
         layout.addWidget(self.chkRemoveDup, row, 1, Qt.AlignmentFlag.AlignTop)
 
         self.chkSortCaptions = QtWidgets.QCheckBox("Sort Captions")
         self.chkSortCaptions.setChecked(True)
-        self.chkSortCaptions.toggled.connect(lambda: self.ctx.controlUpdated.emit())
+        self.chkSortCaptions.toggled.connect(self._emitUpdate)
         layout.addWidget(self.chkSortCaptions, row, 2, Qt.AlignmentFlag.AlignTop)
 
         row += 1
@@ -83,7 +78,7 @@ class CaptionSettings(CaptionTab):
         row += 1
         self.tableReplace = EditableTable(2)
         self.tableReplace.setHorizontalHeaderLabels(["Search Pattern", "Replacement"])
-        self.tableReplace.contentChanged.connect(lambda: self.ctx.controlUpdated.emit())
+        self.tableReplace.contentChanged.connect(self._emitUpdate)
         layout.addWidget(QtWidgets.QLabel("Replace:"), row, 0, Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self.tableReplace, row, 1, 3, 2)
 
@@ -93,7 +88,7 @@ class CaptionSettings(CaptionTab):
         qtlib.setMonospace(self.txtPrefix)
         qtlib.setTextEditHeight(self.txtPrefix, 2)
         qtlib.setShowWhitespace(self.txtPrefix)
-        self.txtPrefix.textChanged.connect(lambda: self.ctx.controlUpdated.emit())
+        self.txtPrefix.textChanged.connect(self._emitUpdate)
         layout.addWidget(QtWidgets.QLabel("Prefix:"), row, 4, Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self.txtPrefix, row, 5, 2, 1, Qt.AlignmentFlag.AlignTop)
 
@@ -102,7 +97,7 @@ class CaptionSettings(CaptionTab):
         qtlib.setMonospace(self.txtSuffix)
         qtlib.setTextEditHeight(self.txtSuffix, 2)
         qtlib.setShowWhitespace(self.txtSuffix)
-        self.txtSuffix.textChanged.connect(lambda: self.ctx.controlUpdated.emit())
+        self.txtSuffix.textChanged.connect(self._emitUpdate)
         layout.addWidget(QtWidgets.QLabel("Suffix:"), row, 4, Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self.txtSuffix, row, 5, Qt.AlignmentFlag.AlignTop)
 
@@ -112,14 +107,14 @@ class CaptionSettings(CaptionTab):
         row += 1
         self.chkWhitelistGroups = QtWidgets.QCheckBox("Groups are Whitelists (Ban all other tags)")
         self.chkWhitelistGroups.toggled.connect(lambda checked: self.banWidget.setEnabled(not checked))
-        self.chkWhitelistGroups.toggled.connect(lambda: self.ctx.controlUpdated.emit())
+        self.chkWhitelistGroups.toggled.connect(self._emitUpdate)
         layout.addWidget(self.chkWhitelistGroups, row, 5, Qt.AlignmentFlag.AlignTop)
 
         row += 1
         layout.addWidget(QtWidgets.QLabel("Banned:"), row, 4, Qt.AlignmentFlag.AlignTop)
 
         self.banWidget = SortedStringFlowWidget()
-        self.banWidget.changed.connect(self.ctx.controlUpdated.emit)
+        self.banWidget.changed.connect(self._emitUpdate)
         layout.addWidget(qtlib.BaseColorScrollArea(self.banWidget), row, 5, 2, 1)
 
         row += 1
@@ -128,6 +123,12 @@ class CaptionSettings(CaptionTab):
         btnAddBanned.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         btnAddBanned.clicked.connect(self.banSelectedCaption)
         layout.addWidget(btnAddBanned, row, 4, Qt.AlignmentFlag.AlignTop)
+
+
+    @Slot()
+    def _emitUpdate(self):
+        if self._emitUpdates:
+            self.ctx.controlUpdated.emit()
 
 
     @property
@@ -282,25 +283,28 @@ class CaptionSettings(CaptionTab):
             self.applyPreset(CaptionPreset())
 
     def applyPreset(self, preset: CaptionPreset):
-        self.txtPrefix.setPlainText(preset.prefix)
-        self.txtSuffix.setPlainText(preset.suffix)
-        self.txtSeparator.setText(preset.separator)
-        self.chkPrefixSeparator.setChecked(preset.prefixSeparator)
-        self.chkSuffixSeparator.setChecked(preset.suffixSeparator)
-        self.chkRemoveDup.setChecked(preset.removeDuplicates)
-        self.chkSortCaptions.setChecked(preset.sortCaptions)
-        self.chkWhitelistGroups.setChecked(preset.whitelistGroups)
+        try:
+            self._emitUpdates = False
 
-        self.ctx.container.setAutoApplyRules(preset.autoApplyRules)
+            self.txtPrefix.setPlainText(preset.prefix)
+            self.txtSuffix.setPlainText(preset.suffix)
+            self.txtSeparator.setText(preset.separator)
+            self.chkPrefixSeparator.setChecked(preset.prefixSeparator)
+            self.chkSuffixSeparator.setChecked(preset.suffixSeparator)
+            self.chkRemoveDup.setChecked(preset.removeDuplicates)
+            self.chkSortCaptions.setChecked(preset.sortCaptions)
+            self.chkWhitelistGroups.setChecked(preset.whitelistGroups)
 
-        with QSignalBlocker(self.tableReplace):
+            self.ctx.container.setAutoApplyRules(preset.autoApplyRules)
+
             self.searchReplacePairs = preset.searchReplace
-
-        with QSignalBlocker(self.banWidget):
             self.bannedCaptions = preset.banned
 
-        with QSignalBlocker(self.ctx):
-            self.ctx.groups.loadFromPreset(preset)
-            self.ctx.conditionals.loadFromPreset(preset)
+            with QSignalBlocker(self.ctx):
+                self.ctx.groups.loadFromPreset(preset)
+                self.ctx.conditionals.loadFromPreset(preset)
 
-        self.ctx.controlUpdated.emit()
+        finally:
+            self._emitUpdates = True
+            self.ctx.controlUpdated.emit()
+            self.ctx.groups.updateGalleryFilter()

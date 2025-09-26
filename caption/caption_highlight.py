@@ -108,19 +108,19 @@ class CaptionHighlight:
 
     @property
     def colors(self) -> dict[str, str]:
-        if not self._cachedColors:
+        if self._cachedColors is None:
             self.update()
         return self._cachedColors
 
     @property
     def charFormats(self) -> dict[str, QTextCharFormat]:
-        if not self._cachedCharFormats:
+        if self._cachedCharFormats is None:
             self.update()
         return self._cachedCharFormats
 
     @property
     def matchNode(self) -> MatcherNode[CaptionFormat]:
-        if not self._cachedMatcherNode:
+        if self._cachedMatcherNode is None:
             self.updateMatcherNode()
         return self._cachedMatcherNode
 
@@ -202,6 +202,41 @@ class CaptionHighlight:
                         # No color specified
                         elif presence < 1.0:
                             HL.highlight(HL.clearFormat, presence, startPos, len(captionPart))
+
+                        startPos += len(captionPart) + 1
+
+                start += len(captionStrip) + padRight + len(separator)
+
+
+    def highlightTextLayout(self, text: str, separator: str, textLayout: QTextLayout):
+        separator = separator.strip()
+        splitCaptions = text.split(separator)
+
+        formats = self.charFormats
+        matchNode = self.matchNode
+
+        with TextLayoutHighlightContext(textLayout) as HL:
+            start = 0
+
+            for i, caption in enumerate(splitCaptions):
+                captionStrip, padLeft, padRight = stripCountPadding(caption)
+                start += padLeft
+
+                if format := formats.get(captionStrip):
+                    HL.highlight(format, start, len(captionStrip))
+
+                else:
+                    startPos = start
+                    for captionPart in captionStrip.translate(self._trans).split(self.SEPS[0]):
+                        # Try highlighting partial matches and combined tags
+                        captionWords = captionPart.split(" ")
+                        if matcherFormats := matchNode.match(captionWords):
+                            pos = startPos
+                            for i, word in enumerate(captionWords):
+                                # Format word
+                                if matchFormat := matcherFormats.get(i):
+                                    HL.highlight(matchFormat.charFormat, pos, len(word))
+                                pos += len(word) + 1
 
                         startPos += len(captionPart) + 1
 
@@ -387,6 +422,31 @@ class HighlightContext:
             range.start += offset
             self._blockFormatRanges[blockNr][range.start] = range
             del prevRanges[maxIndex-i]
+
+
+class TextLayoutHighlightContext:
+    def __init__(self, textLayout: QTextLayout):
+        self.textLayout = textLayout
+        self._formatRanges: dict[int, QTextLayout.FormatRange] = dict()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self._formatRanges:
+            self.textLayout.setFormats(list(self._formatRanges.values()))
+        return False
+
+    def highlight(self, format: QTextCharFormat, start: int, length: int):
+        if length <= 0:
+            return
+
+        range = QTextLayout.FormatRange()
+        range.format = format
+        range.start  = start
+        range.length = length
+
+        self._formatRanges[start] = range
 
 
 

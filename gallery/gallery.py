@@ -153,6 +153,7 @@ class Gallery(QtWidgets.QWidget):
         self.slideThumbnailSize.setTickInterval(self.THUMBNAIL_SIZE_STEP * 2)
         self.slideThumbnailSize.setSingleStep(self.THUMBNAIL_SIZE_STEP)
         self.slideThumbnailSize.setPageStep(self.THUMBNAIL_SIZE_STEP)
+        self.slideThumbnailSize.setTracking(False) # TODO: Still snap to steps
         self.slideThumbnailSize.setFixedWidth(120)
         self.slideThumbnailSize.setValue(Config.galleryThumbnailSize)
         self.slideThumbnailSize.valueChanged.connect(self.onThumbnailSizeChanged)
@@ -175,7 +176,7 @@ class Gallery(QtWidgets.QWidget):
 
         self.captionSrc.setEnabled(state)
         self.btnReloadCaptions.setEnabled(state)
-        self.chkFilterCaptions.setEnabled(state and self.cboViewMode.currentData() == GalleryGrid.VIEW_MODE_GRID)
+        self.chkFilterCaptions.setEnabled(state and self.isGridView)
 
         if state:
             self.btnReloadCaptions.setChanged(True)
@@ -184,7 +185,7 @@ class Gallery(QtWidgets.QWidget):
 
     Slot()
     def onCaptionFilterToggled(self, state: bool):
-        if self.cboViewMode.currentData() == GalleryGrid.VIEW_MODE_GRID:
+        if self.isGridView:
             self.reloadCaptions()
 
     @Slot()
@@ -193,6 +194,11 @@ class Gallery(QtWidgets.QWidget):
 
     @Slot()
     def reloadCaptions(self):
+        self._updateCaptionContext()
+        self.galleryGrid.reloadCaptions()
+        self.btnReloadCaptions.setChanged(False)
+
+    def _updateCaptionContext(self):
         ctx = self.galleryGrid.ctx
         ctx.filterNode     = None
         ctx.rulesProcessor = None
@@ -200,21 +206,22 @@ class Gallery(QtWidgets.QWidget):
         if captionWin := self.tab.getWindowContent("caption"):
             from caption.caption_context import CaptionContext
             captionCtx: CaptionContext = captionWin.ctx
-            #ctx.captionHighlight = captionCtx.highlight
+            ctx.captionHighlight = captionCtx.highlight
+            ctx.separator        = captionCtx.settings.separator
 
             if self.chkFilterCaptions.isChecked():
                 ctx.filterNode      = captionCtx.groups.getGalleryFilterNode()
                 ctx.rulesProcessor  = captionCtx.rulesProcessor()
-                ctx.separator       = captionCtx.settings.separator
-
-        self.galleryGrid.reloadCaptions()
-        self.btnReloadCaptions.setChanged(False)
 
     def onCaptionFilterUpdated(self):
         'Called from Caption Window'
-        if self.chkCaptions.isChecked() and self.chkFilterCaptions.isChecked():
+        if self.chkCaptions.isChecked() and self.isGridView:
             self.reloadCaptions()
 
+
+    @property
+    def isGridView(self) -> bool:
+        return self.cboViewMode.currentData() == GalleryGrid.VIEW_MODE_GRID
 
     @Slot()
     def onViewModeChanged(self, index: int):
@@ -233,6 +240,7 @@ class Gallery(QtWidgets.QWidget):
             finally:
                 self._switchingMode = False
 
+        self._updateCaptionContext()
         self.galleryGrid.setViewMode(mode)
         self.scrollToSelection()
         self.btnReloadCaptions.setChanged(False)

@@ -10,13 +10,6 @@ from .caption_wildcard import WildcardWindow, expandWildcards
 from .caption_highlight import MatcherNode
 
 
-# TODO?: Per group matching method:
-# - exact match (str1 == str2)
-# - substring ('b c' in 'a b c d e', but not 'b d')
-# - all words ('b c' in 'a b c d e', but not 'b f')
-# - any word  ('b d' in 'a b c d e', also 'b f')
-
-
 class CaptionGroups(CaptionTab):
     HUE_OFFSET = 0.3819444 # 1.0 - inverted golden ratio, ~137.5°
 
@@ -212,9 +205,7 @@ class CaptionGroups(CaptionTab):
         filterNode = MatcherNode[bool]()
         for group in filter(lambda g: g.enabled, self.groups):
             for cap in group.captionsExpandWildcards:
-                words = [word for w in cap.split(" ") if (word := w.strip())]
-                filterNode.addWords(words, True)
-
+                filterNode.add(cap, True)
         return filterNode
 
     @Slot()
