@@ -51,6 +51,7 @@ WRITE_MODE_TEXT = {
 class BatchApply(QtWidgets.QWidget):
     def __init__(self, tab, logWidget: BatchLog, bars):
         super().__init__()
+        self.tab = tab
         self.logWidget = logWidget
         self.taskHandler = BatchTaskHandler("Apply", bars, tab.filelist, self.getConfirmOps, self.createTask)
 
@@ -99,7 +100,7 @@ class BatchApply(QtWidgets.QWidget):
 
         row += 1
         btnUpdatePreview = QtWidgets.QPushButton("Regenerate")
-        btnUpdatePreview.clicked.connect(self._updatePreview)
+        btnUpdatePreview.clicked.connect(self.regeneratePreview)
         layout.addWidget(btnUpdatePreview, row, 0, Qt.AlignmentFlag.AlignTop)
         layout.setRowStretch(row, 1)
 
@@ -207,6 +208,10 @@ class BatchApply(QtWidgets.QWidget):
     def onFileChanged(self, currentFile):
         self._parser = TemplateVariableParser(currentFile)
         self._updateParser()
+
+    @Slot()
+    def regeneratePreview(self):
+        self.onFileChanged(self.tab.filelist.getCurrentFile())
 
 
     @Slot()

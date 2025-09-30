@@ -10,6 +10,7 @@ import tools.scale as scale
 import ui.export_settings as export
 from infer.inference import InferenceChain
 from infer.inference_proc import InferenceProcess
+from infer.model_settings import ScaleModelSettings
 from .batch_task import BatchTask, BatchInferenceTask, BatchTaskHandler
 from .batch_log import BatchLog
 
@@ -156,7 +157,23 @@ class BatchScale(QtWidgets.QWidget):
 
 
     def getConfirmOps(self) -> list[str]:
-        ops = [f"Resize the images using the '{self.cboScaleMode.currentText()}' mode"]
+        ops = [
+            f"Resize the images using the '{self.cboScaleMode.currentText()}' mode",
+            f"Use the '{self.cboScalePreset.currentText()}' scaling preset:"
+        ]
+
+        scalePreset = self.cboScalePreset.getSelectedPreset()
+        interpDown = ScaleModelSettings.getInterpDown(scalePreset)
+        if ScaleModelSettings.getLowPassFilter(scalePreset):
+            ops.append(f"<tab>'{interpDown}' interpolation for downscaling (with anti-aliasing)")
+        else:
+            ops.append(f"<tab>'{interpDown}' interpolation for downscaling (no anti-aliasing)")
+
+        interpUp = ScaleModelSettings.getInterpUp(scalePreset)
+        ops.append(f"<tab>'{interpUp}' interpolation for upscaling")
+
+        if self.cboScalePreset.getScaleConfigFactory().needsInference():
+            ops.append("<tab>Use AI upscaling if needed")
 
         if self.pathSettings.overwriteFiles:
             ops.append( qtlib.htmlRed("Overwrite existing images!") )

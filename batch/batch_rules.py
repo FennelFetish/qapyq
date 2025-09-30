@@ -1,4 +1,4 @@
-import os
+import os, enum
 from typing import Callable, Iterable
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QTimer
@@ -17,7 +17,13 @@ from .batch_log import BatchLog
 
 
 class BatchRules(QtWidgets.QWidget):
+    class Tab(enum.IntEnum):
+        Rules = 0
+        Groups = 1
+        Conditionals = 2
+
     formatsUpdated = Signal()
+
 
     def __init__(self, tab, logWidget: BatchLog, bars):
         super().__init__()
@@ -25,7 +31,6 @@ class BatchRules(QtWidgets.QWidget):
         self.logWidget = logWidget
         self.taskHandler = BatchTaskHandler("Rules", bars, tab.filelist, self.getConfirmOps, self.createTask)
 
-        self.bannedSeparator = ", "
         self.captionFile: CaptionFile = None
         self._defaultPresetPath = Config.pathExport
         self._updateEnabled = True
@@ -71,15 +76,17 @@ class BatchRules(QtWidgets.QWidget):
         self.subtabWidget.addTab(self._buildRules(), "Rules")
         self.subtabWidget.addTab(self._buildGroups(), "Groups")
         self.subtabWidget.addTab(self._buildConditionals(), "Conditionals")
+        self._updateSubtabText()
         return self.subtabWidget
 
-    def showSubtab(self, name: str):
-        tabIndexes = {
-            "rules": 0,
-            "groups": 1,
-            "conditionals": 2
-        }
-        self.subtabWidget.setCurrentIndex(tabIndexes[name])
+    def showSubtab(self, tab: Tab):
+        self.subtabWidget.setCurrentIndex(tab.value)
+
+    def _updateSubtabText(self):
+        numGroups = self.groupLayout.count()
+        numConds = self.conditionalsLayout.count()
+        self.subtabWidget.setTabText(self.Tab.Groups.value, f"Groups ({numGroups})")
+        self.subtabWidget.setTabText(self.Tab.Conditionals.value, f"Conditionals ({numConds})")
 
 
     def _buildRules(self):
@@ -206,7 +213,7 @@ class BatchRules(QtWidgets.QWidget):
         layout.addWidget(scrollArea, 1)
 
         btnAddConditional = QtWidgets.QPushButton("✚ Add Conditional Rule")
-        btnAddConditional.clicked.connect(lambda: self.addConditional(None))
+        btnAddConditional.clicked.connect(self._addConditionalClick)
         layout.addWidget(btnAddConditional, 0, Qt.AlignmentFlag.AlignBottom)
 
         widget = QtWidgets.QWidget()
@@ -310,6 +317,11 @@ class BatchRules(QtWidgets.QWidget):
         condWidget.ruleUpdated.connect(self.updatePreview)
         condWidget.removeClicked.connect(self.removeConditional)
         self.conditionalsLayout.addWidget(condWidget, 0, Qt.AlignmentFlag.AlignTop)
+
+    @Slot()
+    def _addConditionalClick(self):
+        self.addConditional(None)
+        self._updateSubtabText()
 
     @Slot()
     def removeConditional(self, condWidget: ConditionalRule):
@@ -427,6 +439,8 @@ class BatchRules(QtWidgets.QWidget):
 
         self.txtPreview.setPlainText(text)
         self.highlight.highlight(text, self.txtSeparator.text(), self.txtPreview)
+
+        self._updateSubtabText()
 
 
     def getConfirmOps(self) -> list[str]:

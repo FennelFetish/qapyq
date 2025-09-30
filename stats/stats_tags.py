@@ -456,13 +456,13 @@ class TagTableView(QtWidgets.QTableView):
             rule.actions.append(actionAdd)
             preset.conditionals.append(rule)
 
-        applyBatchRulesPreset(self.tab, self, preset, self.tagStats.captionSrc, "conditionals")
+        applyBatchRulesPreset(self.tab, self, preset, self.tagStats.captionSrc, BatchRules.Tab.Conditionals)
 
     @Slot()
     def _batchRemoveTags(self):
         preset = CaptionPreset()
         preset.banned.extend(self.selectedTags())
-        applyBatchRulesPreset(self.tab, self, preset, self.tagStats.captionSrc, "rules")
+        applyBatchRulesPreset(self.tab, self, preset, self.tagStats.captionSrc, BatchRules.Tab.Rules)
 
     @Slot()
     def _batchReplaceTags(self):
@@ -477,7 +477,7 @@ class TagTableView(QtWidgets.QTableView):
             rule.actions.append(actionReplace)
             preset.conditionals.append(rule)
 
-        applyBatchRulesPreset(self.tab, self, preset, self.tagStats.captionSrc, "conditionals")
+        applyBatchRulesPreset(self.tab, self, preset, self.tagStats.captionSrc, BatchRules.Tab.Conditionals)
 
     @Slot()
     def _batchPrioritizeSelectedTag(self):
@@ -487,7 +487,7 @@ class TagTableView(QtWidgets.QTableView):
 
         preset = CaptionPreset()
         preset.addGroup("Group", "#000", MutualExclusivity.Priority, False, tags)
-        applyBatchRulesPreset(self.tab, self, preset, self.tagStats.captionSrc, "groups")
+        applyBatchRulesPreset(self.tab, self, preset, self.tagStats.captionSrc, BatchRules.Tab.Groups)
 
 
 
@@ -546,7 +546,7 @@ def getBatchWindow(tab: ImgTab, parent: QtWidgets.QWidget, show=False) -> BatchC
     return getAuxWindow("batch", tab, parent, show)
 
 
-def applyBatchRulesPreset(tab: ImgTab, parent: QtWidgets.QWidget, captionPreset: CaptionPreset, captionSrc: FileTypeSelector, subtab=""):
+def applyBatchRulesPreset(tab: ImgTab, parent: QtWidgets.QWidget, captionPreset: CaptionPreset, captionSrc: FileTypeSelector, subtab: BatchRules.Tab):
     batchWin = getBatchWindow(tab, parent, show=True)
     if not batchWin:
         return
@@ -560,9 +560,7 @@ def applyBatchRulesPreset(tab: ImgTab, parent: QtWidgets.QWidget, captionPreset:
     captionPreset.removeDuplicates = False
     captionPreset.sortCaptions = False
     rulesTab.applyPreset(captionPreset)
-
-    if subtab:
-        rulesTab.showSubtab(subtab)
+    rulesTab.showSubtab(subtab)
 
 
 def getAuxWindow(windowName: str, tab: ImgTab, parent: QtWidgets.QWidget, show: bool) -> QtWidgets.QWidget | None:
