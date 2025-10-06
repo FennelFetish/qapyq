@@ -1,4 +1,4 @@
-import os, superqt, copy, traceback
+import os, superqt, copy, traceback, math
 from difflib import SequenceMatcher
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
@@ -676,7 +676,7 @@ class ScaleConfigFactory:
         return self.createConfig(self.presetData, scaleFactor)
 
     @staticmethod
-    def createConfig(presetData: dict, scaleFactor: float):
+    def createConfig(presetData: dict, scaleFactor: float) -> ScaleConfig:
         interpUp   = ScaleModelSettings.getInterpUp(presetData)
         interpDown = ScaleModelSettings.getInterpDown(presetData)
         lpFilter   = ScaleModelSettings.getLowPassFilter(presetData)
@@ -754,7 +754,11 @@ class ScalePresetComboBox(QtWidgets.QComboBox):
 
 
 class ImageExportTask(QRunnable):
-    MIN_LP_SIGMA = 0.8  # Min downscale factor to apply gauss blur: 2.4
+    MIN_LP_SIGMA     = 0.2
+
+    SIGMA_RAMP_START = 1.33333
+    SIGMA_RAMP_END   = 2.4
+    SIGMA_RAMP_SCALE = (1 / (SIGMA_RAMP_END - SIGMA_RAMP_START)) * math.pi
 
 
     class ExportTaskSignals(QObject):
@@ -884,11 +888,23 @@ class ImageExportTask(QRunnable):
         downScaleX = srcWidth  / targetWidth
         downScaleY = srcHeight / targetHeight
 
-        # https://scikit-image.org/docs/stable/api/skimage.transform.html#skimage.transform.pyramid_reduce
-        sigmaX = 2 * downScaleX / 6
-        sigmaY = 2 * downScaleY / 6
+        if downScaleX < cls.SIGMA_RAMP_START and downScaleY < cls.SIGMA_RAMP_START:
+            #print(f"skip blur, scale factor x:{downScaleX}, y:{downScaleY}")
+            return mat
 
-        if sigmaX < cls.MIN_LP_SIGMA or sigmaY < cls.MIN_LP_SIGMA:
+        # https://scikit-image.org/docs/stable/api/skimage.transform.html#skimage.transform.pyramid_reduce
+        # https://www.desmos.com/calculator/u4dyh8mak0
+        sigmaX = 2 * downScaleX / 6
+        if downScaleX < cls.SIGMA_RAMP_END:
+            t = (downScaleX - cls.SIGMA_RAMP_END) * cls.SIGMA_RAMP_SCALE
+            sigmaX *= math.cos(t) / 2 + 0.5
+
+        sigmaY = 2 * downScaleY / 6
+        if downScaleY < cls.SIGMA_RAMP_END:
+            t = (downScaleY - cls.SIGMA_RAMP_END) * cls.SIGMA_RAMP_SCALE
+            sigmaY *= math.cos(t) / 2 + 0.5
+
+        if sigmaX < cls.MIN_LP_SIGMA and sigmaY < cls.MIN_LP_SIGMA:
             #print(f"skip blur, scale factor x:{downScaleX}, y:{downScaleY}, gauss sigma x:{sigmaX} / y:{sigmaY}")
             return mat
 
@@ -900,39 +916,3 @@ class ImageExportTask(QRunnable):
         #print(f"downscaling by x:{downScaleX} / y:{downScaleY}, gauss sigma x:{sigmaX} / y:{sigmaY} @ kernel size {ksize}")
         mat = cv.GaussianBlur(mat, ksize, sigmaX=sigmaX, sigmaY=sigmaY)
         return mat
-
-
-    # def _tryReduce(self, mat: np.ndarray, ptsSrc: list[list[float]]) -> np.ndarray:
-    #     channels = mat.shape[2] if len(mat.shape) > 2  else 1
-
-    #     srcWidth, srcHeight = self.calcPolySize(ptsSrc)
-    #     areaFactor = np.sqrt((self.targetWidth * self.targetHeight) / (srcWidth * srcHeight))
-    #     factor = int(0.9 / areaFactor) # TODO: Only powers of 2 matter for antialiasing
-    #     print(f"reduce factor: {factor}")
-
-    #     if factor < 2:
-    #         return mat
-
-    #     h, w = mat.shape[:2]
-    #     padW: int = (-w) % factor
-    #     padH: int = (-h) % factor
-    #     if padW or padH:
-    #         mat = cv.copyMakeBorder(mat, 0, padH, 0, padW, borderType=cv.BORDER_REPLICATE)
-    #         # TODO: Divide padding region by padding size to prevent skewing the mean
-    #         print(f"Padded to {mat.shape[1]}x{mat.shape[0]} (padW={padW}, padH={padH})")
-
-    #     reduceW = mat.shape[1] // factor
-    #     reduceH = mat.shape[0] // factor
-    #     print(f"scaleFactor: {areaFactor}, reducing from {mat.shape[1]}x{mat.shape[0]} to {reduceW}x{reduceH}")
-
-    #     mat = mat.reshape(reduceH, factor, reduceW, factor, channels).mean(axis=(1,3)).round().astype(np.uint8)
-
-    #     reduceW -= padW / factor
-    #     reduceH -= padH / factor
-    #     for i, p in enumerate(ptsSrc):
-    #         x, y = p
-    #         p[0] = (np.ceil(p[0]) / w * reduceW) - 0.5
-    #         p[1] = (np.ceil(p[1]) / h * reduceH) - 0.5
-    #         print(f"  P[{i}] from {x} / {y}  to  {p[0]} / {p[1]}")
-
-    #     return mat
