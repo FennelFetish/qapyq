@@ -244,7 +244,7 @@ class CropTool(ViewTool):
         print(message)
         self.tab.statusBar().showColoredMessage(message, success=True)
 
-        self._imgview.filelist.setData(file, DataKeys.CropState, DataKeys.IconStates.Saved)
+        self.tab.filelist.setData(file, DataKeys.CropState, DataKeys.IconStates.Saved)
         self._toolbar.updateExport()
         self._lastExportedFile = path
 
