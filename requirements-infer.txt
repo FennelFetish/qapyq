@@ -1,0 +1,36 @@
+# Inference
+transformers
+accelerate
+
+# Quantization
+bitsandbytes
+
+# llama-cpp-python
+diskcache
+
+# onnx
+onnxruntime-gpu
+protobuf
+humanfriendly
+
+# WD Tags
+pandas
+
+# InternVL2
+timm
+sentencepiece
+einops
+
+# YOLO
+ultralytics
+onnx
+
+# BriaAI RMBG
+kornia
+
+# InSPyReNet rembg
+transparent-background
+
+# Image Upscaling
+spandrel
+spandrel_extra_arches
