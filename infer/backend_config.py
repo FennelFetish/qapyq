@@ -52,6 +52,7 @@ BackendsCaption = {
     "Moondream":        BackendDef("moondream",     BackendTypes.LLAMA_CPP),
     "Ovis-1.6":         BackendDef("ovis16",        BackendTypes.TRANSFORMERS),
     "Ovis-2.0":         BackendDef("ovis2",         BackendTypes.TRANSFORMERS),
+    "Ovis-2.5":         BackendDef("ovis25",        BackendTypes.TRANSFORMERS),
     "Qwen2-VL":         BackendDef("qwen2vl",       BackendTypes.TRANSFORMERS),
     "Qwen2.5-VL":       BackendDef("qwen25vl",      BackendTypes.TRANSFORMERS),
     #"Qwen2.5-VL VLLM":  BackendDef("qwen25vl-vllm", BackendTypes.VLLM)
@@ -150,6 +151,9 @@ class BackendLoader:
             case "ovis2":
                 from .backend_ovis2 import Ovis2Backend
                 return Ovis2Backend(config)
+            case "ovis25":
+                from .backend_ovis25 import Ovis25Backend
+                return Ovis25Backend(config)
             case "qwen2vl":
                 from .backend_qwen2vl import Qwen2VLBackend
                 return Qwen2VLBackend(config)
