@@ -1,8 +1,3 @@
-# GUI
-PySide6
-superqt
-natsort
-
 # Image
 opencv-python-headless
 pillow
@@ -11,3 +6,6 @@ numpy
 
 # Inter-process communication
 msgpack
+
+# Setup
+wheel

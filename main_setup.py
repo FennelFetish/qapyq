@@ -29,17 +29,18 @@ COMP_FLASHATTN = Component("FlashAttention",    False,  ["-r", "requirements-fla
 
 COMPONENTS = {
     "1": ComponentList("all components", True, [
-        Component("GUI requirements",       True,   ["-r", "requirements.txt"]),
-        Component("wheel",                  True,   ["wheel"]),
+        Component("base requirements",      True,   ["-r", "requirements.txt"]),
+        Component("GUI requirements",       True,   ["-r", "requirements-gui.txt"]),
         Component("PyTorch",                True,   ["-r", "requirements-pytorch.txt"]),
         COMP_INFERENCE,
         Component("llama.cpp",              False,  ["-r", "requirements-llamacpp.txt"]),
     ]),
     "2": ComponentList("only GUI", False, [
-        Component("GUI requirements",       True,   ["-r", "requirements.txt"]),
+        Component("base requirements",      True,   ["-r", "requirements.txt"]),
+        Component("GUI requirements",       True,   ["-r", "requirements-gui.txt"]),
     ]),
     "3": ComponentList("only backend", True, [
-        Component("base requirements",      True,   ["wheel", "msgpack"]),
+        Component("base requirements",      True,   ["-r", "requirements.txt"]),
         Component("PyTorch",                True,   ["-r", "requirements-pytorch.txt"]),
         COMP_INFERENCE,
         Component("llama.cpp",              False,  ["-r", "requirements-llamacpp.txt"]),
