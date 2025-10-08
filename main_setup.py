@@ -39,7 +39,7 @@ COMPONENTS = {
         Component("GUI requirements",       True,   ["-r", "requirements.txt"]),
     ]),
     "3": ComponentList("only backend", True, [
-        Component("wheel",                  True,   ["wheel"]),
+        Component("base requirements",      True,   ["wheel", "msgpack"]),
         Component("PyTorch",                True,   ["-r", "requirements-pytorch.txt"]),
         COMP_INFERENCE,
         Component("llama.cpp",              False,  ["-r", "requirements-llamacpp.txt"]),
@@ -107,10 +107,10 @@ def askOldTransformers() -> bool:
     while True:
         choice = input("[y/n, default n] ").strip().lower() or "n"
         if choice == "y":
-            printSep(f"Selecting transformers version {OLD_TRANSFORMERS_VERSION} for installation")
+            printSep(f"Selecting transformers version {OLD_TRANSFORMERS_VERSION} for installation.")
             return True
         if choice == "n":
-            printSep("Selecting the most recent transformers version for installation")
+            printSep("Selecting the most recent transformers version for installation.")
             return False
 
         printSep("Invalid selection. Please enter 'y' for the old version or 'n' for the newest version.")
@@ -122,10 +122,10 @@ def askFlashAttention() -> bool:
     while True:
         choice = input("[y/n, default n] ").strip().lower() or "n"
         if choice == "y":
-            printSep("Selecting FlashAttention for installation")
+            printSep("Selecting FlashAttention for installation.")
             return True
         if choice == "n":
-            printSep("Not installing FlashAttention")
+            printSep("Not installing FlashAttention.")
             return False
 
         printSep("Invalid selection. Please enter 'y' for yes or 'n' for no.")
