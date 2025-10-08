@@ -1,13 +1,22 @@
+import csv
 import numpy as np
 import onnxruntime
-import pandas as pd
 import torch # Not used directly, but required for GPU inference
 from .tag import TagBackend, ThresholdMode
 from .devmap import DevMap
 from config import Config
 
 
+class CategoryIndexes:
+    def __init__(self):
+        self.general: list[int]   = list()
+        self.character: list[int] = list()
+        self.rating: list[int]    = list()
+
+
 class WDTag(TagBackend):
+    SEP = ", "
+
     DEFAULT_GENERAL_THRESH = 0.35
     DEFAULT_CHAR_THRESH = 0.85
 
@@ -26,12 +35,7 @@ class WDTag(TagBackend):
         self.characterThresholdMode: ThresholdMode = ThresholdMode(self.DEFAULT_CHAR_THRESH, True, True)
 
         self.setConfig(config)
-
-        sep_tags = self._loadLabels(config.get("csv_path"))
-        self.tag_names         = sep_tags[0]
-        self.rating_indexes    = sep_tags[1]
-        self.general_indexes   = sep_tags[2]
-        self.character_indexes = sep_tags[3]
+        self.tagNames, self.indexes = self._loadLabels(config.get("csv_path"))
 
         # https://onnxruntime.ai/docs/api/python/api_summary.html
         # https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html#configuration-options
@@ -44,6 +48,9 @@ class WDTag(TagBackend):
         self.model = onnxruntime.InferenceSession(config.get("model_path"), providers=providers)
         _, height, width, _ = self.model.get_inputs()[0].shape
         self.modelTargetSize = height
+
+        self.inputName = self.model.get_inputs()[0].name
+        self.outputNames = [self.model.get_outputs()[0].name]
 
 
     def __del__(self):
@@ -69,37 +76,34 @@ class WDTag(TagBackend):
         img = np.expand_dims(img, axis=0)
 
         results = self.predict(img)
-        tags = ", ".join(res for res in results if res)
+        tags = self.SEP.join(filter(None, results))
         return tags
 
 
-    def predict(self, image) -> tuple[str, ...]:
-        input_name = self.model.get_inputs()[0].name
-        label_name = self.model.get_outputs()[0].name
-        preds = self.model.run([label_name], {input_name: image})[0]
-
-        labels: list[tuple[str, float]] = list(zip(self.tag_names, preds[0].astype(float)))
+    def predict(self, image: np.ndarray) -> tuple[str, ...]:
+        preds = self.model.run(self.outputNames, {self.inputName: image})[0]
+        labels: list[tuple[str, float]] = list(zip(self.tagNames, preds[0].tolist()))
 
         # First 4 labels are actually ratings: pick one with argmax
         if self.includeRatings:
-            maxRating = max(self.nameScores(labels, self.rating_indexes), key=self.scoreKey)
+            maxRating = max(self.nameScores(labels, self.indexes.rating), key=self.scoreKey)
             rating = "rating " + maxRating[0]
         else:
             rating = ""
 
         # Then we have general tags: pick any where prediction confidence > threshold
         if self.includeGeneral:
-            generalTags = self.processPreds(labels, self.general_indexes, self.generalThresholdMode)
+            generalTags = self.processPreds(labels, self.indexes.general, self.generalThresholdMode)
         else:
             generalTags = ""
 
         # Everything else is characters: pick any where prediction confidence > threshold
         if self.includeCharacters:
             if self.characterOnlyMax:
-                maxCharacter = max(self.nameScores(labels, self.character_indexes), key=self.scoreKey)
+                maxCharacter = max(self.nameScores(labels, self.indexes.character), key=self.scoreKey)
                 characterTags = maxCharacter[0] if maxCharacter[1] > self.characterThresholdMode.threshold else ""
             else:
-                characterTags = self.processPreds(labels, self.character_indexes, self.characterThresholdMode, self.MIN_CHAR_THRESH)
+                characterTags = self.processPreds(labels, self.indexes.character, self.characterThresholdMode, self.MIN_CHAR_THRESH)
         else:
             characterTags = ""
 
@@ -119,7 +123,7 @@ class WDTag(TagBackend):
             key=cls.scoreKey,
             reverse=True,
         )
-        return ", ".join(x[0] for x in sortedNames)
+        return cls.SEP.join(x[0] for x in sortedNames)
 
 
     @staticmethod
@@ -132,14 +136,27 @@ class WDTag(TagBackend):
 
 
     @staticmethod
-    def _loadLabels(csvPath: str) -> tuple[list[str], list[int], list[int], list[int]]:
-        dataframe = pd.read_csv(csvPath)
+    def _loadLabels(csvPath: str) -> tuple[list[str], CategoryIndexes]:
+        tagNames = list[str]()
+        indexes = CategoryIndexes()
 
-        name_series = dataframe["name"]
-        name_series = name_series.map(TagBackend.removeUnderscore)
-        tag_names = name_series.tolist()
+        with open(csvPath, 'r', newline='') as csvFile:
+            # columns: tag_id, name, category, count
+            reader = csv.reader(csvFile)
 
-        rating_indexes = list(np.where(dataframe["category"] == 9)[0])
-        general_indexes = list(np.where(dataframe["category"] == 0)[0])
-        character_indexes = list(np.where(dataframe["category"] == 4)[0])
-        return tag_names, rating_indexes, general_indexes, character_indexes
+            row = next(reader)
+            if row[1] != "name" or row[2] != "category":
+                raise ValueError("Unrecognized column names in CSV file")
+
+            for i, row in enumerate(reader):
+                tagNames.append(TagBackend.removeUnderscore(row[1]))
+
+                category = int(row[2])
+                match category:
+                    case 0: indexes.general.append(i)
+                    case 4: indexes.character.append(i)
+                    case 9: indexes.rating.append(i)
+                    case _:
+                        raise ValueError(f"Invalid category in CSV file on row {i+1}: {category}")
+
+        return tagNames, indexes

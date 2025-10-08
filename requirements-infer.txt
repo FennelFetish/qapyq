@@ -13,9 +13,6 @@ onnxruntime-gpu
 protobuf
 humanfriendly
 
-# WD Tags
-pandas
-
 # InternVL2
 timm
 sentencepiece
