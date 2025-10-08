@@ -1,49 +1,11 @@
-# GUI
-PySide6
-superqt
-natsort
-
 # Image
 opencv-python-headless
 pillow
 pillow-jxl-plugin
+numpy
 
 # Inter-process communication
 msgpack
 
-# Inference
-transformers>=4.45.0,<4.46 # InternVL2 1B/40B have issues with 4.46
-accelerate
-
-# Quantization
-bitsandbytes
-
-# llama-cpp-python
-diskcache
-
-# onnx
-numpy
-protobuf
-humanfriendly
-
-# WD Tags
-pandas
-
-# InternVL2
-timm
-sentencepiece
-einops
-
-# YOLO
-ultralytics
-onnx
-
-# BriaAI RMBG
-kornia
-
-# InSPyReNet rembg
-transparent-background
-
-# Image Upscaling
-spandrel
-spandrel_extra_arches
+# Setup
+wheel

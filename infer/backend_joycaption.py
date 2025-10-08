@@ -49,7 +49,7 @@ class JoyCaptionBackend(CaptionBackend):
 
 
     def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
-        image = imgFile.openPIL()
+        image = imgFile.openPIL(forceRGB=True)
         answers = dict()
 
         set_seed(self.randomSeed())

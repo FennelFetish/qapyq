@@ -1,7 +1,9 @@
 #--extra-index-url https://download.pytorch.org/whl/cu121
---extra-index-url https://download.pytorch.org/whl/cu124
+#--extra-index-url https://download.pytorch.org/whl/cu124
+#--extra-index-url https://download.pytorch.org/whl/cu126
+--extra-index-url https://download.pytorch.org/whl/cu128
+#--extra-index-url https://download.pytorch.org/whl/cu129
+#--extra-index-url https://download.pytorch.org/whl/rocm6.4
 
-# Molmo is slow with torch 2.5.0
-
-torch==2.4.1
+torch
 torchvision

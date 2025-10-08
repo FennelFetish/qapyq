@@ -91,14 +91,13 @@ Find more specialized finetuned models on [huggingface.co](https://huggingface.c
   Generate complete-sentence captions for images.
   - [Florence-2](https://huggingface.co/collections/microsoft/florence-6669f44df0d87d9c3bfb76de)
   - [Gemma3 (GGUF)](https://huggingface.co/collections/unsloth/gemma-3-67d12b7e8816ec6efa7e4e5b)
-  - [InternVL2](https://huggingface.co/collections/OpenGVLab/internvl-20-667d3961ab5eb12c7ed1463e), [InternVL2.5](https://huggingface.co/collections/OpenGVLab/internvl25-673e1019b66e2218f68d7c1c), [InternVL2.5-MPO](https://huggingface.co/collections/OpenGVLab/internvl25-mpo-6753fed98cd828219b12f849), [InternVL3](https://huggingface.co/collections/OpenGVLab/internvl3-67f7f690be79c2fe9d74fe9d)
+  - [InternVL2](https://huggingface.co/collections/OpenGVLab/internvl-20-667d3961ab5eb12c7ed1463e), [InternVL2.5](https://huggingface.co/collections/OpenGVLab/internvl25-673e1019b66e2218f68d7c1c), [InternVL2.5-MPO](https://huggingface.co/collections/OpenGVLab/internvl25-mpo-6753fed98cd828219b12f849), [InternVL3](https://huggingface.co/collections/OpenGVLab/internvl3-67f7f690be79c2fe9d74fe9d), [InternVL3.5](https://huggingface.co/collections/OpenGVLab/internvl35-core-68b08a936ded8dc59597179c) (Github Format)
   - [JoyCaption](https://huggingface.co/fancyfeast/llama-joycaption-beta-one-hf-llava)
   - [MiniCPM-V-2.6 (GGUF)](https://huggingface.co/openbmb/MiniCPM-V-2_6-gguf), [MiniCPM-o-2.6 (GGUF)](https://huggingface.co/openbmb/MiniCPM-o-2_6-gguf), [MiniCPM-V-4 (GGUF)](https://huggingface.co/openbmb/MiniCPM-V-4-gguf)
   - [Molmo](https://huggingface.co/collections/allenai/molmo-66f379e6fe3b8ef090a8ca19)
   - [Moondream2 (GGUF)](https://huggingface.co/vikhyatk/moondream2)
-  - [Ovis-1.6](https://huggingface.co/AIDC-AI/Ovis1.6-Gemma2-9B), [Ovis2](https://huggingface.co/collections/AIDC-AI/ovis2-67ab36c7e497429034874464)
-  - [Qwen2-VL](https://huggingface.co/collections/Qwen/qwen2-vl-66cee7455501d7126940800d)
-  - [Qwen2.5-VL](https://huggingface.co/collections/Qwen/qwen25-vl-6795ffac22b334a837c0f9a5) (needs transformers 4.49 manually installed)
+  - [Ovis1.6](https://huggingface.co/AIDC-AI/Ovis1.6-Gemma2-9B), [Ovis2](https://huggingface.co/collections/AIDC-AI/ovis2-67ab36c7e497429034874464), [Ovis2.5](https://huggingface.co/collections/AIDC-AI/ovis25-689ec1474633b2aab8809335)
+  - [Qwen2-VL](https://huggingface.co/collections/Qwen/qwen2-vl-66cee7455501d7126940800d), [Qwen2.5-VL](https://huggingface.co/collections/Qwen/qwen25-vl-6795ffac22b334a837c0f9a5)
 
 - **LLM**<br>
   Transform existing captions/tags.
@@ -131,11 +130,14 @@ Find more specialized finetuned models on [huggingface.co](https://huggingface.c
 ## Setup
 Requires Python 3.10 or later.
 
-By default, prebuilt packages for CUDA 12.4 are installed. If you need a different CUDA version, change the index URL in `requirements-pytorch.txt` and `requirements-llamacpp.txt` before running the setup script.
+By default, prebuilt packages for CUDA 12.8 are installed. If you need a different CUDA version, change the URLs in `requirements-pytorch.txt` and `requirements-flashattn.txt` before running the setup script.
 
 1. Git clone or [download](https://github.com/FennelFetish/qapyq/archive/refs/heads/main.zip) this repository.
 2. Run `setup.sh` on Linux, `setup.bat` on Windows.
-   - This will create a virtual environment that needs 7-9 GB.
+   - Packages are installed into a virtual environment.
+
+The setup script will ask you a couple of questions.<br>
+You can choose to install only the GUI and image processing packages without AI assistance. Or when installing on a headless server for remote inference, you can choose to install only the backend.
 
 If the setup scripts didn't work for you, but you manually got it running, please share your solution and raise an issue.
 
@@ -147,11 +149,12 @@ You can open files or folders directly in qapyq by associating the file types wi
 For shortcuts, icons are available in the `qapyq/res` folder.
 
 ### Update
-If git was used to clone the repository, simply use `git pull` to update.
-
+If git was used to clone the repository, simply use `git pull` to update.<br>
 If the repository was downloaded as a zip archive, download it again and replace the installed files.
 
-New dependencies may be added. If the program fails to start or crashes, run the setup script again to install the missing packages.
+To update the installed packages in the virtual environment, run the setup script again.
+
+New dependencies may be added. If the program fails to start or crashes, run the setup script to install the missing packages.
 
 
 ## User Guide
