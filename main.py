@@ -537,6 +537,23 @@ class MainToolBar(QtWidgets.QToolBar):
 
 
 
+def applyStyle(app: QtWidgets.QApplication):
+    colorScheme = None
+    match Config.colorScheme:
+        case "": pass
+        case "dark":  colorScheme = Qt.ColorScheme.Dark
+        case "light": colorScheme = Qt.ColorScheme.Light
+
+    if colorScheme is not None:
+        app.styleHints().setColorScheme(colorScheme)
+
+    # Reload style after setting color scheme to apply palette colors
+    if Config.qtStyle:
+        app.setStyle(Config.qtStyle)
+    elif colorScheme is not None:
+        app.setStyle(app.style().name())
+
+
 def loadInitialImage(win: MainWindow):
     loadPath = sys.argv[1] if len(sys.argv) > 1 else Config.pathDebugLoad
     if loadPath:
@@ -547,14 +564,13 @@ def restoreWindows(win: MainWindow):
     for winName in Config.windowOpen:
         win.toggleAuxWindow(winName)
 
+
 def main() -> int:
     os.environ["QT_SCALE_FACTOR"] = str(Config.guiScale)
 
     app = QtWidgets.QApplication([])
     QtGui.QPixmapCache.setCacheLimit(24)
-
-    if Config.qtStyle:
-        app.setStyle(Config.qtStyle)
+    applyStyle(app)
 
     threadCount = QThreadPool.globalInstance().maxThreadCount()
     threadCount = max(threadCount // 2, 4)

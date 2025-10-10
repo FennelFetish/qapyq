@@ -4,6 +4,7 @@ class Config:
     windowIcon              = "res/qapyq.png"
     guiScale                = 1.0
     qtStyle                 = "Fusion"
+    colorScheme             = ""
     toolbarPosition         = "Top"
     exifTransform           = False
 
@@ -159,6 +160,7 @@ class Config:
     def _load(cls, data: dict):
         cls.guiScale              = float(data.get("gui_scale", cls.guiScale))
         cls.qtStyle               = data.get("qt_style", cls.qtStyle)
+        cls.colorScheme           = data.get("color_scheme", cls.colorScheme)
         cls.toolbarPosition       = data.get("toolbar_position", cls.toolbarPosition)
         cls.fontMonospace         = data.get("font_monospace", cls.fontMonospace)
         cls.exifTransform         = bool(data.get("exif_transform", cls.exifTransform))
@@ -221,6 +223,7 @@ class Config:
 
         data["gui_scale"]                   = cls.guiScale
         data["qt_style"]                    = cls.qtStyle
+        data["color_scheme"]                = cls.colorScheme
         data["toolbar_position"]            = cls.toolbarPosition
         data["font_monospace"]              = cls.fontMonospace
         data["exif_transform"]              = cls.exifTransform

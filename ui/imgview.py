@@ -1,6 +1,6 @@
 from __future__ import annotations
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QTransform
+from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QTransform, QPalette
 from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsView
 import lib.imagerw as imagerw
 from .dropview import DropView
@@ -12,14 +12,12 @@ class ImgView(DropView):
     def __init__(self, filelist):
         super().__init__()
 
-        bgBrush = QBrush(QColor(0, 0, 0))
-        bgBrush.setStyle(Qt.BrushStyle.Dense2Pattern)
-        self.setBackgroundBrush(bgBrush)
-
         self.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.SmoothPixmapTransform)
         self.setOptimizationFlag(QGraphicsView.OptimizationFlag.DontAdjustForAntialiasing, True)
         self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
         self.setFrameStyle(0)
+
+        self._setupBackground()
 
         self.rotation = 0.0
         self.takeFocusOnFilechange = False
@@ -32,6 +30,24 @@ class ImgView(DropView):
 
         self.image = ImgItem()
         self.scene().addItem(self.image)
+
+    def _setupBackground(self):
+        palette = self.palette()
+        baseColor = palette.color(QPalette.ColorRole.Base)
+
+        if baseColor.valueF() < 0.5:
+            baseColor  = QColor(0, 0, 0)
+            brushColor = QColor(50, 50, 50)
+        else:
+            baseColor  = QColor(232, 232, 232)
+            brushColor = QColor(160, 160, 160)
+
+        palette.setColor(QPalette.ColorRole.Base, baseColor)
+        self.setPalette(palette)
+
+        bgBrush = QBrush(brushColor)
+        bgBrush.setStyle(Qt.BrushStyle.Dense7Pattern)
+        self.setBackgroundBrush(bgBrush)
 
 
     def onFileChanged(self, currentFile):
