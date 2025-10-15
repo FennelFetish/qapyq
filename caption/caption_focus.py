@@ -1,7 +1,7 @@
 from typing import Iterable, Callable
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QEvent, QTimer
-import lib.qtlib as qtlib
+from lib import colorlib, qtlib
 from ui.flow_layout import FlowLayout
 from .caption_tab import CaptionTab, MultiEditSupport
 from .caption_context import CaptionContext
@@ -142,7 +142,7 @@ class CaptionFocus(CaptionTab):
     def updateSelectionState(self, captions: set[str]):
         for bubble in self.bubbles:
             exists = bubble.text in captions
-            bubble.setColor(bubble.groupColor if exists else qtlib.COLOR_BUBBLE_BLACK)
+            bubble.setColor(bubble.groupColor if exists else colorlib.BUBBLE_BG)
 
     def _updateSelectionState(self):
         captions = self.ctx.text.getCaption().split(self.separator.strip())
@@ -167,7 +167,7 @@ class CaptionFocus(CaptionTab):
                 continue
 
             shortcut = i+1 if i<9 else -1
-            groupColor = colors.get(tag, qtlib.COLOR_BUBBLE_BLACK)
+            groupColor = colors.get(tag, colorlib.BUBBLE_BG)
 
             bubble = FocusBubble(tag, shortcut, groupColor)
             bubble.bubbleClicked.connect(self._onBubbleClicked)
@@ -177,8 +177,8 @@ class CaptionFocus(CaptionTab):
         sep = qtlib.VerticalSeparator()
         sep.setMinimumHeight(26)
         self.bubbleLayout.addWidget(sep)
-        bubble = FocusBubble("Unselect All", 0, qtlib.COLOR_BUBBLE_BAN)
-        bubble.setColor(qtlib.COLOR_BUBBLE_BAN)
+        bubble = FocusBubble("Unselect All", 0, colorlib.BUBBLE_BG_BAN)
+        bubble.setColor(colorlib.BUBBLE_BG_BAN)
         bubble.bubbleClicked.connect(self.unselectAllTags)
         self.bubbleLayout.addWidget(bubble)
 
@@ -284,7 +284,7 @@ class FocusBubble(QtWidgets.QFrame):
 
         self.setLayout(layout)
 
-        self.setColor(qtlib.COLOR_BUBBLE_BLACK)
+        self.setColor(colorlib.BUBBLE_BG)
         self.setFrameShape(QtWidgets.QFrame.Shape.Box)
         self.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
 
@@ -294,7 +294,7 @@ class FocusBubble(QtWidgets.QFrame):
         return self.lblText.text()
 
     def setColor(self, color: str):
-        self.setStyleSheet(qtlib.bubbleClassAux("FocusBubble", "QLabel", color))
+        self.setStyleSheet(colorlib.bubbleClassAux("FocusBubble", "QLabel", color))
 
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:

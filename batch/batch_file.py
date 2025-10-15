@@ -7,9 +7,8 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
 from config import Config
 from ui.tab import ImgTab
-from lib import qtlib
+from lib import colorlib, imagerw, qtlib
 from lib.filelist import FileList
-import lib.imagerw as imagerw
 import ui.export_settings as export
 from .batch_task import BatchTask, BatchTaskHandler
 from .batch_log import BatchLog
@@ -84,7 +83,7 @@ class BatchFile(QtWidgets.QWidget):
 
         if self.imageSettings.isChecked():
             if self.imageSettings.overwriteFiles:
-                ops.append(qtlib.htmlRed(f"Include images and overwrite existing files!"))
+                ops.append(colorlib.htmlRed(f"Include images and overwrite existing files!"))
             else:
                 ops.append(f"Include images and skip existing files")
         else:
@@ -92,7 +91,7 @@ class BatchFile(QtWidgets.QWidget):
 
         if self.maskSettings.isChecked():
             if self.maskSettings.maskPathSettings.overwriteFiles:
-                ops.append(qtlib.htmlRed(f"Include masks and overwrite existing files!"))
+                ops.append(colorlib.htmlRed(f"Include masks and overwrite existing files!"))
             else:
                 ops.append(f"Include masks and skip existing files")
 
@@ -116,12 +115,12 @@ class BatchFile(QtWidgets.QWidget):
             if captionContent:
                 if self.captionSettings.chkArchiveTextFiles.isChecked():
                     if self.captionSettings.overwriteFiles:
-                        ops.append(qtlib.htmlRed(f"Write {captionContent} into a ZIP archive and overwrite an existing file!"))
+                        ops.append(colorlib.htmlRed(f"Write {captionContent} into a ZIP archive and overwrite an existing file!"))
                     else:
                         ops.append(f"Write {captionContent} into a ZIP archive and append a counter if the archive already exists")
                 else:
                     if self.captionSettings.overwriteFiles:
-                        ops.append(qtlib.htmlRed(f"Include {captionContent} and overwrite existing files!"))
+                        ops.append(colorlib.htmlRed(f"Include {captionContent} and overwrite existing files!"))
                     else:
                         ops.append(f"Include {captionContent} and skip existing files")
             else:
@@ -352,7 +351,7 @@ class BaseFileSettings(QtWidgets.QGroupBox):
 
     @Slot()
     def _onOverwriteToggled(self, state: bool):
-        style = f"color: {qtlib.COLOR_RED}" if state else None
+        style = f"color: {colorlib.RED}" if state else None
         self.chkOverwriteFiles.setStyleSheet(style)
 
     @Slot()

@@ -4,7 +4,7 @@ from itertools import chain
 from typing import Generator, Callable, ForwardRef, Any
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker
-import lib.qtlib as qtlib
+from lib import colorlib, qtlib
 from ui.flow_layout import ManualStartReorderWidget, ReorderDragHandle
 from .caption_tab import CaptionTab
 from .caption_preset import CaptionPreset, CaptionPresetConditional
@@ -237,7 +237,7 @@ class ConditionalRule(QtWidgets.QWidget):
         if checkedExpression:
             self.txtExpression.setStyleSheet("")
         else:
-            self.txtExpression.setStyleSheet(f"color: {qtlib.COLOR_RED}")
+            self.txtExpression.setStyleSheet(f"color: {colorlib.RED}")
 
         self.ruleUpdated.emit()
 
@@ -262,7 +262,7 @@ class ConditionalRule(QtWidgets.QWidget):
             rule.conditions[cond.variable] = cond.createConditionFunc()
 
         condResults, exprResult = rule.evaluateExpressionForUpdate(tags)
-        exprColor = qtlib.COLOR_GREEN if exprResult else qtlib.COLOR_RED
+        exprColor = colorlib.GREEN if exprResult else colorlib.RED
         self.lblExpression.setStyleSheet(f"color: {exprColor}")
 
         for cond in self.ruleConditions:
@@ -651,7 +651,7 @@ class RuleCondition(QtWidgets.QWidget):
             self.lblVar.setText(var)
 
     def updateConditionState(self, state: bool):
-        color = qtlib.COLOR_GREEN if state else qtlib.COLOR_RED
+        color = colorlib.GREEN if state else colorlib.RED
         self.lblVar.setStyleSheet(f"color: {color}")
 
     def createConditionFunc(self) -> ConditionFunc:

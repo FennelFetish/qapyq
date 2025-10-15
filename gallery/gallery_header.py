@@ -2,29 +2,41 @@ import os
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot
 from ui.tab import ImgTab
-from lib import qtlib
+from lib import colorlib, qtlib
 
 
 class GalleryHeader(QtWidgets.QFrame):
+    TITLE_INTERACTION = Qt.TextInteractionFlag.TextBrowserInteraction
+    TITLE_SIZE_POLICY = (QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Preferred)
+    TITLE_FONT = None
+    STYLESHEET = None
+
     def __init__(self, tab: ImgTab, dir: str, row: int):
         super().__init__()
         self.tab = tab
         self.dir = dir
         self.row = row
 
-        layout = QtWidgets.QHBoxLayout()
-        layout.setContentsMargins(4, 4, 4, 4)
-
-        txtTitle = QtWidgets.QLineEdit(dir)
-        txtTitle.setReadOnly(True)
-        qtlib.setMonospace(txtTitle, 1.2, bold=True)
-        layout.addWidget(txtTitle)
+        lblTitle = QtWidgets.QLabel(dir, textInteractionFlags=self.TITLE_INTERACTION)
+        lblTitle.setSizePolicy(*self.TITLE_SIZE_POLICY)
 
         self.lblImgCount = MenuLabel(self)
-        layout.addWidget(self.lblImgCount)
 
+        if GalleryHeader.STYLESHEET is None:
+            GalleryHeader.STYLESHEET = f"color: {colorlib.BUBBLE_TEXT}; background-color: {colorlib.BUBBLE_BG}; border: 0px"
+
+            qtlib.setMonospace(lblTitle, 1.2, bold=True)
+            GalleryHeader.TITLE_FONT = lblTitle.font()
+        else:
+            lblTitle.setFont(GalleryHeader.TITLE_FONT)
+
+        layout = QtWidgets.QHBoxLayout()
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.addWidget(lblTitle)
+        layout.addWidget(self.lblImgCount)
         self.setLayout(layout)
-        self.setStyleSheet(f"color: #fff; background-color: {qtlib.COLOR_BUBBLE_BLACK}")
+
+        self.setStyleSheet(GalleryHeader.STYLESHEET)
 
     def updateImageLabel(self, numImages: int):
         text = f"{numImages} Image"

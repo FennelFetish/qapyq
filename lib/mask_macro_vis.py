@@ -1,13 +1,15 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
 from .mask_macro import MaskingMacro, MacroOp, MacroOpItem
-from lib.qtlib import COLOR_BUBBLE_BLACK
+from lib.colorlib import DARK_THEME, BUBBLE_BG, BUBBLE_TEXT
 
 
 class MacroVisualization(QtWidgets.QScrollArea):
     SPACING = 6
-    COLORS = ["#3f1f2d", "#243f1f", "#1f363f", "#3f2e1f", "#241f3f", "#1f3f37", "#3f1f3e",
-              "#353f1f", "#1f2c3f", "#3f1f22", "#1f3f26", "#2f1f3f", "#3f381f"]
+    COLORS_DARK   = ["#3f1f2d", "#243f1f", "#1f363f", "#3f2e1f", "#241f3f", "#1f3f37", "#3f1f3e",
+                     "#353f1f", "#1f2c3f", "#3f1f22", "#1f3f26", "#2f1f3f", "#3f381f"]
+    COLORS_BRIGHT = ["#c87881", "#7acc88", "#7a9ccc", "#c99f79", "#867ac9", "#7ac8b4", "#c87ac7",
+                     "#b0c87a", "#7a9ac8", "#c87a81", "#7ac88b", "#a17ac8", "#c8b67a"]
 
     def __init__(self):
         super().__init__()
@@ -56,7 +58,7 @@ class MacroVisualization(QtWidgets.QScrollArea):
 
     def _loadOps(self, ops: list[MacroOpItem], row: int):
         startRow = row
-        colors   = list(self.COLORS)
+        colors   = list(self.COLORS_DARK if DARK_THEME else self.COLORS_BRIGHT)
         layer    = 0
         maxLayer = 0
 
@@ -140,7 +142,7 @@ class MacroVisualization(QtWidgets.QScrollArea):
 
 
 class CellLabel(QtWidgets.QLabel):
-    def __init__(self, title, color1=COLOR_BUBBLE_BLACK, color2="", bold=False, args: dict={}):
+    def __init__(self, title, color1=BUBBLE_BG, color2="", bold=False, args: dict={}):
         super().__init__( self._buildTitle(title, args) )
 
         if bold:
@@ -153,7 +155,7 @@ class CellLabel(QtWidgets.QLabel):
         else:
             background = f"background-color: {color1}"
 
-        self.setStyleSheet(f"QLabel{{font-weight:{fontWeight}; color: #fff; {background}; border: 1px solid {COLOR_BUBBLE_BLACK}; border-radius: 8px}}")
+        self.setStyleSheet(f"QLabel{{font-weight:{fontWeight}; color: {BUBBLE_TEXT}; {background}; border: 1px solid {BUBBLE_BG}; border-radius: 8px}}")
         self.setFixedHeight(height)
 
     @staticmethod
@@ -176,7 +178,7 @@ class CellLabel(QtWidgets.QLabel):
         self.setText(title)
 
         background = f"background-color: {color}"
-        self.setStyleSheet(f"QLabel{{font-weight: 900; color: #fff; {background}; border: 1px solid {COLOR_BUBBLE_BLACK}; border-radius: 8px}}")
+        self.setStyleSheet(f"QLabel{{font-weight: 900; color: {BUBBLE_TEXT}; {background}; border: 1px solid {BUBBLE_BG}; border-radius: 8px}}")
 
 
 
@@ -188,7 +190,8 @@ class CellBg(QtWidgets.QLabel):
 
         # Reduce opacity
         if color:
-            color = f"#60{color[1:]}"
+            alpha = "60" if DARK_THEME else "40"
+            color = f"#{alpha}{color[1:]}"
             self.setStyleSheet(f"QWidget{{background-color:{color}}}")
 
 

@@ -7,10 +7,9 @@ import cv2 as cv
 import numpy as np
 from config import Config
 from infer.inference import InferenceChain
-from lib import qtlib
+from lib import colorlib, imagerw
 from lib.mask_macro import MaskingMacro, ChainedMacroRunner
 from lib.mask_macro_vis import MacroVisualization
-import lib.imagerw as imagerw
 import ui.export_settings as export
 from .batch_task import BatchTaskHandler, BatchTask, BatchInferenceTask
 from .batch_log import BatchLog
@@ -222,7 +221,7 @@ class BatchMask(QtWidgets.QWidget):
             ops.append("Store the mask as the alpha channel in the image")
 
         if self.destPathSettings.overwriteFiles:
-            ops.append( qtlib.htmlRed("Overwrite existing images!") )
+            ops.append( colorlib.htmlRed("Overwrite existing images!") )
         elif self.destPathSettings.skipExistingFiles:
             ops.append("Save images using new filenames")
         else:

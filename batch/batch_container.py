@@ -11,7 +11,7 @@ from .batch_crop import BatchCrop
 from .batch_file import BatchFile
 from .batch_log import BatchLog
 from .batch_task import BatchProgressBar
-import lib.qtlib as qtlib
+from lib import colorlib, qtlib
 
 
 class BatchContainer(QtWidgets.QTabWidget):
@@ -149,7 +149,7 @@ class TabColorAnim:
         palette = QtWidgets.QApplication.palette()
         cls.COLOR_STATIC = palette.color(QtGui.QPalette.ColorRole.Text)
         colorHighlight = palette.color(QtGui.QPalette.ColorRole.Highlight)
-        colorHighlight = qtlib.getHighlightColor(colorHighlight.name()) # "#ff7300"
+        colorHighlight = colorlib.getHighlightColor(colorHighlight.name())
 
         R0, G0, B0 = cls.COLOR_STATIC.redF(), cls.COLOR_STATIC.greenF(), cls.COLOR_STATIC.blueF()
         R1, G1, B1 = colorHighlight.redF(), colorHighlight.greenF(), colorHighlight.blueF()

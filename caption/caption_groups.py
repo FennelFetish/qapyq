@@ -1,8 +1,9 @@
 from __future__ import annotations
+import math
 from collections import Counter
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Slot, Signal
-from lib import qtlib, util, colors
+from PySide6.QtCore import QSignalBlocker, Qt, Slot, Signal
+from lib import colorlib, util, qtlib
 from ui.flow_layout import FlowLayout, ReorderWidget, ManualStartReorderWidget, ReorderDragHandle
 from .caption_tab import CaptionTab
 from .caption_preset import CaptionPreset, MutualExclusivity
@@ -11,8 +12,6 @@ from .caption_highlight import MatcherNode
 
 
 class CaptionGroups(CaptionTab):
-    HUE_OFFSET = 0.3819444 # 1.0 - inverted golden ratio, ~137.5°
-
     def __init__(self, context):
         super().__init__(context)
 
@@ -53,16 +52,7 @@ class CaptionGroups(CaptionTab):
         barLayout.addWidget(Trash())
         barLayout.addSpacing(12)
 
-        btnAddGroup = QtWidgets.QPushButton("✚ Add Group")
-        btnAddGroup.clicked.connect(self.addGroup)
-        barLayout.addWidget(btnAddGroup, 1)
-
-        barLayout.addSpacing(4)
-
-        btnOpenWildcards = QtWidgets.QPushButton("Wildcards...")
-        btnOpenWildcards.setMinimumWidth(100)
-        btnOpenWildcards.clicked.connect(self._openWildcardWindow)
-        barLayout.addWidget(btnOpenWildcards, 1)
+        barLayout.addLayout(self._buildBarButtons(), 2)
 
         self.lblStatus = QtWidgets.QLabel()
         barLayout.addWidget(self.lblStatus, 3, Qt.AlignmentFlag.AlignCenter)
@@ -76,6 +66,29 @@ class CaptionGroups(CaptionTab):
         frame.setFrameStyle(QtWidgets.QFrame.Shape.Panel | QtWidgets.QFrame.Shadow.Sunken)
         frame.setLayout(barLayout)
         return frame
+
+    def _buildBarButtons(self):
+        self.utilMenu = GroupUtilMenu(self)
+
+        btnUtilMenu = QtWidgets.QPushButton("☰")
+        btnUtilMenu.setToolTip("Group Utilities")
+        btnUtilMenu.setFixedSize(36, 24)
+        btnUtilMenu.setMenu(self.utilMenu)
+
+        btnAddGroup = QtWidgets.QPushButton("✚ Add Group")
+        btnAddGroup.clicked.connect(self.addGroup)
+
+        btnOpenWildcards = QtWidgets.QPushButton("Wildcards...")
+        btnOpenWildcards.setMinimumWidth(100)
+        btnOpenWildcards.clicked.connect(self._openWildcardWindow)
+
+        layout = QtWidgets.QHBoxLayout()
+        layout.addWidget(btnUtilMenu, 0)
+        layout.addSpacing(4)
+        layout.addWidget(btnAddGroup, 1)
+        layout.addSpacing(4)
+        layout.addWidget(btnOpenWildcards, 1)
+        return layout
 
     def _buildFilter(self):
         self.filter = qtlib.LayoutFilter(self.groupLayout, self._getFilterTexts)
@@ -124,8 +137,8 @@ class CaptionGroups(CaptionTab):
 
     def _createGroup(self):
         group = CaptionControlGroup(self, "Group")
-        group.color = util.hsv_to_rgb(self._nextGroupHue, 0.5, 0.25)
-        self._nextGroupHue += self.HUE_OFFSET
+        group.color = colorlib.hsvToRgb(self._nextGroupHue, colorlib.GROUP_COLOR_S, colorlib.GROUP_COLOR_V)
+        self._nextGroupHue += colorlib.HUE_OFFSET
         return group
 
     @Slot()
@@ -198,7 +211,11 @@ class CaptionGroups(CaptionTab):
                 groupWidget.combineTags = group.combineTags
                 groupWidget.addAllCaptions(group.captions)
 
-                self._nextGroupHue = util.get_hue(group.color) + self.HUE_OFFSET
+            if preset.groups:
+                lastGroup = preset.groups[-1]
+                self._nextGroupHue = colorlib.getHue(lastGroup.color) + colorlib.HUE_OFFSET
+            else:
+                self._nextGroupHue = util.rnd01()
 
 
     def getGalleryFilterNode(self) -> MatcherNode[bool]:
@@ -214,6 +231,31 @@ class CaptionGroups(CaptionTab):
             from gallery.gallery import Gallery
             gallery: Gallery
             gallery.onCaptionFilterUpdated()
+
+
+    @Slot()
+    def generateColors(self):
+        minHueOffset = 0.07
+        numGroups = self.groupLayout.count()
+        cycles = math.ceil(numGroups * minHueOffset)
+        hueOffset = cycles / numGroups
+
+        hue = util.rnd01()
+        with QSignalBlocker(self.ctx):
+            for group in self.groups:
+                group.color = colorlib.hsvToRgb(hue, colorlib.GROUP_COLOR_S, colorlib.GROUP_COLOR_V)
+                hue += hueOffset
+
+        self.ctx.controlUpdated.emit()
+
+    @Slot()
+    def normalizeColorBrightness(self):
+        with QSignalBlocker(self.ctx):
+            for group in self.groups:
+                hue = colorlib.getHue(group.color)
+                group.color = colorlib.hsvToRgb(hue, colorlib.GROUP_COLOR_S, colorlib.GROUP_COLOR_V)
+
+        self.ctx.controlUpdated.emit()
 
 
 
@@ -526,7 +568,7 @@ class GroupButton(qtlib.EditablePushButton):
         self.checked = checked
         if color != self.color or force:
             self.color = color
-            self.setStyleSheet(qtlib.bubbleStylePad(color))
+            self.setStyleSheet(colorlib.bubbleStylePad(color))
 
     @Slot()
     def _onClicked(self):
@@ -546,7 +588,7 @@ class GroupColor(QtWidgets.QFrame):
         self.group = group
         self._color = "#000"
         self._highlightColor = "#000"
-        self._disabledColor = qtlib.COLOR_BUBBLE_BLACK
+        self._disabledColor = colorlib.BUBBLE_BG
         self.charFormat = QtGui.QTextCharFormat()
 
         self.setToolTip("Choose Color")
@@ -577,14 +619,14 @@ class GroupColor(QtWidgets.QFrame):
 
     @color.setter
     def color(self, color: str):
-        if not util.isValidColor(color):
+        if not colorlib.isValidColor(color):
             return
 
         self._color = color
-        self._disabledColor = colors.mixBubbleColor(color, 0.35, 0.17)
+        self._disabledColor = colorlib.mixBubbleColor(color, colorlib.BUBBLE_MIX_S, colorlib.BUBBLE_MIX_V)
         self.setStyleSheet(f".GroupColor{{background-color: {color}}}")
 
-        highlightColor = qtlib.getHighlightColor(color)
+        highlightColor = colorlib.getHighlightColor(color)
         self.charFormat.setForeground(highlightColor)
         self._highlightColor = highlightColor.name()
 
@@ -617,6 +659,18 @@ class GroupMenu(QtWidgets.QMenu):
     def _addToFocus(self):
         focusTab = self.group.groups.ctx.focus
         focusTab.appendFocusTags(self.group.captionsExpandWildcards)
+
+
+class GroupUtilMenu(QtWidgets.QMenu):
+    def __init__(self, groups: CaptionGroups):
+        super().__init__()
+        self.groups = groups
+
+        actGenGroupColors = self.addAction("Generate Group Colors")
+        actGenGroupColors.triggered.connect(groups.generateColors)
+
+        actNormGroupColors = self.addAction("Reset Group Color Brightness")
+        actNormGroupColors.triggered.connect(groups.normalizeColorBrightness)
 
 
 class FilterMenu(QtWidgets.QMenu):

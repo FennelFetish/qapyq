@@ -5,12 +5,7 @@ from itertools import zip_longest
 from PySide6 import QtWidgets
 from PySide6.QtCore import Slot
 from PySide6.QtGui import QColor, QTextCharFormat, QTextLayout, QTextBlock
-from lib import qtlib, util, colors
-from lib.util import stripCountPadding
-
-
-COLOR_FOCUS_DEFAULT = "#901313"
-COLOR_FOCUS_BAN     = "#686868"
+from lib import colorlib, util
 
 
 # Adapters for data access
@@ -101,9 +96,11 @@ class CaptionHighlight:
         self._bannedFormat.setForeground(QColor.fromHsvF(0, 0, 0.5))
 
         self._focusFormat = QTextCharFormat()
-        self._focusFormat.setForeground(qtlib.getHighlightColor(COLOR_FOCUS_DEFAULT))
+        self._focusFormat.setForeground(colorlib.getHighlightColor(colorlib.FOCUS))
 
         self._trans = str.maketrans({c: self.SEPS[0] for c in self.SEPS[1:]})
+
+        self._mutedMix = (0.22, 0.3) if colorlib.DARK_THEME else (0.1, 0.2)  # (S, V)
 
 
     @property
@@ -174,7 +171,7 @@ class CaptionHighlight:
                         keepFormatOffset += offset
 
                 presence = presenceList[i] if presenceList else 1.0
-                captionStrip, padLeft, padRight = stripCountPadding(caption)
+                captionStrip, padLeft, padRight = util.stripCountPadding(caption)
                 start += padLeft
 
                 if format := formats.get(captionStrip):
@@ -219,7 +216,7 @@ class CaptionHighlight:
             start = 0
 
             for i, caption in enumerate(splitCaptions):
-                captionStrip, padLeft, padRight = stripCountPadding(caption)
+                captionStrip, padLeft, padRight = util.stripCountPadding(caption)
                 start += padLeft
 
                 if format := formats.get(captionStrip):
@@ -250,12 +247,12 @@ class CaptionHighlight:
         # First insert all focus tags. This is the default color if focus tags don't belong to groups.
         focusSet = self.data.getFocusSet()
         for focusTag in focusSet:
-            colors[focusTag] = COLOR_FOCUS_DEFAULT
+            colors[focusTag] = colorlib.FOCUS
             formats[focusTag] = self._focusFormat
 
         # Insert group colors
         for group in self.data.getGroups():
-            mutedColor, mutedFormat = self._getMuted(group.color) if focusSet else (group.color, group.charFormat)
+            mutedColor, mutedFormat = self._getMuted(group.color, *self._mutedMix) if focusSet else (group.color, group.charFormat)
 
             for caption in group.captions:
                 if caption in focusSet:
@@ -267,10 +264,10 @@ class CaptionHighlight:
 
         # Insert banned color. This will overwrite group colors.
         if focusSet:
-            bannedColor, bannedFormat = self._getMuted(qtlib.COLOR_BUBBLE_BAN)
-            bannedFocusColor, bannedFocusFormat = self._getMuted(COLOR_FOCUS_BAN, 1, 1)
+            bannedColor, bannedFormat = self._getMuted(colorlib.BUBBLE_BG_BAN, *self._mutedMix)
+            bannedFocusColor, bannedFocusFormat = self._getMuted(colorlib.FOCUS_BAN, 1, 1)
         else:
-            bannedColor = bannedFocusColor = qtlib.COLOR_BUBBLE_BAN
+            bannedColor = bannedFocusColor = colorlib.BUBBLE_BG_BAN
             bannedFormat = bannedFocusFormat = self._bannedFormat
 
         for banned in self.data.getBanned():
@@ -311,20 +308,20 @@ class CaptionHighlight:
         self._cachedMatcherNode = None
 
 
-    def _getMuted(self, color: str, mixS=0.22, mixV=0.3):
-        mutedColor = colors.mixBubbleColor(color, mixS, mixV)
+    def _getMuted(self, color: str, mixS: float, mixV: float):
+        mutedColor = colorlib.mixBubbleColor(color, mixS, mixV)
         mutedFormat = QTextCharFormat()
-        mutedFormat.setForeground(qtlib.getHighlightColor(mutedColor))
+        mutedFormat.setForeground(colorlib.getHighlightColor(mutedColor))
         return mutedColor, mutedFormat
 
     def _getHovered(self, color: str):
-        h, s, v = util.get_hsv(color)
+        h, s, v = colorlib.toHsv(color)
         s = max(0.3, min(1.0, s*0.8))
         v = max(0.2, min(1.0, v*1.6))
-        hoveredColor = util.hsv_to_rgb(h, s, v)
+        hoveredColor = colorlib.hsvToRgb(h, s, v)
 
         hoveredFormat = QTextCharFormat()
-        hoveredFormat.setForeground(qtlib.getHighlightColor(hoveredColor))
+        hoveredFormat.setForeground(colorlib.getHighlightColor(hoveredColor))
         hoveredFormat.setFontUnderline(True)
 
         return hoveredColor, hoveredFormat

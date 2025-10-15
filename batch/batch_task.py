@@ -1,5 +1,6 @@
 import traceback, time, enum
 from typing import Iterable, Callable, Any
+from typing_extensions import override
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Signal, Slot, QRunnable, QObject, QMutex, QMutexLocker, QThreadPool
 from infer.inference import Inference, InferenceChain, InferenceSetupException
@@ -270,11 +271,11 @@ class BatchProgressUpdate:
 
 
 
-class BatchProgressBar(QtWidgets.QProgressBar):
+class BatchProgressBar(qtlib.ProgressBar):
     def __init__(self):
-        super().__init__()
         self._timeText = ""
         self._lastTime = None
+        super().__init__()
 
     def setTime(self, time: BatchProgressUpdate | None):
         if time is None:
@@ -291,6 +292,7 @@ class BatchProgressBar(QtWidgets.QProgressBar):
         self._timeText = ""
         self.update()
 
+    @override
     def text(self) -> str:
         if text := super().text():
             if self._timeText:
@@ -298,6 +300,7 @@ class BatchProgressBar(QtWidgets.QProgressBar):
             return text
         return self._timeText
 
+    @override
     def reset(self):
         super().reset()
         if self._lastTime:

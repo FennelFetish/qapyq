@@ -3,7 +3,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Signal, Slot, QObject, QRunnable, QThreadPool
 from infer.inference import Inference
 from config import Config
-import lib.qtlib as qtlib
+from lib import colorlib
 from .caption_context import CaptionContext
 
 
@@ -64,7 +64,7 @@ class CaptionTokens(QtWidgets.QLabel):
     def _onFail(self, error: str):
         if self._active:
             self.setText("Tokenizer Error")
-            self.setStyleSheet(f"color: {qtlib.COLOR_RED}")
+            self.setStyleSheet(f"color: {colorlib.RED}")
 
 
 

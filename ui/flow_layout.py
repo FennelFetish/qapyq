@@ -2,7 +2,7 @@ from typing import Iterable, Callable
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Signal, QSize, QRect, QPoint, QMimeData, QTimer
 import numpy as np
-import lib.qtlib as qtlib
+from lib import colorlib, qtlib
 
 
 class FlowLayout(QtWidgets.QLayout):
@@ -107,7 +107,8 @@ class FlowLayout(QtWidgets.QLayout):
 # Layout must provide insertWidget() method.
 # All places that use dropEvent() must postpone the action using QTimer.singleShot
 class ReorderWidget(QtWidgets.QWidget):
-    COLOR_FACTORS = [1.6, 1.9, 2.0, 1.0] # BGRA
+    COLOR_FACTORS_BRIGHTER = [1.60, 1.90, 2.00, 1.0] # BGRA
+    COLOR_FACTORS_DARKER   = [0.75, 0.82, 0.85, 1.0]
 
     orderChanged = Signal()
     receivedDrop = Signal(str)
@@ -152,7 +153,7 @@ class ReorderWidget(QtWidgets.QWidget):
 
         mat = qtlib.qimageToNumpy(image)
         matF = mat.astype(np.float32)
-        matF *= self.COLOR_FACTORS
+        matF *= self.COLOR_FACTORS_BRIGHTER if colorlib.DARK_THEME else self.COLOR_FACTORS_DARKER
         matF.clip(0.0, 255.0, mat, casting="unsafe")
 
         image = qtlib.numpyToQImage(mat)
@@ -420,9 +421,6 @@ class ReorderDragHandle(qtlib.VerticalSeparator):
 
 
 class StringFlowBubble(QtWidgets.QFrame):
-    COLOR_TEXT = "#fff"
-    COLOR_TEXT_DISABLED = "#777"
-
     removeClicked = Signal(object)
 
     def __init__(self, text: str):
@@ -431,20 +429,17 @@ class StringFlowBubble(QtWidgets.QFrame):
 
         self.button = qtlib.EditablePushButton(text, self._buttonStyleFunc)
 
+        btnRemove = qtlib.BubbleRemoveButton()
+        btnRemove.clicked.connect(lambda: self.removeClicked.emit(self))
+
         layout = QtWidgets.QHBoxLayout()
         layout.setContentsMargins(1, 0, 2, 0)
         layout.setSpacing(1)
         layout.addWidget(self.button)
-
-        btnRemove = qtlib.BubbleRemoveButton()
-        btnRemove.clicked.connect(lambda: self.removeClicked.emit(self))
         layout.addWidget(btnRemove)
-
         self.setLayout(layout)
 
-        self.setColor(qtlib.COLOR_BUBBLE_BLACK, self.COLOR_TEXT)
-        self.setFrameShape(QtWidgets.QFrame.Shape.Box)
-        self.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
+        self.setColor(colorlib.BUBBLE_BG, colorlib.BUBBLE_TEXT)
 
     @staticmethod
     def _buttonStyleFunc(button: qtlib.EditablePushButton):
@@ -459,13 +454,13 @@ class StringFlowBubble(QtWidgets.QFrame):
         self.button.text = text
 
     def setColor(self, colorBg: str, colorText: str):
-        self.setStyleSheet(qtlib.bubbleClass("StringFlowBubble", colorBg))
-        self.button.setStyleSheet(qtlib.bubbleStyleAux(colorBg, colorText))
+        self.setStyleSheet(colorlib.bubbleClass("StringFlowBubble", colorBg))
+        self.button.setStyleSheet(colorlib.bubbleStyleNoBorder(colorBg, colorText))
 
     def setEnabled(self, enabled: bool) -> None:
         super().setEnabled(enabled)
-        textColor = self.COLOR_TEXT if enabled else self.COLOR_TEXT_DISABLED
-        self.setColor(qtlib.COLOR_BUBBLE_BLACK, textColor)
+        textColor = colorlib.BUBBLE_TEXT if enabled else colorlib.BUBBLE_TEXT_DISABLED
+        self.setColor(colorlib.BUBBLE_BG, textColor)
 
 
 

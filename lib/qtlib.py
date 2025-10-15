@@ -4,18 +4,8 @@ from contextlib import contextmanager
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QRect
 import numpy as np
-import lib.util as util
+from lib import colorlib
 from config import Config
-
-
-
-COLOR_RED   = "#FF1616" #"#FF3030"
-COLOR_GREEN = "#30FF30"
-
-COLOR_BUBBLE_BLACK = "#161616"
-COLOR_BUBBLE_HOVER = "#808070"
-COLOR_BUBBLE_BAN   = "#454545"
-
 
 
 _fontMonospace: QtGui.QFont | None = None
@@ -281,15 +271,27 @@ class ColoredMessageStatusBar(QtWidgets.QStatusBar):
         super().showMessage(text, timeout)
 
     def showColoredMessage(self, text, success=True, timeout=4000):
-        if success:
-            self.updateStyleSheet(COLOR_GREEN)
-        else:
-            self.updateStyleSheet(COLOR_RED)
+        color = colorlib.GREEN if success else colorlib.RED
+        self.updateStyleSheet(color)
         super().showMessage(text, timeout)
 
     def updateStyleSheet(self, color=None):
         colorStr = f"color: {color}" if color else ""
         self.setStyleSheet("QStatusBar{" + self.additionalStyleSheet + colorStr + "}")
+
+
+class ProgressBar(QtWidgets.QProgressBar):
+    def __init__(self):
+        super().__init__()
+
+        # Fix white on white text in bright theme
+        if not colorlib.DARK_THEME:
+            palette = self.palette()
+            textColor = palette.color(QtGui.QPalette.ColorRole.Text)
+            palette.setColor(QtGui.QPalette.ColorRole.HighlightedText, textColor)
+            highlight = palette.color(QtGui.QPalette.ColorRole.Highlight)
+            palette.setColor(QtGui.QPalette.ColorRole.Highlight, highlight.lighter())
+            self.setPalette(palette)
 
 
 
@@ -298,7 +300,6 @@ class SpacerWidget(QtWidgets.QWidget):
         super().__init__()
         policy = QtWidgets.QSizePolicy.Expanding
         self.setSizePolicy(policy, policy)
-
 
 
 class VerticalSeparator(QtWidgets.QWidget):
@@ -324,104 +325,17 @@ class VerticalSeparator(QtWidgets.QWidget):
 
 
 
-class ColorCharFormats:
-    def __init__(self):
-        self.defaultFormat = QtGui.QTextCharFormat()
-        self.saturation = 0.35
-
-        self._formats = []
-        self._nextHue = util.rnd01()
-        self._colorV = QtWidgets.QApplication.palette().color(QtGui.QPalette.ColorRole.Text).valueF()
-        self._colorV = max(self._colorV, 0.7)
-
-    def getFormat(self, index: int) -> QtGui.QTextCharFormat:
-        while index >= len(self._formats):
-            color = util.hsv_to_rgb(self._nextHue, self.saturation, self._colorV)
-            self._nextHue += 0.3819444
-
-            charFormat = QtGui.QTextCharFormat()
-            charFormat.setForeground(QtGui.QColor(color))
-            self._formats.append(charFormat)
-
-        return self._formats[index]
-
-    def addFormat(self, format: QtGui.QTextCharFormat) -> None:
-        self._formats.append(format)
-
-
-def setBoldFormat(charFormat: QtGui.QTextCharFormat, bold=True) -> None:
-    charFormat.setFontWeight(700 if bold else 400)
-
-def toDisabledFormat(charFormat: QtGui.QTextCharFormat) -> QtGui.QTextCharFormat:
-    color = charFormat.foreground().color()
-    h, s, v, a = color.getHsvF()
-    color.setHsvF(h, 0.25, 0.5, a)
-    charFormat = QtGui.QTextCharFormat()
-    charFormat.setForeground(color)
-    return charFormat
-
-
-
-def getHighlightColor(colorHex: str) -> QtGui.QColor:
-    vPalette = QtWidgets.QApplication.palette().color(QtGui.QPalette.ColorRole.Text).valueF()
-    vPalette = max(vPalette, 0.70) # min/max prevents div/0 when calculating vMix below
-    vPalette = min(vPalette, 0.99)
-
-    h, s, v = util.get_hsv(colorHex)
-
-    # Try to keep saturation at around 0.38 for bright text (dark themes)
-    # and around 0.76 for dark text (bright themes), but allow extreme values.
-    # Smooth curve with start/end at 0 and 1, with plateau in the middle.
-    # https://www.desmos.com/calculator/y4dgc8uz0b
-    plateauLower = 1.4 if vPalette>0.71 else 0.4
-    plateauWidth = 1.5
-    plateau = ((2*s - 1) ** 5) * 0.5 + 0.5
-    smoothstep = 3*s*s - 2*s*s*s
-    sMix = (2*abs(s-0.5)) ** plateauWidth
-    s = (1-sMix)*plateau + sMix*smoothstep
-    s = s ** plateauLower
-
-    # Try to keep 'v' at 'vPalette', but mix towards 'v' for extreme values.
-    # Smooth curve goes through (0,1), (vPalette,0), (1,1), sample at 'v'.
-    # https://www.desmos.com/calculator/obmyhuqy37
-    vMix = (vPalette-v)/vPalette if v<vPalette else (v-vPalette)/(1-vPalette)
-    vMix = vMix ** 8.0
-    v = (1.0-vMix)*vPalette + vMix*v
-
-    return QtGui.QColor.fromHsvF(h, s, v)
-
-
-
-def htmlRed(text: str) -> str:
-    return f"<font color='{COLOR_RED}'>{text}</font>"
-
-
-def bubbleStyle(color: str, borderColor=COLOR_BUBBLE_BLACK) -> str:
-    return f"color: #fff; background-color: {color}; border: 1px solid {borderColor}; border-radius: 8px"
-
-def bubbleStylePad(color: str, padding=2, borderColor=COLOR_BUBBLE_BLACK) -> str:
-    return f"color: #fff; background-color: {color}; border: 1px solid {borderColor}; border-radius: 8px; padding: {padding}px"
-
-def bubbleStyleAux(color: str, textColor="#fff") -> str:
-    return f"color: {textColor}; background-color: {color}; border: 0px"
-
-def bubbleClass(className: str, color: str, borderColor=COLOR_BUBBLE_BLACK) -> str:
-    return f".{className}{{color: #fff; background-color: {color}; border: 1px solid {borderColor}; border-radius: 8px}}"
-
-def bubbleClassAux(className: str, auxClassName: str, colorBg: str, borderColor=COLOR_BUBBLE_BLACK, textColor="#fff") -> str:
-    return f".{className}{{background-color: {colorBg}; border: 1px solid {borderColor}; border-radius: 8px}}" \
-           f".{auxClassName}{{color: {textColor}}}"
-
-
-
 class BubbleRemoveButton(QtWidgets.QPushButton):
-    STYLE = f".BubbleRemoveButton{{color: #D54040; background-color: {COLOR_BUBBLE_BLACK}; border: 1px solid #401616; border-radius: 4px}}"
+    STYLE = None
 
     def __init__(self):
         super().__init__("⨯")
         self.setFixedWidth(18)
         self.setFixedHeight(18)
-        self.setStyleSheet(self.STYLE)
+
+        if BubbleRemoveButton.STYLE is None:
+            BubbleRemoveButton.STYLE = colorlib.removeButtonStyle("BubbleRemoveButton")
+        self.setStyleSheet(BubbleRemoveButton.STYLE)
 
 
 
@@ -455,11 +369,13 @@ class ColoredButton(QtWidgets.QPushButton):
 
 class SaveButton(ColoredButton):
     def __init__(self, text: str):
-        super().__init__(text, "#440A0A", "#FFEEEE")
+        color = "#440A0A" if colorlib.DARK_THEME else "#8A0A0A"
+        super().__init__(text, color, "#FFEEEE")
 
 class GreenButton(ColoredButton):
     def __init__(self, text: str):
-        super().__init__(text, "#0A440A", "#EEFFEE")
+        color = "#0A440A" if colorlib.DARK_THEME else "#2A8A2A"
+        super().__init__(text, color, "#EEFFEE")
 
 
 
@@ -569,14 +485,12 @@ class MenuComboBox(QtWidgets.QComboBox):
         self._nextIndex = 0
 
 
-
 class NonScrollComboBox(QtWidgets.QComboBox):
     def __init__(self):
         super().__init__()
 
     def wheelEvent(self, e: QtGui.QWheelEvent) -> None:
         e.ignore()
-
 
 
 class PercentageSpinBox(QtWidgets.QSpinBox):
@@ -599,7 +513,6 @@ class BaseColorScrollArea(QtWidgets.QScrollArea):
         bgColor = palette.color(colorRole)
         palette.setColor(QtGui.QPalette.ColorRole.Window, bgColor)
         self.setPalette(palette)
-
 
 
 class RowScrollArea(BaseColorScrollArea):
@@ -843,7 +756,7 @@ class LayoutFilter(QtWidgets.QHBoxLayout):
 
         if numVisible < numTotal:
             text = f"Showing {numVisible} / " + text
-            color = COLOR_GREEN if numVisible > 0 else COLOR_RED
+            color = colorlib.GREEN if numVisible > 0 else colorlib.RED
             self._lblStatus.setStyleSheet(f"color: {color}")
         else:
             self._lblStatus.setStyleSheet("")

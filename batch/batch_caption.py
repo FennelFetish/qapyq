@@ -1,12 +1,12 @@
 from typing import Callable
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, QSignalBlocker
+from PySide6.QtCore import Qt, Slot, QSignalBlocker
 from config import Config
 from infer.inference_proc import InferenceProcess
 from infer.inference_settings import InferencePresetWidget, RemoteInferenceConfig
 from infer.tag_settings import TagPresetWidget
 from infer.prompt import PromptWidget, PromptsHighlighter
-from lib import qtlib
+from lib import colorlib, qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
 from .batch_task import BatchInferenceTask, BatchTaskHandler
@@ -109,6 +109,7 @@ class BatchCaption(QtWidgets.QWidget):
         groupBox = QtWidgets.QGroupBox("Generate Captions")
         groupBox.setCheckable(True)
         groupBox.setLayout(layout)
+        groupBox.toggled.connect(self._updatePreview)
         return groupBox
 
 
@@ -140,20 +141,23 @@ class BatchCaption(QtWidgets.QWidget):
         self._parser = TemplateVariableParser(currentFile)
         self._updateParser()
 
+    @Slot()
     def _updateParser(self):
         if self._parser:
             self._parser.stripAround = self.chkStripAround.isChecked()
             self._parser.stripMultiWhitespace = self.chkStripMulti.isChecked()
             self._updatePreview()
 
-
+    @Slot()
     def _updatePreview(self):
         text = self.promptWidget.prompts
         preview, varPositions = self._parser.parseWithPositions(text)
         self.txtPromptPreview.setPlainText(preview)
 
+        disabled = not self.captionGroup.isChecked()
+
         with QSignalBlocker(self.promptWidget.txtPrompts):
-            self._highlighter.highlight(self.promptWidget.txtPrompts, self.txtPromptPreview, varPositions)
+            self._highlighter.highlight(self.promptWidget.txtPrompts, self.txtPromptPreview, varPositions, disabled)
             PromptsHighlighter.highlightPromptSeparators(self.promptWidget.txtPrompts)
             PromptsHighlighter.highlightPromptSeparators(self.txtPromptPreview)
 
@@ -170,7 +174,7 @@ class BatchCaption(QtWidgets.QWidget):
             if self.cboOverwriteMode.currentData() == CAPTION_OVERWRITE_MODE_MISSING:
                 captionText += " if the key doesn't exist"
             else:
-                captionText = qtlib.htmlRed(captionText + " and overwrite the content!")
+                captionText = colorlib.htmlRed(captionText + " and overwrite the content!")
             ops.append(captionText)
 
         if self.chkStorePrompts.isChecked():
@@ -187,7 +191,7 @@ class BatchCaption(QtWidgets.QWidget):
             if self.chkTagSkipExisting.isChecked():
                 tagText += " if the key doesn't exist"
             else:
-                tagText = qtlib.htmlRed(tagText + " and overwrite the content!")
+                tagText = colorlib.htmlRed(tagText + " and overwrite the content!")
             ops.append(tagText)
 
         return ops

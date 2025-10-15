@@ -6,8 +6,7 @@ from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
 import cv2 as cv
-import lib.imagerw as imagerw
-import lib.qtlib as qtlib
+from lib import colorlib, imagerw, qtlib
 from ui.tab import ImgTab
 from ui.export_settings import PathSettings, ExportVariableParser
 from config import Config
@@ -157,7 +156,7 @@ class MaskStats(QtWidgets.QWidget):
         self.lblMean.setText(f"{summary.mean:.3f}")
         self.lblMedian.setText(f"{summary.median:.3f}")
 
-        missingStyle = f"color: {qtlib.COLOR_RED}" if summary.numMissing > 0 else ""
+        missingStyle = f"color: {colorlib.RED}" if summary.numMissing > 0 else ""
         self.lblNumMissing.setStyleSheet(missingStyle)
 
     def clearData(self):
@@ -410,7 +409,7 @@ class MaskModel(QAbstractItemModel):
     def __init__(self):
         super().__init__()
         self.font = qtlib.getMonospaceFont()
-        self.colorRed = QtGui.QColor(qtlib.COLOR_RED)
+        self.colorRed = QtGui.QColor(colorlib.RED)
 
         self.statsName: str = ""
         self.maskBins: list[MaskData] = list()

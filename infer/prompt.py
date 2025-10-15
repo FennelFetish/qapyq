@@ -1,7 +1,8 @@
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QSignalBlocker
 from config import Config
-import lib.qtlib as qtlib
+from lib import qtlib
+from lib.colorlib import ColorCharFormats
 
 
 class PromptSettingsSignals(QObject):
@@ -232,7 +233,7 @@ class PromptWidget(QtWidgets.QWidget):
 class PromptsHighlighter(QtGui.QSyntaxHighlighter):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.formats = qtlib.ColorCharFormats()
+        self.formats = ColorCharFormats()
         self.formats.addFormat(self.formats.defaultFormat)
 
     # Not used
@@ -255,7 +256,7 @@ class PromptsHighlighter(QtGui.QSyntaxHighlighter):
         self.setCurrentBlockState(formatIndex)
 
         format = self.formats.getFormat(formatIndex)
-        qtlib.setBoldFormat(format, isPromptTitle)
+        ColorCharFormats.setBoldFormat(format, isPromptTitle)
         format.setFontUnderline(isConvTitle)
         format.setFontItalic(isHidden)
         self.setFormat(0, len(text), format)
@@ -270,7 +271,7 @@ class PromptsHighlighter(QtGui.QSyntaxHighlighter):
 
             if line.startswith("---") or line.startswith("==="):
                 format = QtGui.QTextCharFormat()
-                qtlib.setBoldFormat(format)
+                ColorCharFormats.setBoldFormat(format)
 
                 isHidden = line.lstrip("-=").lstrip().startswith("?")
                 format.setFontItalic(isHidden)

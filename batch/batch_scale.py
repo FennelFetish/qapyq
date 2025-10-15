@@ -4,8 +4,7 @@ from PySide6.QtCore import Slot
 import cv2 as cv
 import numpy as np
 from config import Config
-from lib import qtlib
-import lib.imagerw as imagerw
+from lib import colorlib, imagerw
 import tools.scale as scale
 import ui.export_settings as export
 from infer.inference import InferenceChain
@@ -176,7 +175,7 @@ class BatchScale(QtWidgets.QWidget):
             ops.append("<tab>Use AI upscaling if needed")
 
         if self.pathSettings.overwriteFiles:
-            ops.append( qtlib.htmlRed("Overwrite existing images!") )
+            ops.append( colorlib.htmlRed("Overwrite existing images!") )
         else:
             ops.append("Save images using new filenames with an increasing counter")
 

@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, Slot, QPoint, QThreadPool
 from config import Config
 from ui import aux_window
 from ui.tab import ImgTab
-import lib.qtlib as qtlib
+from lib import colorlib, qtlib
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -538,20 +538,24 @@ class MainToolBar(QtWidgets.QToolBar):
 
 
 def applyStyle(app: QtWidgets.QApplication):
-    colorScheme = None
     match Config.colorScheme:
-        case "": pass
-        case "dark":  colorScheme = Qt.ColorScheme.Dark
-        case "light": colorScheme = Qt.ColorScheme.Light
+        case "dark":  colorSchemeOverride = Qt.ColorScheme.Dark
+        case "light": colorSchemeOverride = Qt.ColorScheme.Light
+        case _:       colorSchemeOverride = None
 
-    if colorScheme is not None:
-        app.styleHints().setColorScheme(colorScheme)
+    if colorSchemeOverride is not None:
+        app.styleHints().setColorScheme(colorSchemeOverride)
+        colorScheme = colorSchemeOverride
+    else:
+        colorScheme = app.styleHints().colorScheme()
 
     # Reload style after setting color scheme to apply palette colors
     if Config.qtStyle:
         app.setStyle(Config.qtStyle)
-    elif colorScheme is not None:
+    elif colorSchemeOverride is not None:
         app.setStyle(app.style().name())
+
+    colorlib.initColors(colorScheme)
 
 
 def loadInitialImage(win: MainWindow):

@@ -10,7 +10,7 @@ from caption.caption_highlight import CaptionHighlight, HighlightDataSource, Cap
 from config import Config
 from ui.edit_table import EditableTable
 from ui.flow_layout import FlowLayout, SortedStringFlowWidget, ManualStartReorderWidget
-from lib import qtlib
+from lib import colorlib, qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from .batch_task import BatchTask, BatchTaskHandler
 from .batch_log import BatchLog
@@ -207,6 +207,7 @@ class BatchRules(QtWidgets.QWidget):
         condReorderWidget.orderChanged.connect(self.updatePreview)
         scrollArea = qtlib.RowScrollArea(condReorderWidget)
         scrollArea.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
+        condReorderWidget.enableBorderScroll(scrollArea)
 
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
@@ -455,7 +456,7 @@ class BatchRules(QtWidgets.QWidget):
         if self.chkSkipExisting.isChecked():
             storeText += " if the key doesn't exist"
         else:
-            storeText = qtlib.htmlRed(storeText + " and overwrite the content!")
+            storeText = colorlib.htmlRed(storeText + " and overwrite the content!")
         ops.append(storeText)
 
         return ops
@@ -478,7 +479,7 @@ class BatchRulesGroup(QtWidgets.QWidget):
         super().__init__()
         self.color = color
         self.charFormat = QtGui.QTextCharFormat()
-        self.charFormat.setForeground( qtlib.getHighlightColor(color) )
+        self.charFormat.setForeground( colorlib.getHighlightColor(color) )
 
         self.captions = list(captions)
 
@@ -512,7 +513,7 @@ class BatchRulesGroup(QtWidgets.QWidget):
         for cap in captions:
             label = QtWidgets.QLabel(cap)
             qtlib.setMonospace(label)
-            label.setStyleSheet(qtlib.bubbleStylePad(color))
+            label.setStyleSheet(colorlib.bubbleStylePad(color))
             flowLayout.addWidget(label)
 
         self.flowWidget = QtWidgets.QWidget()

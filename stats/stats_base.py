@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os, traceback, time
 from typing import Iterable, Generator, Callable, Any, TypeVar
+from typing_extensions import override
 from collections import Counter
 from PySide6 import QtWidgets
 from PySide6.QtCore import (
@@ -8,7 +9,7 @@ from PySide6.QtCore import (
     QRunnable, QObject, QMutex, QMutexLocker, QThreadPool, QTimer
 )
 from ui.tab import ImgTab
-import lib.qtlib as qtlib
+from lib import colorlib, qtlib
 from lib.filelist import FileList, sortKey
 from config import Config
 
@@ -247,7 +248,7 @@ class StatsLayout(QtWidgets.QVBoxLayout):
     def _onFilterChanged(self, text: str):
         regex = QRegularExpression(text, QRegularExpression.PatternOption.CaseInsensitiveOption)
         if not regex.isValid():
-            self.txtFilter.setStyleSheet(f"color: {qtlib.COLOR_RED}")
+            self.txtFilter.setStyleSheet(f"color: {colorlib.RED}")
             return
 
         self.txtFilter.setStyleSheet(None)
@@ -294,7 +295,7 @@ class StatsLayout(QtWidgets.QVBoxLayout):
     def _loadFoldersInNewTab(self):
         filesGen = self.getListedFiles()
         if filesGen is None:
-            return None
+            return
 
         currentFilelist = self.tab.filelist
         folders = set(os.path.dirname(file) for file in filesGen)
@@ -303,7 +304,6 @@ class StatsLayout(QtWidgets.QVBoxLayout):
         newTab = self.tab.mainWindow.addTab()
         newFilelist: FileList = newTab.filelist
         newFilelist.loadFilesFixed(files, currentFilelist)
-        return newTab
 
     @Slot()
     def _unloadFiles(self):
@@ -497,7 +497,7 @@ class StatsLoadGroupBox(QtWidgets.QGroupBox):
 
     @Slot()
     def _onFail(self):
-        self.progressBar.setStyleSheet(f"color: {qtlib.COLOR_RED}")
+        self.progressBar.setStyleSheet(f"color: {colorlib.RED}")
 
     def abortTask(self):
         if self._task:
@@ -515,17 +515,17 @@ class StatsLoadGroupBox(QtWidgets.QGroupBox):
 
 
 
-class StatsProgressBar(QtWidgets.QProgressBar):
+class StatsProgressBar(qtlib.ProgressBar):
     def __init__(self):
+        self.current: int = 0
+        self.total: int = 0
+
         super().__init__()
         self.setFixedHeight(20)
 
         font = self.font()
         font.setPointSizeF(font.pointSizeF() * 0.9)
         self.setFont(font)
-
-        self.current: int = 0
-        self.total: int = 0
 
     @Slot()
     def setProgress(self, current: int, total: int):
@@ -536,9 +536,11 @@ class StatsProgressBar(QtWidgets.QProgressBar):
         self.current = current
         self.setValue(current)
 
+    @override
     def text(self) -> str:
         return f"{self.current} / {self.total} Files"
 
+    @override
     def reset(self):
         self.current = self.total = 0
         super().reset()

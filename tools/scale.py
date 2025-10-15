@@ -6,7 +6,7 @@ from config import Config
 from .view import ViewTool
 import ui.export_settings as export
 from ui.size_preset import SizePresetComboBox
-from lib.qtlib import COLOR_RED, COLOR_GREEN
+from lib.colorlib import RED, GREEN
 from lib.filelist import DataKeys
 
 
@@ -368,10 +368,10 @@ class ScaleMode(QtWidgets.QWidget):
             scale = np.sqrt(scale)
 
         if scale > 1.0:
-            self.lblScale.setStyleSheet(f"QLabel{{color:{COLOR_RED}}}")
+            self.lblScale.setStyleSheet(f"QLabel{{color:{RED}}}")
             self.lblScale.setText(f"▲  {scale:.3f}")
         else:
-            self.lblScale.setStyleSheet(f"QLabel{{color:{COLOR_GREEN}}}")
+            self.lblScale.setStyleSheet(f"QLabel{{color:{GREEN}}}")
             self.lblScale.setText(f"▼  {scale:.3f}")
 
         self.sizeChanged.emit(w, h)

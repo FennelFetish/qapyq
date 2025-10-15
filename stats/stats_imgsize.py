@@ -2,8 +2,7 @@ from __future__ import annotations
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
-import lib.qtlib as qtlib
-import lib.imagerw as imagerw
+from lib import colorlib, imagerw, qtlib
 from ui.tab import ImgTab
 from .stats_base import StatsLayout, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
 
@@ -57,7 +56,7 @@ class ImageSizeStats(QtWidgets.QWidget):
 
         unreadableStyle = ""
         if summary.numUnreadable > 0:
-            unreadableStyle = f"color: {qtlib.COLOR_RED}"
+            unreadableStyle = f"color: {colorlib.RED}"
         self.lblNumUnreadable.setStyleSheet(unreadableStyle)
 
     def clearData(self):
@@ -162,7 +161,7 @@ class SizeBucketModel(QAbstractItemModel):
     def __init__(self):
         super().__init__()
         self.font = qtlib.getMonospaceFont()
-        self.colorRed = QtGui.QColor(qtlib.COLOR_RED)
+        self.colorRed = QtGui.QColor(colorlib.RED)
 
         self.buckets: list[SizeBucketData] = list()
         self.summary = SizeBucketSummary()

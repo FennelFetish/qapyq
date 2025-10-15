@@ -5,7 +5,7 @@ from config import Config
 from infer.inference_proc import InferenceProcess
 from infer.inference_settings import InferencePresetWidget, RemoteInferenceConfig
 from infer.prompt import PromptWidget, PromptsHighlighter
-from lib import qtlib
+from lib import colorlib, qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
 from .batch_task import BatchInferenceTask, BatchTaskHandler
@@ -137,7 +137,7 @@ class BatchTransform(QtWidgets.QWidget):
         if self.cboOverwriteMode.currentData() == TRANSFORM_OVERWRITE_MODE_MISSING:
             targetText += " if the key doesn't exist"
         else:
-            targetText = qtlib.htmlRed(targetText + " and overwrite the content!")
+            targetText = colorlib.htmlRed(targetText + " and overwrite the content!")
         ops.append(targetText)
 
         if self.chkStorePrompts.isChecked():

@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QRunnable, QObject
 import cv2 as cv
 import numpy as np
 from PIL import Image
-from lib import qtlib, template_parser
+from lib import colorlib, qtlib, template_parser
 from infer.model_settings import ModelSettingsWindow, ScaleModelSettings
 from config import Config
 
@@ -191,7 +191,7 @@ class ExportWidget(QtWidgets.QWidget):
         examplePath = self.getAutoExportPath(self.filelist.getCurrentFile())
         stylesheet = ""
         if os.path.exists(examplePath):
-            stylesheet = f"color: {qtlib.COLOR_RED}"
+            stylesheet = f"color: {colorlib.RED}"
         self.txtPathSample.setStyleSheet(stylesheet)
 
         examplePath = f"{os.sep}\n\n".join(os.path.split(examplePath))
@@ -366,7 +366,7 @@ Examples:
 
     @Slot()
     def _onOverwriteToggled(self, state: bool):
-        style = f"color: {qtlib.COLOR_RED}" if state else None
+        style = f"color: {colorlib.RED}" if state else None
         self.chkOverwrite.setStyleSheet(style)
 
         if state:

@@ -2,7 +2,7 @@ from __future__ import annotations
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QTransform, QPalette
 from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsView
-import lib.imagerw as imagerw
+from lib import colorlib, imagerw
 from .dropview import DropView
 
 
@@ -35,8 +35,8 @@ class ImgView(DropView):
         palette = self.palette()
         baseColor = palette.color(QPalette.ColorRole.Base)
 
-        if baseColor.valueF() < 0.5:
-            baseColor  = QColor(0, 0, 0)
+        if colorlib.DARK_THEME:
+            baseColor  = QColor(15, 15, 15)
             brushColor = QColor(50, 50, 50)
         else:
             baseColor  = QColor(232, 232, 232)

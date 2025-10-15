@@ -5,7 +5,7 @@ from datetime import datetime
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Signal, Slot
 from config import Config
-from lib import qtlib
+from lib import colorlib, qtlib
 
 
 class BatchLogEntry(QtWidgets.QPlainTextEdit):
@@ -169,7 +169,7 @@ class BatchLog(QtWidgets.QWidget):
 
     def _askRun(self):
         text = "A batch task that affects the selected files is already running.<br>" \
-               "Starting another task that processes the same files may result in " + qtlib.htmlRed("data corruption") + "!<br><br>" \
+               "Starting another task that processes the same files may result in " + colorlib.htmlRed("data corruption") + "!<br><br>" \
                "Do you really want to start a possibly conflicting task?"
 
         dialog = QtWidgets.QMessageBox(self)

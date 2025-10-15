@@ -6,7 +6,7 @@ from PySide6.QtCore import QSize, Qt, Slot, QPoint, QPointF, QTimer, QSignalBloc
 from lib.filelist import DataKeys
 from lib.captionfile import FileTypeSelector
 from lib.util import CaptionSplitter
-from lib import qtlib
+from lib import colorlib, qtlib
 from caption.caption_text import NavigationTextEdit
 from caption.caption_highlight import CaptionHighlight, MatcherNode
 from caption.caption_filter import CaptionRulesProcessor, CaptionRulesSettings
@@ -135,7 +135,7 @@ class GalleryItem(QtWidgets.QWidget):
         selectionColor = palette.color(QtGui.QPalette.ColorRole.Highlight)
 
         cls.PEN_TEXT = QtGui.QPen(textColor)
-        cls.PEN_TEXT_ERROR = QtGui.QPen(qtlib.COLOR_RED)
+        cls.PEN_TEXT_ERROR = QtGui.QPen(colorlib.RED)
 
         cls.PEN_PRIMARY = QtGui.QPen(selectionColor)
         cls.PEN_PRIMARY.setStyle(Qt.PenStyle.SolidLine)
@@ -454,13 +454,14 @@ class GalleryGridItem(GalleryItem):
 class GalleryListItem(GalleryItem):
     COLUMN_WIDTH = 800
     HEADER_HEIGHT = 18
+    SIZE_POLICY = (QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.MinimumExpanding)
 
     def __init__(self, gallery, file):
         self._built = False
         self.gridLayout = QtWidgets.QGridLayout()
 
         super().__init__(gallery, file)
-        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.MinimumExpanding)
+        self.setSizePolicy(*self.SIZE_POLICY)
 
 
     def _build(self):
@@ -508,7 +509,7 @@ class GalleryListItem(GalleryItem):
         super().setImageSize(w, h)
         if self._built and self._pixmap is not None:
             if w < 1 or h < 1:
-                self.lblFilename.setStyleSheet(f"color: {qtlib.COLOR_RED}")
+                self.lblFilename.setStyleSheet(f"color: {colorlib.RED}")
             self.lblFilename.setText(f"{self.filename} ({self.imgWidth}x{self.imgHeight})")
 
     @override

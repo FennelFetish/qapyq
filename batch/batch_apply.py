@@ -6,7 +6,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QSignalBlocker
 from config import Config
 from infer.prompt import PromptWidget
-from lib import qtlib
+from lib import colorlib, qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
 from .batch_task import BatchTask, BatchTaskHandler
@@ -254,13 +254,13 @@ class BatchApply(QtWidgets.QWidget):
         self.chkDeleteJson.setChecked(deleteChecked)
         self.chkDeleteJson.setEnabled(deletePossible)
 
-        style = f"color: {qtlib.COLOR_RED}" if deleteChecked else None
+        style = f"color: {colorlib.RED}" if deleteChecked else None
         self.chkDeleteJson.setStyleSheet(style)
 
     @Slot()
     def _updateOverwriteBackup(self):
         red = self.backupSettings.isChecked() and self.chkOverwriteBackup.isChecked()
-        style = f"color: {qtlib.COLOR_RED}" if red else None
+        style = f"color: {colorlib.RED}" if red else None
         self.chkOverwriteBackup.setStyleSheet(style)
 
     @Slot()
@@ -288,18 +288,18 @@ class BatchApply(QtWidgets.QWidget):
             ops.append("Read the old content from the destination")
 
             if self.chkOverwriteBackup.isChecked():
-                ops.append(qtlib.htmlRed(f"Write the old content to .json files [{backupKey}] and overwrite the content!"))
+                ops.append(colorlib.htmlRed(f"Write the old content to .json files [{backupKey}] and overwrite the content!"))
             else:
                 ops.append(f"Write the old content to .json files [{backupKey}] and append an increasing counter if the key already exists")
 
         writeMode = self.cboWriteMode.currentData()
         writeModeText = WRITE_MODE_TEXT.get(writeMode, "").format(key=self.destSelector.name.strip())
         if writeMode in (WriteMode.SeparateReplace, WriteMode.SingleReplace, WriteMode.CaptionsReplace, WriteMode.TagsReplace):
-            writeModeText = qtlib.htmlRed(writeModeText)
+            writeModeText = colorlib.htmlRed(writeModeText)
         ops.append(writeModeText)
 
         if self.chkDeleteJson.isChecked():
-            ops.append(qtlib.htmlRed('Delete all .json files!'))
+            ops.append(colorlib.htmlRed('Delete all .json files!'))
 
         return ops
 

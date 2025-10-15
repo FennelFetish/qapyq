@@ -4,7 +4,7 @@ from collections import defaultdict
 from datetime import datetime
 from PySide6 import QtWidgets, QtGui
 from .captionfile import CaptionFile
-from . import qtlib
+from .colorlib import ColorCharFormats
 
 
 class TemplateVariableParser:
@@ -472,7 +472,7 @@ class VariableHighlighter:
 
 
     def __init__(self):
-        self.formats = qtlib.ColorCharFormats()
+        self.formats = ColorCharFormats()
 
     def highlight(self, source: QtWidgets.QPlainTextEdit, target: QtWidgets.QPlainTextEdit, positions, disabled=False) -> None:
         sourceRanges = self.FormatRanges(source)
@@ -484,10 +484,10 @@ class VariableHighlighter:
             varIndex += 1
 
             if disabled:
-                format = qtlib.toDisabledFormat(format)
+                format = self.formats.toDisabledFormat(format)
 
             boldFormat = QtGui.QTextCharFormat(format)
-            qtlib.setBoldFormat(boldFormat)
+            ColorCharFormats.setBoldFormat(boldFormat)
 
             sourceRanges.setFormatRange(srcStart, srcEnd, boldFormat)
             targetRanges.setFormatRange(targetStart, targetEnd, format)

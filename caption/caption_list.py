@@ -5,7 +5,7 @@ from typing import Generator
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QTimer, QSignalBlocker
 from lib.captionfile import CaptionFile, FileTypeSelector, Keys
-import lib.qtlib as qtlib
+from lib import colorlib, qtlib
 from .caption_tab import CaptionTab
 from .caption_highlight import CaptionHighlight
 from .caption_text import NavigationTextEdit
@@ -398,7 +398,7 @@ class CaptionEntry(QtWidgets.QWidget):
             case KeyType.Caption:  keyColor = "#C0C070"
             case KeyType.TextFile: keyColor = "#C070C0"
 
-        keyColor = qtlib.getHighlightColor(keyColor)
+        keyColor = colorlib.getHighlightColor(keyColor)
         keyPalette = txtKey.palette()
         keyPalette.setColor(QtGui.QPalette.ColorRole.WindowText, keyColor)
         txtKey.setPalette(keyPalette)
@@ -460,7 +460,8 @@ class AutoSizeTextEdit(NavigationTextEdit):
         palette = self.palette()
         bgColor = palette.color(QtGui.QPalette.ColorRole.Base).toHsv()
         h, s, v = bgColor.hueF(), bgColor.saturationF(), bgColor.valueF()
-        bgColor.setHsvF(h, s, v*0.87)
+        v *= 0.87 if colorlib.DARK_THEME else 0.92
+        bgColor.setHsvF(h, s, v)
         palette.setColor(QtGui.QPalette.ColorRole.Base, bgColor)
         AutoSizeTextEdit.PALETTE_ACTIVE = palette
 

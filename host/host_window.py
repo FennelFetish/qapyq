@@ -1,7 +1,7 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal
 from config import Config
-from lib import qtlib
+from lib import colorlib, qtlib
 
 
 LOCAL_NAME = "Local"
@@ -350,10 +350,10 @@ class HostSettings(QtWidgets.QGroupBox):
         proc.stop()
         if state:
             self.lblTestResult.setText("Command Verified")
-            self.lblTestResult.setStyleSheet(f"color: {qtlib.COLOR_GREEN}")
+            self.lblTestResult.setStyleSheet(f"color: {colorlib.GREEN}")
         else:
             self.lblTestResult.setText("Failed: See console for more information")
-            self.lblTestResult.setStyleSheet(f"color: {qtlib.COLOR_RED}")
+            self.lblTestResult.setStyleSheet(f"color: {colorlib.RED}")
 
     @Slot()
     def _onTestProcessEnded(self, proc):

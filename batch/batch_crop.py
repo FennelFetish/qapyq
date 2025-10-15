@@ -6,9 +6,8 @@ from PySide6.QtCore import Qt, Slot, QSignalBlocker
 import cv2 as cv
 import numpy as np
 from config import Config
-from lib import qtlib
+from lib import colorlib, imagerw
 from lib.mask_macro import MaskingMacro, ChainedMacroRunner
-import lib.imagerw as imagerw
 from infer.inference import InferenceChain
 import ui.export_settings as export
 from ui.size_preset import SizeBucket, SizePresetWidget
@@ -307,7 +306,7 @@ class BatchCrop(QtWidgets.QWidget):
             ops.append("Combine all cropped regions into one image")
 
         if self.outputImagePathSettings.overwriteFiles:
-            ops.append( qtlib.htmlRed("Save the cropped images and overwrite existing images!") )
+            ops.append( colorlib.htmlRed("Save the cropped images and overwrite existing images!") )
         elif self.outputImagePathSettings.skipExistingFiles:
             ops.append("Save the cropped images using new filenames")
         else:
@@ -318,7 +317,7 @@ class BatchCrop(QtWidgets.QWidget):
                 ops.append("Discard the mask")
             case OutputMaskType.File:
                 if self.outputMaskPathSettings.overwriteFiles:
-                    ops.append( qtlib.htmlRed("Save the cropped mask as a separate image and overwrite existing images!") )
+                    ops.append( colorlib.htmlRed("Save the cropped mask as a separate image and overwrite existing images!") )
                 else:
                     ops.append("Save the cropped mask as a separate image, using new filenames with an increasing counter")
             case OutputMaskType.Alpha:

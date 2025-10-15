@@ -3,7 +3,7 @@ from PySide6.QtCore import Qt, Slot
 from ui.export_settings import ExportWidget
 from ui.size_preset import SizePresetComboBox
 from config import Config
-from lib.qtlib import COLOR_RED, COLOR_GREEN
+from lib.colorlib import RED, GREEN
 from .crop import CropTool
 
 
@@ -224,10 +224,10 @@ class CropToolBar(QtWidgets.QToolBar):
 
         scale = (self.spinH.value() / h) if h>0 else 0.0
         if scale > 1.0:
-            self.lblScale.setStyleSheet(f"QLabel{{color:{COLOR_RED}}}")
+            self.lblScale.setStyleSheet(f"QLabel{{color:{RED}}}")
             self.lblScale.setText(f"▲  {scale:.3f}")
         else:
-            self.lblScale.setStyleSheet(f"QLabel{{color:{COLOR_GREEN}}}")
+            self.lblScale.setStyleSheet(f"QLabel{{color:{GREEN}}}")
             self.lblScale.setText(f"▼  {scale:.3f}")
 
 

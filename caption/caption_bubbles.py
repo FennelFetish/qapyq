@@ -2,8 +2,7 @@ from __future__ import annotations
 from typing import NamedTuple
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Signal, Slot
-import lib.qtlib as qtlib
-import lib.util as util
+from lib import colorlib, qtlib
 from ui.flow_layout import FlowLayout, ReorderWidget
 from .caption_context import CaptionContext
 
@@ -119,9 +118,10 @@ class CaptionBubbles(ReorderWidget):
 
 
 class BubbleColor(NamedTuple):
-    bg: str     = qtlib.COLOR_BUBBLE_BLACK
-    border: str = qtlib.COLOR_BUBBLE_BLACK
-    text: str   = "#fff"
+    bg: str     = colorlib.BUBBLE_BG
+    border: str = colorlib.BUBBLE_BG
+    text: str   = colorlib.BUBBLE_TEXT
+    bold: bool  = False
 
 
 class Bubble(QtWidgets.QFrame):
@@ -186,11 +186,11 @@ class Bubble(QtWidgets.QFrame):
         self.colors = colors
 
         # TODO: Display presence (with border height? full height with top border -> full presence)
-        self.setStyleSheet(qtlib.bubbleClassAux("Bubble", "EllipsisLabel", colors.bg, colors.border, colors.text))
+        self.setStyleSheet(colorlib.bubbleClassAux("Bubble", "EllipsisLabel", colors.bg, colors.border, colors.text, colors.bold))
 
         if self.spinWeight:
             #self.spinWeight.setStyleSheet(".QDoubleSpinBox{background-color: " + color + "; border: 0; padding-right: 25px}")
-            self.spinWeight.lineEdit().setStyleSheet("color: #fff; background-color: " + colors.bg)
+            self.spinWeight.lineEdit().setStyleSheet(f"color: {colors.text}; background-color: {colors.bg}")
 
     def forceUpdateWidth(self):
         if isinstance(self.textField, qtlib.DynamicLineEdit):
@@ -240,19 +240,21 @@ class BubbleColorMap:
         self.ctx = context
         self.highlight = context.highlight
         self.presence = context.container.multiEdit.getTagPresence()
+
         self.mutedColors: dict[str, str] = dict()
+        self._muteSV = self._muteDark if colorlib.DARK_THEME else self._muteLight
 
     def getBubbleColor(self, index: int, caption: str) -> BubbleColor:
         bg = self._getBubbleColor(caption)
         if bg is None:
-            bg = qtlib.COLOR_BUBBLE_HOVER if self.ctx.container.isHovered(caption) else qtlib.COLOR_BUBBLE_BLACK
+            bg = colorlib.BUBBLE_BG_HOVER if self.ctx.container.isHovered(caption) else colorlib.BUBBLE_BG
 
         if not self.presence:
             return BubbleColor(bg)
 
         mutedColor = self.getMutedColor(bg)
         if self.presence[index] == 1.0:
-            return BubbleColor(bg, border=mutedColor)
+            return BubbleColor(bg, bold=True)
         else:
             return BubbleColor(bg, text=mutedColor)
 
@@ -271,12 +273,21 @@ class BubbleColorMap:
     def getMutedColor(self, color: str) -> str:
         mutedColor = self.mutedColors.get(color)
         if mutedColor is None:
-            h, s, v = util.get_hsv(color)
-            v = min(v*1.8, 1.0)
-            v = max(v, 0.7)
-            self.mutedColors[color] = mutedColor = util.hsv_to_rgb(h, s*0.7, v)
-
+            h, s, v = colorlib.toHsv(color)
+            s, v = self._muteSV(s, v)
+            self.mutedColors[color] = mutedColor = colorlib.hsvToRgb(h, s, v)
         return mutedColor
+
+    @staticmethod
+    def _muteDark(s: float, v: float) -> tuple[float, float]:
+        s *= 0.7
+        v = min(max(v*1.8, 0.7), 1.0)
+        return s, v
+
+    @staticmethod
+    def _muteLight(s: float, v: float) -> tuple[float, float]:
+        v *= 0.52
+        return s, v
 
 
 
