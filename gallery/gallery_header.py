@@ -1,4 +1,5 @@
 import os
+from typing import NamedTuple
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot
 from ui.tab import ImgTab
@@ -6,10 +7,12 @@ from lib import colorlib, qtlib
 
 
 class GalleryHeader(QtWidgets.QFrame):
-    TITLE_INTERACTION = Qt.TextInteractionFlag.TextBrowserInteraction
-    TITLE_SIZE_POLICY = (QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Preferred)
-    TITLE_FONT = None
-    STYLESHEET = None
+    class StyleCache(NamedTuple):
+        titleFont: QtGui.QFont
+        stylesheet: str
+
+    STYLE: StyleCache | None = None
+
 
     def __init__(self, tab: ImgTab, dir: str, row: int):
         super().__init__()
@@ -17,26 +20,25 @@ class GalleryHeader(QtWidgets.QFrame):
         self.dir = dir
         self.row = row
 
-        lblTitle = QtWidgets.QLabel(dir, textInteractionFlags=self.TITLE_INTERACTION)
-        lblTitle.setSizePolicy(*self.TITLE_SIZE_POLICY)
+        txtTitle = QtWidgets.QLineEdit(dir)
+        txtTitle.setReadOnly(True)
 
         self.lblImgCount = MenuLabel(self)
 
-        if GalleryHeader.STYLESHEET is None:
-            GalleryHeader.STYLESHEET = f"color: {colorlib.BUBBLE_TEXT}; background-color: {colorlib.BUBBLE_BG}; border: 0px"
-
-            qtlib.setMonospace(lblTitle, 1.2, bold=True)
-            GalleryHeader.TITLE_FONT = lblTitle.font()
+        if GalleryHeader.STYLE is None:
+            qtlib.setMonospace(txtTitle, 1.2, bold=True)
+            stylesheet = f"color: {colorlib.BUBBLE_TEXT}; background-color: {colorlib.BUBBLE_BG}; border: 0px"
+            GalleryHeader.STYLE = self.StyleCache(txtTitle.font(), stylesheet)
         else:
-            lblTitle.setFont(GalleryHeader.TITLE_FONT)
+            txtTitle.setFont(GalleryHeader.STYLE.titleFont)
 
         layout = QtWidgets.QHBoxLayout()
         layout.setContentsMargins(4, 4, 4, 4)
-        layout.addWidget(lblTitle)
+        layout.addWidget(txtTitle)
         layout.addWidget(self.lblImgCount)
         self.setLayout(layout)
 
-        self.setStyleSheet(GalleryHeader.STYLESHEET)
+        self.setStyleSheet(GalleryHeader.STYLE.stylesheet)
 
     def updateImageLabel(self, numImages: int):
         text = f"{numImages} Image"
