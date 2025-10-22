@@ -963,6 +963,30 @@ def createActionReplaceWords(params: list[str]) -> ActionFunc:
     return actReplaceWords
 
 
+def createActionReplaceLastWords(params: list[str]) -> ActionFunc:
+    search  = splitParamsStrip(params[0])
+    replace = splitParams(params[1])
+
+    def actReplaceLastWords(varParser: ConditionVariableParser, tags: list[str]) -> list[str]:
+        parsedPairs = parseSearchReplace(varParser, search, replace)
+
+        newTags = list[str]()
+        for tag in tags:
+            for s, r in parsedPairs.items():
+                if tag.endswith(s):
+                    lenS = len(s)
+                    if len(tag) == lenS:
+                        tag = r
+                    elif tag[-lenS-1].isspace():
+                        tag = tag[:-lenS] + r
+
+            newTags.append(tag)
+
+        return newTags
+
+    return actReplaceLastWords
+
+
 def createActionReplaceStrings(params: list[str]) -> ActionFunc:
     search  = splitParams(params[0])
     replace = splitParams(params[1])
@@ -999,6 +1023,7 @@ ACTIONS = {
     "RemoveTagsContaining": ActionDef("Remove tags containing", createActionRemoveTagsContaining, ["words"]),
     "ReplaceTags":          ActionDef("Replace tags", createActionReplaceTags, ["search", "replace"]),
     "ReplaceWords":         ActionDef("Replace words", createActionReplaceWords, ["search", "replace"]),
+    "ReplaceLastWords":     ActionDef("Replace last words", createActionReplaceLastWords, ["search", "replace"]),
     "ReplaceStrings":       ActionDef("Replace strings", createActionReplaceStrings, ["search", "replace"])
 
     # Add tag to different key?
