@@ -493,7 +493,7 @@ class BatchRulesGroup(QtWidgets.QWidget):
 
         flowLayout = FlowLayout(spacing=2)
 
-        self.cboExclusive = QtWidgets.QComboBox()
+        self.cboExclusive = qtlib.NonScrollComboBox()
         self.cboExclusive.addItem("Keep All", MutualExclusivity.Disabled)
         self.cboExclusive.addItem("Keep Last", MutualExclusivity.KeepLast)
         self.cboExclusive.addItem("Keep First", MutualExclusivity.KeepFirst)
