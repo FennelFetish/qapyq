@@ -2,6 +2,7 @@
 try: import pillow_jxl
 except: pass
 
+import numpy as np
 from config import Config
 
 from io import BytesIO
@@ -219,18 +220,16 @@ def loadImagePIL(source, forceRGB=False, allowGreyscale=True, allowAlpha=True):
 # Always load with PIL: OpenCV has problems with loading certain modes (like P)
 
 def loadMatBGR(imgPath: str, rgb=False, forceRGB=False, allowGreyscale=True, allowAlpha=True):
-    import numpy as np
-    with loadImagePIL(imgPath, forceRGB, allowGreyscale, allowAlpha) as img:
-        mat = np.array(img)
+    img = loadImagePIL(imgPath, forceRGB, allowGreyscale, allowAlpha)
+    mat = np.array(img)
 
     if not rgb:
         mat[..., :3] = mat[..., 2::-1] # Convert RGB(A) -> BGR(A)
     return mat
 
 def decodeMatBGR(data: bytes | bytearray, rgb=False, forceRGB=False, allowGreyscale=True, allowAlpha=True):
-    import numpy as np
-    with loadImagePIL(BytesIO(data), forceRGB, allowGreyscale, allowAlpha) as img:
-        mat = np.array(img)
+    img = loadImagePIL(BytesIO(data), forceRGB, allowGreyscale, allowAlpha)
+    mat = np.array(img)
 
     if not rgb:
         mat[..., :3] = mat[..., 2::-1] # Convert RGB(A) -> BGR(A)
