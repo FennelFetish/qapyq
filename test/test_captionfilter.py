@@ -19,8 +19,6 @@ class BaseCaptionFilterTest(unittest.TestCase):
 
 class CaptionFilterTest(BaseCaptionFilterTest):
     def setUp(self):
-        prefix = ""
-        suffix = ""
         seperator = ", "
         removeDup = True
         sortCaptions = True
@@ -35,8 +33,7 @@ class CaptionFilterTest(BaseCaptionFilterTest):
 
         bans = ["realistic", "blurry"]
 
-        self.rulesProcessor = CaptionRulesProcessor()
-        self.rulesProcessor.setup(prefix, suffix, seperator, removeDup, sortCaptions, whitelistGroups)
+        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, sortCaptions, whitelistGroups)
         self.rulesProcessor.setBannedCaptions(bans)
         self.rulesProcessor.setCaptionGroups(groups)
 
@@ -106,8 +103,9 @@ class CaptionFilterTest(BaseCaptionFilterTest):
 
 class CaptionFilterPrefixSuffixTest(BaseCaptionFilterTest):
     def setUp(self):
-        prefix = "pre1, pre2, "
-        suffix = ", suf1, suf2"
+        prefix = "pre1, pre2"
+        suffix = "suf1, suf2"
+        prefixSuffixSep = True
         seperator = ", "
         removeDup = True
         sortCaptions = True
@@ -117,8 +115,8 @@ class CaptionFilterPrefixSuffixTest(BaseCaptionFilterTest):
             (["long pants", "black pants", "white pants", "denim pants", "pants"], MutualExclusivity.Disabled, True)
         ]
 
-        self.rulesProcessor = CaptionRulesProcessor()
-        self.rulesProcessor.setup(prefix, suffix, seperator, removeDup, sortCaptions, whitelistGroups)
+        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, sortCaptions, whitelistGroups)
+        self.rulesProcessor.setPrefixSuffix(prefix, suffix, prefixSuffixSep, prefixSuffixSep)
         self.rulesProcessor.setCaptionGroups(groups)
 
     def tearDown(self):
@@ -135,12 +133,64 @@ class CaptionFilterPrefixSuffixTest(BaseCaptionFilterTest):
         expected = "pre1, pre2, black denim pants, suf1, suf2"
         self.assertProcessedEqual(caption, expected)
 
+    # TODO:
+    # def test_partial_prefix_suffix(self):
+    #     caption  = "denim pants, pre2, suf1, black pants"
+    #     expected = "pre1, pre2, black denim pants, suf1, suf2"
+    #     self.assertProcessedEqual(caption, expected)
+
+
+    def test_single_add_prefix(self):
+        self.rulesProcessor.setPrefixSuffix("add", "", False, False)
+        self.assertProcessedEqual("", "add")
+        self.assertProcessedEqual("add", "add")
+
+    def test_single_add_suffix(self):
+        self.rulesProcessor.setPrefixSuffix("", "add", False, False)
+        self.assertProcessedEqual("", "add")
+        self.assertProcessedEqual("add", "add")
+
+    def test_single_add_both(self):
+        self.rulesProcessor.setPrefixSuffix("add", "add", False, False)
+        self.assertProcessedEqual("", "add")
+        self.assertProcessedEqual("add", "add")
+
+    def test_prefix_suffix_exist(self):
+        self.rulesProcessor.setPrefixSuffix("pre", "suf", False, False)
+        self.assertProcessedEqual("", "presuf")
+        self.assertProcessedEqual("pre", "presuf")
+        self.assertProcessedEqual("suf", "presuf")
+        self.assertProcessedEqual("presuf", "presuf")
+        self.assertProcessedEqual("pre, suf", "pre, suf")
+        self.assertProcessedEqual("pre, mid, suf", "pre, mid, suf")
+
+
+    def test_single_add_prefix_sep(self):
+        self.rulesProcessor.setPrefixSuffix("add", "", True, True)
+        self.assertProcessedEqual("", "add")
+        self.assertProcessedEqual("add", "add")
+
+    def test_single_add_suffix_sep(self):
+        self.rulesProcessor.setPrefixSuffix("", "add", True, True)
+        self.assertProcessedEqual("", "add")
+        self.assertProcessedEqual("add", "add")
+
+    def test_single_add_both_sep(self):
+        self.rulesProcessor.setPrefixSuffix("add", "add", True, True)
+        self.assertProcessedEqual("", "add")
+        self.assertProcessedEqual("add", "add")
+
+    def test_prefix_suffix_exist_sep(self):
+        self.rulesProcessor.setPrefixSuffix("pre", "suf", True, True)
+        self.assertProcessedEqual("", "pre, suf")
+        self.assertProcessedEqual("pre", "pre, suf")
+        self.assertProcessedEqual("suf", "pre, suf")
+        self.assertProcessedEqual("pre, suf", "pre, suf")
+
 
 
 class CaptionFilterMutualExclusivityTest(BaseCaptionFilterTest):
     def setUp(self):
-        prefix = ""
-        suffix = ""
         seperator = ", "
         removeDup = True
         sortCaptions = True
@@ -152,8 +202,7 @@ class CaptionFilterMutualExclusivityTest(BaseCaptionFilterTest):
             (["lying", "sitting", "standing"], MutualExclusivity.Priority, False)
         ]
 
-        self.rulesProcessor = CaptionRulesProcessor()
-        self.rulesProcessor.setup(prefix, suffix, seperator, removeDup, sortCaptions, whitelistGroups)
+        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, sortCaptions, whitelistGroups)
         self.rulesProcessor.setCaptionGroups(groups)
 
     def tearDown(self):

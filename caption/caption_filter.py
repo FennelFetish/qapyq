@@ -228,11 +228,11 @@ class TagCombineFilter(CaptionFilter):
     # short hair, brown hair    -> short brown hair   short, brown -> group 0
     # messy hair, curly hair    -> messy curly hair   messy, curly -> group 1
 
-    def __init__(self):
+    def __init__(self, sort: bool):
         self.groupMap = dict[str, int]() # key: tag as-is / value: group index
         self._nextGroupIndex = 1
 
-        self.sort = True
+        self.sort = sort
         self.tagOrder = dict[str, int]()
         self._nextOrder = 0
 
@@ -386,15 +386,29 @@ class PrefixSuffixFilter:
         self.prefix = ""
         self.suffix = ""
 
-    def setup(self, prefix: str, suffix: str) -> None:
+        self.prefixWithSep = ""
+        self.suffixWithSep = ""
+
+    def setup(self, prefix: str, suffix: str, separator: str, prefixSep: bool, suffixSep: bool) -> None:
         self.prefix = prefix
         self.suffix = suffix
 
+        self.prefixWithSep = prefix + separator if (prefixSep and prefix) else prefix
+        self.suffixWithSep = separator + suffix if (suffixSep and suffix) else suffix
+
     def filterText(self, text: str) -> str:
-        if not text.startswith(self.prefix):
-            text = self.prefix + text
-        if not text.endswith(self.suffix):
-            text += self.suffix
+        if not text.startswith(self.prefixWithSep):
+            if not text:
+                text = self.prefix
+            elif text != self.prefix:
+                text = self.prefixWithSep + text
+
+        if not text.endswith(self.suffixWithSep):
+            if not text:
+                text = self.suffix
+            elif text != self.suffix:
+                text += self.suffixWithSep
+
         return text
 
 
@@ -428,13 +442,11 @@ class CaptionRulesSettings:
 
 
 class CaptionRulesProcessor:
-    def __init__(self):
-        self.prefix = ""
-        self.suffix = ""
-        self.separator = ", "
-        self.removeDup = True
-        self.sortCaptions = True
-        self.whitelistGroups = False
+    def __init__(self, separator: str, removeDup: bool, sortCaptions: bool, whitelistGroups: bool):
+        self.separator = separator
+        self.removeDup = removeDup
+        self.sortCaptions = sortCaptions
+        self.whitelistGroups = whitelistGroups
 
         self.replaceFilter = SearchReplaceFilter()
         self.exclusiveFilterLast = MutuallyExclusiveFilter(MutualExclusivity.KeepLast)
@@ -445,21 +457,13 @@ class CaptionRulesProcessor:
         self.whitelistFilter = WhitelistGroupsFilter()
         self.conditionalsFilter = ConditionalsFilter()
         self.sortFilter = SortCaptionFilter()
-        self.combineFilter = TagCombineFilter()
+        self.combineFilter = TagCombineFilter(sortCaptions)
         self.subsetFilter = SubsetFilter()
         self.prefixSuffixFilter = PrefixSuffixFilter()
 
 
-    def setup(self, prefix: str, suffix: str, separator: str, removeDup: bool, sortCaptions: bool, whitelistGroups: bool) -> None:
-        self.prefix = prefix
-        self.suffix = suffix
-        self.separator = separator
-        self.removeDup = removeDup
-        self.sortCaptions = sortCaptions
-        self.combineFilter.sort = sortCaptions
-        self.whitelistGroups = whitelistGroups
-
-        self.prefixSuffixFilter.setup(prefix, suffix)
+    def setPrefixSuffix(self, prefix: str, suffix: str, prefixSep: bool, suffixSep: bool):
+        self.prefixSuffixFilter.setup(prefix, suffix, self.separator, prefixSep, suffixSep)
 
     def setSearchReplacePairs(self, pairs: list[tuple[str, str]]) -> None:
         self.replaceFilter.setup(pairs)
@@ -471,7 +475,9 @@ class CaptionRulesProcessor:
         'Takes iterable with tuples of `captions: list[str]`, `MutualExclusivity`, `combine: bool`'
         captionGroups = list(captionGroups)
 
-        self.sortFilter.setup((group[0] for group in captionGroups), self.prefix, self.suffix, self.separator)
+        prefix = self.prefixSuffixFilter.prefix
+        suffix = self.prefixSuffixFilter.suffix
+        self.sortFilter.setup((group[0] for group in captionGroups), prefix, suffix, self.separator)
 
         if self.whitelistGroups:
             self.whitelistFilter.setup(group[0] for group in captionGroups)

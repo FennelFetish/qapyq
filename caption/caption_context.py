@@ -110,15 +110,12 @@ class CaptionContext(QtWidgets.QTabWidget):
         return self._cachedRulesProcessor
 
     def createRulesProcessor(self) -> CaptionRulesProcessor:
-        removeDup = self.settings.isRemoveDuplicates
-        sortCaptions = self.settings.isSortCaptions
-        whitelistGroups = self.settings.isWhitelistGroups
-        separator = self.settings.separator
+        cfg = self.settings
 
-        rulesProcessor = CaptionRulesProcessor()
-        rulesProcessor.setup(self.settings.prefix, self.settings.suffix, separator, removeDup, sortCaptions, whitelistGroups)
-        rulesProcessor.setSearchReplacePairs(self.settings.searchReplacePairs)
-        rulesProcessor.setBannedCaptions(self.settings.bannedCaptions)
+        rulesProcessor = CaptionRulesProcessor(cfg.separator, cfg.isRemoveDuplicates, cfg.isSortCaptions, cfg.isWhitelistGroups)
+        rulesProcessor.setPrefixSuffix(cfg.prefix, cfg.suffix, cfg.isAddPrefixSeparator, cfg.isAddSuffixSeparator)
+        rulesProcessor.setSearchReplacePairs(cfg.searchReplacePairs)
+        rulesProcessor.setBannedCaptions(cfg.bannedCaptions)
         rulesProcessor.setCaptionGroups( (group.captionsExpandWildcards, group.exclusivity, group.combineTags) for group in self.groups.groups )
         rulesProcessor.setConditionalRules(self.conditionals.getFilterRules())
         return rulesProcessor

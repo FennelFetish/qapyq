@@ -133,17 +133,20 @@ class CaptionSettings(CaptionTab):
 
     @property
     def prefix(self) -> str:
-        prefix = self.txtPrefix.toPlainText()
-        if prefix and self.chkPrefixSeparator.isChecked():
-            prefix += self.separator
-        return prefix
+        return self.txtPrefix.toPlainText()
 
     @property
     def suffix(self) -> str:
-        suffix = self.txtSuffix.toPlainText()
-        if suffix and self.chkSuffixSeparator.isChecked():
-            suffix = self.separator + suffix
-        return suffix
+        return self.txtSuffix.toPlainText()
+
+    @property
+    def isAddPrefixSeparator(self) -> bool:
+        return self.chkPrefixSeparator.isChecked()
+
+    @property
+    def isAddSuffixSeparator(self) -> bool:
+        return self.chkSuffixSeparator.isChecked()
+
 
     @property
     def separator(self) -> str:

@@ -404,15 +404,13 @@ class BatchRules(QtWidgets.QWidget):
         separator = self.txtSeparator.text()
 
         prefix = self.txtPrefix.toPlainText()
-        if prefix and self.chkPrefixSeparator.isChecked():
-            prefix += separator
+        prefixSep = self.chkPrefixSeparator.isChecked()
 
         suffix = self.txtSuffix.toPlainText()
-        if suffix and self.chkSuffixSeparator.isChecked():
-            suffix = separator + suffix
+        suffixSep = self.chkSuffixSeparator.isChecked()
 
-        rulesProcessor = CaptionRulesProcessor()
-        rulesProcessor.setup(prefix, suffix, separator, self.chkRemoveDup.isChecked(), self.chkSortCaptions.isChecked(), self.chkWhitelistGroups.isChecked())
+        rulesProcessor = CaptionRulesProcessor(separator, self.chkRemoveDup.isChecked(), self.chkSortCaptions.isChecked(), self.chkWhitelistGroups.isChecked())
+        rulesProcessor.setPrefixSuffix(prefix, suffix, prefixSep, suffixSep)
         rulesProcessor.setSearchReplacePairs(self.tableReplace.getContent())
         rulesProcessor.setBannedCaptions(self.bannedCaptions)
         rulesProcessor.setCaptionGroups( (group.captionsExpandWildcards(self.wildcards), group.exclusivity, group.combineTags) for group in self.groups )
