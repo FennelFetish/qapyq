@@ -10,13 +10,13 @@ diskcache
 
 # onnx
 onnxruntime-gpu
-protobuf
-humanfriendly
 
 # InternVL2
-timm
 sentencepiece
-einops
+
+# Ovis 2.5
+# triton version 3.4 for torch 2.8
+triton-windows<3.5; platform_system == "Windows"  
 
 # YOLO
 ultralytics
