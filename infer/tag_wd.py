@@ -1,6 +1,6 @@
 import csv
 import numpy as np
-import onnxruntime
+import onnxruntime as ort
 import torch # Not used directly, but required for GPU inference
 from .tag import TagBackend, ThresholdMode
 from .devmap import DevMap
@@ -37,6 +37,9 @@ class WDTag(TagBackend):
         self.setConfig(config)
         self.tagNames, self.indexes = self._loadLabels(config.get("csv_path"))
 
+        sessOpts = ort.SessionOptions()
+        sessOpts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+
         # https://onnxruntime.ai/docs/api/python/api_summary.html
         # https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html#configuration-options
         # CUDAExecutionProvider needs 'import torch'
@@ -45,7 +48,7 @@ class WDTag(TagBackend):
             'CPUExecutionProvider'
         ]
 
-        self.model = onnxruntime.InferenceSession(config.get("model_path"), providers=providers)
+        self.model = ort.InferenceSession(config.get("model_path"), sess_options=sessOpts, providers=providers)
         _, height, width, _ = self.model.get_inputs()[0].shape
         self.modelTargetSize = height
 
@@ -71,10 +74,13 @@ class WDTag(TagBackend):
         self.characterThresholdMode = ThresholdMode.fromConfig(config, "character_threshold", "character_threshold_mode", self.DEFAULT_CHAR_THRESH)
 
 
-    def tag(self, imgFile) -> str:
+    def _loadImage(self, imgFile) -> np.ndarray:
         img = self.loadImageSquare(imgFile, self.modelTargetSize)
         img = np.expand_dims(img, axis=0)
+        return img
 
+    def tag(self, imgFile) -> str:
+        img = self._loadImage(imgFile)
         results = self.predict(img)
         tags = self.SEP.join(filter(None, results))
         return tags
@@ -140,18 +146,26 @@ class WDTag(TagBackend):
         tagNames = list[str]()
         indexes = CategoryIndexes()
 
+        colName = -1
+        colCategory = -1
+
         with open(csvPath, 'r', newline='') as csvFile:
             # columns: tag_id, name, category, count
             reader = csv.reader(csvFile)
 
             row = next(reader)
-            if row[1] != "name" or row[2] != "category":
-                raise ValueError("Unrecognized column names in CSV file")
+            for i, col in enumerate(row):
+                match col:
+                    case "name": colName = i
+                    case "category": colCategory = i
+
+            if colName < 0 or colCategory < 0:
+                raise ValueError("Couldn't find 'name' or 'category' column in CSV file")
 
             for i, row in enumerate(reader):
-                tagNames.append(TagBackend.removeUnderscore(row[1]))
+                tagNames.append(TagBackend.removeUnderscore(row[colName]))
 
-                category = int(row[2])
+                category = int(row[colCategory])
                 match category:
                     case 0: indexes.general.append(i)
                     case 4: indexes.character.append(i)

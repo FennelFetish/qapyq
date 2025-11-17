@@ -74,11 +74,9 @@ class TagBackend:
 
         if srcChannels == 4:
             # Blend
-            alpha = imgScaled[:, :, 3] / 255.0
-            alphaInv = 1.0 - alpha
-            for chan in range(3):
-                targetSlice[:, :, chan] *= alphaInv
-                targetSlice[:, :, chan] += imgScaled[:, :, chan] * alpha
+            alpha = imgScaled[:, :, 3:4] / 255.0
+            targetSlice *= 1.0 - alpha
+            targetSlice += imgScaled[:, :, :3] * alpha
         else:
             targetSlice[:] = imgScaled
 

@@ -65,8 +65,9 @@ BackendsLLM = {
 }
 
 BackendsTag = {
-    "WD":               BackendDef("wd",     BackendTypes.ONNX),
-    "JoyTag":           BackendDef("joytag", BackendTypes.TORCH)
+    "JoyTag":           BackendDef("joytag",        BackendTypes.TORCH),
+    "PixAI":            BackendDef("pixai-tag",     BackendTypes.ONNX),
+    "WD":               BackendDef("wd",            BackendTypes.ONNX)
 }
 
 BackendsMask = {
@@ -173,6 +174,9 @@ class BackendLoader:
             case "joytag":
                 from .tag_joytag import JoyTag
                 return JoyTag(config)
+            case "pixai-tag":
+                from .tag_pixai import PixAiTag
+                return PixAiTag(config)
             case "wd":
                 from .tag_wd import WDTag
                 return WDTag(config)
