@@ -1,6 +1,6 @@
 import os
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, QSignalBlocker
+from PySide6.QtCore import Qt, Slot, QSignalBlocker, QTimer
 import lib.qtlib as qtlib
 from ui.edit_table import EditableTable
 from ui.flow_layout import SortedStringFlowWidget
@@ -309,5 +309,8 @@ class CaptionSettings(CaptionTab):
 
         finally:
             self._emitUpdates = True
-            self.ctx.controlUpdated.emit()
-            self.ctx.groups.updateGalleryFilter()
+
+            # When the group tab is open while loading a preset, highlighting fails because the groups are not directly visible after adding.
+            # They report enabled=False and are filtered out in CaptionContextDataSource.getGroups(). Workaround: Delay the update.
+            QTimer.singleShot(0, self.ctx.controlUpdated.emit)
+            QTimer.singleShot(0, self.ctx.groups.updateGalleryFilter)

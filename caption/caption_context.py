@@ -30,6 +30,9 @@ class CaptionContext(QtWidgets.QTabWidget):
         self.separatorChanged.connect(lambda sep: self._invalidateRulesProcessor())
         self.multiEditToggled.connect(self._storeMultiEditState)
 
+        # Create CaptionHighlight early to connect cache clearing to 'controlUpdated' before anything else
+        self.highlight = CaptionHighlight(CaptionContextDataSource(self))
+
         from .caption_container import CaptionContainer
         self.container: CaptionContainer = container
 
@@ -47,7 +50,6 @@ class CaptionContext(QtWidgets.QTabWidget):
 
         from .caption_text import CaptionTextEdit
         self.text = CaptionTextEdit(self)
-        self.highlight = CaptionHighlight(CaptionContextDataSource(self))
 
         self.addTab(self.settings, "Rules")
         self.addTab(self.groups, "Groups")
