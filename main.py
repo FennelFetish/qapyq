@@ -256,8 +256,7 @@ class MainWindow(QtWidgets.QMainWindow):
             win.close()
         Config.windowOpen = openWindows
 
-        from infer.model_settings import ModelSettingsWindow
-        ModelSettingsWindow.closeInstance()
+        qtlib.SingletonWindow.closeAllWindows()
 
 
 

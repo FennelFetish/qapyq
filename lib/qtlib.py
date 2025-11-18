@@ -1,5 +1,5 @@
 import weakref
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, cast
 from contextlib import contextmanager
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QRect
@@ -771,3 +771,40 @@ class LayoutFilter(QtWidgets.QHBoxLayout):
         finally:
             self._updatesDisabled = False
             self.updateStatus()
+
+
+
+class SingletonWindow(QtWidgets.QMainWindow):
+    _instances = dict[type, 'SingletonWindow']()
+
+    def __new__(cls, *args, **kwargs):
+        win = cls._instances.get(cls)
+        if win is None:
+            cls._instances[cls] = win = super(SingletonWindow, cls).__new__(cls)
+        return cast(cls, win)
+
+    def __init__(self, parent=None):
+        if getattr(self, '_singleton_initialized', False):
+            return
+
+        super().__init__(parent)
+        self._singleton_initialized = True
+        self._init_singleton()
+
+        self.move(self.screen().geometry().center() - self.frameGeometry().center())
+
+    def _init_singleton(self):
+        raise NotImplementedError()
+
+    def closeEvent(self, event):
+        SingletonWindow._instances.pop(type(self), None)
+        super().closeEvent(event)
+
+    @classmethod
+    def closeAllWindows(cls):
+        for win in list(cls._instances.values()):
+            win.close()
+
+    @classmethod
+    def isWindowOpen(cls) -> bool:
+        return cls in cls._instances

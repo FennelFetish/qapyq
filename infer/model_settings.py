@@ -16,21 +16,10 @@ class ModelSettingsSignals(QObject):
     presetListUpdated = Signal(str)
 
 
-class ModelSettingsWindow(QtWidgets.QMainWindow):
-    _instance = None
+class ModelSettingsWindow(qtlib.SingletonWindow):
     signals = ModelSettingsSignals()
 
-    def __new__(cls, *args, **kwargs):
-        if not isinstance(cls._instance, cls):
-            cls._instance = super(ModelSettingsWindow, cls).__new__(cls, *args, **kwargs)
-        return cls._instance
-
-    def __init__(self, parent):
-        if hasattr(self, '_initialized'):
-            return
-        self._initialized = True
-
-        super().__init__(parent)
+    def _init_singleton(self):
         self.setWindowTitle(f"Model Settings - {Config.windowTitle}")
         self.resize(800, self.height())
 
@@ -50,19 +39,15 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
         self.tabWidget.addTab(self.embedSettings, "Embedding")
         self.setCentralWidget(self.tabWidget)
 
-    def closeEvent(self, event):
-        super().closeEvent(event)
-        ModelSettingsWindow._instance = None
-
     @classmethod
     def openInstance(cls, parent, configAttr=None, presetName=None):
-        justOpened = (cls._instance is None)
+        alreadyOpen = cls.isWindowOpen()
 
         win = ModelSettingsWindow(parent)
         win.show()
         win.activateWindow()
 
-        if not justOpened:
+        if alreadyOpen:
             return
 
         match configAttr:
@@ -76,11 +61,6 @@ class ModelSettingsWindow(QtWidgets.QMainWindow):
 
         win.tabWidget.setCurrentIndex(index)
         widget.reloadPresetList(presetName)
-
-    @classmethod
-    def closeInstance(cls):
-        if isinstance(cls._instance, cls):
-            cls._instance.close()
 
 
 

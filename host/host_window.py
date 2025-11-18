@@ -7,22 +7,10 @@ from lib import colorlib, qtlib
 LOCAL_NAME = "Local"
 
 
-class HostWindow(QtWidgets.QMainWindow):
+class HostWindow(qtlib.SingletonWindow):
     PROP_SETTINGS = "settings"
 
-    _instance = None
-
-    def __new__(cls, *args, **kwargs):
-        if not isinstance(cls._instance, cls):
-            cls._instance = super(HostWindow, cls).__new__(cls, *args, **kwargs)
-        return cls._instance
-
-    def __init__(self, parent):
-        if hasattr(self, '_initialized'):
-            return
-        self._initialized = True
-
-        super().__init__(parent)
+    def _init_singleton(self):
         self.setWindowTitle(f"Hosts - {Config.windowTitle}")
         self.resize(800, 400)
 
@@ -34,16 +22,6 @@ class HostWindow(QtWidgets.QMainWindow):
         win = HostWindow(parent)
         win.show()
         win.activateWindow()
-
-    @classmethod
-    def closeInstance(cls):
-        if isinstance(cls._instance, cls):
-            cls._instance.close()
-
-    def closeEvent(self, event):
-        super().closeEvent(event)
-        HostWindow._instance = None
-
 
     def _build(self):
         layout = QtWidgets.QGridLayout()
