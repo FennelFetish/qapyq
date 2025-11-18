@@ -66,6 +66,9 @@ def initColors(colorScheme: Qt.ColorScheme):
         FOCUS     = "#E04444"
         FOCUS_BAN = "#909090"
 
+        global bubbleMuteColor
+        bubbleMuteColor = __bubbleMuteLight
+
     else:
         TEXT_HIGHLIGHT_V **= 0.5  # Brighter highlighting
 
@@ -79,6 +82,21 @@ def mixBubbleColor(destColor: str, mixS: float, mixV: float) -> str:
     s = BUBBLE_BG_S + (destS - BUBBLE_BG_S) * mixS
     v = BUBBLE_BG_V + (destV - BUBBLE_BG_V) * mixV
     return hsvToRgb(destH, s, v)
+
+
+def __bubbleMuteDark(color: str) -> str:
+    h, s, v = toHsv(color)
+    s *= 0.7
+    v = min(max(v*1.8, 0.7), 1.0)
+    return hsvToRgb(h, s, v)
+
+def __bubbleMuteLight(color: str) -> str:
+    h, s, v = toHsv(color)
+    s = min(s*1.5, 1.0)
+    v *= 0.52
+    return hsvToRgb(h, s, v)
+
+bubbleMuteColor = __bubbleMuteDark
 
 
 def bubbleStyle(color: str, borderColor="") -> str:

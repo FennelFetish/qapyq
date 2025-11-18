@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import NamedTuple
+from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Signal, Slot
 from lib import colorlib, qtlib
@@ -31,12 +32,14 @@ class CaptionBubbles(ReorderWidget):
         self.showRemove = showRemove
         self.editable = editable
 
+        self._selectedIndex = -1
+
         layout = FlowLayout(spacing=5)
         self.setLayout(layout)
         self.updateBubbles()
 
 
-    def setText(self, text):
+    def setText(self, text: str):
         self.text = text
         self.updateBubbles()
 
@@ -73,12 +76,28 @@ class CaptionBubbles(ReorderWidget):
                 bubble.setFocusProxy(self)
                 self.layout().addWidget(bubble)
 
+            color = colorMap.getBubbleColor(i, caption)
+            if i == self._selectedIndex:
+                color = color.withBorderEnabled(True)
+            bubble.setColor(color)
+
             bubble.text = caption
-            bubble.setColor( colorMap.getBubbleColor(i, caption) )
             bubble.forceUpdateWidth()
 
         for i in range(i+1, len(oldBubbles)):
             oldBubbles[i].deleteLater()
+
+    def setSelectedBubble(self, index: int):
+        if index == self._selectedIndex:
+            return
+
+        if bubble := self.getBubbleAt(self._selectedIndex):
+            bubble.setColor(bubble.colors.withBorderEnabled(False))
+
+        if bubble := self.getBubbleAt(index):
+            bubble.setColor(bubble.colors.withBorderEnabled(True))
+
+        self._selectedIndex = index
 
 
     def moveBubble(self, srcIndex: int, destIndex: int) -> int:
@@ -108,12 +127,17 @@ class CaptionBubbles(ReorderWidget):
         menu.exec( bubble.mapToGlobal(bubble.rect().bottomLeft()) )
 
 
-    def resizeEvent(self, event):
-        self.layout().update()  # Weird: Needed for proper resize.
-
     @Slot()
     def _onDrop(self, text: str):
         self.dropped.emit(text)
+
+    @override
+    def resizeEvent(self, event):
+        self.layout().update()  # Weird: Needed for proper resize.
+
+    @override
+    def leaveEvent(self, event):
+        self.hovered.emit(-1)
 
 
 
@@ -122,6 +146,13 @@ class BubbleColor(NamedTuple):
     border: str = colorlib.BUBBLE_BG
     text: str   = colorlib.BUBBLE_TEXT
     bold: bool  = False
+
+    def withBorderEnabled(self, enabled: bool) -> BubbleColor:
+        if enabled:
+            border = colorlib.bubbleMuteColor(self.bg)
+            return BubbleColor(self.bg, border, self.text, self.bold)
+        else:
+            return BubbleColor(self.bg, text=self.text, bold=self.bold)
 
 
 class Bubble(QtWidgets.QFrame):
@@ -196,6 +227,7 @@ class Bubble(QtWidgets.QFrame):
         if isinstance(self.textField, qtlib.DynamicLineEdit):
             self.textField.updateWidth()
 
+    @override
     def wheelEvent(self, event: QtGui.QWheelEvent):
         if self.spinWeight:
             self.spinWeight.wheelEvent(event)
@@ -204,6 +236,7 @@ class Bubble(QtWidgets.QFrame):
         else:
             event.ignore()
 
+    @override
     def mousePressEvent(self, event: QtGui.QMouseEvent):
         match event.button():
             case Qt.MouseButton.LeftButton:
@@ -222,16 +255,15 @@ class Bubble(QtWidgets.QFrame):
 
         super().mousePressEvent(event)
 
+    @override
     def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
             event.accept()
             self.bubbles.doubleClicked.emit(self.index)
 
+    @override
     def enterEvent(self, event):
         self.bubbles.hovered.emit(self.index)
-
-    def leaveEvent(self, event):
-        self.bubbles.hovered.emit(-1)
 
 
 
@@ -242,7 +274,6 @@ class BubbleColorMap:
         self.presence = context.container.multiEdit.getTagPresence()
 
         self.mutedColors: dict[str, str] = dict()
-        self._muteSV = self._muteDark if colorlib.DARK_THEME else self._muteLight
 
     def getBubbleColor(self, index: int, caption: str) -> BubbleColor:
         bg = self._getBubbleColor(caption)
@@ -252,11 +283,10 @@ class BubbleColorMap:
         if not self.presence:
             return BubbleColor(bg)
 
-        mutedColor = self.getMutedColor(bg)
         if self.presence[index] == 1.0:
             return BubbleColor(bg, bold=True)
         else:
-            return BubbleColor(bg, text=mutedColor)
+            return BubbleColor(bg, text=self._getMutedColor(bg))
 
     def _getBubbleColor(self, caption: str) -> str | None:
         if color := self.highlight.colors.get(caption):
@@ -270,24 +300,11 @@ class BubbleColorMap:
         colors = set(format.color for format in matchFormats.values())
         return next(iter(colors)) if len(colors) == 1 else None
 
-    def getMutedColor(self, color: str) -> str:
+    def _getMutedColor(self, color: str) -> str:
         mutedColor = self.mutedColors.get(color)
         if mutedColor is None:
-            h, s, v = colorlib.toHsv(color)
-            s, v = self._muteSV(s, v)
-            self.mutedColors[color] = mutedColor = colorlib.hsvToRgb(h, s, v)
+            self.mutedColors[color] = mutedColor = colorlib.bubbleMuteColor(color)
         return mutedColor
-
-    @staticmethod
-    def _muteDark(s: float, v: float) -> tuple[float, float]:
-        s *= 0.7
-        v = min(max(v*1.8, 0.7), 1.0)
-        return s, v
-
-    @staticmethod
-    def _muteLight(s: float, v: float) -> tuple[float, float]:
-        v *= 0.52
-        return s, v
 
 
 

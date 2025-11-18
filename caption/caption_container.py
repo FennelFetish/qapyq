@@ -635,21 +635,19 @@ class CaptionContainer(QtWidgets.QWidget):
 
     @Slot()
     def _updateTextCursorHighlight(self):
-        if not self.multiEdit.active:
-            return
-
         index = -1
-        # TODO: Keep highlight when another window is activated
-        if self.txtCaption.hasFocus():
+        if self.multiEdit.active or self.txtCaption.hasFocus():
             index = self.txtCaption.getSelectedCaptionIndex()
 
+        self.bubbles.setSelectedBubble(index)
         self._multiEditHighlightImages(index)
 
     @Slot()
     def _updateBubbleHighlight(self, index: int):
         if index < 0:
             self._updateTextCursorHighlight()
-        else:
+        elif self.multiEdit.active:
+            self.bubbles.setSelectedBubble(index)
             self._multiEditHighlightImages(index)
 
 
