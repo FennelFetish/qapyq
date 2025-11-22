@@ -242,7 +242,7 @@ class MainWindow(QtWidgets.QMainWindow):
         QThreadPool.globalInstance().clear()
 
         from gallery.thumbnail_cache import ThumbnailCache
-        ThumbnailCache.shutdown()
+        ThumbnailCache().shutdown()
 
         aux_window.saveWindowPos(self, "main")
         self.toolbar.saveDockedArea()

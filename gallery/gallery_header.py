@@ -14,11 +14,10 @@ class GalleryHeader(QtWidgets.QFrame):
     STYLE: StyleCache | None = None
 
 
-    def __init__(self, tab: ImgTab, dir: str, row: int):
-        super().__init__()
+    def __init__(self, parent: QtWidgets.QWidget, tab: ImgTab, dir: str):
+        super().__init__(parent)
         self.tab = tab
         self.dir = dir
-        self.row = row
 
         txtTitle = QtWidgets.QLineEdit(dir)
         txtTitle.setReadOnly(True)
