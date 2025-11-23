@@ -3,6 +3,7 @@ from typing import NamedTuple
 from typing_extensions import override
 from PySide6.QtCore import Qt, Signal, Slot, QAbstractTableModel, QModelIndex, QPersistentModelIndex, QTimer, QObject
 from lib.filelist import FileList, DataKeys
+from .gallery_caption import GalleryCaption
 
 # Imported at the bottom
 # from .thumbnail_cache import ThumbnailCache
@@ -12,7 +13,6 @@ from lib.filelist import FileList, DataKeys
 # For extremely large datasets, consider implementing data virtualization
 # where only the visible rows (plus a buffer) are actually in the model,
 # and the rest are loaded on demand as the user scrolls. This complex solution significantly improves performance.
-
 
 
 class ImageIcon:
@@ -31,24 +31,24 @@ class ItemType:
 
 
 class HeaderItem:
-    __slots__ = ('path', 'files', 'row', 'endRow')
+    __slots__ = ('path', 'numFiles', 'row', 'endRow')
 
     itemType = ItemType.Header
 
     def __init__(self, path: str):
         self.path: str = path
-        self.files: list[FileItem] = []
+        self.numFiles: int = 0
         self.row: int = 0
         self.endRow: int = 0
 
 class FileItem:
-    __slots__ = ('path', 'label', 'pos')
+    __slots__ = ('path', 'filename', 'pos')
 
     itemType = ItemType.File
 
     def __init__(self, file: str):
         self.path: str = file
-        self.label: str = os.path.basename(file)
+        self.filename: str = os.path.basename(file)
         self.pos: GridPos = None
 
 
@@ -100,18 +100,21 @@ class GalleryModel(QAbstractTableModel):
     ItemType = ItemType
 
     ROLE_TYPE       = Qt.ItemDataRole.UserRole.value
-    ROLE_LABEL      = Qt.ItemDataRole.UserRole.value + 1
-    ROLE_IMGSIZE    = Qt.ItemDataRole.UserRole.value + 2
-    ROLE_IMGCOUNT   = Qt.ItemDataRole.UserRole.value + 3
-    ROLE_ICONS      = Qt.ItemDataRole.UserRole.value + 4
-    ROLE_SELECTION  = Qt.ItemDataRole.UserRole.value + 5
+    ROLE_IMGSIZE    = Qt.ItemDataRole.UserRole.value + 1
+    ROLE_IMGCOUNT   = Qt.ItemDataRole.UserRole.value + 2
+    ROLE_ICONS      = Qt.ItemDataRole.UserRole.value + 3
+    ROLE_SELECTION  = Qt.ItemDataRole.UserRole.value + 4
+    ROLE_FILENAME   = Qt.ItemDataRole.UserRole.value + 5
+    ROLE_CAPTION    = Qt.ItemDataRole.UserRole.value + 6
 
     headersUpdated  = Signal(list)
     highlighted     = Signal()
 
 
-    def __init__(self, filelist: FileList):
+    def __init__(self, filelist: FileList, galleryCaption: GalleryCaption):
         super().__init__()
+        self.galleryCaption = galleryCaption
+
         self.filelist = filelist
         filelist.addListener(self)
         filelist.addDataListener(self)
@@ -138,60 +141,73 @@ class GalleryModel(QAbstractTableModel):
     def setNumColumns(self, numCols: int, forceSignal=False):
         if numCols != self.numColumns:
             self.numColumns = numCols
-            self.rebuildModel()
+            self.buildGrid()
         elif forceSignal:
             self.modelReset.emit()
 
 
-    def rebuildModel(self):
+    def buildGrid(self):
         self.beginResetModel()
 
         self.posItems = {}
         self.numRows = 0
 
+        fileIt = iter(self.filelist.getOrderedFiles())
         for header in self.headerItems:
             header.row = self.numRows
             self.posItems[GridPos(header.row, 0)] = header
 
-            self.numRows += 1 + math.ceil(len(header.files) / self.numColumns)
+            self.numRows += 1 + math.ceil(header.numFiles / self.numColumns)
             header.endRow = self.numRows
 
-            for i, fileItem in enumerate(header.files):
+            for i in range(header.numFiles):
+                file = next(fileIt)
+                fileItem = self.fileItems[file]
+
                 fileGridPos = GridPos(
                     header.row + 1 + (i // self.numColumns),
                     i % self.numColumns
                 )
 
-                self.fileItems[fileItem.path].pos = fileGridPos
+                fileItem.pos = fileGridPos
                 self.posItems[fileGridPos] = fileItem
 
         self.endResetModel()
         self.headersUpdated.emit(self.headerItems)
 
+        assert not self.headerItems or next(fileIt, None) is None
 
-    def reloadImages(self, headers=True):
+
+    @Slot(bool)
+    def reloadImages(self, headers: bool = True):
+        headers &= self.filelist.isOrderWithFolders()
+
         self.headerItems = []
         self.fileItems = {}
 
         self._selectedItem = None
         self._selectedFiles.clear()
 
-        currentDir = ""
+        currentDir = None
         currentHeader: HeaderItem = None
 
+        if not headers:
+            currentHeader = HeaderItem("All Images")
+            self.headerItems.append(currentHeader)
+
         for file in self.filelist.getOrderedFiles():
-            dirname = os.path.dirname(file)
-            if currentDir != dirname:
-                currentDir = dirname
+            if headers:
+                dirname = os.path.dirname(file)
+                if currentDir != dirname:
+                    currentDir = dirname
 
-                currentHeader = HeaderItem(currentDir)
-                self.headerItems.append(currentHeader)
+                    currentHeader = HeaderItem(currentDir)
+                    self.headerItems.append(currentHeader)
 
-            item = FileItem(file)
-            self.fileItems[file] = item
-            currentHeader.files.append(item)
+            self.fileItems[file] = FileItem(file)
+            currentHeader.numFiles += 1
 
-        self.rebuildModel()
+        self.buildGrid()
 
 
     @Slot(str)
@@ -242,18 +258,21 @@ class GalleryModel(QAbstractTableModel):
                 index = self.index(*item.pos)
                 self.dataChanged.emit(index, index, [self.ROLE_ICONS])
 
-        # if (
-        #     self.ctx.captionsEnabled
-        #     and key == DataKeys.CaptionState
-        #     and self.filelist.getData(file, key) == DataKeys.IconStates.Saved
-        #     and (item := self.fileItems[file])
-        # ):
-        #     if isinstance(item, GalleryListItem):
-        #         if not item.captionEdited:
-        #             item.loadCaption(False)
-        #     else:
-        #         item.reloadCaption = True
-        #         item.update()
+        if (
+            self.galleryCaption.captionsEnabled
+            and key == DataKeys.CaptionState
+            and self.filelist.getData(file, key) == DataKeys.IconStates.Saved
+            and (item := self.fileItems[file])
+        ):
+            index = self.index(*item.pos)
+            self.dataChanged.emit(index, index, [self.ROLE_CAPTION])
+
+            # if isinstance(item, GalleryListItem):
+            #     if not item.captionEdited:
+            #         item.loadCaption(False)
+            # else:
+            #     item.reloadCaption = True
+            #     item.update()
 
 
     # === QAbstractTableModel Interface ===
@@ -282,8 +301,11 @@ class GalleryModel(QAbstractTableModel):
 
         if item.itemType == ItemType.File:
             match role:
-                case self.ROLE_LABEL:
-                    return item.label
+                case self.ROLE_FILENAME:
+                    return item.filename
+
+                case self.ROLE_CAPTION:
+                    return self.galleryCaption.loadCaption(item.path)
 
                 case self.ROLE_IMGSIZE:
                     return self.filelist.getData(item.path, DataKeys.ImageSize)
@@ -312,7 +334,7 @@ class GalleryModel(QAbstractTableModel):
         else:
             match role:
                 case self.ROLE_IMGCOUNT:
-                    return len(item.files)
+                    return item.numFiles
 
         return None
 

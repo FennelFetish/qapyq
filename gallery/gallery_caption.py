@@ -1,0 +1,94 @@
+from PySide6 import QtGui
+from PySide6.QtCore import Qt, QPointF
+from lib.captionfile import FileTypeSelector
+from lib.util import CaptionSplitter
+from caption.caption_highlight import CaptionHighlight, MatcherNode
+from caption.caption_filter import CaptionRulesProcessor, CaptionRulesSettings
+
+
+class GalleryCaption:
+    def __init__(self, captionSrc: FileTypeSelector):
+        self.captionSrc = captionSrc
+        self.captionsEnabled: bool = False
+
+        self.captionHighlight: CaptionHighlight | None = None
+        self.filterNode: MatcherNode[bool] | None = None
+        self.splitter = CaptionSplitter()
+        self.separator = ", "
+
+        self.rulesProcessor: CaptionRulesProcessor | None = None
+        self.rulesSettings = CaptionRulesSettings()
+        self.rulesSettings.prefixSuffix = False
+
+        self.textFlags = Qt.AlignmentFlag.AlignHCenter | Qt.TextFlag.TextWordWrap
+        self.textOpt = QtGui.QTextOption()
+        self.textOpt.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self.textOpt.setWrapMode(QtGui.QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+
+
+    def loadCaption(self, file: str) -> str:
+        caption = self.captionSrc.loadCaption(file)
+        if caption is None:
+            return ""
+
+        if self.filterNode:
+            tags = self.splitter.split(caption)
+            caption = self.separator.join(
+                tag for tag in tags
+                if self.filterNode.match(tag.split(" "))
+            )
+
+        if self.rulesProcessor:
+            caption = self.rulesProcessor.process(caption, self.rulesSettings)
+
+        return caption
+
+
+    def layoutCaption(self, text: str, width: int, maxHeight: int) -> tuple[float, list[QtGui.QTextLayout]]:
+        layouts = list[QtGui.QTextLayout]()
+        totalHeight = 0.0
+
+        for lineText in filter(None, text.splitlines()):
+            textLayout = QtGui.QTextLayout(lineText)
+            textLayout.setCacheEnabled(True)
+            textLayout.setTextOption(self.textOpt)
+            layouts.append(textLayout)
+
+            if self.captionHighlight:
+                self.captionHighlight.highlightTextLayout(lineText, self.separator, textLayout)
+
+            textLayout.beginLayout()
+            while (line := textLayout.createLine()).isValid():
+                line.setLineWidth(width)
+                line.setPosition(QPointF(0, totalHeight))
+
+                lineHeight = line.height()
+                totalHeight += lineHeight
+                if totalHeight + lineHeight >= maxHeight:
+                    textLayout.endLayout()
+                    if line.textStart() + line.textLength() >= len(lineText): # Check if last line
+                        return totalHeight, layouts
+                    else:
+                        return self._addEllipsis(width, totalHeight, layouts)
+
+            textLayout.endLayout()
+
+        return totalHeight, layouts
+
+    def _addEllipsis(self, w: int, h: float, layouts: list[QtGui.QTextLayout]) -> tuple[float, list[QtGui.QTextLayout]]:
+        textLayout = QtGui.QTextLayout("…")
+        textLayout.setCacheEnabled(True)
+        textLayout.setTextOption(self.textOpt)
+
+        textLayout.beginLayout()
+        line = textLayout.createLine()
+        line.setLineWidth(w)
+
+        lineHeight = line.height()
+        h -= lineHeight * 0.4
+        line.setPosition(QPointF(0, h))
+        h += lineHeight
+
+        textLayout.endLayout()
+        layouts.append(textLayout)
+        return h, layouts

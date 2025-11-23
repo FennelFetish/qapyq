@@ -2,9 +2,10 @@ from collections import defaultdict
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QSize, QPoint, QRect, QModelIndex, QPersistentModelIndex
-from PySide6.QtGui import QFontMetrics, QPainter
+from PySide6.QtGui import QFontMetrics, QPainter, QPixmap
 from lib import colorlib
 from lib.filelist import DataKeys
+from .gallery_caption import GalleryCaption
 from .gallery_model import GalleryModel, ImageIcon, SelectionState
 from .gallery_header import GalleryHeader
 
@@ -37,15 +38,18 @@ class BaseGalleryDelegate(QtWidgets.QStyledItemDelegate):
     BORDER_SIZE_SECONDARY = 3
 
 
-    def __init__(self, galleryView):
+    def __init__(self, galleryView, galleryCaption: GalleryCaption):
         super().__init__()
+
+        from .gallery_view import GalleryView
+        self.view: GalleryView = galleryView
+        self.caption = galleryCaption
+
         self.numColumns = 1
         self.xSpacing = 0
 
         self.sizeCache = defaultdict(SizeHintCacheRow)
-
-        from .gallery_view import GalleryView
-        self.view: GalleryView = galleryView
+        self.captionCache = dict[tuple[int, int], tuple[QtGui.QTextLayout, ...]]()
 
         self.icons = {
             ImageIcon.Caption:  QtGui.QPixmap("./res/icon_caption.png"),
@@ -101,10 +105,20 @@ class BaseGalleryDelegate(QtWidgets.QStyledItemDelegate):
     @Slot()
     def clearCache(self):
         self.sizeCache.clear()
+        self.captionCache.clear()
+        self.view.updateVisibleRows()
 
     @Slot(QModelIndex, QModelIndex, list)
     def onDataChanged(self, startIndex: QModelIndex, endIndex: QModelIndex, roles: list[int]):
-        if Qt.ItemDataRole.SizeHintRole in roles:
+        resetSizeHint = Qt.ItemDataRole.SizeHintRole in roles
+
+        if GalleryModel.ROLE_CAPTION in roles:
+            resetSizeHint = True
+            for row in range(startIndex.row(), endIndex.row()+1):
+                for col in range(startIndex.column(), endIndex.column()+1):
+                    self.captionCache.pop((row, col), None)
+
+        if resetSizeHint:
             for row in range(startIndex.row(), endIndex.row()+1):
                 self.sizeCache[row].reset()
                 self.view.resizeRowToContents(row)
@@ -131,10 +145,8 @@ class BaseGalleryDelegate(QtWidgets.QStyledItemDelegate):
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
 
-        #painter.save()
         rect = self._adjustRect(option.rect, index.column())
         self.paintItem(painter, rect, index)
-        #painter.restore()
 
     def paintItem(self, painter: QPainter, rect: QRect, index: QModelIndex | QPersistentModelIndex):
         raise NotImplementedError()
@@ -229,8 +241,8 @@ class GalleryGridDelegate(BaseGalleryDelegate):
     TEXT_SPACING = 4
     TEXT_MAX_HEIGHT = 200
 
-    def __init__(self, galleryView):
-        super().__init__(galleryView)
+    def __init__(self, galleryView, galleryCaption: GalleryCaption):
+        super().__init__(galleryView, galleryCaption)
 
         self.textFlags = Qt.AlignmentFlag.AlignHCenter | Qt.TextFlag.TextWrapAnywhere
         self.textOpt = QtGui.QTextOption()
@@ -239,11 +251,26 @@ class GalleryGridDelegate(BaseGalleryDelegate):
 
         self.labelFontMetrics = QFontMetrics(QtGui.QFont())
 
+
+    def _getCaptionLayouts(self, w: int, h: int, index: QModelIndex | QPersistentModelIndex) -> tuple[QtGui.QTextLayout, ...]:
+        key = (index.row(), index.column())
+        textLayouts = self.captionCache.get(key)
+
+        if textLayouts is None:
+            if label := index.data(GalleryModel.ROLE_CAPTION):
+                textLayouts = tuple(self.caption.layoutCaption(label, w, h)[1])
+            else:
+                textLayouts = ()
+            self.captionCache[key] = textLayouts
+
+        return textLayouts
+
+
     @override
     def paintItem(self, painter: QPainter, rect: QRect, index: QModelIndex | QPersistentModelIndex):
         x, y, w, h = rect.left(), rect.top(), rect.width(), rect.height()
 
-        pixmap = index.data(Qt.ItemDataRole.DecorationRole)
+        pixmap: QPixmap | None = index.data(Qt.ItemDataRole.DecorationRole)
         if pixmap:
             ar = pixmap.height() / pixmap.width()
             imgH = round(ar * w)
@@ -258,10 +285,14 @@ class GalleryGridDelegate(BaseGalleryDelegate):
         textY = y + imgH + self.TEXT_SPACING
         textW = w - self.BORDER_SIZE
         textH = rect.bottom() - textY
-        textRect = QRect(textX, textY, textW, textH)
 
-        label = index.data(GalleryModel.ROLE_LABEL)
-        painter.drawText(textRect, label, self.textOpt)
+        if self.caption.captionsEnabled:
+            for textLayout in self._getCaptionLayouts(textW, textH, index):
+                textLayout.draw(painter, QPoint(textX, textY))
+        else:
+            label = index.data(GalleryModel.ROLE_FILENAME)
+            textRect = QRect(textX, textY, textW, textH)
+            painter.drawText(textRect, label, self.textOpt)
 
     @override
     def sizeHintHeight(self, rect: QRect, index: QModelIndex | QPersistentModelIndex) -> int:
@@ -271,12 +302,20 @@ class GalleryGridDelegate(BaseGalleryDelegate):
 
         imgW, imgH = imgSize
         w = rect.width() - self.BORDER_SIZE - self.xSpacing
-        h = round((imgH / imgW) * w) + self.TEXT_SPACING + self.BORDER_SIZE//2
+        h = round((imgH / imgW) * w)
 
-        label = index.data(GalleryModel.ROLE_LABEL)
         textW = w - self.BORDER_SIZE
-        textRect = self.labelFontMetrics.boundingRect(0, 0, textW, self.TEXT_MAX_HEIGHT, self.textFlags, label)
-        h += min(textRect.height(), self.TEXT_MAX_HEIGHT)
+
+        if self.caption.captionsEnabled:
+            label = index.data(GalleryModel.ROLE_CAPTION)
+            if label:
+                textH, textLayouts = self.caption.layoutCaption(label, textW, self.TEXT_MAX_HEIGHT)
+                h += round(textH) + self.TEXT_SPACING + self.BORDER_SIZE//2 + 2
+        else:
+            label = index.data(GalleryModel.ROLE_FILENAME)
+            textRect = self.labelFontMetrics.boundingRect(0, 0, textW, self.TEXT_MAX_HEIGHT, self.textFlags, label)
+            h += min(textRect.height(), self.TEXT_MAX_HEIGHT) + self.TEXT_SPACING + self.BORDER_SIZE//2 + 2
+
         return h
 
 
@@ -284,8 +323,8 @@ class GalleryGridDelegate(BaseGalleryDelegate):
 class GalleryListDelegate(BaseGalleryDelegate):
     TEXT_SPACING = 8
 
-    def __init__(self, galleryView):
-        super().__init__(galleryView)
+    def __init__(self, galleryView, galleryCaption: GalleryCaption):
+        super().__init__(galleryView, galleryCaption)
 
         #self.textFlags = Qt.AlignmentFlag.AlignLeft
         self.textOpt = QtGui.QTextOption()
@@ -317,7 +356,7 @@ class GalleryListDelegate(BaseGalleryDelegate):
         textW = rect.right() - self.BORDER_SIZE//2 - x
         textRect = QRect(x, y, textW, h)
 
-        label = index.data(GalleryModel.ROLE_LABEL)
+        label = index.data(GalleryModel.ROLE_FILENAME)
         painter.drawText(textRect, label, self.textOpt)
 
     @override

@@ -5,6 +5,7 @@ import lib.qtlib as qtlib
 from lib.captionfile import FileTypeSelector
 from ui.tab import ImgTab
 from config import Config
+from .gallery_caption import GalleryCaption
 from .gallery_model import GalleryModel, HeaderItem
 from .gallery_view import GalleryView
 from .gallery_sort import GallerySortControl
@@ -28,23 +29,27 @@ class Gallery(QtWidgets.QWidget):
         self._gridUpdateTimer = QTimer(singleShot=True, interval=100)
         self._gridUpdateTimer.timeout.connect(self.updateGrid)
 
+        self.captionSrc = FileTypeSelector()
+        self.galleryCaption = GalleryCaption(self.captionSrc)
+
+        self.galleryModel = GalleryModel(tab.filelist, self.galleryCaption)
+        self.galleryView: GalleryView = GalleryView(tab, self.galleryCaption, Config.galleryThumbnailSize)
+        self.galleryView.verticalScrollBar().valueChanged.connect(self.updateComboboxFolder)
+        self.galleryView.setModel(self.galleryModel)
+
+        self.sortControl = GallerySortControl(self.tab)
+        self.sortControl.sortDone.connect(self.galleryModel.reloadImages)
+        self.galleryView.sortByImages.connect(self.sortControl.updateSortByImage)
+
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addLayout(self._buildTopRow())
-
-        self.galleryModel = GalleryModel(tab.filelist)
-        self.galleryView: GalleryView = GalleryView(tab, Config.galleryThumbnailSize)
-        self.galleryView.verticalScrollBar().valueChanged.connect(self.updateComboboxFolder)
-        self.galleryView.setModel(self.galleryModel)
         layout.addWidget(self.galleryView)
-
-        # self.sortControl = GallerySortControl(self.tab, self.galleryGrid)
-        # layout.addWidget(self.sortControl)
-        # self.galleryGrid.ctx.gallerySort = self.sortControl
+        layout.addWidget(self.sortControl)
+        self.setLayout(layout)
 
         self._buildStatusBar()
-        self.setLayout(layout)
 
         tab.filelist.addListener(self)
         tab.filelist.addSelectionListener(self)
@@ -93,7 +98,6 @@ class Gallery(QtWidgets.QWidget):
         self.chkCaptions.toggled.connect(self.onCaptionsToggled)
         layout.addWidget(self.chkCaptions)
 
-        self.captionSrc = FileTypeSelector()
         self.captionSrc.setEnabled(False)
         self.captionSrc.fileTypeUpdated.connect(self.onCaptionSourceChanged)
         layout.addLayout(self.captionSrc)
@@ -124,7 +128,7 @@ class Gallery(QtWidgets.QWidget):
         self.statusBar.addPermanentWidget(self.chkFollowSelection)
 
         self.statusBar.addPermanentWidget(self._buildThumbnailSize())
-        #self.statusBar.addPermanentWidget(self.sortControl.btnSort)
+        self.statusBar.addPermanentWidget(self.sortControl.btnSort)
 
         self.cboViewMode = QtWidgets.QComboBox()
         self.cboViewMode.addItem("▦ Grid View", GalleryView.VIEW_MODE_GRID)
@@ -161,8 +165,7 @@ class Gallery(QtWidgets.QWidget):
 
     @Slot(bool)
     def onCaptionsToggled(self, state: bool):
-        # self.galleryGrid.ctx.captionsEnabled = state
-        # self.galleryGrid.ctx.updateTextFlags()
+        self.galleryCaption.captionsEnabled = state
 
         self.captionSrc.setEnabled(state)
         self.btnReloadCaptions.setEnabled(state)
@@ -184,24 +187,24 @@ class Gallery(QtWidgets.QWidget):
 
     @Slot()
     def reloadCaptions(self):
-        #self._updateCaptionContext()
-        #self.galleryGrid.reloadCaptions()
+        self._updateCaptionContext()
         self.btnReloadCaptions.setChanged(False)
+        self.galleryModel.modelReset.emit()
 
-    # def _updateCaptionContext(self):
-    #     ctx = self.galleryGrid.ctx
-    #     ctx.filterNode     = None
-    #     ctx.rulesProcessor = None
+    def _updateCaptionContext(self):
+        cap = self.galleryCaption
+        cap.filterNode     = None
+        cap.rulesProcessor = None
 
-    #     if captionWin := self.tab.getWindowContent("caption"):
-    #         from caption.caption_context import CaptionContext
-    #         captionCtx: CaptionContext = captionWin.ctx
-    #         ctx.captionHighlight = captionCtx.highlight
-    #         ctx.separator        = captionCtx.settings.separator
+        if captionWin := self.tab.getWindowContent("caption"):
+            from caption.caption_context import CaptionContext
+            captionCtx: CaptionContext = captionWin.ctx
+            cap.captionHighlight = captionCtx.highlight
+            cap.separator        = captionCtx.settings.separator
 
-    #         if self.chkFilterCaptions.isChecked():
-    #             ctx.filterNode      = captionCtx.groups.getGalleryFilterNode()
-    #             ctx.rulesProcessor  = captionCtx.rulesProcessor()
+            if self.chkFilterCaptions.isChecked():
+                cap.filterNode      = captionCtx.groups.getGalleryFilterNode()
+                cap.rulesProcessor  = captionCtx.rulesProcessor()
 
     def onCaptionFilterUpdated(self):
         'Called from Caption Window'
@@ -230,7 +233,7 @@ class Gallery(QtWidgets.QWidget):
             finally:
                 self._switchingMode = False
 
-        #self._updateCaptionContext()
+        self._updateCaptionContext()
         self.galleryView.setViewMode(mode)
         self.ensureVisible(self.tab.filelist.currentFile)
         self.btnReloadCaptions.setChanged(False)

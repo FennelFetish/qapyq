@@ -1,8 +1,9 @@
 from typing_extensions import override
-from PySide6.QtCore import Qt, Slot, QPoint, QSignalBlocker, QTimer, QModelIndex, QPersistentModelIndex, QObject
+from PySide6.QtCore import Qt, Signal, Slot, QPoint, QSignalBlocker, QTimer, QModelIndex, QPersistentModelIndex, QObject
 from PySide6.QtWidgets import QTableView, QHeaderView, QMenu
 from PySide6.QtGui import QGuiApplication, QCursor, QWheelEvent, QKeyEvent
 from ui.tab import ImgTab
+from .gallery_caption import GalleryCaption
 from .gallery_model import GalleryModel, FileItem, SelectionState
 from .gallery_delegate import BaseGalleryDelegate, GalleryGridDelegate, GalleryListDelegate
 
@@ -13,9 +14,12 @@ class GalleryView(QTableView):
 
     HEADER_HEIGHT = 32
 
-    def __init__(self, tab: ImgTab, initialItemWidth: int):
+    sortByImages = Signal(list)
+
+    def __init__(self, tab: ImgTab, galleryCaption: GalleryCaption, initialItemWidth: int):
         super().__init__()
         self.tab = tab
+        self.galleryCaption = galleryCaption
         self.itemWidth = initialItemWidth
 
         self.delegate: BaseGalleryDelegate = None
@@ -39,7 +43,7 @@ class GalleryView(QTableView):
 
         # self.verticalScrollBar().setSingleStep(1)
         # self.verticalScrollBar().setPageStep(1)
-        self.verticalScrollBar().valueChanged.connect(self._updateVisibleRows)
+        self.verticalScrollBar().valueChanged.connect(self.updateVisibleRows)
 
         self.setUpdateThreshold(1000)
 
@@ -67,9 +71,9 @@ class GalleryView(QTableView):
                 self.delegate.deleteLater()
 
             if mode == self.VIEW_MODE_GRID:
-                self.delegate = GalleryGridDelegate(self)
+                self.delegate = GalleryGridDelegate(self, self.galleryCaption)
             else:
-                self.delegate = GalleryListDelegate(self)
+                self.delegate = GalleryListDelegate(self, self.galleryCaption)
 
             self.model().dataChanged.connect(self.delegate.onDataChanged)
             self.model().modelReset.connect(self.delegate.clearCache)
@@ -82,7 +86,7 @@ class GalleryView(QTableView):
         if width != self.itemWidth:
             self.itemWidth = width
             self.updateColumnCount()
-            QTimer.singleShot(0, self._updateVisibleRows)
+            QTimer.singleShot(0, self.updateVisibleRows)
 
     def updateColumnCount(self):
         spacing = self.delegate.spacing()
@@ -102,10 +106,10 @@ class GalleryView(QTableView):
                 self.setSpan(header.row, 0, 1, numCols)
 
         self.visibleHeaderRows.clear()
-        self._updateVisibleRows()
+        self.updateVisibleRows()
 
     @Slot()
-    def _updateVisibleRows(self):
+    def updateVisibleRows(self):
         r0, r1 = self._getVisibleRows()
 
         # Updating more than the visible rows breaks update of folder-combobox.
@@ -353,7 +357,7 @@ class GalleryItemMenu(QMenu):
     def _sortBySimilarity(self):
         filelist = self.view.tab.filelist
         files = list(filelist.selectedFiles) if filelist.selectedFiles else [filelist.getCurrentFile()]
-        #self.gallery.ctx.gallerySort.updateSortByImage(files)
+        self.view.sortByImages.emit(files)
 
     @Slot()
     def _openFilesInNewTab(self):
