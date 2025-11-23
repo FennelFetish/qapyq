@@ -1,4 +1,3 @@
-import time
 from bisect import bisect_right
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QSignalBlocker, QTimer
@@ -28,21 +27,17 @@ class Gallery(QtWidgets.QWidget):
 
         self._gridUpdateTimer = QTimer(singleShot=True, interval=100)
         self._gridUpdateTimer.timeout.connect(self.updateGrid)
-        self._lastGridUpdate = 0
 
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addLayout(self._buildTopRow())
 
+        self.galleryModel = GalleryModel(tab.filelist)
         self.galleryView: GalleryView = GalleryView(tab, Config.galleryThumbnailSize)
         self.galleryView.verticalScrollBar().valueChanged.connect(self.updateComboboxFolder)
-        layout.addWidget(self.galleryView)
-
-        self.galleryModel = GalleryModel(tab.filelist)
-        self.galleryModel.view = self.galleryView
         self.galleryView.setModel(self.galleryModel)
-        self.galleryModel.modelReset.connect(self.galleryView.updateFolderRows)
+        layout.addWidget(self.galleryView)
 
         # self.sortControl = GallerySortControl(self.tab, self.galleryGrid)
         # layout.addWidget(self.sortControl)
@@ -51,6 +46,7 @@ class Gallery(QtWidgets.QWidget):
         self._buildStatusBar()
         self.setLayout(layout)
 
+        tab.filelist.addListener(self)
         tab.filelist.addSelectionListener(self)
 
 
@@ -72,12 +68,12 @@ class Gallery(QtWidgets.QWidget):
         self.galleryView.setViewMode(self.cboViewMode.currentData())
         self.galleryModel.reloadImages()
 
-        self.galleryModel.reloaded.connect(lambda: self.galleryView.scrollToTop())
+        #####self.galleryModel.reloaded.connect(lambda: self.galleryView.scrollToTop())
         # #self.galleryGrid.reloaded.connect(self.queueGridUpdate)
         # #self.galleryGrid.thumbnailLoaded.connect(self.queueGridUpdate)
         # self.galleryGrid.loadingProgress.connect(self.updateStatusBar)
         # self.galleryGrid.highlighted.connect(self.updateStatusBar)
-        # self.galleryGrid.fileChanged.connect(self.ensureVisible)
+        #self.galleryModel.fileChanged.connect(self.ensureVisible)
 
 
     def _buildTopRow(self):
@@ -163,7 +159,7 @@ class Gallery(QtWidgets.QWidget):
         return widget
 
 
-    @Slot()
+    @Slot(bool)
     def onCaptionsToggled(self, state: bool):
         # self.galleryGrid.ctx.captionsEnabled = state
         # self.galleryGrid.ctx.updateTextFlags()
@@ -177,7 +173,7 @@ class Gallery(QtWidgets.QWidget):
         elif not self._switchingMode:
             self.reloadCaptions()
 
-    Slot()
+    Slot(bool)
     def onCaptionFilterToggled(self, state: bool):
         if self.isGridView:
             self.reloadCaptions()
@@ -217,7 +213,7 @@ class Gallery(QtWidgets.QWidget):
     def isGridView(self) -> bool:
         return self.cboViewMode.currentData() == GalleryView.VIEW_MODE_GRID
 
-    @Slot()
+    @Slot(int)
     def onViewModeChanged(self, index: int):
         mode = self.cboViewMode.itemData(index)
         if mode == GalleryView.VIEW_MODE_LIST:
@@ -236,18 +232,19 @@ class Gallery(QtWidgets.QWidget):
 
         #self._updateCaptionContext()
         self.galleryView.setViewMode(mode)
-        self.scrollToSelection()
+        self.ensureVisible(self.tab.filelist.currentFile)
         self.btnReloadCaptions.setChanged(False)
 
-    @Slot()
+    @Slot(int)
     def onThumbnailSizeChanged(self, size: int):
         size = round(size / self.THUMBNAIL_SIZE_STEP) * self.THUMBNAIL_SIZE_STEP
         with QSignalBlocker(self.slideThumbnailSize):
             self.slideThumbnailSize.setValue(size)
 
+        Config.galleryThumbnailSize = size
         self.lblThumbnailSize.setText(f"{size}")
         self.galleryView.setItemWidth(size)
-        Config.galleryThumbnailSize = size
+        self.ensureVisible(self.tab.filelist.currentFile)
 
     @Slot()
     def updateStatusBar(self):
@@ -272,38 +269,23 @@ class Gallery(QtWidgets.QWidget):
         if self._initTimer:
             self._initTimer.start()
         else:
-            self.queueGridUpdate()
-
-    @Slot()
-    def queueGridUpdate(self):
-        tNow = time.monotonic()
-        tDiff = tNow - self._lastGridUpdate
-        self._lastGridUpdate = tNow
-
-        if tDiff > self.MIN_GRID_UPDATE_DELAY:
-            self.updateGrid()
-        else:
+            # NOTE: The slow thing during resize are the gallery headers (delegate editor)
+            self.galleryView.setResizing(True)
             self._gridUpdateTimer.start()
-            #self.scrollArea.setWidgetResizable(False) # Disable auto update because it can be laggy
-            self.galleryView.viewport().setUpdatesEnabled(False)
-            #self.galleryView.setUpdatesEnabled(False)
-            #self.galleryView.setModel(None)
-            #self.galleryView.delegate.resizing = True
+
+        event.accept()
 
     @Slot()
     def updateGrid(self):
-        # Re-enable size update. Update scroll area size to fit window.
-        #self.scrollArea.setWidgetResizable(True)
-        self.galleryView.viewport().setUpdatesEnabled(True)
-        #self.galleryView.setUpdatesEnabled(True)
-        #self.galleryView.setModel(self.galleryModel)
-        #self.galleryView.delegate.resizing = False
+        self.galleryView.setResizing(False)
 
-        if self.isVisible():
-            self.galleryView.updateWidth()
+        # if self.isVisible():
+        #     self.galleryView.updateWidth()
+        #     #self.galleryView.updateFolderRows()  # TODO: Why is this required twice?
+        #     self.galleryView.repaint()
 
 
-    @Slot()
+    @Slot(list)
     def onHeadersUpdated(self, headers: list[HeaderItem]):
         self.rowToHeader.clear()
         with QSignalBlocker(self.cboFolders):
@@ -316,12 +298,12 @@ class Gallery(QtWidgets.QWidget):
         self.updateComboboxFolder()
         self.updateStatusBar()
 
-    @Slot()
-    def onFolderSelected(self, index):
+    @Slot(int)
+    def onFolderSelected(self, index: int):
         row = self.cboFolders.itemData(index)
         if row is not None:
             self.galleryView.scrollToRow(row)
-            self.updateComboboxFolder()
+            #self.updateComboboxFolder()
 
     @Slot()
     def updateComboboxFolder(self):
@@ -332,68 +314,28 @@ class Gallery(QtWidgets.QWidget):
         with QSignalBlocker(self.cboFolders):
             self.cboFolders.setCurrentIndex(index)
 
-    # @Slot()
-    # def ensureVisible(self, widget: QtWidgets.QWidget, row: int, delay: bool):
-    #     if delay:
-    #         QTimer.singleShot(100, lambda: self.ensureVisible(widget, row, False))
-    #         return
+    @Slot(str, bool)
+    def ensureVisible(self, file: str, delay: bool = False):
+        if delay:
+            QTimer.singleShot(400, lambda: self.ensureVisible(file, False))
+            return
 
-    #     if self.chkFollowSelection.isChecked() and widget.visibleRegion().isEmpty():
-    #         if (y := self.galleryGrid.getYforRow(row)) >= 0:
-    #             self.scrollArea.verticalScrollBar().setValue(y)
+        if self.chkFollowSelection.isChecked():
+            self.galleryView.scrollToFile(file)
 
-    def scrollToSelection(self):
-        pass
-        # if selectedItem := self.galleryGrid.selectedItem:
-        #     self.ensureVisible(selectedItem, selectedItem.row, delay=True)
 
+    def onFileChanged(self, currentFile: str):
+        self.ensureVisible(currentFile)
+
+    def onFileListChanged(self, currentFile: str):
+        self.ensureVisible(currentFile)
+        self.ensureVisible(currentFile, delay=True)
+        #self.galleryView.scrollToTop()
 
     def onFileSelectionChanged(self, selectedFiles: set[str]):
         self.updateStatusBar()
 
+
     def highlightFiles(self, files: list[str]):
         pass
         #self.galleryGrid.highlightFiles(files)
-
-
-
-# class GalleryScrollArea(QtWidgets.QScrollArea):
-#     def __init__(self, tab: ImgTab):
-#         super().__init__()
-#         self.tab = tab
-
-#     def wheelEvent(self, event):
-#         scrollBar = self.verticalScrollBar()
-#         gallery: GalleryGrid = self.widget()
-
-#         scrollDown = event.angleDelta().y() < 0
-
-#         row = gallery.getRowForY(scrollBar.value(), scrollDown)
-#         row += 1 if scrollDown else -1
-#         y = gallery.getYforRow(row, scrollDown)
-#         if y >= 0:
-#             scrollBar.setValue(y)
-
-#     def keyPressEvent(self, event: QtGui.QKeyEvent):
-#         filelist = self.tab.filelist
-#         match event.key():
-#             case Qt.Key.Key_Left:
-#                 filelist.setPrevFile()
-#             case Qt.Key.Key_Right:
-#                 filelist.setNextFile()
-#             case Qt.Key.Key_Up:
-#                 filelist.setPrevFolder()
-#             case Qt.Key.Key_Down:
-#                 filelist.setNextFolder()
-
-#             case Qt.Key.Key_Home:
-#                 self.verticalScrollBar().setValue(0)
-#             case Qt.Key.Key_End:
-#                 scrollBar = self.verticalScrollBar()
-#                 scrollBar.setValue(scrollBar.maximum()+1000)
-
-#             case _:
-#                 super().keyPressEvent(event)
-#                 return
-
-#         event.accept()
