@@ -1,4 +1,3 @@
-from bisect import bisect_right
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QSignalBlocker, QTimer
 import lib.qtlib as qtlib
@@ -19,7 +18,6 @@ class Gallery(QtWidgets.QWidget):
         super().__init__()
         self.tab = tab
 
-        self.rowToHeader: list[int] = list()
         self._switchingMode = False
 
         # Initialize grid after delay: Wait for the window width to calculate column count
@@ -32,7 +30,7 @@ class Gallery(QtWidgets.QWidget):
         self.captionSrc = FileTypeSelector()
         self.galleryCaption = GalleryCaption(self.captionSrc)
 
-        self.galleryModel = GalleryModel(tab.filelist, self.galleryCaption)
+        self.galleryModel: GalleryModel = GalleryModel(tab.filelist, self.galleryCaption)
         self.galleryView: GalleryView = GalleryView(tab, self.galleryCaption, Config.galleryThumbnailSize)
         self.galleryView.verticalScrollBar().valueChanged.connect(self.updateComboboxFolder)
         self.galleryView.setModel(self.galleryModel)
@@ -56,9 +54,7 @@ class Gallery(QtWidgets.QWidget):
 
 
     def deleteLater(self):
-        self.galleryView.deleteLater()
-        self.galleryView = None
-
+        self.galleryModel.deleteLater()
         super().deleteLater()
 
 
@@ -189,7 +185,7 @@ class Gallery(QtWidgets.QWidget):
     def reloadCaptions(self):
         self._updateCaptionContext()
         self.btnReloadCaptions.setChanged(False)
-        self.galleryModel.modelReset.emit()
+        self.galleryModel.resetCaptions()
 
     def _updateCaptionContext(self):
         cap = self.galleryCaption
@@ -256,23 +252,19 @@ class Gallery(QtWidgets.QWidget):
         msgs = list[str]()
         if numSelectedFiles := len(filelist.selectedFiles):
             msgs.append(f"{numSelectedFiles} Selected")
-        # if self.galleryGrid.highlightCount:
-        #     msgs.append(f"{self.galleryGrid.highlightCount} Highlighted")
+        if self.galleryModel.numHighlighted:
+            msgs.append(f"{self.galleryModel.numHighlighted} Highlighted")
         msgsText = "".join(("  (", ", ".join(msgs), ")")) if msgs else ""
-
-        loadPercent = 1.0 #self.galleryGrid.getLoadPercent()
-        loadText = f"  (Loading Gallery: {100*loadPercent:.1f} %)" if loadPercent < 1.0 else ""
 
         numFiles = filelist.getNumFiles()
         numFolders = self.cboFolders.count()
-        self.statusBar.showMessage(f"{numFiles} Images in {numFolders} Folders{msgsText}{loadText}")
+        self.statusBar.showMessage(f"{numFiles} Images in {numFolders} Folders{msgsText}")
 
 
     def resizeEvent(self, event: QtGui.QResizeEvent):
         if self._initTimer:
             self._initTimer.start()
         else:
-            # NOTE: The slow thing during resize are the gallery headers (delegate editor)
             self.galleryView.setResizing(True)
             self._gridUpdateTimer.start()
 
@@ -282,21 +274,14 @@ class Gallery(QtWidgets.QWidget):
     def updateGrid(self):
         self.galleryView.setResizing(False)
 
-        # if self.isVisible():
-        #     self.galleryView.updateWidth()
-        #     #self.galleryView.updateFolderRows()  # TODO: Why is this required twice?
-        #     self.galleryView.repaint()
-
 
     @Slot(list)
     def onHeadersUpdated(self, headers: list[HeaderItem]):
-        self.rowToHeader.clear()
         with QSignalBlocker(self.cboFolders):
             self.cboFolders.clear()
             for header in headers:
                 path = self.tab.filelist.removeCommonRoot(header.path)
                 self.cboFolders.addItem(path, header.row)
-                self.rowToHeader.append(header.row)
 
         self.updateComboboxFolder()
         self.updateStatusBar()
@@ -310,9 +295,8 @@ class Gallery(QtWidgets.QWidget):
 
     @Slot()
     def updateComboboxFolder(self):
-        row = self.galleryView.getRowAtTop()
-        index = bisect_right(self.rowToHeader, row)
-        index = max(index-1, 0)
+        row = self.galleryView.rowAt(0)
+        index = self.galleryModel.headerIndexForRow(row)
 
         with QSignalBlocker(self.cboFolders):
             self.cboFolders.setCurrentIndex(index)
@@ -340,5 +324,5 @@ class Gallery(QtWidgets.QWidget):
 
 
     def highlightFiles(self, files: list[str]):
-        pass
-        #self.galleryGrid.highlightFiles(files)
+        self.galleryModel.highlightFiles(files)
+        self.updateStatusBar()

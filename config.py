@@ -129,6 +129,7 @@ class Config:
     # Gallery
     galleryThumbnailSize    = 200
     galleryThumbnailThreads = 6
+    galleryCacheSize        = 5000
 
     # Window state
     windowStates            = dict()
@@ -210,6 +211,7 @@ class Config:
 
         cls.galleryThumbnailSize    = int(data.get("gallery_thumbnail_size", cls.galleryThumbnailSize))
         cls.galleryThumbnailThreads = int(data.get("gallery_thumbnail_threads", cls.galleryThumbnailThreads))
+        cls.galleryCacheSize        = int(data.get("gallery_cache_size", cls.galleryCacheSize))
 
         cls.windowStates          = data.get("window_states", cls.windowStates)
         cls.windowOpen            = data.get("window_open", cls.windowOpen)
@@ -273,6 +275,7 @@ class Config:
 
         data["gallery_thumbnail_size"]      = cls.galleryThumbnailSize
         data["gallery_thumbnail_threads"]   = cls.galleryThumbnailThreads
+        data["gallery_cache_size"]          = cls.galleryCacheSize
 
         data["window_states"]               = cls.windowStates
         data["window_open"]                 = cls.windowOpen

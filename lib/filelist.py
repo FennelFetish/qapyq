@@ -77,7 +77,7 @@ class FileSelection:
         self._sortedFiles: list[str] | None = None
 
     @property
-    def sorted(self):
+    def sorted(self) -> list[str]:
         if self._sortedFiles is None:
             self._sortedFiles = sorted(self.files, key=sortKey)
         return self._sortedFiles
@@ -355,11 +355,11 @@ class FileList:
         self.notifyListChanged()
 
 
-    def getNumFiles(self):
+    def getNumFiles(self) -> int:
         self._lazyLoadFolder()
         return len(self.files)
 
-    def getFiles(self):
+    def getFiles(self) -> list[str]:
         self._lazyLoadFolder()
         return self.files
 
@@ -371,12 +371,12 @@ class FileList:
         currentIndex = self.order[self.currentIndex] if self.order else self.currentIndex
         return currentIndex == len(self.files) - 1  # True when no files loaded
 
-    def getCurrentNr(self):
+    def getCurrentNr(self) -> int:
         if self.order and self.currentIndex >= 0:
             return self.order[self.currentIndex]
         return self.currentIndex
 
-    def getCurrentFile(self):
+    def getCurrentFile(self) -> str:
         return self.currentFile
 
     def setCurrentFile(self, file: str):
@@ -543,7 +543,7 @@ class FileList:
             return False
         return True
 
-    def isSelected(self, file: str):
+    def isSelected(self, file: str) -> bool:
         return file in self.selection
 
     def selectFile(self, file: str):
@@ -665,6 +665,11 @@ class FileList:
         if fileDict is None:
             return None
         return fileDict.get(key)
+
+    def getMultipleData(self, file: str, keys: Iterable[str]) -> dict:
+        if fileDict := self.fileData.get(file):
+            return {k: v for k in keys if (v := fileDict.get(k)) is not None}
+        return {}
 
     def removeData(self, file: str, key: str, notify=True) -> None:
         fileDict = self.fileData.get(file)

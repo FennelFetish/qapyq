@@ -1,3 +1,4 @@
+from typing import Iterable
 from typing_extensions import override
 from PySide6.QtCore import Qt, Signal, Slot, QPoint, QSignalBlocker, QTimer, QModelIndex, QPersistentModelIndex, QObject
 from PySide6.QtWidgets import QTableView, QHeaderView, QMenu
@@ -5,14 +6,12 @@ from PySide6.QtGui import QGuiApplication, QCursor, QWheelEvent, QKeyEvent
 from ui.tab import ImgTab
 from .gallery_caption import GalleryCaption
 from .gallery_model import GalleryModel, FileItem, SelectionState
-from .gallery_delegate import BaseGalleryDelegate, GalleryGridDelegate, GalleryListDelegate
+from .gallery_delegate import GalleryDelegate, GalleryGridDelegate, GalleryListDelegate
 
 
 class GalleryView(QTableView):
     VIEW_MODE_GRID = "grid"
     VIEW_MODE_LIST = "list"
-
-    HEADER_HEIGHT = 32
 
     sortByImages = Signal(list)
 
@@ -22,8 +21,8 @@ class GalleryView(QTableView):
         self.galleryCaption = galleryCaption
         self.itemWidth = initialItemWidth
 
-        self.delegate: BaseGalleryDelegate = None
-        self.visibleHeaderRows: set[int] = set()
+        self.delegate: GalleryDelegate = None
+        self.editorRows: set[int] = set()
 
         self._selectedItem: FileItem | None = None
 
@@ -52,6 +51,17 @@ class GalleryView(QTableView):
 
 
     @override
+    def deleteLater(self):
+        if self.delegate:
+            self.setItemDelegate(None)
+            self.delegate.view = None
+            self.delegate.deleteLater()
+            self.delegate = None
+
+        return super().deleteLater()
+
+
+    @override
     def model(self) -> GalleryModel:
         return super().model()
 
@@ -61,7 +71,7 @@ class GalleryView(QTableView):
             raise ValueError("GalleryModel already set")
 
         super().setModel(model)
-        model.modelReset.connect(self._updateHeaderRows)
+        model.modelReset.connect(self._onModelReset)
 
 
     def setViewMode(self, mode: str):
@@ -76,7 +86,6 @@ class GalleryView(QTableView):
                 self.delegate = GalleryListDelegate(self, self.galleryCaption)
 
             self.model().dataChanged.connect(self.delegate.onDataChanged)
-            self.model().modelReset.connect(self.delegate.clearCache)
             self.setItemDelegate(self.delegate)
 
         self.updateColumnCount()
@@ -86,76 +95,76 @@ class GalleryView(QTableView):
         if width != self.itemWidth:
             self.itemWidth = width
             self.updateColumnCount()
-            QTimer.singleShot(0, self.updateVisibleRows)
 
     def updateColumnCount(self):
         spacing = self.delegate.spacing()
         numCols = (self.viewport().width() + spacing) // (self.delegate.itemWidth() + spacing)
         numCols = max(1, numCols)
         self.delegate.setNumColumns(numCols)
-        self.model().setNumColumns(numCols, forceSignal=True)
+        self.model().setNumColumns(numCols, forceReset=True)
 
 
     @Slot()
-    def _updateHeaderRows(self):
-        self.clearSpans()
+    def _onModelReset(self):
+        if self.delegate:
+            self.delegate.clearCache()
 
+        # Update header rows
+        self.clearSpans()
         numCols = self.model().columnCount()
         if numCols > 1:
             for header in self.model().headerItems:
                 self.setSpan(header.row, 0, 1, numCols)
 
-        self.visibleHeaderRows.clear()
+        self.editorRows.clear()
         self.updateVisibleRows()
+
+        # Ensure top row has no header above
+        self.scrollToRow(self.rowAt(0))
+
+        QTimer.singleShot(100, self.updateVisibleRows)
+
 
     @Slot()
     def updateVisibleRows(self):
-        r0, r1 = self._getVisibleRows()
+        if not self.delegate:
+            return
 
-        # Updating more than the visible rows breaks update of folder-combobox.
-        # r0 = max(r0 - 2, 0)
-        # r1 = min(r1 + 2, self.model().rowCount()-1)
+        editorRows = set[int]()
+        for row, isHeader in self.visibleRows():
+            if self.delegate.rowNeedsEditor(isHeader):
+                editorRows.add(row)
 
-        headerRows = set[int]()
-        for row in range(r0, r1+1):
-            if self.rowIsHeader(row):
-                headerRows.add(row)
-            else:
-                self.resizeRowToContents(row)
+            self.resizeRowToContents(row)
 
-        deactivate = self.visibleHeaderRows - headerRows
+        deactivate = self.editorRows - editorRows
         for row in deactivate:
-            self.closePersistentEditor(self.model().index(row, 0))
+            self.delegate.closeRowEditors(row)
 
-        activate = headerRows - self.visibleHeaderRows
+        activate = editorRows - self.editorRows
         for row in activate:
-            self.setRowHeight(row, self.HEADER_HEIGHT)
-            self.openPersistentEditor(self.model().index(row, 0))
+            self.delegate.openRowEditors(row)
 
-        self.visibleHeaderRows = headerRows
+        self.editorRows = editorRows
 
-    def _getVisibleRows(self):
-        topRow = self.getRowAtTop()
-        bottomRow = topRow
+    def visibleRows(self) -> Iterable[tuple[int, bool]]:
+        model = self.model()
+        rect  = self.rect()
 
-        # Coarse search
-        step = 5
-        while self.rowIsVisible(bottomRow+step):
-            bottomRow += step
-
-        for bottomRow in range(bottomRow+1, bottomRow+step):
-            if not self.rowIsVisible(bottomRow):
-                bottomRow -= 1
-                break
-
-        return topRow, bottomRow
+        index = self.indexAt(QPoint(0, 0))
+        while index.isValid() and self.visualRect(index).intersects(rect):
+            isHeader = index.data(GalleryModel.ROLE_TYPE) == GalleryModel.ItemType.Header
+            yield index.row(), isHeader
+            index = model.index(index.row()+1, 0)
 
 
     def setResizing(self, state: bool):
+        self.delegate.fastRender = state
+
         if state:
-            for row in self.visibleHeaderRows:
-                self.closePersistentEditor(self.model().index(row, 0))
-            self.visibleHeaderRows.clear()
+            for row in self.editorRows:
+                self.delegate.closeRowEditors(row)
+            self.editorRows.clear()
         else:
             self.updateColumnCount()
 
@@ -181,10 +190,6 @@ class GalleryView(QTableView):
         item = self.model().getFileItem(file)
         if not (item is None or self.rowIsVisible(item.pos.row)):
             self.scrollToRow(item.pos.row)
-
-    def getRowAtTop(self) -> int:
-        index = self.indexAt(QPoint(0, 0))
-        return index.row() if index.isValid() else -1
 
     def rowIsHeader(self, row: int) -> bool:
         index = self.model().index(row, 0)
@@ -245,7 +250,7 @@ class GalleryView(QTableView):
 
 class GalleryMouseHandler(QObject):
     def __init__(self, view: GalleryView):
-        super().__init__()
+        super().__init__(view)
         self.view = view
 
         view.entered.connect(self._onMouseEntered)

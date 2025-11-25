@@ -48,7 +48,8 @@ class GalleryCaption:
         layouts = list[QtGui.QTextLayout]()
         totalHeight = 0.0
 
-        for lineText in filter(None, text.splitlines()):
+        lines = [line for l in text.splitlines() if (line := l.strip())]
+        for lineNr, lineText in enumerate(lines, 1):
             textLayout = QtGui.QTextLayout(lineText)
             textLayout.setCacheEnabled(True)
             textLayout.setTextOption(self.textOpt)
@@ -66,7 +67,9 @@ class GalleryCaption:
                 totalHeight += lineHeight
                 if totalHeight + lineHeight >= maxHeight:
                     textLayout.endLayout()
-                    if line.textStart() + line.textLength() >= len(lineText): # Check if last line
+
+                    # Check if last line
+                    if lineNr >= len(lines) and line.textStart() + line.textLength() >= len(lineText):
                         return totalHeight, layouts
                     else:
                         return self._addEllipsis(width, totalHeight, layouts)
