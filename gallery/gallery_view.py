@@ -106,8 +106,7 @@ class GalleryView(QTableView):
 
     @Slot()
     def _onModelReset(self):
-        if self.delegate:
-            self.delegate.clearCache()
+        self.delegate.clearCache()
 
         # Update header rows
         self.clearSpans()
@@ -127,9 +126,6 @@ class GalleryView(QTableView):
 
     @Slot()
     def updateVisibleRows(self):
-        if not self.delegate:
-            return
-
         editorRows = set[int]()
         for row, isHeader in self.visibleRows():
             if self.delegate.rowNeedsEditor(isHeader):
@@ -190,10 +186,7 @@ class GalleryView(QTableView):
         item = self.model().getFileItem(file)
         if not (item is None or self.rowIsVisible(item.pos.row)):
             self.scrollToRow(item.pos.row)
-
-    def rowIsHeader(self, row: int) -> bool:
-        index = self.model().index(row, 0)
-        return index.data(GalleryModel.ROLE_TYPE) == GalleryModel.ItemType.Header
+            #QTimer.singleShot(100, self.updateVisibleRows)
 
     def rowIsVisible(self, row: int) -> bool:
         index = self.model().index(row, 0)
@@ -217,7 +210,8 @@ class GalleryView(QTableView):
 
             # Scroll down
             elif delta < 0:
-                row += 2 if self.rowIsHeader(row) else 1
+                isHeader = index.data(GalleryModel.ROLE_TYPE) == GalleryModel.ItemType.Header
+                row += 2 if isHeader else 1
                 self.scrollToRow(row, alignHeader=False)
 
         event.accept()
@@ -258,12 +252,12 @@ class GalleryMouseHandler(QObject):
         view.doubleClicked.connect(self._onMouseDoubleClick)
 
 
-    @Slot(object)
+    @Slot(QModelIndex)
     def _onMouseEntered(self, index: QModelIndex):
         if self.view.state() != self.view.State.DragSelectingState:
             return
 
-        file = index.data(Qt.ItemDataRole.DisplayRole)
+        file = index.data(GalleryModel.ROLE_FILEPATH)
         if not file:
             return
 
@@ -276,12 +270,12 @@ class GalleryMouseHandler(QObject):
                 self.view.tab.filelist.selectFile(file)
 
 
-    @Slot(object)
+    @Slot(QModelIndex)
     def _onMousePressed(self, index: QModelIndex):
         filelist = self.view.tab.filelist
         buttons = QGuiApplication.mouseButtons()
 
-        file = index.data(Qt.ItemDataRole.DisplayRole)
+        file = index.data(GalleryModel.ROLE_FILEPATH)
         if not file:
             return
 
@@ -326,7 +320,7 @@ class GalleryMouseHandler(QObject):
             menu.exec(QCursor.pos())
 
 
-    @Slot(object)
+    @Slot(QModelIndex)
     def _onMouseDoubleClick(self, index: QModelIndex):
         buttons = QGuiApplication.mouseButtons()
         if buttons == Qt.MouseButton.LeftButton:

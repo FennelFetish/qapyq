@@ -115,7 +115,7 @@ class GalleryDelegate(QtWidgets.QStyledItemDelegate):
     def setNumColumns(self, columnCount: int):
         self.numColumns = columnCount
         totalSpacing = self.spacing() * (columnCount-1)
-        self.xSpacing = totalSpacing // columnCount
+        self.xSpacing = round(totalSpacing / columnCount)
 
 
     def clearCache(self):
@@ -128,10 +128,6 @@ class GalleryDelegate(QtWidgets.QStyledItemDelegate):
         if resetSizeHint or Qt.ItemDataRole.SizeHintRole in roles:
             for row in range(startIndex.row(), endIndex.row()+1):
                 self.sizeCache[row].reset()
-
-                # for col in range(startIndex.column(), endIndex.column()+1):
-                #     self.sizeHintChanged.emit(self.view.model().index(row, col))
-
                 self.view.resizeRowToContents(row)
 
     def _onDataChanged(self, startIndex: QModelIndex, endIndex: QModelIndex, roles: list[int]) -> bool:
@@ -152,8 +148,8 @@ class GalleryDelegate(QtWidgets.QStyledItemDelegate):
 
     @override
     def paint(self, painter: QPainter, option: QtWidgets.QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex):
-        itemType = index.data(GalleryModel.ROLE_TYPE)
-        if itemType != GalleryModel.ItemType.File:
+        filename = index.data(GalleryModel.ROLE_FILENAME)
+        if filename is None:
             return
 
         if not self.fastRender:
@@ -161,9 +157,9 @@ class GalleryDelegate(QtWidgets.QStyledItemDelegate):
             painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
 
         rect = self._adjustRect(option.rect, index.column())
-        self.paintItem(painter, rect, index)
+        self.paintItem(painter, rect, index, filename)
 
-    def paintItem(self, painter: QPainter, rect: QRect, index: QModelIndex | QPersistentModelIndex):
+    def paintItem(self, painter: QPainter, rect: QRect, index: QModelIndex | QPersistentModelIndex, filename: str):
         raise NotImplementedError()
 
     def paintHightlightBg(self, painter: QtGui.QPainter, x: int, y: int, w: int, h: int):
@@ -209,18 +205,20 @@ class GalleryDelegate(QtWidgets.QStyledItemDelegate):
     @override
     def sizeHint(self, option: QtWidgets.QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex) -> QSize:
         itemType = index.data(GalleryModel.ROLE_TYPE)
-        if itemType == GalleryModel.ItemType.Header:
-            return QSize(0, self.HEADER_HEIGHT)
-        if itemType != GalleryModel.ItemType.File:
-            return QSize(0, 0)
+        match itemType:
+            case GalleryModel.ItemType.File:
+                cacheRow = self.sizeCache[index.row()]
+                if not cacheRow.hasColumn(index.column()):
+                    h = self.sizeHintHeight(option.rect, index)
+                    h += self.BORDER_SIZE + 2*self.spacing()
+                    cacheRow.setColumnHeight(index.column(), h)
+                return cacheRow.size
 
-        cacheRow = self.sizeCache[index.row()]
-        if not cacheRow.hasColumn(index.column()):
-            h = self.sizeHintHeight(option.rect, index)
-            h += self.BORDER_SIZE + 2*self.spacing()
-            cacheRow.setColumnHeight(index.column(), h)
+            case GalleryModel.ItemType.Header:
+                return QSize(0, self.HEADER_HEIGHT)
 
-        return cacheRow.size
+            case _:
+                return QSize(0, 0)
 
     def sizeHintHeight(self, rect: QRect, index: QModelIndex | QPersistentModelIndex) -> int:
         raise NotImplementedError()
@@ -228,9 +226,9 @@ class GalleryDelegate(QtWidgets.QStyledItemDelegate):
 
     @override
     def createEditor(self, parent: QtWidgets.QWidget, option: QtWidgets.QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex) -> QtWidgets.QWidget:
-        itemType = index.data(GalleryModel.ROLE_TYPE)
-        if itemType == GalleryModel.ItemType.Header:
-            return GalleryHeader(parent, self.view.tab, index.data(Qt.ItemDataRole.DisplayRole))
+        path = index.data(GalleryModel.ROLE_FOLDERPATH)
+        if path is not None:
+            return GalleryHeader(parent, self.view.tab, path)
         return None
 
     @override
@@ -251,7 +249,7 @@ class GalleryGridDelegate(GalleryDelegate):
     def __init__(self, galleryView, galleryCaption: GalleryCaption):
         super().__init__(galleryView, galleryCaption)
 
-        self.layoutCache = OrderedDict[tuple[int, int], tuple[QtGui.QTextLayout, ...]]()
+        self.layoutCache: OrderedDict[tuple[int, int], tuple[QtGui.QTextLayout, ...]] = OrderedDict()
 
         self.textFlags = Qt.AlignmentFlag.AlignHCenter | Qt.TextFlag.TextWrapAnywhere
         self.textOpt = QtGui.QTextOption()
@@ -263,11 +261,11 @@ class GalleryGridDelegate(GalleryDelegate):
 
     @Slot()
     def clearCache(self):
-        self.layoutCache.clear()
+        self.layoutCache = OrderedDict()
         super().clearCache()
 
     def _onDataChanged(self, startIndex: QModelIndex, endIndex: QModelIndex, roles: list[int]) -> bool:
-        if (GalleryModel.ROLE_CAPTION in roles) or (Qt.ItemDataRole.SizeHintRole in roles):
+        if (Qt.ItemDataRole.SizeHintRole in roles) or (GalleryModel.ROLE_CAPTION in roles):
             for row in range(startIndex.row(), endIndex.row()+1):
                 for col in range(startIndex.column(), endIndex.column()+1):
                     self.layoutCache.pop((row, col), None)
@@ -297,7 +295,7 @@ class GalleryGridDelegate(GalleryDelegate):
 
 
     @override
-    def paintItem(self, painter: QPainter, rect: QRect, index: QModelIndex | QPersistentModelIndex):
+    def paintItem(self, painter: QPainter, rect: QRect, index: QModelIndex | QPersistentModelIndex, filename: str):
         x, y, w, h = rect.left(), rect.top(), rect.width(), rect.height()
 
         pen = self.PEN_TEXT
@@ -318,6 +316,9 @@ class GalleryGridDelegate(GalleryDelegate):
         self.paintIcons(painter, x+4, y+4, index.data(GalleryModel.ROLE_ICONS))
         self.paintBorder(painter, x, y, w, h, index.data(GalleryModel.ROLE_SELECTION))
 
+        if self.fastRender:
+            return
+
         textX = x + self.BORDER_SIZE // 2
         textY = y + imgH + self.TEXT_SPACING
         textW = w - self.BORDER_SIZE
@@ -329,9 +330,8 @@ class GalleryGridDelegate(GalleryDelegate):
             for textLayout in self._getCaptionLayouts(textW, textH, index):
                 textLayout.draw(painter, p)
         else:
-            label = index.data(GalleryModel.ROLE_FILENAME)
             textRect = QRect(textX, textY, textW, textH)
-            painter.drawText(textRect, label, self.textOpt)
+            painter.drawText(textRect, filename, self.textOpt)
 
 
     @override
@@ -368,16 +368,24 @@ class GalleryListDelegate(GalleryDelegate):
     def __init__(self, galleryView, galleryCaption: GalleryCaption):
         super().__init__(galleryView, galleryCaption)
 
+        self.sizeUpdateTimer = QTimer(singleShot=True, interval=50)
+        self.sizeUpdateTimer.timeout.connect(self.view.updateVisibleRows)
+
         self.textOpt = QtGui.QTextOption()
         self.textOpt.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-
-        self.labelFontMetrics = QFontMetrics(QtGui.QFont())
 
 
     @override
     def itemWidth(self) -> int:
         return 800
 
+
+    @override
+    def _onDataChanged(self, startIndex: QModelIndex, endIndex: QModelIndex, roles: list[int]) -> bool:
+        if Qt.ItemDataRole.SizeHintRole in roles:
+            self.sizeUpdateTimer.start()
+            return True
+        return False
 
     @override
     def rowNeedsEditor(self, isHeader: bool):
@@ -395,7 +403,7 @@ class GalleryListDelegate(GalleryDelegate):
 
 
     @override
-    def paintItem(self, painter: QPainter, rect: QRect, index: QModelIndex | QPersistentModelIndex):
+    def paintItem(self, painter: QPainter, rect: QRect, index: QModelIndex | QPersistentModelIndex, filename: str):
         x, y, w, h = rect.left(), rect.top(), rect.width(), rect.height()
 
         pen = self.PEN_TEXT
@@ -422,10 +430,12 @@ class GalleryListDelegate(GalleryDelegate):
         self.paintIcons(painter, x+4, y+4, index.data(GalleryModel.ROLE_ICONS))
         self.paintBorder(painter, x, y, imgW, h, index.data(GalleryModel.ROLE_SELECTION))
 
-        label = index.data(GalleryModel.ROLE_FILENAME)
+        if self.fastRender:
+            return
+
         textRect = QRect(textX, textY, textW, textH)
         painter.setPen(pen)
-        painter.drawText(textRect, label, self.textOpt)
+        painter.drawText(textRect, filename, self.textOpt)
 
     @override
     def sizeHintHeight(self, rect: QRect, index: QModelIndex | QPersistentModelIndex) -> int:
@@ -434,20 +444,21 @@ class GalleryListDelegate(GalleryDelegate):
             return self.view.itemWidth
 
         imgW, imgH = imgSize
-        h = int((imgH / imgW) * self.view.itemWidth)
+        h = round((imgH / imgW) * self.view.itemWidth)
         return max(h, self.MIN_HEIGHT)
 
 
     @override
     def createEditor(self, parent: QtWidgets.QWidget, option: QtWidgets.QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex) -> QtWidgets.QWidget:
-        itemType = index.data(GalleryModel.ROLE_TYPE)
-        if itemType == GalleryModel.ItemType.File:
-            return GalleryListItem(parent, self, index)
+        if file := index.data(GalleryModel.ROLE_FILEPATH):
+            edited = index.data(GalleryModel.ROLE_DOC_EDITED)
+            return GalleryCaptionEditor(parent, self, file, edited)
+
         return super().createEditor(parent, option, index)
 
     @override
     def updateEditorGeometry(self, editor: QtWidgets.QWidget, option: QtWidgets.QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex):
-        if not isinstance(editor, GalleryListItem):
+        if not isinstance(editor, GalleryCaptionEditor):
             super().updateEditorGeometry(editor, option, index)
             return
 
@@ -465,28 +476,27 @@ class GalleryListDelegate(GalleryDelegate):
 
     @override
     def setEditorData(self, editor: QtWidgets.QWidget, index: QModelIndex | QPersistentModelIndex):
-        if isinstance(editor, GalleryListItem):
+        if isinstance(editor, GalleryCaptionEditor):
             editor.updateData(index)
         else:
             super().setEditorData(editor, index)
 
     @override
     def setModelData(self, editor: QtWidgets.QWidget, model: GalleryModel, index: QModelIndex | QPersistentModelIndex):
-        if isinstance(editor, GalleryListItem):
-            value = editor.caption if editor.edited else None
-            model.setData(index, value, GalleryModel.ROLE_CAPTION_EDIT)
+        if isinstance(editor, GalleryCaptionEditor):
+            model.setData(index, editor.edited, GalleryModel.ROLE_DOC_EDITED)
 
 
 
-class GalleryListItem(QtWidgets.QWidget):
+class GalleryCaptionEditor(QtWidgets.QWidget):
     TEXT_PALETTE = None
 
-    def __init__(self, parent: QtWidgets.QWidget, delegate: GalleryListDelegate, index: QModelIndex | QPersistentModelIndex):
+    def __init__(self, parent: QtWidgets.QWidget, delegate: GalleryListDelegate, file: str, edited: bool):
         super().__init__(parent)
-        self.delegate = delegate
-        self.file     = index.data(Qt.ItemDataRole.DisplayRole)
-        self.edited   = False
-        self.selected = False
+        self.delegate   = delegate
+        self.file       = file
+        self.edited     = edited
+        self.selected   = False
 
         self._build()
 
@@ -502,17 +512,20 @@ class GalleryListItem(QtWidgets.QWidget):
         row = 0
         layout.setRowMinimumHeight(row, labelHeight)
 
-        self.btnSave = QtWidgets.QPushButton("Save")
-        self.btnSave.clicked.connect(self.saveCaption)
+        self.btnSave = qtlib.SaveButton("Save")
+        self.btnSave.setChanged(True)
         self.btnSave.setFixedHeight(labelHeight)
-        self.btnSave.hide()
+        self.btnSave.clicked.connect(self.saveCaption)
         layout.addWidget(self.btnSave, row, 1)
 
         self.btnReload = QtWidgets.QPushButton("Reload")
-        self.btnReload.clicked.connect(self.reloadCaption)
         self.btnReload.setFixedHeight(labelHeight)
-        self.btnReload.hide()
+        self.btnReload.clicked.connect(self.reloadCaption)
         layout.addWidget(self.btnReload, row, 3)
+
+        if not self.edited:
+            self.btnSave.hide()
+            self.btnReload.hide()
 
         row += 1
         layout.setRowMinimumHeight(row, 4)
@@ -521,15 +534,13 @@ class GalleryListItem(QtWidgets.QWidget):
         layout.setRowStretch(row, 1)
 
         self.txtCaption = NavigationTextEdit(self.delegate.caption.separator)
-        qtlib.setMonospace(self.txtCaption)
-        qtlib.setShowWhitespace(self.txtCaption)
-        self.txtCaption.textChanged.connect(self._onCaptionChanged)
         self.txtCaption.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
+        self.txtCaption.textChanged.connect(self._onCaptionChanged)
         layout.addWidget(self.txtCaption, row, 0, 1, 4, Qt.AlignmentFlag.AlignTop)
 
-        if GalleryListItem.TEXT_PALETTE is None:
-            GalleryListItem.TEXT_PALETTE = self._initPalette(self.txtCaption)
-        self.txtCaption.setPalette(GalleryListItem.TEXT_PALETTE)
+        if GalleryCaptionEditor.TEXT_PALETTE is None:
+            GalleryCaptionEditor.TEXT_PALETTE = self._initPalette(self.txtCaption)
+        self.txtCaption.setPalette(GalleryCaptionEditor.TEXT_PALETTE)
 
         self.setLayout(layout)
 
@@ -553,23 +564,13 @@ class GalleryListItem(QtWidgets.QWidget):
     def updateData(self, index: QModelIndex | QPersistentModelIndex):
         self.txtCaption.separator = self.delegate.caption.separator
 
-        if not self.edited:
-            text = index.data(GalleryModel.ROLE_CAPTION_EDIT)
-            if text is not None:
-                self._setEdited(True)
-            else:
-                text = index.data(GalleryModel.ROLE_CAPTION)
-                self._setEdited(False)
-
+        doc = index.data(GalleryModel.ROLE_CAPTION_DOC)
+        if doc is not self.txtCaption.document():
             with QSignalBlocker(self.txtCaption):
-                self.txtCaption.setCaption(text)
+                self.txtCaption.setDocument(doc)
+                self.txtCaption.moveCursor(QtGui.QTextCursor.MoveOperation.End)
 
-            if not self.edited:
-                # TODO: Undo stack is cleared everytime the editor is destroyed when going out of view.
-                # Cache widgets instead.
-                self.txtCaption.document().clearUndoRedoStacks()
-
-            QTimer.singleShot(0, self._updateHighlight)
+        QTimer.singleShot(0, self._updateHighlight)
 
         selection = index.data(GalleryModel.ROLE_SELECTION)
         selected = (selection == SelectionState.Primary)
@@ -578,15 +579,16 @@ class GalleryListItem(QtWidgets.QWidget):
         self.selected = selected
 
 
-    def _setEdited(self, edited: bool):
-        self.edited = edited
+    def setEdited(self, edited: bool):
         self.btnSave.setVisible(edited)
         self.btnReload.setVisible(edited)
 
+        self.edited = edited
+        self.delegate.commitData.emit(self)
+
     @Slot()
     def _onCaptionChanged(self):
-        self._setEdited(True)
-        self.delegate.commitData.emit(self)
+        self.setEdited(True)
         self._updateHighlight()
 
     @Slot()
@@ -599,15 +601,19 @@ class GalleryListItem(QtWidgets.QWidget):
 
     @Slot()
     def reloadCaption(self):
-        self._setEdited(False)
-        self.delegate.commitData.emit(self)
+        index = self.delegate.view.model().getFileIndex(self.file)
+        if index.isValid():
+            text = index.data(GalleryModel.ROLE_CAPTION)
+            with QSignalBlocker(self.txtCaption):
+                self.txtCaption.setCaption(text)
+
+        self.setEdited(False)
 
     @Slot()
     def saveCaption(self):
         if self.delegate.caption.captionSrc.saveCaption(self.file, self.caption):
             self.delegate.view.tab.filelist.setData(self.file, DataKeys.CaptionState, DataKeys.IconStates.Saved)
-            self._setEdited(False)
-            self.delegate.commitData.emit(self)
+            self.setEdited(False)
 
 
     def takeFocus(self):

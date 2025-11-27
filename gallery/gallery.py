@@ -36,7 +36,7 @@ class Gallery(QtWidgets.QWidget):
         self.galleryView.setModel(self.galleryModel)
 
         self.sortControl = GallerySortControl(self.tab)
-        self.sortControl.sortDone.connect(self.galleryModel.reloadImages)
+        self.sortControl.sortDone.connect(self.galleryModel.updateGrid)
         self.galleryView.sortByImages.connect(self.sortControl.updateSortByImage)
 
         layout = QtWidgets.QVBoxLayout()
@@ -64,23 +64,16 @@ class Gallery(QtWidgets.QWidget):
         self._initTimer.deleteLater()
         self._initTimer = None
 
-        # Slot onHeadersUpdated() needs access to cboFolders and scrollArea
-        self.galleryModel.headersUpdated.connect(self.onHeadersUpdated)
         self.galleryView.setViewMode(self.cboViewMode.currentData())
+        self.galleryModel.headersUpdated.connect(self.onHeadersUpdated)
         self.galleryModel.reloadImages()
-
-        #####self.galleryModel.reloaded.connect(lambda: self.galleryView.scrollToTop())
-        # #self.galleryGrid.reloaded.connect(self.queueGridUpdate)
-        # #self.galleryGrid.thumbnailLoaded.connect(self.queueGridUpdate)
-        # self.galleryGrid.loadingProgress.connect(self.updateStatusBar)
-        # self.galleryGrid.highlighted.connect(self.updateStatusBar)
-        #self.galleryModel.fileChanged.connect(self.ensureVisible)
 
 
     def _buildTopRow(self):
         layout = QtWidgets.QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
 
+        # TODO: Use MenuComboBox and build tree structure when num headers > 30?
         self.cboFolders = QtWidgets.QComboBox()
         self.cboFolders.setMinimumWidth(100)
         self.cboFolders.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored, QtWidgets.QSizePolicy.Policy.Preferred)
@@ -110,7 +103,7 @@ class Gallery(QtWidgets.QWidget):
         self.btnReloadCaptions.setToolTip("Reload Captions")
         self.btnReloadCaptions.setEnabled(False)
         self.btnReloadCaptions.setFixedWidth(30)
-        self.btnReloadCaptions.clicked.connect(self.reloadCaptions)
+        self.btnReloadCaptions.clicked.connect(lambda: self.reloadCaptions(clear=True))
         layout.addWidget(self.btnReloadCaptions)
 
         return layout
@@ -121,6 +114,7 @@ class Gallery(QtWidgets.QWidget):
 
         self.chkFollowSelection = QtWidgets.QCheckBox("Follow Selection")
         self.chkFollowSelection.setChecked(True)
+        self.chkFollowSelection.toggled.connect(self.onFollowSelectionToggled)
         self.statusBar.addPermanentWidget(self.chkFollowSelection)
 
         self.statusBar.addPermanentWidget(self._buildThumbnailSize())
@@ -170,22 +164,21 @@ class Gallery(QtWidgets.QWidget):
         if state:
             self.btnReloadCaptions.setChanged(True)
         elif not self._switchingMode:
-            self.reloadCaptions()
+            self.reloadCaptions(clear=True)
 
-    Slot(bool)
+    @Slot(bool)
     def onCaptionFilterToggled(self, state: bool):
         if self.isGridView:
-            self.reloadCaptions()
+            self.reloadCaptions(clear=False)
 
     @Slot()
     def onCaptionSourceChanged(self):
         self.btnReloadCaptions.setChanged(True)
 
-    @Slot()
-    def reloadCaptions(self):
+    def reloadCaptions(self, clear: bool, modelReset: bool = True):
         self._updateCaptionContext()
         self.btnReloadCaptions.setChanged(False)
-        self.galleryModel.resetCaptions()
+        self.galleryModel.resetCaptions(clear=clear, modelReset=modelReset)
 
     def _updateCaptionContext(self):
         cap = self.galleryCaption
@@ -204,8 +197,8 @@ class Gallery(QtWidgets.QWidget):
 
     def onCaptionFilterUpdated(self):
         'Called from Caption Window'
-        if self.chkCaptions.isChecked() and self.isGridView:
-            self.reloadCaptions()
+        if self.chkCaptions.isChecked():
+            self.reloadCaptions(clear=False)
 
 
     @property
@@ -229,10 +222,15 @@ class Gallery(QtWidgets.QWidget):
             finally:
                 self._switchingMode = False
 
-        self._updateCaptionContext()
+        self.reloadCaptions(clear=True, modelReset=False)
         self.galleryView.setViewMode(mode)
         self.ensureVisible(self.tab.filelist.currentFile)
-        self.btnReloadCaptions.setChanged(False)
+
+
+    @Slot(bool)
+    def onFollowSelectionToggled(self, state: bool):
+        if state:
+            self.ensureVisible(self.tab.filelist.currentFile)
 
     @Slot(int)
     def onThumbnailSizeChanged(self, size: int):
@@ -285,6 +283,7 @@ class Gallery(QtWidgets.QWidget):
 
         self.updateComboboxFolder()
         self.updateStatusBar()
+        self.galleryView.setFocus()
 
     @Slot(int)
     def onFolderSelected(self, index: int):

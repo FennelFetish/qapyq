@@ -1,9 +1,15 @@
 import os, math
 from typing import NamedTuple
 from typing_extensions import override
+from collections import OrderedDict
+from itertools import chain
 from bisect import bisect_right
-from PySide6.QtCore import Qt, Signal, Slot, QAbstractTableModel, QModelIndex, QPersistentModelIndex, QTimer, QObject
+from PySide6.QtCore import Qt, Signal, Slot, QAbstractTableModel, QModelIndex, QPersistentModelIndex, QTimer, QObject, QSignalBlocker
+from PySide6.QtGui import QTextCursor, QTextDocument
+from PySide6.QtWidgets import QPlainTextDocumentLayout
+from lib import qtlib
 from lib.filelist import FileList, DataKeys
+from config import Config
 from .gallery_caption import GalleryCaption
 from .gallery_header import GalleryHeader
 
@@ -29,13 +35,12 @@ class ItemType:
 
 class HeaderItem:
     itemType = ItemType.Header
-    __slots__ = ('path', 'numFiles', 'row', 'endRow')
+    __slots__ = ('path', 'numFiles', 'row')
 
     def __init__(self, path: str):
         self.path: str = path
         self.numFiles: int = 0
         self.row: int = 0
-        self.endRow: int = 0
 
 class FileItem:
     itemType = ItemType.File
@@ -92,18 +97,26 @@ class ThumbnailUpdateQueue(QObject):
 class GalleryModel(QAbstractTableModel):
     ItemType = ItemType
 
-    # File path:    Qt.ItemDataRole.DisplayRole
     # Thumbnail:    Qt.ItemDataRole.DecorationRole
+    # Size Hint:    Qt.ItemDataRole.SizeHintRole
 
     ROLE_TYPE           = Qt.ItemDataRole.UserRole.value
-    ROLE_ICONS          = Qt.ItemDataRole.UserRole.value + 1
-    ROLE_SELECTION      = Qt.ItemDataRole.UserRole.value + 2
-    ROLE_HIGHLIGHT      = Qt.ItemDataRole.UserRole.value + 3
-    ROLE_FILENAME       = Qt.ItemDataRole.UserRole.value + 4
-    ROLE_CAPTION        = Qt.ItemDataRole.UserRole.value + 5
-    ROLE_CAPTION_EDIT   = Qt.ItemDataRole.UserRole.value + 6
+
+    ROLE_FILENAME       = Qt.ItemDataRole.UserRole.value + 1
+    ROLE_FILEPATH       = Qt.ItemDataRole.UserRole.value + 2
+    ROLE_FOLDERPATH     = Qt.ItemDataRole.UserRole.value + 3
+
+    ROLE_ICONS          = Qt.ItemDataRole.UserRole.value + 4
+    ROLE_SELECTION      = Qt.ItemDataRole.UserRole.value + 5
+    ROLE_HIGHLIGHT      = Qt.ItemDataRole.UserRole.value + 6
+
     ROLE_IMGSIZE        = Qt.ItemDataRole.UserRole.value + 7
     ROLE_IMGCOUNT       = Qt.ItemDataRole.UserRole.value + 8
+
+    ROLE_CAPTION        = Qt.ItemDataRole.UserRole.value + 9
+    ROLE_CAPTION_DOC    = Qt.ItemDataRole.UserRole.value + 10
+    ROLE_DOC_EDITED     = Qt.ItemDataRole.UserRole.value + 11
+
 
     headersUpdated  = Signal(list)
 
@@ -120,6 +133,7 @@ class GalleryModel(QAbstractTableModel):
         self.numColumns = 1
         self.numRows = 0
 
+        self.headersEnabled: bool | None = None
         self.headerItems: list[HeaderItem] = []
         self.fileItems: dict[str, FileItem] = {}
         self.posItems: dict[GridPos, FileItem | HeaderItem] = {}
@@ -128,7 +142,9 @@ class GalleryModel(QAbstractTableModel):
         self._selectedFiles: set[str] = set()
         self._highlightedFiles: set[str] = set()
 
-        self._editedCaptions: dict[str, str] = {}
+        self._docs: OrderedDict[str, QTextDocument] = OrderedDict()
+        self._docsEdited: dict[str, QTextDocument] = {}
+        self._docFont = qtlib.getMonospaceFont()
 
         self._thumbnailUpdateQueue = ThumbnailUpdateQueue(self)
 
@@ -136,24 +152,94 @@ class GalleryModel(QAbstractTableModel):
     def getFileItem(self, file: str) -> FileItem | None:
         return self.fileItems.get(file)
 
+    def getFileIndex(self, file: str) -> QModelIndex:
+        if item := self.fileItems.get(file):
+            return self.index(*item.pos)
+        return QModelIndex()
+
     def headerIndexForRow(self, row: int):
         index = bisect_right(self.headerItems, row, key=lambda header: header.row)
         return max(index-1, 0)
 
-    def resetCaptions(self):
-        self._editedCaptions = {}
-        self.modelReset.emit()
+    def resetCaptions(self, clear: bool = True, modelReset: bool = True):
+        if clear:
+            for doc in chain(self._docs.values(), self._docsEdited.values()):
+                doc.deleteLater()
+
+            self._docs = OrderedDict()
+            self._docsEdited = {}
+
+        if modelReset:
+            self.modelReset.emit()
 
 
     def setNumColumns(self, numCols: int, forceReset=False):
         if numCols != self.numColumns:
             self.numColumns = numCols
-            self.buildGrid()
+            self._buildGrid()
         elif forceReset:
             self.modelReset.emit()
 
 
-    def buildGrid(self):
+    def reloadImages(self):
+        self._selectedItem = None
+        self._selectedFiles = set()
+        self._highlightedFiles = set()
+
+        self.fileItems = {file: FileItem(file) for file in self.filelist.getFiles()}
+        if self.fileItems:
+            self._selectedItem = self.fileItems[self.filelist.currentFile]
+            self._selectedFiles.update(self.filelist.selectedFiles)
+
+        # Clear list view documents, but keep edited documents for files which still exist in FileList
+        docsEdited = {}
+        for file, doc in self._docsEdited.items():
+            if file in self.fileItems:
+                docsEdited[file] = doc
+            else:
+                doc.deleteLater()
+        self._docsEdited = docsEdited
+
+        for doc in self._docs.values():
+            doc.deleteLater()
+        self._docs = OrderedDict()
+
+        # Always reset headers when reloading
+        self.headersEnabled = None
+        self.updateGrid()
+
+    @Slot(bool)
+    def updateGrid(self, headers: bool = True):
+        headers &= self.filelist.isOrderWithFolders()
+        if headers == self.headersEnabled:
+            self._buildGrid()
+            return
+
+        self.headersEnabled = headers
+        self.headerItems = []
+
+        if headers:
+            currentDir = None
+            currentHeader: HeaderItem = None
+
+            for file in self.filelist.getFiles():
+                dirname = os.path.dirname(file)
+                if currentDir != dirname:
+                    currentDir = dirname
+
+                    currentHeader = HeaderItem(currentDir)
+                    self.headerItems.append(currentHeader)
+
+                currentHeader.numFiles += 1
+
+        else:
+            header = HeaderItem(GalleryHeader.ALL_FILES_DIR)
+            header.numFiles = self.filelist.getNumFiles()
+            self.headerItems.append(header)
+
+        self._buildGrid()
+
+    def _buildGrid(self):
         self.beginResetModel()
 
         self.posItems = {}
@@ -163,9 +249,7 @@ class GalleryModel(QAbstractTableModel):
         for header in self.headerItems:
             header.row = self.numRows
             self.posItems[GridPos(header.row, 0)] = header
-
             self.numRows += 1 + math.ceil(header.numFiles / self.numColumns)
-            header.endRow = self.numRows
 
             for i in range(header.numFiles):
                 file = next(fileIt)
@@ -183,46 +267,6 @@ class GalleryModel(QAbstractTableModel):
         self.headersUpdated.emit(self.headerItems)
 
         assert not self.headerItems or next(fileIt, None) is None
-
-
-    @Slot(bool)
-    def reloadImages(self, headers: bool = True):
-        headers &= self.filelist.isOrderWithFolders()
-
-        self.headerItems = []
-        self.fileItems = {}
-
-        self._selectedItem = None
-        self._selectedFiles = set()
-        self._highlightedFiles = set()
-
-        # TODO: Only clear files which are missing from FileList
-        self._editedCaptions = {}
-
-        currentDir = None
-        currentHeader: HeaderItem = None
-
-        if not headers:
-            currentHeader = HeaderItem(GalleryHeader.ALL_FILES_DIR)
-            self.headerItems.append(currentHeader)
-
-        for file in self.filelist.getOrderedFiles():
-            if headers:
-                dirname = os.path.dirname(file)
-                if currentDir != dirname:
-                    currentDir = dirname
-
-                    currentHeader = HeaderItem(currentDir)
-                    self.headerItems.append(currentHeader)
-
-            self.fileItems[file] = FileItem(file)
-            currentHeader.numFiles += 1
-
-        if self.fileItems:
-            self._selectedItem = self.fileItems[self.filelist.currentFile]
-            self._selectedFiles.update(self.filelist.selectedFiles)
-
-        self.buildGrid()
 
 
     @Slot(str)
@@ -261,13 +305,11 @@ class GalleryModel(QAbstractTableModel):
         if not item:
             return
 
-        match key:
-            # case DataKeys.ImageSize:
-            #     self.dataChanged.emit(index, index, [self.ROLE_IMGSIZE])
+        roles = []
 
+        match key:
             case DataKeys.CaptionState | DataKeys.CropState | DataKeys.MaskState:
-                index = self.index(*item.pos)
-                self.dataChanged.emit(index, index, [self.ROLE_ICONS])
+                roles.append(self.ROLE_ICONS)
 
         if (
             self.galleryCaption.captionsEnabled
@@ -275,15 +317,12 @@ class GalleryModel(QAbstractTableModel):
             and self.filelist.getData(file, key) == DataKeys.IconStates.Saved
             and (item := self.fileItems[file])
         ):
-            index = self.index(*item.pos)
-            self.dataChanged.emit(index, index, [self.ROLE_CAPTION])
+            self._reloadDocument(file)
+            roles.append(self.ROLE_CAPTION)
 
-            # if isinstance(item, GalleryListItem):
-            #     if not item.captionEdited:
-            #         item.loadCaption(False)
-            # else:
-            #     item.reloadCaption = True
-            #     item.update()
+        if roles:
+            index = self.index(*item.pos)
+            self.dataChanged.emit(index, index, roles)
 
 
     def highlightFiles(self, files: list[str]):
@@ -299,6 +338,46 @@ class GalleryModel(QAbstractTableModel):
     @property
     def numHighlighted(self) -> int:
         return len(self._highlightedFiles)
+
+
+    def _getDocument(self, file: str) -> QTextDocument:
+        if doc := self._docsEdited.get(file):
+            return doc
+
+        if doc := self._docs.get(file):
+            self._docs.move_to_end(file)
+            return doc
+
+        doc = QTextDocument(self)
+        doc.setDocumentLayout(QPlainTextDocumentLayout(doc))
+        doc.setDefaultFont(self._docFont)
+        doc.setPlainText(self.galleryCaption.loadCaption(file))
+        self._storeUnchangedDocument(file, doc)
+        return doc
+
+    def _storeUnchangedDocument(self, file: str, doc: QTextDocument):
+        self._docs[file] = doc
+        if len(self._docs) > Config.galleryCacheSize:
+            self._docs.popitem(last=False)
+
+    def _reloadDocument(self, file: str):
+        doc = self._docs.get(file)
+        if not doc:
+            return
+
+        with QSignalBlocker(doc):
+            cursor = QTextCursor(doc)
+            cursor.beginEditBlock()
+            cursor.select(QTextCursor.SelectionType.Document)
+
+            text = self.galleryCaption.loadCaption(file)
+            cursor.insertText(text)
+
+            # Further text input is merged with this edit block. Ctrl+Z would remove the typed text, plus this inserted text.
+            # Add and delete a space char to avoid merging the commands in the undo stack.
+            cursor.insertText(" ")
+            cursor.deletePreviousChar()
+            cursor.endEditBlock()
 
 
     # === QAbstractTableModel Interface ===
@@ -319,14 +398,17 @@ class GalleryModel(QAbstractTableModel):
         if item is None:
             return None
 
-        match role:
-            case self.ROLE_TYPE:
-                return item.itemType
-            case Qt.ItemDataRole.DisplayRole:
-                return item.path
+        if role == self.ROLE_TYPE:
+            return item.itemType
 
         if item.itemType == ItemType.File:
             match role:
+                case self.ROLE_FILENAME:
+                    return item.filename
+
+                case self.ROLE_FILEPATH:
+                    return item.path
+
                 case Qt.ItemDataRole.DecorationRole:
                     thumbnail = self.filelist.getData(item.path, DataKeys.Thumbnail)
                     if thumbnail is None:
@@ -347,20 +429,23 @@ class GalleryModel(QAbstractTableModel):
                 case self.ROLE_HIGHLIGHT:
                     return item.path in self._highlightedFiles
 
-                case self.ROLE_FILENAME:
-                    return item.filename
+                case self.ROLE_IMGSIZE:
+                    return self.filelist.getData(item.path, DataKeys.ImageSize)
 
                 case self.ROLE_CAPTION:
                     return self.galleryCaption.loadCaption(item.path)
 
-                case self.ROLE_CAPTION_EDIT:
-                    return self._editedCaptions.get(item.path)
+                case self.ROLE_CAPTION_DOC:
+                    return self._getDocument(item.path)
 
-                case self.ROLE_IMGSIZE:
-                    return self.filelist.getData(item.path, DataKeys.ImageSize)
+                case self.ROLE_DOC_EDITED:
+                    return item.path in self._docsEdited
 
         else: # ItemType.Header
             match role:
+                case self.ROLE_FOLDERPATH:
+                    return item.path
+
                 case self.ROLE_IMGCOUNT:
                     return item.numFiles
 
@@ -372,16 +457,16 @@ class GalleryModel(QAbstractTableModel):
         if item is None:
             return False
 
-        if role == self.ROLE_CAPTION_EDIT:
-            if isinstance(value, str):
-                # Don't notify dataChanged
-                self._editedCaptions[item.path] = value
-                return True
+        if role == self.ROLE_DOC_EDITED:
+            if value:
+                if doc := self._docs.pop(item.path, None):
+                    self._docsEdited[item.path] = doc
+            else:
+                if doc := self._docsEdited.pop(item.path, None):
+                    self._storeUnchangedDocument(item.path, doc)
 
-            elif value is None:
-                self._editedCaptions.pop(item.path, None)
-                self.dataChanged.emit(index, index, [self.ROLE_CAPTION_EDIT])
-                return True
+            # Don't notify with dataChanged
+            return True
 
         return False
 
