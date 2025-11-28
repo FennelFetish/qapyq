@@ -1,6 +1,6 @@
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QTimer
-from lib.util import stripCountPadding
+from lib import colorlib, qtlib, util
 
 
 class NavigationTextEdit(QtWidgets.QPlainTextEdit):
@@ -14,16 +14,7 @@ class NavigationTextEdit(QtWidgets.QPlainTextEdit):
 
     def setCaption(self, text: str):
         cursor = self.textCursor()
-        cursor.beginEditBlock()
-        cursor.movePosition(cursor.MoveOperation.Start, cursor.MoveMode.MoveAnchor)
-        cursor.movePosition(cursor.MoveOperation.End, cursor.MoveMode.KeepAnchor)
-        cursor.insertText(text)
-
-        # Further text input is merged with this edit block. Ctrl+Z would remove the typed text, plus this inserted text.
-        # Add and delete a space char to avoid merging the commands in the undo stack.
-        cursor.insertText(" ")
-        cursor.deletePreviousChar()
-        cursor.endEditBlock()
+        qtlib.setTextPreserveUndo(cursor, text)
 
 
     def appendToCaption(self, text: str):
@@ -66,14 +57,14 @@ class NavigationTextEdit(QtWidgets.QPlainTextEdit):
     def selectCaption(self, index: int):
         self.setFocus()
         text = self.toPlainText()
-        sepStrip, sepSpaceL, sepSpaceR = stripCountPadding(self.separator)
+        sepStrip, sepSpaceL, sepSpaceR = util.stripCountPadding(self.separator)
 
         splitCaptions = text.split(sepStrip)
         if index < 0 or index >= len(splitCaptions):
             return
 
         caption = splitCaptions[index]
-        capStrip, capSpaceL, capSpaceR = stripCountPadding(caption)
+        capStrip, capSpaceL, capSpaceR = util.stripCountPadding(caption)
         offsetL = min(capSpaceL, sepSpaceR) if index > 0 else 0
         offsetR = min(capSpaceR, sepSpaceL) if index < len(splitCaptions)-1 else 0
 
@@ -246,3 +237,30 @@ class CaptionTextEdit(NavigationTextEdit):
 
         # Call parent method last: Text cursor must be drawn on top of lines.
         super().paintEvent(e)
+
+
+
+class BorderlessNavigationTextEdit(NavigationTextEdit):
+    PALETTE_ORIG:   QtGui.QPalette = None
+    PALETTE_ACTIVE: QtGui.QPalette = None
+
+    def __init__(self, separator: str):
+        super().__init__(separator)
+        self.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
+
+        if not BorderlessNavigationTextEdit.PALETTE_ORIG:
+            self._initPalettes()
+
+    def _initPalettes(self):
+        BorderlessNavigationTextEdit.PALETTE_ORIG = self.palette()
+
+        palette = self.palette()
+        bgColor = palette.color(QtGui.QPalette.ColorRole.Base).toHsv()
+        h, s, v = bgColor.hueF(), bgColor.saturationF(), bgColor.valueF()
+        v *= 0.87 if colorlib.DARK_THEME else 0.92
+        bgColor.setHsvF(h, s, v)
+        palette.setColor(QtGui.QPalette.ColorRole.Base, bgColor)
+        BorderlessNavigationTextEdit.PALETTE_ACTIVE = palette
+
+    def setActivePalette(self, active: bool):
+        self.setPalette(self.PALETTE_ACTIVE if active else self.PALETTE_ORIG)

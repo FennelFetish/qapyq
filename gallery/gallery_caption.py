@@ -1,9 +1,21 @@
+import math
+from typing import NamedTuple
 from PySide6 import QtGui
 from PySide6.QtCore import Qt, QPointF
 from lib.captionfile import FileTypeSelector
 from lib.util import CaptionSplitter
 from caption.caption_highlight import CaptionHighlight, MatcherNode
 from caption.caption_filter import CaptionRulesProcessor, CaptionRulesSettings
+
+
+class LayoutInfo(NamedTuple):
+    height: int
+    layouts: tuple[QtGui.QTextLayout, ...]
+
+    @classmethod
+    def create(cls, height: float, layouts: list[QtGui.QTextLayout]) -> 'LayoutInfo':
+        return LayoutInfo(math.ceil(height), tuple(layouts))
+
 
 
 class GalleryCaption:
@@ -44,7 +56,7 @@ class GalleryCaption:
         return caption
 
 
-    def layoutCaption(self, text: str, width: int, maxHeight: int) -> tuple[float, list[QtGui.QTextLayout]]:
+    def layoutCaption(self, text: str, width: int, maxHeight: int) -> LayoutInfo:
         layouts = list[QtGui.QTextLayout]()
         totalHeight = 0.0
 
@@ -70,15 +82,15 @@ class GalleryCaption:
 
                     # Check if last line
                     if lineNr >= len(lines) and line.textStart() + line.textLength() >= len(lineText):
-                        return totalHeight, layouts
+                        return LayoutInfo.create(totalHeight, layouts)
                     else:
                         return self._addEllipsis(width, totalHeight, layouts)
 
             textLayout.endLayout()
 
-        return totalHeight, layouts
+        return LayoutInfo.create(totalHeight, layouts)
 
-    def _addEllipsis(self, w: int, h: float, layouts: list[QtGui.QTextLayout]) -> tuple[float, list[QtGui.QTextLayout]]:
+    def _addEllipsis(self, w: int, h: float, layouts: list[QtGui.QTextLayout]) -> LayoutInfo:
         textLayout = QtGui.QTextLayout("…")
         textLayout.setCacheEnabled(True)
         textLayout.setTextOption(self.textOpt)
@@ -94,4 +106,4 @@ class GalleryCaption:
 
         textLayout.endLayout()
         layouts.append(textLayout)
-        return h, layouts
+        return LayoutInfo.create(h, layouts)

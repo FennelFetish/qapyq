@@ -17,12 +17,6 @@ from .gallery_header import GalleryHeader
 # from .thumbnail_cache import ThumbnailCache
 
 
-# Virtualization/Lazy Loading
-# For extremely large datasets, consider implementing data virtualization
-# where only the visible rows (plus a buffer) are actually in the model,
-# and the rest are loaded on demand as the user scrolls. This complex solution significantly improves performance.
-
-
 class SelectionState:
     Unselected = 0
     Primary    = 1
@@ -311,14 +305,17 @@ class GalleryModel(QAbstractTableModel):
             case DataKeys.CaptionState | DataKeys.CropState | DataKeys.MaskState:
                 roles.append(self.ROLE_ICONS)
 
+        # Reload caption when it was edited and saved in CaptionWindow
         if (
             self.galleryCaption.captionsEnabled
             and key == DataKeys.CaptionState
             and self.filelist.getData(file, key) == DataKeys.IconStates.Saved
             and (item := self.fileItems[file])
         ):
-            self._reloadDocument(file)
             roles.append(self.ROLE_CAPTION)
+            if doc := self._docs.get(file): # Only reload when unchanged
+                with QSignalBlocker(doc):
+                    qtlib.setTextPreserveUndo(QTextCursor(doc), self.galleryCaption.loadCaption(file))
 
         if roles:
             index = self.index(*item.pos)
@@ -359,25 +356,6 @@ class GalleryModel(QAbstractTableModel):
         self._docs[file] = doc
         if len(self._docs) > Config.galleryCacheSize:
             self._docs.popitem(last=False)
-
-    def _reloadDocument(self, file: str):
-        doc = self._docs.get(file)
-        if not doc:
-            return
-
-        with QSignalBlocker(doc):
-            cursor = QTextCursor(doc)
-            cursor.beginEditBlock()
-            cursor.select(QTextCursor.SelectionType.Document)
-
-            text = self.galleryCaption.loadCaption(file)
-            cursor.insertText(text)
-
-            # Further text input is merged with this edit block. Ctrl+Z would remove the typed text, plus this inserted text.
-            # Add and delete a space char to avoid merging the commands in the undo stack.
-            cursor.insertText(" ")
-            cursor.deletePreviousChar()
-            cursor.endEditBlock()
 
 
     # === QAbstractTableModel Interface ===
@@ -452,6 +430,7 @@ class GalleryModel(QAbstractTableModel):
         return None
 
 
+    @override
     def setData(self, index: QModelIndex | QPersistentModelIndex, value, role: int = Qt.ItemDataRole.DisplayRole) -> bool:
         item = self.posItems.get(GridPos(index.row(), index.column()))
         if item is None:

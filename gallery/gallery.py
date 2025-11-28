@@ -1,3 +1,4 @@
+from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QSignalBlocker, QTimer
 import lib.qtlib as qtlib
@@ -11,7 +12,6 @@ from .gallery_sort import GallerySortControl
 
 
 class Gallery(QtWidgets.QWidget):
-    MIN_GRID_UPDATE_DELAY = 1.0
     THUMBNAIL_SIZE_STEP = 50
 
     def __init__(self, tab: ImgTab):
@@ -53,6 +53,7 @@ class Gallery(QtWidgets.QWidget):
         tab.filelist.addSelectionListener(self)
 
 
+    @override
     def deleteLater(self):
         self.galleryModel.deleteLater()
         super().deleteLater()
@@ -259,6 +260,7 @@ class Gallery(QtWidgets.QWidget):
         self.statusBar.showMessage(f"{numFiles} Images in {numFolders} Folders{msgsText}")
 
 
+    @override
     def resizeEvent(self, event: QtGui.QResizeEvent):
         if self._initTimer:
             self._initTimer.start()
@@ -290,7 +292,6 @@ class Gallery(QtWidgets.QWidget):
         row = self.cboFolders.itemData(index)
         if row is not None:
             self.galleryView.scrollToRow(row)
-            #self.updateComboboxFolder()
 
     @Slot()
     def updateComboboxFolder(self):
@@ -316,7 +317,6 @@ class Gallery(QtWidgets.QWidget):
     def onFileListChanged(self, currentFile: str):
         self.ensureVisible(currentFile)
         self.ensureVisible(currentFile, delay=True)
-        #self.galleryView.scrollToTop()
 
     def onFileSelectionChanged(self, selectedFiles: set[str]):
         self.updateStatusBar()

@@ -5,9 +5,9 @@ from PySide6.QtCore import Qt, Slot, QSize, QPoint, QRect, QModelIndex, QPersist
 from PySide6.QtGui import QFontMetrics, QPainter, QPixmap
 from lib import colorlib, qtlib
 from lib.filelist import DataKeys
-from caption.caption_text import NavigationTextEdit
+from caption.caption_text import BorderlessNavigationTextEdit
 from config import Config
-from .gallery_caption import GalleryCaption
+from .gallery_caption import GalleryCaption, LayoutInfo
 from .gallery_model import GalleryModel, SelectionState
 from .gallery_header import GalleryHeader
 
@@ -249,7 +249,7 @@ class GalleryGridDelegate(GalleryDelegate):
     def __init__(self, galleryView, galleryCaption: GalleryCaption):
         super().__init__(galleryView, galleryCaption)
 
-        self.layoutCache: OrderedDict[tuple[int, int], tuple[QtGui.QTextLayout, ...]] = OrderedDict()
+        self.layoutCache: OrderedDict[tuple[int, int], LayoutInfo] = OrderedDict()
 
         self.textFlags = Qt.AlignmentFlag.AlignHCenter | Qt.TextFlag.TextWrapAnywhere
         self.textOpt = QtGui.QTextOption()
@@ -274,16 +274,16 @@ class GalleryGridDelegate(GalleryDelegate):
         return False
 
 
-    def _getCaptionLayouts(self, w: int, h: int, index: QModelIndex | QPersistentModelIndex) -> tuple[QtGui.QTextLayout, ...]:
+    def _getCaptionLayouts(self, w: int, h: int, index: QModelIndex | QPersistentModelIndex) -> LayoutInfo:
         key = (index.row(), index.column())
-        textLayouts = self.layoutCache.get(key)
+        layoutInfo = self.layoutCache.get(key)
 
-        if textLayouts is None:
-            if label := index.data(GalleryModel.ROLE_CAPTION):
-                textLayouts = tuple(self.caption.layoutCaption(label, w, h)[1])
+        if layoutInfo is None:
+            if text := index.data(GalleryModel.ROLE_CAPTION):
+                layoutInfo = self.caption.layoutCaption(text, w, h)
             else:
-                textLayouts = ()
-            self.layoutCache[key] = textLayouts
+                layoutInfo = LayoutInfo(0, ())
+            self.layoutCache[key] = layoutInfo
 
             if len(self.layoutCache) > Config.galleryCacheSize:
                 self.layoutCache.popitem(last=False)
@@ -291,7 +291,7 @@ class GalleryGridDelegate(GalleryDelegate):
         else:
             self.layoutCache.move_to_end(key)
 
-        return textLayouts
+        return layoutInfo
 
 
     @override
@@ -327,7 +327,8 @@ class GalleryGridDelegate(GalleryDelegate):
         painter.setPen(pen)
         if self.caption.captionsEnabled and pen is not self.PEN_TEXT_ERROR:
             p = QPoint(textX, textY)
-            for textLayout in self._getCaptionLayouts(textW, textH, index):
+            layoutInfo = self._getCaptionLayouts(textW, textH, index)
+            for textLayout in layoutInfo.layouts:
                 textLayout.draw(painter, p)
         else:
             textRect = QRect(textX, textY, textW, textH)
@@ -347,10 +348,8 @@ class GalleryGridDelegate(GalleryDelegate):
         textW = w - self.BORDER_SIZE
 
         if self.caption.captionsEnabled:
-            label = index.data(GalleryModel.ROLE_CAPTION)
-            if label:
-                textH, _ = self.caption.layoutCaption(label, textW, self.TEXT_MAX_HEIGHT)
-                h += round(textH) + self.TEXT_SPACING + self.BORDER_SIZE//2 + 2
+            layoutInfo = self._getCaptionLayouts(textW, self.TEXT_MAX_HEIGHT, index)
+            h += layoutInfo.height + self.TEXT_SPACING + self.BORDER_SIZE//2 + 2
         else:
             label = index.data(GalleryModel.ROLE_FILENAME)
             textRect = self.labelFontMetrics.boundingRect(0, 0, textW, self.TEXT_MAX_HEIGHT, self.textFlags, label)
@@ -489,8 +488,6 @@ class GalleryListDelegate(GalleryDelegate):
 
 
 class GalleryCaptionEditor(QtWidgets.QWidget):
-    TEXT_PALETTE = None
-
     def __init__(self, parent: QtWidgets.QWidget, delegate: GalleryListDelegate, file: str, edited: bool):
         super().__init__(parent)
         self.delegate   = delegate
@@ -533,27 +530,12 @@ class GalleryCaptionEditor(QtWidgets.QWidget):
         row += 1
         layout.setRowStretch(row, 1)
 
-        self.txtCaption = NavigationTextEdit(self.delegate.caption.separator)
-        self.txtCaption.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
+        self.txtCaption = BorderlessNavigationTextEdit(self.delegate.caption.separator)
+        self.txtCaption.setActivePalette(True)
         self.txtCaption.textChanged.connect(self._onCaptionChanged)
         layout.addWidget(self.txtCaption, row, 0, 1, 4, Qt.AlignmentFlag.AlignTop)
 
-        if GalleryCaptionEditor.TEXT_PALETTE is None:
-            GalleryCaptionEditor.TEXT_PALETTE = self._initPalette(self.txtCaption)
-        self.txtCaption.setPalette(GalleryCaptionEditor.TEXT_PALETTE)
-
         self.setLayout(layout)
-
-    @staticmethod
-    def _initPalette(widget: QtWidgets.QWidget):
-        palette = widget.palette()
-
-        bgColor = palette.color(QtGui.QPalette.ColorRole.Base).toHsv()
-        h, s, v = bgColor.hueF(), bgColor.saturationF(), bgColor.valueF()
-        v *= 0.87 if colorlib.DARK_THEME else 0.92
-        bgColor.setHsvF(h, s, v)
-        palette.setColor(QtGui.QPalette.ColorRole.Base, bgColor)
-        return palette
 
 
     @property
@@ -574,9 +556,14 @@ class GalleryCaptionEditor(QtWidgets.QWidget):
 
         selection = index.data(GalleryModel.ROLE_SELECTION)
         selected = (selection == SelectionState.Primary)
-        if not self.selected and selected:
-            self.takeFocus()
-        self.selected = selected
+        if self.selected != selected:
+            self.selected = selected
+            if selected:
+                self.takeFocus()
+            else:
+                cursor = self.txtCaption.textCursor()
+                cursor.clearSelection()
+                self.txtCaption.setTextCursor(cursor)
 
 
     def setEdited(self, edited: bool):
@@ -606,8 +593,7 @@ class GalleryCaptionEditor(QtWidgets.QWidget):
             text = index.data(GalleryModel.ROLE_CAPTION)
             with QSignalBlocker(self.txtCaption):
                 self.txtCaption.setCaption(text)
-
-        self.setEdited(False)
+            self.setEdited(False)
 
     @Slot()
     def saveCaption(self):

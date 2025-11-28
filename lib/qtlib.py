@@ -64,6 +64,16 @@ def setShowWhitespace(textEdit):
     opt.setFlags(QtGui.QTextOption.ShowTabsAndSpaces)
     doc.setDefaultTextOption(opt)
 
+def setTextPreserveUndo(cursor: QtGui.QTextCursor, text: str):
+    cursor.beginEditBlock()
+    cursor.select(QtGui.QTextCursor.SelectionType.Document)
+    cursor.insertText(text)
+
+    # Further text input is merged with this edit block. Ctrl+Z would remove the typed text, plus this inserted text.
+    # Add and delete a space char to avoid merging the commands in the undo stack.
+    cursor.insertText(" ")
+    cursor.deletePreviousChar()
+    cursor.endEditBlock()
 
 
 def numpyToQImageMask(mat: np.ndarray) -> QtGui.QImage:
@@ -408,7 +418,7 @@ class ToggleButton(QtWidgets.QPushButton):
         palette.setBrush(QtGui.QPalette.ColorGroup.Disabled, QtGui.QPalette.ColorRole.ButtonText, colorText.darker())
         ToggleButton.PALETTE_CHECKED = palette
 
-    @Slot()
+    @Slot(bool)
     def _onToggled(self, checked: bool):
         self.setPalette(ToggleButton.PALETTE_CHECKED if checked else ToggleButton.PALETTE_ORIG)
 
