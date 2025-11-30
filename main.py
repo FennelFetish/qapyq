@@ -2,6 +2,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 import sys, os
+from typing import Iterable
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import Qt, Slot, QPoint, QThreadPool
 from config import Config
@@ -44,6 +45,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabWidget.currentChanged.connect(self.onTabChanged)
         self.tabWidget.tabCloseRequested.connect(self.askCloseTab)
         self.setCentralWidget(self.tabWidget)
+
+    def tabs(self) -> Iterable[ImgTab]:
+        for i in range(self.tabWidget.count()):
+            yield self.tabWidget.widget(i)
 
     @Slot()
     def addTab(self) -> ImgTab:
@@ -209,8 +214,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def askQuit(self, confirm=False) -> bool:
         questions = list[str]()
-        for i in range(self.tabWidget.count()):
-            tab: ImgTab = self.tabWidget.widget(i)
+        for tab in self.tabs():
             questions.extend(tab.checkClose())
 
         if questions:
@@ -238,6 +242,9 @@ class MainWindow(QtWidgets.QMainWindow):
         if not (self._quitConfirmed or self.askQuit()):
             event.ignore()
             return
+
+        for tab in self.tabs():
+            tab.filelist.abortLoading()
 
         QThreadPool.globalInstance().clear()
 

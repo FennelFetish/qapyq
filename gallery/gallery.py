@@ -1,7 +1,8 @@
+import locale
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QSignalBlocker, QTimer
-import lib.qtlib as qtlib
+from lib import qtlib
 from lib.captionfile import FileTypeSelector
 from ui.tab import ImgTab
 from config import Config
@@ -49,9 +50,6 @@ class Gallery(QtWidgets.QWidget):
 
         self._buildStatusBar()
 
-        tab.filelist.addListener(self)
-        tab.filelist.addSelectionListener(self)
-
 
     @override
     def deleteLater(self):
@@ -66,6 +64,16 @@ class Gallery(QtWidgets.QWidget):
         self._initTimer = None
 
         self.galleryView.setViewMode(self.cboViewMode.currentData())
+
+        # Register model before self: Build grid before jumping to selected file
+        filelist = self.tab.filelist
+        filelist.addListener(self.galleryModel)
+        filelist.addDataListener(self.galleryModel)
+        filelist.addSelectionListener(self.galleryModel)
+
+        filelist.addListener(self)
+        filelist.addSelectionListener(self)
+
         self.galleryModel.headersUpdated.connect(self.onHeadersUpdated)
         self.galleryModel.reloadImages()
 
@@ -248,16 +256,23 @@ class Gallery(QtWidgets.QWidget):
     def updateStatusBar(self):
         filelist = self.tab.filelist
 
+        numFiles = filelist.getNumFiles()
+        numFolders = self.cboFolders.count()
+        text = locale.format_string("%d Images in %d Folders", (numFiles, numFolders), grouping=True)
+
         msgs = list[str]()
         if numSelectedFiles := len(filelist.selectedFiles):
             msgs.append(f"{numSelectedFiles} Selected")
         if self.galleryModel.numHighlighted:
             msgs.append(f"{self.galleryModel.numHighlighted} Highlighted")
-        msgsText = "".join(("  (", ", ".join(msgs), ")")) if msgs else ""
+        if filelist.isLoading():
+            msgs.append("Loading")
 
-        numFiles = filelist.getNumFiles()
-        numFolders = self.cboFolders.count()
-        self.statusBar.showMessage(f"{numFiles} Images in {numFolders} Folders{msgsText}")
+        if msgs:
+            msgs = ", ".join(msgs)
+            text += f"  ({msgs})"
+
+        self.statusBar.showMessage(text)
 
 
     @override
@@ -277,15 +292,20 @@ class Gallery(QtWidgets.QWidget):
 
     @Slot(list)
     def onHeadersUpdated(self, headers: list[HeaderItem]):
+        filelist = self.tab.filelist
+
         with QSignalBlocker(self.cboFolders):
             self.cboFolders.clear()
             for header in headers:
-                path = self.tab.filelist.removeCommonRoot(header.path)
+                path = filelist.removeCommonRoot(header.path)
                 self.cboFolders.addItem(path, header.row)
 
         self.updateComboboxFolder()
         self.updateStatusBar()
         self.galleryView.setFocus()
+
+        self.sortControl.setSortAvailable(not filelist.isLoading())
+
 
     @Slot(int)
     def onFolderSelected(self, index: int):

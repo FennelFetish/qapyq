@@ -39,9 +39,6 @@ class GalleryView(QTableView):
 
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-
-        # self.verticalScrollBar().setSingleStep(1)
-        # self.verticalScrollBar().setPageStep(1)
         self.verticalScrollBar().valueChanged.connect(self.updateVisibleRows)
 
         self.setUpdateThreshold(1000)

@@ -7,7 +7,7 @@ from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject, QThreadPool, QTimer, QSignalBlocker, QMutex, QMutexLocker
 import numpy as np
 import lib.qtlib as qtlib
-from lib.filelist import FileList, DataKeys, naturalSort
+from lib.filelist import FileList, DataKeys, folderSortKey
 from ui.tab import ImgTab
 from config import Config
 from infer.model_settings import ModelSettingsWindow
@@ -214,6 +214,11 @@ class GallerySortControl(QtWidgets.QWidget):
 
             self.btnSort.setChecked(False)
 
+
+    def setSortAvailable(self, state: bool):
+        self.btnSort.setEnabled(state)
+        if not state:
+            self.btnSort.setChecked(False)
 
     def resetSort(self, params: SortParams):
         if self._paramsCurrent != params:
@@ -568,12 +573,12 @@ class UpdateSortTask(QRunnable):
 
 
     @staticmethod
-    @naturalSort
-    def sortKeyByFolder(fileScore: tuple[int, str, float]):
-        return os.path.dirname(fileScore[1]), fileScore[2]
+    def sortKeyByFolder(fileScore: tuple[int, str, float]) -> tuple:
+        folderKey = folderSortKey( os.path.dirname(fileScore[1]) )
+        return folderKey, fileScore[2]
 
     @staticmethod
-    def sortKey(fileScore: tuple[int, str, float]):
+    def sortKey(fileScore: tuple[int, str, float]) -> float:
         return fileScore[2]
 
 

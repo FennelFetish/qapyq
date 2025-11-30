@@ -117,12 +117,8 @@ class GalleryModel(QAbstractTableModel):
 
     def __init__(self, filelist: FileList, galleryCaption: GalleryCaption):
         super().__init__()
-        self.galleryCaption = galleryCaption
-
         self.filelist = filelist
-        filelist.addListener(self)
-        filelist.addDataListener(self)
-        filelist.addSelectionListener(self)
+        self.galleryCaption = galleryCaption
 
         self.numColumns = 1
         self.numRows = 0
