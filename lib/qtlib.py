@@ -425,12 +425,32 @@ class ToggleButton(QtWidgets.QPushButton):
 
 
 class MenuComboBox(QtWidgets.QComboBox):
-    def __init__(self, title: str = None):
+    class ClickableSubMenu(QtWidgets.QMenu):
+        def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
+            if self.actionAt(event.pos()):
+                super().mouseReleaseEvent(event)
+                return
+
+            # Find next submenu with actual content
+            menu = self
+            while actions := menu.actions():
+                menu = actions[0].menu()
+                if not isinstance(menu, QtWidgets.QMenu):
+                    actions[0].trigger()
+                    self.parentWidget().close()
+                    event.accept()
+                    return
+
+
+    def __init__(self, title: str = None, expandWidth=True, clickableSubmenus=False):
         super().__init__()
         self.menu = QtWidgets.QMenu(title)
         self._currentAction: QtGui.QAction | None = None
         self._actions: dict[int, tuple[str, QtGui.QAction]] = dict()
         self._nextIndex = 0
+
+        self.expandWidth = expandWidth
+        self.clickableSubmenus = clickableSubmenus
 
     def _updateCurrentAction(self):
         if self._currentAction:
@@ -447,8 +467,10 @@ class MenuComboBox(QtWidgets.QComboBox):
         self._currentAction = None
 
     def showPopup(self):
+        minWidth = self.width() if self.expandWidth else 0
+        self.menu.setMinimumWidth(minWidth)
+
         self._updateCurrentAction()
-        self.menu.setMinimumWidth(self.width())
         point = self.mapToGlobal(self.rect().topLeft())
         self.menu.exec_(point)
         self.hidePopup()
@@ -468,19 +490,22 @@ class MenuComboBox(QtWidgets.QComboBox):
     def addMenuAction(self, text: str) -> QtGui.QAction:
         return self.menu.addAction(text)
 
-    def addSubmenu(self, text: str):
-        submenu = QtWidgets.QMenu(text)
-        self.menu.addMenu(submenu)
+    def addSubmenu(self, text: str, parentMenu: QtWidgets.QMenu | None = None):
+        if parentMenu is None:
+            parentMenu = self.menu
+
+        submenu = self.ClickableSubMenu(text, self.menu) if self.clickableSubmenus else QtWidgets.QMenu(text)
+        parentMenu.addMenu(submenu)
         return submenu
 
-    def addSubmenuItem(self, submenu: QtWidgets.QMenu, text: str, prefix: str, userData=None):
+    def addSubmenuItem(self, submenu: QtWidgets.QMenu, text: str, prefix: str, userData=None, actionText: str | None = None):
         itemText = prefix + text
         super().addItem(itemText, userData)
 
         index = self._nextIndex
         self._nextIndex += 1
 
-        act = submenu.addAction(text)
+        act = submenu.addAction(actionText or text)
         act.triggered.connect(lambda checked, i=index: self.setCurrentIndex(i))
         self._actions[index] = (itemText, act)
 

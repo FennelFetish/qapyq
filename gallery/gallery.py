@@ -1,4 +1,4 @@
-import locale
+import locale, os
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QSignalBlocker, QTimer
@@ -82,8 +82,7 @@ class Gallery(QtWidgets.QWidget):
         layout = QtWidgets.QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # TODO: Use MenuComboBox and build tree structure when num headers > 30?
-        self.cboFolders = QtWidgets.QComboBox()
+        self.cboFolders = qtlib.MenuComboBox(expandWidth=False, clickableSubmenus=True)
         self.cboFolders.setMinimumWidth(100)
         self.cboFolders.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored, QtWidgets.QSizePolicy.Policy.Preferred)
         self.cboFolders.currentIndexChanged.connect(self.onFolderSelected)
@@ -294,11 +293,21 @@ class Gallery(QtWidgets.QWidget):
     def onHeadersUpdated(self, headers: list[HeaderItem]):
         filelist = self.tab.filelist
 
+        subfolderThreshold = 10
+        self.cboFolders.expandWidth = True
+        if len(headers) > 30:
+            subfolderThreshold = 2
+            self.cboFolders.expandWidth = False
+
+        root = MenuFolder("", "")
+        for header in headers:
+            path = filelist.removeCommonRoot(header.path)
+            folder = root.initFolder(path)
+            folder.row = header.row
+
         with QSignalBlocker(self.cboFolders):
             self.cboFolders.clear()
-            for header in headers:
-                path = filelist.removeCommonRoot(header.path)
-                self.cboFolders.addItem(path, header.row)
+            root.buildMenu(self.cboFolders, subfolderThreshold)
 
         self.updateComboboxFolder()
         self.updateStatusBar()
@@ -345,3 +354,42 @@ class Gallery(QtWidgets.QWidget):
     def highlightFiles(self, files: list[str]):
         self.galleryModel.highlightFiles(files)
         self.updateStatusBar()
+
+
+
+class MenuFolder:
+    def __init__(self, path: str, name: str):
+        self.path = path
+        self.name = name
+        self.row = -1
+        self.subfolders = dict[str, MenuFolder]()
+
+    def initFolder(self, path: str):
+        folder = self
+        for part in path.split(os.sep):
+            subfolder = folder.subfolders.get(part)
+            if subfolder is None:
+                folder.subfolders[part] = subfolder = MenuFolder(path, part)
+            folder = subfolder
+
+        return folder
+
+
+    def buildMenu(self, cbo: qtlib.MenuComboBox, subfolderThreshold: int):
+        for subfolder in self.subfolders.values():
+            subfolder._buildMenu(cbo, subfolderThreshold, cbo.menu, "")
+
+    def _buildMenu(self, cbo: qtlib.MenuComboBox, subfolderThreshold: int, menu: QtWidgets.QMenu, prefix: str):
+        # Accumulate prefix text on each level. Reset when adding a submenu.
+        prefix = f"{prefix}{os.sep}{self.name}" if prefix else self.name
+
+        if len(self.subfolders) >= subfolderThreshold:
+            menu = cbo.addSubmenu(prefix, menu)
+            prefix = ""
+
+        if self.row >= 0:
+            actionText = prefix or "."
+            cbo.addSubmenuItem(menu, self.path, "", self.row, actionText)
+
+        for subfolder in self.subfolders.values():
+            subfolder._buildMenu(cbo, subfolderThreshold, menu, prefix)
