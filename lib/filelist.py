@@ -36,13 +36,9 @@ def __fileSortKey(filename: str):
     return filename
 
 def fileSortKey(filename: str) -> tuple:
-    # Handle filenames that have different case but are otherwise exactly the same (Linux)
-    key = __fileSortKey(filename)
-    keyLower = tuple(
-        elem.lower() if isinstance(elem, str) else elem
-        for elem in key
-    )
-    return keyLower, key
+    # Consistently sort filenames that have different case but are otherwise exactly the same (Linux: Image before image),
+    # and filenames that only consist of numbers (01 before 1).
+    return __fileSortKey(filename.lower()), filename
 
 def sortKey(path: str) -> tuple:
     path, filename = os.path.split(path)
@@ -757,7 +753,7 @@ class FileListLoadReceiver(QObject):
 
         self.task: FileListLoadTask | None = None
 
-    @Slot(list, str)
+    @Slot(list, str, bool)
     def _onApply(self, files: list[str], commonRoot: str, finished: bool):
         if self.filelist is not None:
             self.filelist._applyLoadedFiles(files, commonRoot, finished)
