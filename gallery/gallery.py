@@ -82,7 +82,7 @@ class Gallery(QtWidgets.QWidget):
         layout = QtWidgets.QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.cboFolders = qtlib.MenuComboBox(expandWidth=False, clickableSubmenus=True)
+        self.cboFolders = qtlib.MenuComboBox(expandWidth=False, menuClass=ClickableSubMenu)
         self.cboFolders.setMinimumWidth(100)
         self.cboFolders.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored, QtWidgets.QSizePolicy.Policy.Preferred)
         self.cboFolders.currentIndexChanged.connect(self.onFolderSelected)
@@ -393,3 +393,41 @@ class MenuFolder:
 
         for subfolder in self.subfolders.values():
             subfolder._buildMenu(cbo, subfolderThreshold, menu, prefix)
+
+
+
+class ClickableSubMenu(QtWidgets.QMenu):
+    """
+    Clicking on a submenu will trigger the first non-menu child action.
+    The top menu itself needs to be a class of ClickableSubMenu to correctly handle clicks,
+    as open submenus would otherwise grab mouse events.
+    """
+
+    def __init__(self, title: str, parent=None):
+        super().__init__(title, parent)
+        qtlib.setMonospace(self)
+
+    @override
+    def mousePressEvent(self, event: QtGui.QMouseEvent):
+        action = self.actionAt(event.pos())
+        if action and (menu := action.menu()):
+            if act := self._getFirstSubAction(menu):
+                act.trigger()
+                (self.parentWidget() or self).close()
+
+            event.accept()
+            return
+
+        super().mousePressEvent(event)
+
+    @classmethod
+    def _getFirstSubAction(cls, menu: QtWidgets.QMenu):
+        for act in menu.actions():
+            if act.isSeparator() or not act.isEnabled():
+                continue
+            if submenu := act.menu():
+                if subact := cls._getFirstSubAction(submenu):
+                    return subact
+            else:
+                return act
+        return None

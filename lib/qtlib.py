@@ -425,32 +425,18 @@ class ToggleButton(QtWidgets.QPushButton):
 
 
 class MenuComboBox(QtWidgets.QComboBox):
-    class ClickableSubMenu(QtWidgets.QMenu):
-        def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
-            if self.actionAt(event.pos()):
-                super().mouseReleaseEvent(event)
-                return
-
-            # Find next submenu with actual content
-            menu = self
-            while actions := menu.actions():
-                menu = actions[0].menu()
-                if not isinstance(menu, QtWidgets.QMenu):
-                    actions[0].trigger()
-                    self.parentWidget().close()
-                    event.accept()
-                    return
-
-
-    def __init__(self, title: str = None, expandWidth=True, clickableSubmenus=False):
+    def __init__(self, title: str = None, expandWidth=True, menuClass=QtWidgets.QMenu):
         super().__init__()
-        self.menu = QtWidgets.QMenu(title)
+        self.menuClass = menuClass
+
+        # Root menu has no parent. Submenus have this root menu as parent so they can close it.
+        self.menu = self.menuClass(title)
+
         self._currentAction: QtGui.QAction | None = None
         self._actions: dict[int, tuple[str, QtGui.QAction]] = dict()
         self._nextIndex = 0
 
         self.expandWidth = expandWidth
-        self.clickableSubmenus = clickableSubmenus
 
     def _updateCurrentAction(self):
         if self._currentAction:
@@ -491,11 +477,8 @@ class MenuComboBox(QtWidgets.QComboBox):
         return self.menu.addAction(text)
 
     def addSubmenu(self, text: str, parentMenu: QtWidgets.QMenu | None = None):
-        if parentMenu is None:
-            parentMenu = self.menu
-
-        submenu = self.ClickableSubMenu(text, self.menu) if self.clickableSubmenus else QtWidgets.QMenu(text)
-        parentMenu.addMenu(submenu)
+        submenu = self.menuClass(text, self.menu) # Set root menu as parent
+        (parentMenu or self.menu).addMenu(submenu)
         return submenu
 
     def addSubmenuItem(self, submenu: QtWidgets.QMenu, text: str, prefix: str, userData=None, actionText: str | None = None):
