@@ -1,4 +1,4 @@
-import os, math
+import os, math, time
 from typing import NamedTuple
 from typing_extensions import override
 from collections import OrderedDict
@@ -91,6 +91,9 @@ class ThumbnailUpdateQueue(QObject):
 class GalleryModel(QAbstractTableModel):
     ItemType = ItemType
 
+    CAPTION_CACHE_SIZE = 400
+    CAPTION_CACHE_TTL  = 5 * 1_000_000_000  # 5 seconds
+
     # Thumbnail:    Qt.ItemDataRole.DecorationRole
     # Size Hint:    Qt.ItemDataRole.SizeHintRole
 
@@ -112,13 +115,15 @@ class GalleryModel(QAbstractTableModel):
     ROLE_DOC_EDITED     = Qt.ItemDataRole.UserRole.value + 11
 
 
-    headersUpdated  = Signal(list)
+    headersUpdated = Signal(list)
 
 
     def __init__(self, filelist: FileList, galleryCaption: GalleryCaption):
         super().__init__()
         self.filelist = filelist
+
         self.galleryCaption = galleryCaption
+        galleryCaption.captionSrc.fileTypeUpdated.connect(self._onCaptionSourceChanged)
 
         self.numColumns = 1
         self.numRows = 0
@@ -132,6 +137,10 @@ class GalleryModel(QAbstractTableModel):
         self._selectedFiles: set[str] = set()
         self._highlightedFiles: set[str] = set()
 
+        # A small time-bounded cache to avoid I/O during relayouting. Includes the filtering/processing.
+        self._captionCache: OrderedDict[str, tuple[str, int]] = OrderedDict()
+
+        # In list view, captions are cached in documents that include the undo stack.
         self._docs: OrderedDict[str, QTextDocument] = OrderedDict()
         self._docsEdited: dict[str, QTextDocument] = {}
         self._docFont = qtlib.getMonospaceFont()
@@ -151,8 +160,15 @@ class GalleryModel(QAbstractTableModel):
         index = bisect_right(self.headerItems, row, key=lambda header: header.row)
         return max(index-1, 0)
 
-    def resetCaptions(self, clear: bool = True, modelReset: bool = True):
-        if clear:
+
+    @Slot()
+    def _onCaptionSourceChanged(self):
+        self._captionCache = OrderedDict()
+
+    def resetCaptions(self, clearDocs: bool = True, modelReset: bool = True):
+        self._captionCache = OrderedDict()
+
+        if clearDocs:
             for doc in chain(self._docs.values(), self._docsEdited.values()):
                 doc.deleteLater()
 
@@ -309,9 +325,11 @@ class GalleryModel(QAbstractTableModel):
             and (item := self.fileItems[file])
         ):
             roles.append(self.ROLE_CAPTION)
-            if doc := self._docs.get(file): # Only reload when unchanged
+            self._captionCache.pop(file, None)
+
+            if doc := self._docs.get(file): # Only reload when document is unedited
                 with QSignalBlocker(doc):
-                    qtlib.setTextPreserveUndo(QTextCursor(doc), self.galleryCaption.loadCaption(file))
+                    qtlib.setTextPreserveUndo(QTextCursor(doc), self._getCaption(file))
 
         if roles:
             index = self.index(*item.pos)
@@ -333,6 +351,28 @@ class GalleryModel(QAbstractTableModel):
         return len(self._highlightedFiles)
 
 
+    def _getCaption(self, file: str) -> str:
+        entry = self._captionCache.get(file)
+        now = time.monotonic_ns()
+
+        if entry is None:
+            caption = self.galleryCaption.loadCaption(file)
+            self._captionCache[file] = (caption, now)
+
+            if len(self._captionCache) > self.CAPTION_CACHE_SIZE:
+                self._captionCache.popitem(last=False)
+
+        else:
+            caption, insertTime = entry
+            if insertTime < (now - self.CAPTION_CACHE_TTL):
+                caption = self.galleryCaption.loadCaption(file)
+                self._captionCache[file] = (caption, now)
+
+            self._captionCache.move_to_end(file)
+
+        return caption
+
+
     def _getDocument(self, file: str) -> QTextDocument:
         if doc := self._docsEdited.get(file):
             return doc
@@ -344,7 +384,7 @@ class GalleryModel(QAbstractTableModel):
         doc = QTextDocument(self)
         doc.setDocumentLayout(QPlainTextDocumentLayout(doc))
         doc.setDefaultFont(self._docFont)
-        doc.setPlainText(self.galleryCaption.loadCaption(file))
+        doc.setPlainText(self._getCaption(file))
         self._storeUnchangedDocument(file, doc)
         return doc
 
@@ -407,7 +447,7 @@ class GalleryModel(QAbstractTableModel):
                     return self.filelist.getData(item.path, DataKeys.ImageSize)
 
                 case self.ROLE_CAPTION:
-                    return self.galleryCaption.loadCaption(item.path)
+                    return self._getCaption(item.path)
 
                 case self.ROLE_CAPTION_DOC:
                     return self._getDocument(item.path)

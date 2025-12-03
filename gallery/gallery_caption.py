@@ -12,8 +12,8 @@ class LayoutInfo(NamedTuple):
     height: int
     layouts: tuple[QtGui.QTextLayout, ...]
 
-    @classmethod
-    def create(cls, height: float, layouts: list[QtGui.QTextLayout]) -> 'LayoutInfo':
+    @staticmethod
+    def create(height: float, layouts: list[QtGui.QTextLayout]) -> 'LayoutInfo':
         return LayoutInfo(math.ceil(height), tuple(layouts))
 
 
@@ -32,7 +32,6 @@ class GalleryCaption:
         self.rulesSettings = CaptionRulesSettings()
         self.rulesSettings.prefixSuffix = False
 
-        self.textFlags = Qt.AlignmentFlag.AlignHCenter | Qt.TextFlag.TextWordWrap
         self.textOpt = QtGui.QTextOption()
         self.textOpt.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.textOpt.setWrapMode(QtGui.QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
@@ -57,6 +56,9 @@ class GalleryCaption:
 
 
     def layoutCaption(self, text: str, width: int, maxHeight: int) -> LayoutInfo:
+        if not text:
+            return LayoutInfo(0, ())
+
         layouts = list[QtGui.QTextLayout]()
         totalHeight = 0.0
 

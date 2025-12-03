@@ -111,7 +111,7 @@ class Gallery(QtWidgets.QWidget):
         self.btnReloadCaptions.setToolTip("Reload Captions")
         self.btnReloadCaptions.setEnabled(False)
         self.btnReloadCaptions.setFixedWidth(30)
-        self.btnReloadCaptions.clicked.connect(lambda: self.reloadCaptions(clear=True))
+        self.btnReloadCaptions.clicked.connect(lambda: self.reloadCaptions(clearDocs=True))
         layout.addWidget(self.btnReloadCaptions)
 
         return layout
@@ -172,21 +172,21 @@ class Gallery(QtWidgets.QWidget):
         if state:
             self.btnReloadCaptions.setChanged(True)
         elif not self._switchingMode:
-            self.reloadCaptions(clear=True)
+            self.reloadCaptions(clearDocs=True)
 
     @Slot(bool)
     def onCaptionFilterToggled(self, state: bool):
         if self.isGridView:
-            self.reloadCaptions(clear=False)
+            self.reloadCaptions(clearDocs=False)
 
     @Slot()
     def onCaptionSourceChanged(self):
         self.btnReloadCaptions.setChanged(True)
 
-    def reloadCaptions(self, clear: bool, modelReset: bool = True):
+    def reloadCaptions(self, clearDocs: bool, modelReset: bool = True):
         self._updateCaptionContext()
         self.btnReloadCaptions.setChanged(False)
-        self.galleryModel.resetCaptions(clear=clear, modelReset=modelReset)
+        self.galleryModel.resetCaptions(clearDocs=clearDocs, modelReset=modelReset)
 
     def _updateCaptionContext(self):
         cap = self.galleryCaption
@@ -206,7 +206,7 @@ class Gallery(QtWidgets.QWidget):
     def onCaptionFilterUpdated(self):
         'Called from Caption Window'
         if self.chkCaptions.isChecked():
-            self.reloadCaptions(clear=False)
+            self.reloadCaptions(clearDocs=False)
 
 
     @property
@@ -230,7 +230,7 @@ class Gallery(QtWidgets.QWidget):
             finally:
                 self._switchingMode = False
 
-        self.reloadCaptions(clear=True, modelReset=False)
+        self.reloadCaptions(clearDocs=True, modelReset=False)
         self.galleryView.setViewMode(mode)
         self.ensureVisible(self.tab.filelist.currentFile)
 
@@ -299,11 +299,10 @@ class Gallery(QtWidgets.QWidget):
             subfolderThreshold = 2
             self.cboFolders.expandWidth = False
 
-        root = MenuFolder("", "")
+        root = MenuFolder()
         for header in headers:
             path = filelist.removeCommonRoot(header.path)
-            folder = root.initFolder(path)
-            folder.row = header.row
+            root.addFolder(path, header.row)
 
         with QSignalBlocker(self.cboFolders):
             self.cboFolders.clear()
@@ -358,21 +357,22 @@ class Gallery(QtWidgets.QWidget):
 
 
 class MenuFolder:
-    def __init__(self, path: str, name: str):
-        self.path = path
+    def __init__(self, name: str = ""):
         self.name = name
+        self.path = ""
         self.row = -1
         self.subfolders = dict[str, MenuFolder]()
 
-    def initFolder(self, path: str):
+    def addFolder(self, path: str, row: int):
         folder = self
         for part in path.split(os.sep):
             subfolder = folder.subfolders.get(part)
             if subfolder is None:
-                folder.subfolders[part] = subfolder = MenuFolder(path, part)
+                folder.subfolders[part] = subfolder = MenuFolder(part)
             folder = subfolder
 
-        return folder
+        folder.path = path
+        folder.row = row
 
 
     def buildMenu(self, cbo: qtlib.MenuComboBox, subfolderThreshold: int):

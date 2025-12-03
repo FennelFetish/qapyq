@@ -209,9 +209,15 @@ class GalleryDelegate(QtWidgets.QStyledItemDelegate):
             case GalleryModel.ItemType.File:
                 cacheRow = self.sizeCache[index.row()]
                 if not cacheRow.hasColumn(index.column()):
-                    h = self.sizeHintHeight(option.rect, index)
-                    h += self.BORDER_SIZE + 2*self.spacing()
+                    if imgSize := index.data(GalleryModel.ROLE_IMGSIZE):
+                        imgW, imgH = imgSize
+                        h = self.sizeHintHeight(option.rect, index, imgW, imgH)
+                        h += self.BORDER_SIZE + 2*self.spacing()
+                    else:
+                        h = int(self.view.itemWidth * 1.5)
+
                     cacheRow.setColumnHeight(index.column(), h)
+
                 return cacheRow.size
 
             case GalleryModel.ItemType.Header:
@@ -220,7 +226,7 @@ class GalleryDelegate(QtWidgets.QStyledItemDelegate):
             case _:
                 return QSize(0, 0)
 
-    def sizeHintHeight(self, rect: QRect, index: QModelIndex | QPersistentModelIndex) -> int:
+    def sizeHintHeight(self, rect: QRect, index: QModelIndex | QPersistentModelIndex, imgW: int, imgH: int) -> int:
         raise NotImplementedError()
 
 
@@ -243,8 +249,9 @@ class GalleryDelegate(QtWidgets.QStyledItemDelegate):
 
 
 class GalleryGridDelegate(GalleryDelegate):
-    TEXT_SPACING = 4
     TEXT_MAX_HEIGHT = 200
+    TEXT_SPACING = 4
+    TEXT_SPACING_BOTTOM = TEXT_SPACING + GalleryDelegate.BORDER_SIZE//2 + 2
 
     def __init__(self, galleryView, galleryCaption: GalleryCaption):
         super().__init__(galleryView, galleryCaption)
@@ -275,16 +282,19 @@ class GalleryGridDelegate(GalleryDelegate):
 
 
     def _getCaptionLayouts(self, w: int, h: int, index: QModelIndex | QPersistentModelIndex) -> LayoutInfo:
+        # When a row consists of images with different aspect ratios, the tallest image+caption defines the row height.
+        # The space available for each caption is different. Therefore, to always use all available vertical space,
+        # don't cache and reuse the layout which was used to calculate the size hint,
+        # but do full relayouting when the final row height becomes available in the first paintItem().
+
         key = (index.row(), index.column())
         layoutInfo = self.layoutCache.get(key)
 
         if layoutInfo is None:
-            if text := index.data(GalleryModel.ROLE_CAPTION):
-                layoutInfo = self.caption.layoutCaption(text, w, h)
-            else:
-                layoutInfo = LayoutInfo(0, ())
-            self.layoutCache[key] = layoutInfo
+            text = index.data(GalleryModel.ROLE_CAPTION)
+            layoutInfo = self.caption.layoutCaption(text, w, h)
 
+            self.layoutCache[key] = layoutInfo
             if len(self.layoutCache) > Config.galleryCacheSize:
                 self.layoutCache.popitem(last=False)
 
@@ -325,7 +335,9 @@ class GalleryGridDelegate(GalleryDelegate):
         textH = rect.bottom() - textY
 
         painter.setPen(pen)
-        if self.caption.captionsEnabled and pen is not self.PEN_TEXT_ERROR:
+
+        # Only load caption when thumbnail and final size hint is ready
+        if self.caption.captionsEnabled and imgH > 0:
             p = QPoint(textX, textY)
             layoutInfo = self._getCaptionLayouts(textW, textH, index)
             for textLayout in layoutInfo.layouts:
@@ -336,24 +348,21 @@ class GalleryGridDelegate(GalleryDelegate):
 
 
     @override
-    def sizeHintHeight(self, rect: QRect, index: QModelIndex | QPersistentModelIndex) -> int:
-        imgSize = index.data(GalleryModel.ROLE_IMGSIZE)
-        if imgSize is None:
-            return self.view.itemWidth
-
-        imgW, imgH = imgSize
+    def sizeHintHeight(self, rect: QRect, index: QModelIndex | QPersistentModelIndex, imgW: int, imgH: int) -> int:
         w = rect.width() - self.BORDER_SIZE - self.xSpacing
         h = round((imgH / imgW) * w)
 
         textW = w - self.BORDER_SIZE
 
         if self.caption.captionsEnabled:
-            layoutInfo = self._getCaptionLayouts(textW, self.TEXT_MAX_HEIGHT, index)
-            h += layoutInfo.height + self.TEXT_SPACING + self.BORDER_SIZE//2 + 2
+            text = index.data(GalleryModel.ROLE_CAPTION)
+            layoutInfo = self.caption.layoutCaption(text, textW, self.TEXT_MAX_HEIGHT)
+            if layoutInfo.height > 0:
+                h += layoutInfo.height + self.TEXT_SPACING_BOTTOM
         else:
             label = index.data(GalleryModel.ROLE_FILENAME)
             textRect = self.labelFontMetrics.boundingRect(0, 0, textW, self.TEXT_MAX_HEIGHT, self.textFlags, label)
-            h += min(textRect.height(), self.TEXT_MAX_HEIGHT) + self.TEXT_SPACING + self.BORDER_SIZE//2 + 2
+            h += min(textRect.height(), self.TEXT_MAX_HEIGHT) + self.TEXT_SPACING_BOTTOM
 
         return h
 
@@ -437,12 +446,7 @@ class GalleryListDelegate(GalleryDelegate):
         painter.drawText(textRect, filename, self.textOpt)
 
     @override
-    def sizeHintHeight(self, rect: QRect, index: QModelIndex | QPersistentModelIndex) -> int:
-        imgSize = index.data(GalleryModel.ROLE_IMGSIZE)
-        if imgSize is None:
-            return self.view.itemWidth
-
-        imgW, imgH = imgSize
+    def sizeHintHeight(self, rect: QRect, index: QModelIndex | QPersistentModelIndex, imgW: int, imgH: int) -> int:
         h = round((imgH / imgW) * self.view.itemWidth)
         return max(h, self.MIN_HEIGHT)
 
@@ -594,6 +598,7 @@ class GalleryCaptionEditor(QtWidgets.QWidget):
             with QSignalBlocker(self.txtCaption):
                 self.txtCaption.setCaption(text)
             self.setEdited(False)
+            self._updateHighlight()
 
     @Slot()
     def saveCaption(self):
