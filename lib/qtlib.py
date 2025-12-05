@@ -425,7 +425,7 @@ class ToggleButton(QtWidgets.QPushButton):
 
 
 class MenuComboBox(QtWidgets.QComboBox):
-    def __init__(self, title: str = None, expandWidth=True, menuClass=QtWidgets.QMenu):
+    def __init__(self, title: str = None, menuClass=QtWidgets.QMenu):
         super().__init__()
         self.menuClass = menuClass
 
@@ -435,8 +435,6 @@ class MenuComboBox(QtWidgets.QComboBox):
         self._currentAction: QtGui.QAction | None = None
         self._actions: dict[int, tuple[str, QtGui.QAction]] = dict()
         self._nextIndex = 0
-
-        self.expandWidth = expandWidth
 
     def _updateCurrentAction(self):
         if self._currentAction:
@@ -453,10 +451,8 @@ class MenuComboBox(QtWidgets.QComboBox):
         self._currentAction = None
 
     def showPopup(self):
-        minWidth = self.width() if self.expandWidth else 0
-        self.menu.setMinimumWidth(minWidth)
-
         self._updateCurrentAction()
+        self.menu.setMinimumWidth(self.width())
         point = self.mapToGlobal(self.rect().topLeft())
         self.menu.exec_(point)
         self.hidePopup()

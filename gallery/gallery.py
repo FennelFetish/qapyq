@@ -82,7 +82,7 @@ class Gallery(QtWidgets.QWidget):
         layout = QtWidgets.QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.cboFolders = qtlib.MenuComboBox(expandWidth=False, menuClass=ClickableSubMenu)
+        self.cboFolders = qtlib.MenuComboBox(menuClass=ClickableSubMenu)
         self.cboFolders.setMinimumWidth(100)
         self.cboFolders.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored, QtWidgets.QSizePolicy.Policy.Preferred)
         self.cboFolders.currentIndexChanged.connect(self.onFolderSelected)
@@ -292,12 +292,7 @@ class Gallery(QtWidgets.QWidget):
     @Slot(list)
     def onHeadersUpdated(self, headers: list[HeaderItem]):
         filelist = self.tab.filelist
-
-        subfolderThreshold = 10
-        self.cboFolders.expandWidth = True
-        if len(headers) > 30:
-            subfolderThreshold = 2
-            self.cboFolders.expandWidth = False
+        subfolderThreshold = 2 if len(headers) > 30 else 10
 
         root = MenuFolder()
         for header in headers:
@@ -399,26 +394,42 @@ class MenuFolder:
 class ClickableSubMenu(QtWidgets.QMenu):
     """
     Clicking on a submenu will trigger the first non-menu child action.
-    The top menu itself needs to be a class of ClickableSubMenu to correctly handle clicks,
+    The top menu itself needs to be a ClickableSubMenu to correctly handle clicks,
     as open submenus would otherwise grab mouse events.
     """
 
     def __init__(self, title: str, parent=None):
         super().__init__(title, parent)
         qtlib.setMonospace(self)
+        self.setStyleSheet("QMenu {menu-scrollable: 1}")
+
 
     @override
     def mousePressEvent(self, event: QtGui.QMouseEvent):
-        action = self.actionAt(event.pos())
+        if self._subactionTrigger( self.actionAt(event.pos()) ):
+            event.accept()
+            return
+
+        super().mousePressEvent(event)
+
+    @override
+    def keyPressEvent(self, event: QtGui.QKeyEvent):
+        if event.key() == Qt.Key.Key_Return and self._subactionTrigger(self.activeAction()):
+            event.accept()
+            return
+
+        super().keyPressEvent(event)
+
+
+    def _subactionTrigger(self, action: QtGui.QAction):
         if action and (menu := action.menu()):
             if act := self._getFirstSubAction(menu):
                 act.trigger()
                 (self.parentWidget() or self).close()
 
-            event.accept()
-            return
+            return True
 
-        super().mousePressEvent(event)
+        return False
 
     @classmethod
     def _getFirstSubAction(cls, menu: QtWidgets.QMenu):

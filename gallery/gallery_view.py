@@ -331,9 +331,10 @@ class GalleryItemMenu(QMenu):
         self.view = galleryView
 
         actClearSelection = self.addAction("Clear Selection")
-        if galleryView.tab.filelist.selectedFiles:
+        numSelected = len(galleryView.tab.filelist.selectedFiles)
+        if numSelected > 0:
             actClearSelection.triggered.connect(lambda: galleryView.tab.filelist.clearSelection())
-            strFiles = "Files"
+            strFiles = f"Files ({numSelected})"
         else:
             actClearSelection.setEnabled(False)
             strFiles = "File"
