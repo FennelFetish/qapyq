@@ -3,13 +3,13 @@ import os
 from typing_extensions import override
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
-from lib.filelist import sortKey, removeCommonRoot
+from lib.filelist import folderSortKey, removeCommonRoot
 from ui.tab import ImgTab
 import lib.qtlib as qtlib
 from .stats_base import StatsLayout, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
 
 
-# TODO: export folders as concepts in onetrainer config
+# TODO: When filter is active, selection of parent folder should only select filtered subfolders.
 
 
 class FolderStats(QtWidgets.QWidget):
@@ -144,7 +144,7 @@ class FolderData:
     def __init__(self, path: str, name: str):
         self.path = path
         self.name = name
-        self.sortName = sortKey(name)
+        self.sortName = folderSortKey(name)
         self.files: set[str] = set()
 
         self.parent: FolderData | None = None

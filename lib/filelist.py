@@ -6,60 +6,92 @@ from config import Config
 from lib.imagerw import READ_EXTENSIONS
 
 
-def naturalSort(path=False):
-    try:
-        import natsort as ns
+try:
+    import natsort as ns
 
-        alg = ns.ns.INT
-        if path:
-            alg |= ns.ns.PATH | ns.ns.GROUPLETTERS
+    __keygenPath = ns.natsort_keygen(alg=ns.ns.INT | ns.ns.PATH | ns.ns.GROUPLETTERS)
+    __keygenFile = ns.natsort_keygen(alg=ns.ns.INT)
 
-        def decorator(key: Callable[[str], Any]) -> Callable[[str], tuple]:
-            return ns.natsort_keygen(key=key, alg=alg)
+    def folderSortKey(path: str) -> tuple:
+        return __keygenPath(path), path
 
-    except ImportError:
-        print("natsort not installed. Numbered files might appear in wrong order.")
-        print("Run the setup script to install the missing natsort package.")
+    def fileSortKey(filename: str) -> tuple:
+        filename, ext = os.path.splitext(filename)
+        ext = ext.lstrip(".")
 
-        def decorator(key: Callable[[str], Any]) -> Callable[[str], tuple]:
-            return lambda *args: tuple(args)
-
-    return decorator
+        # Also return the unmodified filename as fallback for consistent sorting on presumably rare occasions
+        # when filenames have different case but are otherwise exactly the same (Linux: Image before image),
+        # and filenames with 0-prefixed numbers (01 before 1).
+        return __keygenFile(filename.casefold()), ext.casefold(), filename, ext
 
 
-@naturalSort(path=True)
-def folderSortKey(path: str):
-    return path
+    # __sortNameTrans = str.maketrans("-_.,", "    ")
 
-@naturalSort()
-def __fileSortKey(filename: str):
-    return filename
+    # def fileSortKey(filename: str) -> tuple:
+    #     filename, ext = os.path.splitext(filename)
+    #     ext = ext.lstrip(".")
 
-def fileSortKey(filename: str) -> tuple:
-    # Consistently sort filenames that have different case but are otherwise exactly the same (Linux: Image before image),
-    # and filenames that only consist of numbers (01 before 1).
-    return __fileSortKey(filename.lower()), filename
+    #     # Treat some delimeter chars as space and split filename by words.
+    #     split = filename.translate(__sortNameTrans).casefold().split(" ")
+
+    #     nameParts = tuple(
+    #         (part,) if part.isalpha() else __keygenFile(part)
+    #         for part in filter(None, split)
+    #     )
+
+    #     # Also return the unmodified filename as fallback for consistent sorting on presumably rare occasions
+    #     # when filenames have different case but are otherwise exactly the same (Linux: Image before image),
+    #     # and filenames with 0-prefixed numbers (01 before 1).
+    #     return nameParts, ext.casefold(), filename, ext
+
+
+except ImportError:
+    print()
+    print("natsort not installed. Files and folders might appear in wrong order.")
+    print("Run the setup script to install the missing natsort package.")
+    print()
+
+    def folderSortKey(path: str) -> tuple:
+        return (path,)
+
+    def fileSortKey(filename: str) -> tuple:
+        filename, ext = os.path.splitext(filename)
+        ext = ext.lstrip(".")
+        return filename.casefold(), ext.casefold(), filename, ext
+
 
 def sortKey(path: str) -> tuple:
     path, filename = os.path.split(path)
     return folderSortKey(path), fileSortKey(filename)
 
 
+class CachedPathSort:
+    def __init__(self):
+        self._folderKeys = dict[str, tuple]()
+
+    def __call__(self, path: str) -> tuple:
+        path, filename = os.path.split(path)
+        folderKey = self._folderKeys.get(path)
+        if folderKey is None:
+            self._folderKeys[path] = folderKey = folderSortKey(path)
+        return folderKey, fileSortKey(filename)
+
+
 
 class DataKeys:
-    ImageSize       = "img_size"            # tuple[w, h]
+    ImageSize               = "img_size"                # tuple[w, h]
 
-    Caption         = "caption"             # str
-    CaptionState    = "caption_state"       # IconStates
-    CropState       = "crop_state"          # IconStates
-    Thumbnail       = "thumbnail"           # QPixmap
-    ThumbnailRequestTime = "thumbnail_time" # int (ns)
+    Caption                 = "caption"                 # str
+    CaptionState            = "caption_state"           # IconStates
+    CropState               = "crop_state"              # IconStates
+    Thumbnail               = "thumbnail"               # QPixmap
+    ThumbnailRequestTime    = "thumbnail_time"          # int (ns)
 
-    MaskLayers      = "mask_layers"         # list[MaskItem]
-    MaskIndex       = "mask_selected_index" # int
-    MaskState       = "mask_state"          # IconStates
+    MaskLayers              = "mask_layers"             # list[MaskItem]
+    MaskIndex               = "mask_selected_index"     # int
+    MaskState               = "mask_state"              # IconStates
 
-    Embedding       = "embedding"           # numpy vector (1xN)
+    Embedding               = "embedding"               # numpy vector (1xN)
 
 
     class IconStates(enum.Enum):
@@ -113,7 +145,7 @@ class FileSelection:
     @property
     def sorted(self) -> list[str]:
         if self._sortedFiles is None:
-            self._sortedFiles = sorted(self.files, key=sortKey)
+            self._sortedFiles = sorted(self.files, key=CachedPathSort())
         return self._sortedFiles
 
     def add(self, element: str):
@@ -544,6 +576,11 @@ class FileList:
                 print(f"Warning: File {self.currentFile} not in FileList")
                 self.currentIndex = -1
 
+            numAddedFiles = len(self.files) - 1
+            if numAddedFiles > 0:
+                filesStr = "file" if numAddedFiles == 1 else "files"
+                print(f"Added {numAddedFiles} {filesStr}")
+
     def _walkPath(self, path: str, subfolders=False):
         path = os.path.abspath(path)
         for (root, dirs, files) in os.walk(path, topdown=True, followlinks=True):
@@ -555,9 +592,9 @@ class FileList:
 
     def _postprocessList(self, removeDuplicates=False):
         if removeDuplicates:
-            self.files = sorted(set(self.files), key=sortKey)
+            self.files = sorted(set(self.files), key=CachedPathSort())
         else:
-            self.files.sort(key=sortKey)
+            self.files.sort(key=CachedPathSort())
 
         self.commonRoot = getCommonRoot(self.files)
 
@@ -793,6 +830,7 @@ class Folder:
 class FileListLoadTask(QRunnable):
     NOTIFY_INTERVAL_FIRST = 2000
     NOTIFY_INTERVAL       = 50000
+    NOTIFY_INTERVAL_FORCE = 10000
 
     def __init__(self, receiver: FileListLoadReceiver, paths: list[str]):
         super().__init__()
@@ -805,6 +843,7 @@ class FileListLoadTask(QRunnable):
         self.numInitialFiles = 0
         self.numAddedFiles = 0
         self.nextNotify = self.NOTIFY_INTERVAL_FIRST
+        self.forceNotifyCountdown = self.NOTIFY_INTERVAL_FORCE
 
         self.folders: dict[str, Folder] = {}
         self._initFolders(receiver.filelist.files)
@@ -869,11 +908,11 @@ class FileListLoadTask(QRunnable):
                         folder = self._getFolder(root)
                         numFolderFiles = len(folder.fileEntries)
 
-                        folder.fileEntries.extend((
+                        folder.fileEntries.extend(
                             (filePath, fileSortKey(f))
                             for f in files
                             if fileFilter(f) and (filePath := os.path.join(root, f)) not in folder.existingFiles
-                        ))
+                        )
 
                         folder.fileEntries.sort(key=fileEntryKey)
                         self._notifyFilesAdded(len(folder.fileEntries) - numFolderFiles)
@@ -892,19 +931,32 @@ class FileListLoadTask(QRunnable):
         finally:
             if not self.isAborted():
                 t = (time.monotonic_ns() - self.startTime) / 1_000_000
-                msg = "Added" if self.numInitialFiles else "Loaded"
-                print(f"{msg} {self.numAddedFiles} files in {t:.2f} ms")
+                msg = " ".join((
+                    "Added" if self.numInitialFiles else "Loaded",
+                    str(self.numAddedFiles),
+                    "file" if self.numAddedFiles == 1 else "files",
+                    f"in {t:.2f} ms"
+                ))
 
+                print(msg)
                 self.apply(finished=True)
 
 
     def _notifyFilesAdded(self, numAddedFiles: int):
         self.numAddedFiles += numAddedFiles
         if self.numAddedFiles >= self.nextNotify:
-            self.nextNotify = self.numAddedFiles + self.NOTIFY_INTERVAL
+            self.apply()
+            return
+
+        # Force earlier notification when scanning lots of small folders
+        self.forceNotifyCountdown -= 1
+        if self.forceNotifyCountdown <= 0:
             self.apply()
 
     def apply(self, finished: bool = False):
+        self.nextNotify = self.numAddedFiles + self.NOTIFY_INTERVAL
+        self.forceNotifyCountdown = self.NOTIFY_INTERVAL_FORCE
+
         folders = sorted(self.folders.values(), key=Folder.key)
 
         files = []
