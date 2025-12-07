@@ -428,30 +428,39 @@ class MenuComboBox(QtWidgets.QComboBox):
     def __init__(self, title: str = None, menuClass=QtWidgets.QMenu):
         super().__init__()
         self.menuClass = menuClass
+        self.menu = self.menuClass(title, self)
 
-        # Root menu has no parent. Submenus have this root menu as parent so they can close it.
-        self.menu = self.menuClass(title)
-
-        self._currentAction: QtGui.QAction | None = None
+        self._activeActions: list[QtGui.QAction] = list()
         self._actions: dict[int, tuple[str, QtGui.QAction]] = dict()
         self._nextIndex = 0
 
-    def _updateCurrentAction(self):
-        if self._currentAction:
-            setFontBold(self._currentAction, False)
+    def _updateActiveActions(self):
+        for act in self._activeActions:
+            setFontBold(act, False)
+        self._activeActions.clear()
 
-        if currentEntry := self._actions.get(self.currentIndex()):
-            text, action = currentEntry
-            if text == self.currentText():
+        currentEntry = self._actions.get(self.currentIndex())
+        if currentEntry is None:
+            return
+
+        text, action = currentEntry
+        if text == self.currentText():
+            self.menu.setActiveAction(action)
+
+            setFontBold(action)
+            self._activeActions.append(action)
+
+            # Set bold text to all parent submenus.
+            # But don't activate submenus: That would open them and they could swallow mouse hover events.
+            item = action
+            while (item := item.parent()) and item is not self.menu and isinstance(item, QtWidgets.QMenu):
+                action = item.menuAction()
                 setFontBold(action)
-                self.menu.setActiveAction(action)
-                self._currentAction = action
-                return
+                self._activeActions.append(action)
 
-        self._currentAction = None
 
     def showPopup(self):
-        self._updateCurrentAction()
+        self._updateActiveActions()
         self.menu.setMinimumWidth(self.width())
         point = self.mapToGlobal(self.rect().topLeft())
         self.menu.exec_(point)
@@ -473,8 +482,11 @@ class MenuComboBox(QtWidgets.QComboBox):
         return self.menu.addAction(text)
 
     def addSubmenu(self, text: str, parentMenu: QtWidgets.QMenu | None = None):
-        submenu = self.menuClass(text, self.menu) # Set root menu as parent
-        (parentMenu or self.menu).addMenu(submenu)
+        if parentMenu is None:
+            parentMenu = self.menu
+
+        submenu = self.menuClass(text, parentMenu)
+        parentMenu.addMenu(submenu)
         return submenu
 
     def addSubmenuItem(self, submenu: QtWidgets.QMenu, text: str, prefix: str, userData=None, actionText: str | None = None):
@@ -493,7 +505,7 @@ class MenuComboBox(QtWidgets.QComboBox):
 
     def clear(self):
         super().clear()
-        self._currentAction = None
+        self._activeActions.clear()
         self._actions.clear()
         self.menu.clear()
         self._nextIndex = 0

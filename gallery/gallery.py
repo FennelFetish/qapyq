@@ -82,7 +82,7 @@ class Gallery(QtWidgets.QWidget):
         layout = QtWidgets.QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.cboFolders = qtlib.MenuComboBox(menuClass=ClickableSubMenu)
+        self.cboFolders = qtlib.MenuComboBox("Folders", menuClass=ClickableSubMenu)
         self.cboFolders.setMinimumWidth(100)
         self.cboFolders.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored, QtWidgets.QSizePolicy.Policy.Preferred)
         self.cboFolders.currentIndexChanged.connect(self.onFolderSelected)
@@ -394,7 +394,7 @@ class MenuFolder:
 class ClickableSubMenu(QtWidgets.QMenu):
     """
     Clicking on a submenu will trigger the first non-menu child action.
-    The top menu itself needs to be a ClickableSubMenu to correctly handle clicks,
+    The top menu itself needs to be a ClickableSubMenu to correctly handle mouse events,
     as open submenus would otherwise grab mouse events.
     """
 
@@ -403,6 +403,13 @@ class ClickableSubMenu(QtWidgets.QMenu):
         qtlib.setMonospace(self)
         self.setStyleSheet("QMenu {menu-scrollable: 1}")
 
+    @override
+    def keyPressEvent(self, event: QtGui.QKeyEvent):
+        if event.key() == Qt.Key.Key_Return and self._subactionTrigger(self.activeAction()):
+            event.accept()
+            return
+
+        super().keyPressEvent(event)
 
     @override
     def mousePressEvent(self, event: QtGui.QMouseEvent):
@@ -413,19 +420,24 @@ class ClickableSubMenu(QtWidgets.QMenu):
         super().mousePressEvent(event)
 
     @override
-    def keyPressEvent(self, event: QtGui.QKeyEvent):
-        if event.key() == Qt.Key.Key_Return and self._subactionTrigger(self.activeAction()):
-            event.accept()
-            return
+    def wheelEvent(self, event: QtGui.QWheelEvent):
+        containsMouse = self.rect().contains( self.mapFromGlobal(event.globalPosition().toPoint()) )
+        if not containsMouse and (parent := self.parent()) and isinstance(parent, ClickableSubMenu):
+            parent.wheelEvent(event)
+        else:
+            # Close submenu so a parent can handle scrolling
+            action = self.activeAction()
+            if action and (menu := action.menu()) and isinstance(menu, ClickableSubMenu):
+                menu.close()
 
-        super().keyPressEvent(event)
+            super().wheelEvent(event)
 
 
     def _subactionTrigger(self, action: QtGui.QAction):
         if action and (menu := action.menu()):
             if act := self._getFirstSubAction(menu):
                 act.trigger()
-                (self.parentWidget() or self).close()
+                self._closeTopMenu()
 
             return True
 
@@ -442,3 +454,9 @@ class ClickableSubMenu(QtWidgets.QMenu):
             else:
                 return act
         return None
+
+    def _closeTopMenu(self):
+        current = self
+        while (parent := current.parent()) and isinstance(parent, ClickableSubMenu):
+            current = parent
+        current.close()
