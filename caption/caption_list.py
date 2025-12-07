@@ -8,7 +8,7 @@ from lib.captionfile import CaptionFile, FileTypeSelector, Keys
 from lib import colorlib, qtlib
 from .caption_tab import CaptionTab
 from .caption_highlight import CaptionHighlight
-from .caption_text import NavigationTextEdit
+from .caption_text import BorderlessNavigationTextEdit
 
 
 # List all captions and tags from current json file for comparison.
@@ -433,10 +433,7 @@ class CaptionEntry(QtWidgets.QWidget):
 
 
 
-class AutoSizeTextEdit(NavigationTextEdit):
-    PALETTE_ORIG:   QtGui.QPalette = None
-    PALETTE_ACTIVE: QtGui.QPalette = None
-
+class AutoSizeTextEdit(BorderlessNavigationTextEdit):
     focusReceived = Signal(object)
     save = Signal()
 
@@ -446,25 +443,9 @@ class AutoSizeTextEdit(NavigationTextEdit):
 
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
 
         self.textChanged.connect(self._onTextChanged)
         self.verticalScrollBar().valueChanged.connect(self._scrollTop)
-
-        if not AutoSizeTextEdit.PALETTE_ORIG:
-            self._initPalettes()
-
-    def _initPalettes(self):
-        AutoSizeTextEdit.PALETTE_ORIG = self.palette()
-
-        palette = self.palette()
-        bgColor = palette.color(QtGui.QPalette.ColorRole.Base).toHsv()
-        h, s, v = bgColor.hueF(), bgColor.saturationF(), bgColor.valueF()
-        v *= 0.87 if colorlib.DARK_THEME else 0.92
-        bgColor.setHsvF(h, s, v)
-        palette.setColor(QtGui.QPalette.ColorRole.Base, bgColor)
-        AutoSizeTextEdit.PALETTE_ACTIVE = palette
-
 
     def updateHighlight(self):
         self.highlight.highlight(self.toPlainText(), self.separator, self)
@@ -506,10 +487,10 @@ class AutoSizeTextEdit(NavigationTextEdit):
     def focusInEvent(self, e: QtGui.QFocusEvent):
         super().focusInEvent(e)
         self.moveCursor(QtGui.QTextCursor.MoveOperation.End)
-        self.setPalette(AutoSizeTextEdit.PALETTE_ACTIVE)
+        self.setActivePalette(True)
         self.focusReceived.emit(self)
 
     def focusOutEvent(self, e: QtGui.QFocusEvent):
         super().focusOutEvent(e)
         self.moveCursor(QtGui.QTextCursor.MoveOperation.End) # Clear selection
-        self.setPalette(AutoSizeTextEdit.PALETTE_ORIG)
+        self.setActivePalette(False)

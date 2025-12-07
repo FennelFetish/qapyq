@@ -7,12 +7,11 @@ from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QRunnable, QObject, QThreadPool, QTimer, QSignalBlocker, QMutex, QMutexLocker
 import numpy as np
 import lib.qtlib as qtlib
-from lib.filelist import FileList, DataKeys, naturalSort
+from lib.filelist import FileList, DataKeys, folderSortKey
 from ui.tab import ImgTab
 from config import Config
 from infer.model_settings import ModelSettingsWindow
 from infer.embedding import embedding_common as embed
-from .gallery_grid import GalleryGrid
 
 
 EMBED_FAILED = object()
@@ -52,10 +51,11 @@ class GallerySortControl(QtWidgets.QWidget):
 
     DISABLED_PARAMS = SortParams()
 
-    def __init__(self, tab: ImgTab, galleryGrid: GalleryGrid):
+    sortDone = Signal(bool) # param: allow folders
+
+    def __init__(self, tab: ImgTab):
         super().__init__()
         self.tab = tab
-        self.galleryGrid = galleryGrid
 
         self._sorted = False
         self._paramsCurrent: SortParams = self.DISABLED_PARAMS
@@ -158,14 +158,14 @@ class GallerySortControl(QtWidgets.QWidget):
 
         self.cboModelPreset.setCurrentIndex(index)
 
-    @Slot()
-    def _onPresetListChanged(self, attr):
+    @Slot(str)
+    def _onPresetListChanged(self, attr: str):
         if attr == self.CONFIG_ATTR:
             currentName = self.cboModelPreset.currentText()
             with QSignalBlocker(self.cboModelPreset):
                 self.reloadPresetList(currentName)
 
-    @Slot()
+    @Slot(str)
     def _onPresetChanged(self, name: str):
         Config.inferSelectedPresets[self.CONFIG_ATTR] = name
 
@@ -177,7 +177,7 @@ class GallerySortControl(QtWidgets.QWidget):
             self.cboModelPreset.setFixedHeight(h)
             self.btnAscending.setFixedHeight(h)
 
-    @Slot()
+    @Slot(bool)
     def _onSortToggled(self, enabled: bool):
         self.setVisible(enabled)
         if enabled:
@@ -195,7 +195,7 @@ class GallerySortControl(QtWidgets.QWidget):
             for file in filelist.getFiles():
                 filelist.removeData(file, DataKeys.Embedding, False)
 
-    @Slot()
+    @Slot(bool)
     def _onDirectionChanged(self, ascending: bool):
         text = "∆" if ascending else "∇"
         self.btnAscending.setText(text)
@@ -215,13 +215,18 @@ class GallerySortControl(QtWidgets.QWidget):
             self.btnSort.setChecked(False)
 
 
+    def setSortAvailable(self, state: bool):
+        self.btnSort.setEnabled(state)
+        if not state:
+            self.btnSort.setChecked(False)
+
     def resetSort(self, params: SortParams):
         if self._paramsCurrent != params:
             self._paramsCurrent = params
             self._paramsRequested = params
 
             self.tab.filelist.clearOrder()
-            self.galleryGrid.reloadImages(folders=params.byFolder)
+            self.sortDone.emit(params.byFolder)
 
     @Slot()
     def updateSortByText(self):
@@ -230,6 +235,7 @@ class GallerySortControl(QtWidgets.QWidget):
         self._setTextPromptMuted(False)
         self.applySort()
 
+    @Slot(list)
     def updateSortByImage(self, files: list[str]):
         prompt = ImagePrompt.fromList(files)
         self.setRequestedParams(prompt)
@@ -312,14 +318,14 @@ class GallerySortControl(QtWidgets.QWidget):
             QThreadPool.globalInstance().start(self._taskSort)
 
 
-    @Slot()
+    @Slot(str, object, int, int)
     def _onFileEmbedDone(self, file: str, embedding: object, currentFile: int, totalFiles: int):
         self.tab.filelist.setData(file, DataKeys.Embedding, embedding, False)
 
         progress = round((currentFile / totalFiles) * 100)
         self.btnSort.setText(f"{self.BUTTON_TEXT} ({progress}%)")
 
-    @Slot()
+    @Slot(dict, bool)
     def _onEmbeddingsDone(self, config: dict, success: bool):
         self.btnSort.setText(self.BUTTON_TEXT)
         self._taskEmbed = None
@@ -329,7 +335,7 @@ class GallerySortControl(QtWidgets.QWidget):
             QTimer.singleShot(0, self.updateSort)
 
 
-    @Slot()
+    @Slot(list, list, tuple)
     def _onSortDone(self, mapFilePos: list[int], mapPosFile: list[int], params: SortParams):
         self.btnSort.setText(self.BUTTON_TEXT)
         self._taskSort = None
@@ -339,7 +345,7 @@ class GallerySortControl(QtWidgets.QWidget):
                 self._paramsCurrent = params
 
                 self.tab.filelist.setOrder(mapFilePos, mapPosFile, params.byFolder)
-                self.galleryGrid.reloadImages()
+                self.sortDone.emit(True)
             else:
                 self.updateSort()
 
@@ -567,12 +573,12 @@ class UpdateSortTask(QRunnable):
 
 
     @staticmethod
-    @naturalSort
-    def sortKeyByFolder(fileScore: tuple[int, str, float]):
-        return os.path.dirname(fileScore[1]), fileScore[2]
+    def sortKeyByFolder(fileScore: tuple[int, str, float]) -> tuple:
+        folderKey = folderSortKey( os.path.dirname(fileScore[1]) )
+        return folderKey, fileScore[2]
 
     @staticmethod
-    def sortKey(fileScore: tuple[int, str, float]):
+    def sortKey(fileScore: tuple[int, str, float]) -> float:
         return fileScore[2]
 
 

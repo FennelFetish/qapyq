@@ -26,7 +26,7 @@
 
 - **Image Viewer**: Display and navigate images
   - Quick-starting desktop application built with Qt
-  - Runs smoothly with tens of thousands of images
+  - Runs smoothly with a million images
   - Modular interface that lets you place windows on different monitors
   - Open multiple tabs
   - Zoom/pan and fullscreen mode

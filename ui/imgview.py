@@ -160,10 +160,9 @@ class ImgItem(QGraphicsPixmapItem):
         self.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
         self.filepath = ""
 
-    def loadImage(self, path) -> bool:
+    def loadImage(self, path: str) -> bool:
         self.filepath = path
         if not path:
-            print("Failed to load image: Path is empty")
             self.setPixmap(QPixmap())
             return False
 

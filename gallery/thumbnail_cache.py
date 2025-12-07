@@ -1,85 +1,89 @@
 import os, time
 from PySide6.QtCore import Slot, Signal, QThreadPool, QObject, QRunnable, Qt
 from PySide6.QtGui import QPixmap, QImage
-from lib.filelist import FileList, DataKeys
+from lib.filelist import DataKeys
 import lib.imagerw as imagerw
 from config import Config
-from .gallery_item import GalleryItem
+from .gallery_model import GalleryModel
 
 
-class ThumbnailCache:
+
+class ThumbnailCache(QObject):
     THUMBNAIL_SIZE = 300
     REQUEST_TIMEOUT = 1000 * 1000000
 
-    THREAD_POOL = QThreadPool()
-    THREAD_POOL.setMaxThreadCount(Config.galleryThumbnailThreads)
+    _instance = None
 
-    _active = True
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(ThumbnailCache, cls).__new__(cls)
+        return cls._instance
 
-    @classmethod
-    def updateThumbnail(cls, filelist: FileList, target: GalleryItem, file: str):
-        if pixmap := filelist.getData(file, DataKeys.Thumbnail):
-            target.pixmap = pixmap
+    def __init__(self):
+        if getattr(self, '_singleton_initialized', False):
             return
 
-        if not cls._active:
+        super().__init__()
+        self._singleton_initialized = True
+
+        self._active = True
+
+        self.threadpool = QThreadPool()
+        self.threadpool.setMaxThreadCount(Config.galleryThumbnailThreads)
+
+    def shutdown(self):
+        self._active = False
+        self.threadpool.clear()
+
+
+    def updateThumbnail(self, model: GalleryModel, file: str):
+        if not self._active:
             return
 
         # Throttle requests to prevent unnecessary I/O and congestion of thread pool.
-        requestTime = filelist.getData(file, DataKeys.ThumbnailRequestTime)
+        requestTime = model.filelist.getData(file, DataKeys.ThumbnailRequestTime)
         now = time.monotonic_ns()
-        if requestTime and requestTime+cls.REQUEST_TIMEOUT > now:
+        if requestTime and requestTime+self.REQUEST_TIMEOUT > now:
             return
-        filelist.setData(file, DataKeys.ThumbnailRequestTime, now, False)
+        model.filelist.setData(file, DataKeys.ThumbnailRequestTime, now, False)
 
-        task = ThumbnailTask(filelist, target, file)
-        task.signals.done.connect(cls._onThumbnailLoaded, Qt.ConnectionType.BlockingQueuedConnection)
-        cls.THREAD_POOL.start(task)
+        task = ThumbnailTask(model, file)
+        task.signals.done.connect(self._onThumbnailLoaded, Qt.ConnectionType.QueuedConnection)
+        self.threadpool.start(task)
 
-    @Slot()
-    @staticmethod
-    def _onThumbnailLoaded(filelist: FileList, target: GalleryItem, file: str, img: QImage, imgSize: tuple[int, int], icons: dict):
+
+    @Slot(object, str, object, object, dict)
+    def _onThumbnailLoaded(self, model: GalleryModel, file: str, img: QImage, imgSize: tuple[int, int], icons: dict):
         pixmap = QPixmap.fromImage(img)
 
-        try:
-            target.pixmap = pixmap
-        except RuntimeError as ex:
-            if ex.args[0].endswith("already deleted."):
-                return
-            else:
-                raise
-
-        filelist.setData(file, DataKeys.Thumbnail, pixmap)
-        filelist.setData(file, DataKeys.ImageSize, imgSize)
+        filelist = model.filelist
+        filelist.setData(file, DataKeys.Thumbnail, pixmap, False)
+        filelist.setData(file, DataKeys.ImageSize, imgSize, False)
         filelist.removeData(file, DataKeys.ThumbnailRequestTime, False)
 
         for key, state in icons.items():
             if state:
                 filelist.setData(file, key, state)
 
-    @classmethod
-    def shutdown(cls):
-        cls._active = False
-        cls.THREAD_POOL.clear()
+        model.onThumbnailLoaded(file)
 
 
 
 class ThumbnailTask(QRunnable):
     class Signals(QObject):
-        done = Signal(object, object, str, object, tuple, dict)
+        done = Signal(object, str, object, tuple, dict)
 
     ICON_KEYS = (DataKeys.CaptionState, DataKeys.MaskState)
 
-    def __init__(self, filelist: FileList, target: GalleryItem, file: str):
+    def __init__(self, model: GalleryModel, file: str):
         super().__init__()
         self.setAutoDelete(True)
 
-        self.filelist = filelist
-        self.target = target
+        self.model = model
         self.file = file
         self.signals = self.Signals()
 
-        self.icons = { k: filelist.getData(file, k) for k in self.ICON_KEYS }
+        self.icons = { k: model.filelist.getData(file, k) for k in self.ICON_KEYS }
 
 
     @Slot()
@@ -93,12 +97,7 @@ class ThumbnailTask(QRunnable):
             w = h = -1
 
         self.checkIcons()
-
-        try:
-            self.signals.done.emit(self.filelist, self.target, self.file, img, (w, h), self.icons)
-        except RuntimeError as ex:
-            if ex.args[0] != "Signal source has been deleted":
-                raise
+        self.signals.done.emit(self.model, self.file, img, (w, h), self.icons)
 
     def checkIcons(self):
         filenameNoExt = os.path.splitext(self.file)[0]

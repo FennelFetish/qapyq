@@ -1,7 +1,7 @@
 from __future__ import annotations
 from collections import defaultdict
 from typing import Iterable, Callable, Generator
-from lib.filelist import FileList, DataKeys, sortKey
+from lib.filelist import FileList, DataKeys, CachedPathSort
 from lib.captionfile import FileTypeSelector
 from .caption_highlight import MatcherNode
 
@@ -156,7 +156,7 @@ class CaptionMultiEdit:
 
         # TODO: Set self._edited to True if any captions have an entry in cache. (for turning Save button red)
         # Sort files for consistent tag order. FileList.selectedFiles is an unordered set.
-        for file in sorted(files, key=sortKey):
+        for file in sorted(files, key=CachedPathSort()):
             captionText = loadFunc(file)
 
             fileTags = FileTags(file)

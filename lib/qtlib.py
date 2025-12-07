@@ -64,6 +64,16 @@ def setShowWhitespace(textEdit):
     opt.setFlags(QtGui.QTextOption.ShowTabsAndSpaces)
     doc.setDefaultTextOption(opt)
 
+def setTextPreserveUndo(cursor: QtGui.QTextCursor, text: str):
+    cursor.beginEditBlock()
+    cursor.select(QtGui.QTextCursor.SelectionType.Document)
+    cursor.insertText(text)
+
+    # Further text input is merged with this edit block. Ctrl+Z would remove the typed text, plus this inserted text.
+    # Add and delete a space char to avoid merging the commands in the undo stack.
+    cursor.insertText(" ")
+    cursor.deletePreviousChar()
+    cursor.endEditBlock()
 
 
 def numpyToQImageMask(mat: np.ndarray) -> QtGui.QImage:
@@ -408,36 +418,49 @@ class ToggleButton(QtWidgets.QPushButton):
         palette.setBrush(QtGui.QPalette.ColorGroup.Disabled, QtGui.QPalette.ColorRole.ButtonText, colorText.darker())
         ToggleButton.PALETTE_CHECKED = palette
 
-    @Slot()
+    @Slot(bool)
     def _onToggled(self, checked: bool):
         self.setPalette(ToggleButton.PALETTE_CHECKED if checked else ToggleButton.PALETTE_ORIG)
 
 
 
 class MenuComboBox(QtWidgets.QComboBox):
-    def __init__(self, title: str = None):
+    def __init__(self, title: str = None, menuClass=QtWidgets.QMenu):
         super().__init__()
-        self.menu = QtWidgets.QMenu(title)
-        self._currentAction: QtGui.QAction | None = None
+        self.menuClass = menuClass
+        self.menu = self.menuClass(title, self)
+
+        self._activeActions: list[QtGui.QAction] = list()
         self._actions: dict[int, tuple[str, QtGui.QAction]] = dict()
         self._nextIndex = 0
 
-    def _updateCurrentAction(self):
-        if self._currentAction:
-            setFontBold(self._currentAction, False)
+    def _updateActiveActions(self):
+        for act in self._activeActions:
+            setFontBold(act, False)
+        self._activeActions.clear()
 
-        if currentEntry := self._actions.get(self.currentIndex()):
-            text, action = currentEntry
-            if text == self.currentText():
+        currentEntry = self._actions.get(self.currentIndex())
+        if currentEntry is None:
+            return
+
+        text, action = currentEntry
+        if text == self.currentText():
+            self.menu.setActiveAction(action)
+
+            setFontBold(action)
+            self._activeActions.append(action)
+
+            # Set bold text to all parent submenus.
+            # But don't activate submenus: That would open them and they could swallow mouse hover events.
+            item = action
+            while (item := item.parent()) and item is not self.menu and isinstance(item, QtWidgets.QMenu):
+                action = item.menuAction()
                 setFontBold(action)
-                self.menu.setActiveAction(action)
-                self._currentAction = action
-                return
+                self._activeActions.append(action)
 
-        self._currentAction = None
 
     def showPopup(self):
-        self._updateCurrentAction()
+        self._updateActiveActions()
         self.menu.setMinimumWidth(self.width())
         point = self.mapToGlobal(self.rect().topLeft())
         self.menu.exec_(point)
@@ -458,19 +481,22 @@ class MenuComboBox(QtWidgets.QComboBox):
     def addMenuAction(self, text: str) -> QtGui.QAction:
         return self.menu.addAction(text)
 
-    def addSubmenu(self, text: str):
-        submenu = QtWidgets.QMenu(text)
-        self.menu.addMenu(submenu)
+    def addSubmenu(self, text: str, parentMenu: QtWidgets.QMenu | None = None):
+        if parentMenu is None:
+            parentMenu = self.menu
+
+        submenu = self.menuClass(text, parentMenu)
+        parentMenu.addMenu(submenu)
         return submenu
 
-    def addSubmenuItem(self, submenu: QtWidgets.QMenu, text: str, prefix: str, userData=None):
+    def addSubmenuItem(self, submenu: QtWidgets.QMenu, text: str, prefix: str, userData=None, actionText: str | None = None):
         itemText = prefix + text
         super().addItem(itemText, userData)
 
         index = self._nextIndex
         self._nextIndex += 1
 
-        act = submenu.addAction(text)
+        act = submenu.addAction(actionText or text)
         act.triggered.connect(lambda checked, i=index: self.setCurrentIndex(i))
         self._actions[index] = (itemText, act)
 
@@ -479,7 +505,7 @@ class MenuComboBox(QtWidgets.QComboBox):
 
     def clear(self):
         super().clear()
-        self._currentAction = None
+        self._activeActions.clear()
         self._actions.clear()
         self.menu.clear()
         self._nextIndex = 0

@@ -1,8 +1,9 @@
-import os
+import os, locale
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Signal, Slot, QTimer
 from PySide6.QtGui import QPixmap
 from config import Config
+from lib import qtlib
 from lib.filelist import FileList
 from lib.qtlib import ColoredMessageStatusBar
 
@@ -46,17 +47,18 @@ class ImgTab(QtWidgets.QMainWindow):
         self.destroyed.connect(queueGC)
 
 
-    def onFileChanged(self, currentFile):
+    def onFileChanged(self, currentFile: str):
         name = os.path.basename(currentFile) if currentFile else self.EMPTY_TAB_TITLE
         if numFiles := len(self.filelist.files): # No lazy loading
+            loading = " - Loading" if self.filelist.isLoading() else ""
             fileNr = self.filelist.getCurrentNr() + 1
-            name += f" ({fileNr}/{numFiles})"
+            name += locale.format_string(f" (%d/%d{loading})", (fileNr, numFiles), grouping=True)
 
         tabIndex = self.tabWidget.indexOf(self)
         self.tabWidget.setTabText(tabIndex, name)
         self.tabTitleChanged.emit(name)
 
-    def onFileListChanged(self, currentFile):
+    def onFileListChanged(self, currentFile: str):
         self.onFileChanged(currentFile)
 
 
@@ -162,7 +164,7 @@ class ImgTab(QtWidgets.QMainWindow):
 
 
 
-class TabStatusBar(ColoredMessageStatusBar):
+class TabStatusBar(qtlib.ColoredMessageStatusBar):
     def __init__(self, tab):
         super().__init__("border-top: 1px outset black")
         self.tab = tab
@@ -174,10 +176,16 @@ class TabStatusBar(ColoredMessageStatusBar):
         self.addPermanentWidget(self._lblToolMessage)
 
         self._lblMouseCoords = QtWidgets.QLabel()
-        self._lblMouseCoords.setFixedWidth(100)
+        self._lblMouseCoords.setContentsMargins(0, 0, 12, 0)
+        self._lblMouseCoords.setTextFormat(Qt.TextFormat.PlainText)
+        self._lblMouseCoords.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        qtlib.setMonospace(self._lblMouseCoords)
         self.addPermanentWidget(self._lblMouseCoords)
 
         self._lblImgSize = QtWidgets.QLabel()
+        self._lblImgSize.setTextFormat(Qt.TextFormat.PlainText)
+        self._lblImgSize.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        qtlib.setMonospace(self._lblImgSize)
         self.addPermanentWidget(self._lblImgSize)
 
     def setToolMessage(self, msg: str):
@@ -185,7 +193,7 @@ class TabStatusBar(ColoredMessageStatusBar):
         self._lblToolMessage.setText(msg)
 
     def setMouseCoords(self, x, y):
-        self._lblMouseCoords.setText(f"X: {x}  Y: {y}")
+        self._lblMouseCoords.setText(f"X:{x}  Y:{y}")
 
     def setImageInfo(self, pixmap: QPixmap):
         size = pixmap.size()
@@ -195,10 +203,10 @@ class TabStatusBar(ColoredMessageStatusBar):
         if min(w, h) > 0:
             aspect = w / h
             aspectText = f"{aspect:.3f}" if aspect >= 1 else f"{aspect:.3f} (1:{1/aspect:.3f})"
-            aspectText = f"  AR: {aspectText}"
+            aspectText = f"  AR:{aspectText}"
 
         alpha = "  (Alpha)" if pixmap.hasAlphaChannel() else ""
-        self._lblImgSize.setText(f"W: {w}  H: {h}{aspectText}{alpha}")
+        self._lblImgSize.setText(f"{w}x{h}{aspectText}{alpha}")
 
 
 

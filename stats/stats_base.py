@@ -10,7 +10,7 @@ from PySide6.QtCore import (
 )
 from ui.tab import ImgTab
 from lib import colorlib, qtlib
-from lib.filelist import FileList, sortKey
+from lib.filelist import FileList, CachedPathSort
 from config import Config
 
 
@@ -210,7 +210,7 @@ class StatsLayout(QtWidgets.QVBoxLayout):
         if self.chkFilesNegate.isChecked():
             fileSet = [file for file in self.tab.filelist.getFiles() if file not in fileSet]
 
-        files = sorted(fileSet, key=sortKey)
+        files = sorted(fileSet, key=CachedPathSort())
 
         with QSignalBlocker(self.listFiles.selectionModel()):
             self.listFiles.clear()

@@ -1,40 +1,97 @@
+import os, enum, time
 from typing import Iterable, Iterator, Any, Callable
-import os, enum
 from bisect import bisect_left, bisect_right
+from PySide6.QtCore import Qt, Signal, Slot, QThreadPool, QRunnable, QObject, QMutex, QMutexLocker
 from config import Config
 from lib.imagerw import READ_EXTENSIONS
 
 
-def naturalSort(key: Callable) -> Callable:
-    try:
-        import natsort as ns
-        return ns.natsort_keygen(key=key, alg=ns.ns.INT | ns.ns.PATH | ns.ns.GROUPLETTERS)
-    except:
-        print("natsort not installed. Numbered files might appear in wrong order.")
-        print("Run the setup script to install the missing natsort package.")
-        return key
+try:
+    import natsort as ns
 
-@naturalSort
-def sortKey(path: str):
+    __keygenPath = ns.natsort_keygen(alg=ns.ns.INT | ns.ns.PATH | ns.ns.GROUPLETTERS)
+    __keygenFile = ns.natsort_keygen(alg=ns.ns.INT)
+
+    def folderSortKey(path: str) -> tuple:
+        return __keygenPath(path), path
+
+    def fileSortKey(filename: str) -> tuple:
+        filename, ext = os.path.splitext(filename)
+        ext = ext.lstrip(".")
+
+        # Also return the unmodified filename as fallback for consistent sorting on presumably rare occasions
+        # when filenames have different case but are otherwise exactly the same (Linux: Image before image),
+        # and filenames with 0-prefixed numbers (01 before 1).
+        return __keygenFile(filename.casefold()), ext.casefold(), filename, ext
+
+
+    # __sortNameTrans = str.maketrans("-_.,", "    ")
+
+    # def fileSortKey(filename: str) -> tuple:
+    #     filename, ext = os.path.splitext(filename)
+    #     ext = ext.lstrip(".")
+
+    #     # Treat some delimeter chars as space and split filename by words.
+    #     split = filename.translate(__sortNameTrans).casefold().split(" ")
+
+    #     nameParts = tuple(
+    #         (part,) if part.isalpha() else __keygenFile(part)
+    #         for part in filter(None, split)
+    #     )
+
+    #     # Also return the unmodified filename as fallback for consistent sorting on presumably rare occasions
+    #     # when filenames have different case but are otherwise exactly the same (Linux: Image before image),
+    #     # and filenames with 0-prefixed numbers (01 before 1).
+    #     return nameParts, ext.casefold(), filename, ext
+
+
+except ImportError:
+    print()
+    print("natsort not installed. Files and folders might appear in wrong order.")
+    print("Run the setup script to install the missing natsort package.")
+    print()
+
+    def folderSortKey(path: str) -> tuple:
+        return (path,)
+
+    def fileSortKey(filename: str) -> tuple:
+        filename, ext = os.path.splitext(filename)
+        ext = ext.lstrip(".")
+        return filename.casefold(), ext.casefold(), filename, ext
+
+
+def sortKey(path: str) -> tuple:
     path, filename = os.path.split(path)
-    return path, filename.lower()
+    return folderSortKey(path), fileSortKey(filename)
+
+
+class CachedPathSort:
+    def __init__(self):
+        self._folderKeys = dict[str, tuple]()
+
+    def __call__(self, path: str) -> tuple:
+        path, filename = os.path.split(path)
+        folderKey = self._folderKeys.get(path)
+        if folderKey is None:
+            self._folderKeys[path] = folderKey = folderSortKey(path)
+        return folderKey, fileSortKey(filename)
 
 
 
 class DataKeys:
-    ImageSize       = "img_size"            # tuple[w, h]
+    ImageSize               = "img_size"                # tuple[w, h]
 
-    Caption         = "caption"             # str
-    CaptionState    = "caption_state"       # IconStates
-    CropState       = "crop_state"          # IconStates
-    Thumbnail       = "thumbnail"           # QPixmap
-    ThumbnailRequestTime = "thumbnail_time" # int (ns)
+    Caption                 = "caption"                 # str
+    CaptionState            = "caption_state"           # IconStates
+    CropState               = "crop_state"              # IconStates
+    Thumbnail               = "thumbnail"               # QPixmap
+    ThumbnailRequestTime    = "thumbnail_time"          # int (ns)
 
-    MaskLayers      = "mask_layers"         # list[MaskItem]
-    MaskIndex       = "mask_selected_index" # int
-    MaskState       = "mask_state"          # IconStates
+    MaskLayers              = "mask_layers"             # list[MaskItem]
+    MaskIndex               = "mask_selected_index"     # int
+    MaskState               = "mask_state"              # IconStates
 
-    Embedding       = "embedding"           # numpy vector (1xN)
+    Embedding               = "embedding"               # numpy vector (1xN)
 
 
     class IconStates(enum.Enum):
@@ -44,12 +101,21 @@ class DataKeys:
 
 
 
-def fileFilter(path) -> bool:
+def fileFilter(path: str) -> bool:
     name, ext = os.path.splitext(path)
     if name.endswith(Config.maskSuffix):
         return False
     return ext.lower() in READ_EXTENSIONS
 
+
+def getCommonRoot(files: list[str]) -> str:
+    try:
+        commonRoot = os.path.commonpath(files).rstrip("/\\")
+        if os.path.isfile(commonRoot):
+            commonRoot = os.path.dirname(commonRoot)
+        return commonRoot
+    except ValueError:
+        return ""
 
 def removeCommonRoot(path: str, commonRoot: str, allowEmpty=False) -> str:
     if not (commonRoot and path.startswith(commonRoot)):
@@ -77,9 +143,9 @@ class FileSelection:
         self._sortedFiles: list[str] | None = None
 
     @property
-    def sorted(self):
+    def sorted(self) -> list[str]:
         if self._sortedFiles is None:
-            self._sortedFiles = sorted(self.files, key=sortKey)
+            self._sortedFiles = sorted(self.files, key=CachedPathSort())
         return self._sortedFiles
 
     def add(self, element: str):
@@ -194,13 +260,15 @@ class FileList:
         self.selectionListeners: list = []
         self.dataListeners: list = []
 
+        self._loadReceiver: FileListLoadReceiver | None = None
+
 
     @property
     def selectedFiles(self) -> set[str]:
         return self.selection.files
 
 
-    def reset(self):
+    def reset(self, clearListeners=True):
         self.files = list()
         self.selection = FileSelection()
         self.fileData = dict()
@@ -210,39 +278,81 @@ class FileList:
         self.currentIndex = -1
         self.commonRoot = ""
 
-        self.listeners.clear()
-        self.selectionListeners.clear()
-        self.dataListeners.clear()
+        if clearListeners:
+            self.listeners = []
+            self.selectionListeners = []
+            self.dataListeners = []
+
+        self.abortLoading()
+
+    def abortLoading(self):
+        if self._loadReceiver:
+            self._loadReceiver.abortTask()
+            self._loadReceiver = None
+
+    def isLoading(self) -> bool:
+        return self._loadReceiver is not None
 
 
     def load(self, path: str):
         self.loadAll((path,))
 
     def loadAll(self, paths: Iterable[str]):
-        self.files.clear()
-        self.selection.clear()
-        self.fileData.clear()
+        notify = bool(self.files)
+        self.reset(clearListeners=False)
+
+        if notify:
+            self.notifySelectionChanged()
+            self.notifyListChanged()
+
+        self._loadReceiver = FileListLoadReceiver(self)
+        self._loadReceiver.startTask(list(paths))
+
+    def loadAppend(self, paths: Iterable[str]):
+        self.abortLoading()
+
+        self.order = None
+        self._lazyLoadFolder()
+
+        self._loadReceiver = FileListLoadReceiver(self)
+        self._loadReceiver.startTask(list(paths))
+
+
+    def _applyLoadedFiles(self, files: list[str], commonRoot: str, finished: bool):
+        self.files = files
+        self.commonRoot = commonRoot
         self.order = None
 
-        for path in paths:
-            if os.path.isdir(path):
-                self._walkPath(path, True)
-            elif fileFilter(path):
-                self.files.append(os.path.abspath(path))
+        if len(files) > 0:
+            if self.currentIndex < 0:
+                self.currentFile = files[0]
+                self.currentIndex = 0
+            else:
+                try:
+                    self.currentIndex = self.indexOf(self.currentFile)
+                except ValueError:
+                    print(f"Warning: File {self.currentFile} not in FileList")
+                    self.currentIndex = -1
+        else:
+            self.currentFile = ""
+            self.currentIndex = -1
 
-        self._postprocessList()
-        numFiles = len(self.files)
-        self.currentFile = self.files[0] if numFiles > 0 else ""
-        self.currentIndex = 0 if numFiles > 1 else -1
-        self.notifySelectionChanged()
+        if finished:
+            self._loadReceiver.deleteLater()
+            self._loadReceiver = None
+
+            # Enable lazy loading if there's only one file
+            if len(files) <= 1:
+                self.currentIndex = -1
+
+            self.notifySelectionChanged()
+
+        # TODO: Different notification for append (don't scroll to selection in Gallery)
         self.notifyListChanged()
 
 
     def loadFilesFixed(self, paths: Iterable[str], copyFromFileList=None, copyKeys: list[str]=[DataKeys.ImageSize, DataKeys.Thumbnail]):
-        self.files.clear()
-        self.selection.clear()
-        self.fileData.clear()
-        self.order = None
+        self.reset(clearListeners=False)
 
         if copyFromFileList and copyKeys:
             def copyData(file: str):
@@ -266,33 +376,9 @@ class FileList:
         self.notifyListChanged()
 
 
-    def loadAppend(self, paths: Iterable[str]):
-        if not self.files:
-            self.loadAll(paths)
-            return
-
-        self.order = None
-        self._lazyLoadFolder()
-
-        for path in paths:
-            if os.path.isdir(path):
-                self._walkPath(path, True)
-            elif fileFilter(path):
-                self.files.append(os.path.abspath(path))
-
-        self._postprocessList(removeDuplicates=True)
-
-        try:
-            self.currentIndex = self.indexOf(self.currentFile)
-        except ValueError:
-            print(f"Warning: File {self.currentFile} not in FileList")
-            self.currentIndex = -1
-
-        self.notifySelectionChanged()
-        self.notifyListChanged()
-
-
     def filterFiles(self, predKeep: Callable[[str], bool]):
+        self.abortLoading()
+
         currentFile = self.currentFile
         currentMappedIndex = self.order[self.currentIndex] if self.order and self.currentIndex >= 0 else -1
 
@@ -346,7 +432,7 @@ class FileList:
                 self.currentFile  = newFiles[0]
 
         self.files = newFiles
-        self._updateCommonRoot()
+        self.commonRoot = getCommonRoot(self.files)
 
         if len(self.selection) != numSelected:
             self._validateSelection()
@@ -355,11 +441,11 @@ class FileList:
         self.notifyListChanged()
 
 
-    def getNumFiles(self):
+    def getNumFiles(self) -> int:
         self._lazyLoadFolder()
         return len(self.files)
 
-    def getFiles(self):
+    def getFiles(self) -> list[str]:
         self._lazyLoadFolder()
         return self.files
 
@@ -371,12 +457,12 @@ class FileList:
         currentIndex = self.order[self.currentIndex] if self.order else self.currentIndex
         return currentIndex == len(self.files) - 1  # True when no files loaded
 
-    def getCurrentNr(self):
+    def getCurrentNr(self) -> int:
         if self.order and self.currentIndex >= 0:
             return self.order[self.currentIndex]
         return self.currentIndex
 
-    def getCurrentFile(self):
+    def getCurrentFile(self) -> str:
         return self.currentFile
 
     def setCurrentFile(self, file: str):
@@ -479,7 +565,7 @@ class FileList:
 
 
     def _lazyLoadFolder(self):
-        if self.currentIndex < 0 and self.currentFile:
+        if self.currentIndex < 0 and self.currentFile and self._loadReceiver is None:
             path = os.path.dirname(self.currentFile)
             self._walkPath(path, False)
             self._postprocessList(removeDuplicates=True)
@@ -489,6 +575,11 @@ class FileList:
             except ValueError:
                 print(f"Warning: File {self.currentFile} not in FileList")
                 self.currentIndex = -1
+
+            numAddedFiles = len(self.files) - 1
+            if numAddedFiles > 0:
+                filesStr = "file" if numAddedFiles == 1 else "files"
+                print(f"Added {numAddedFiles} {filesStr}")
 
     def _walkPath(self, path: str, subfolders=False):
         path = os.path.abspath(path)
@@ -501,19 +592,11 @@ class FileList:
 
     def _postprocessList(self, removeDuplicates=False):
         if removeDuplicates:
-            self.files = sorted(set(self.files), key=sortKey)
+            self.files = sorted(set(self.files), key=CachedPathSort())
         else:
-            self.files.sort(key=sortKey)
+            self.files.sort(key=CachedPathSort())
 
-        self._updateCommonRoot()
-
-    def _updateCommonRoot(self):
-        try:
-            self.commonRoot = os.path.commonpath(self.files).rstrip("/\\")
-            if os.path.isfile(self.commonRoot):
-                self.commonRoot = os.path.dirname(self.commonRoot)
-        except ValueError:
-            self.commonRoot = ""
+        self.commonRoot = getCommonRoot(self.files)
 
     def removeCommonRoot(self, path: str, allowEmpty=False) -> str:
         return removeCommonRoot(path, self.commonRoot, allowEmpty)
@@ -543,7 +626,7 @@ class FileList:
             return False
         return True
 
-    def isSelected(self, file: str):
+    def isSelected(self, file: str) -> bool:
         return file in self.selection
 
     def selectFile(self, file: str):
@@ -666,6 +749,11 @@ class FileList:
             return None
         return fileDict.get(key)
 
+    def getMultipleData(self, file: str, keys: Iterable[str]) -> dict:
+        if fileDict := self.fileData.get(file):
+            return {k: v for k in keys if (v := fileDict.get(k)) is not None}
+        return {}
+
     def removeData(self, file: str, key: str, notify=True) -> None:
         fileDict = self.fileData.get(file)
         if fileDict is None:
@@ -689,3 +777,191 @@ class FileList:
     def notifyDataChanged(self, file: str, key: str):
         for l in self.dataListeners:
             l.onFileDataChanged(file, key)
+
+
+
+class FileListLoadReceiver(QObject):
+    apply = Signal(list, str, bool)
+
+    def __init__(self, filelist: FileList):
+        super().__init__(parent=None)
+        self.filelist = filelist
+        self.apply.connect(self._onApply, Qt.ConnectionType.QueuedConnection)
+
+        self.task: FileListLoadTask | None = None
+
+    @Slot(list, str, bool)
+    def _onApply(self, files: list[str], commonRoot: str, finished: bool):
+        if self.filelist is not None:
+            self.filelist._applyLoadedFiles(files, commonRoot, finished)
+        if finished:
+            self.filelist = None
+
+    def startTask(self, paths: list[str]):
+        self.task = FileListLoadTask(self, paths)
+        QThreadPool.globalInstance().start(self.task)
+
+    def abortTask(self):
+        self.apply.disconnect()
+        self.filelist = None
+
+        if self.task:
+            self.task.abort()
+
+
+class Folder:
+    __slots__ = ('path', 'sortKey', 'fileEntries', 'existingFiles', 'missingKeys')
+
+    def __init__(self, path: str, missingKeys=False):
+        self.path: str = path
+        self.sortKey: Any = folderSortKey(path)
+        self.fileEntries: list[tuple[str, Any]] = []
+        self.existingFiles: set[str] = set()
+        self.missingKeys: bool = missingKeys
+
+    def key(self):
+        return self.sortKey
+
+    @property
+    def files(self) -> Iterable[str]:
+        return (entry[0] for entry in self.fileEntries)
+
+
+class FileListLoadTask(QRunnable):
+    NOTIFY_INTERVAL_FIRST = 2000
+    NOTIFY_INTERVAL       = 50000
+    NOTIFY_INTERVAL_FORCE = 10000
+
+    def __init__(self, receiver: FileListLoadReceiver, paths: list[str]):
+        super().__init__()
+        self.setAutoDelete(True)
+        self.startTime = time.monotonic_ns()
+
+        self.receiver = receiver
+        self.paths = paths
+
+        self.numInitialFiles = 0
+        self.numAddedFiles = 0
+        self.nextNotify = self.NOTIFY_INTERVAL_FIRST
+        self.forceNotifyCountdown = self.NOTIFY_INTERVAL_FORCE
+
+        self.folders: dict[str, Folder] = {}
+        self._initFolders(receiver.filelist.files)
+
+        self._mutex = QMutex()
+        self._aborted = False
+
+
+    def abort(self):
+        with QMutexLocker(self._mutex):
+            self._aborted = True
+
+    def isAborted(self) -> bool:
+        with QMutexLocker(self._mutex):
+            return self._aborted
+
+
+    def _initFolders(self, files: list[str]):
+        currentDir = None
+        currentFolder: Folder = None
+
+        for file in files:
+            dirname, basename = os.path.split(file)
+            if dirname != currentDir:
+                currentDir = dirname
+                currentFolder = Folder(dirname, missingKeys=True)
+                self.folders[dirname] = currentFolder
+
+            currentFolder.fileEntries.append((file, basename))
+
+        self.numInitialFiles = len(files)
+
+    def _getFolder(self, path: str):
+        if folder := self.folders.get(path):
+            # When an existing folder is retrieved to add more files,
+            # lazily create keys and populate set with existing files.
+            if folder.missingKeys:
+                folder.missingKeys = False
+                folder.fileEntries = [(file, fileSortKey(basename)) for file, basename in folder.fileEntries]
+
+            folder.existingFiles.update(folder.files)
+        else:
+            self.folders[path] = folder = Folder(path)
+        return folder
+
+
+    @Slot()
+    def run(self):
+        fileEntryKey = lambda entry: entry[1]
+
+        try:
+            for path in self.paths:
+                path = os.path.abspath(path)
+
+                # Walk folders
+                if os.path.isdir(path):
+                    for (root, dirs, files) in os.walk(path, topdown=True, followlinks=True):
+                        if self.isAborted():
+                            return
+
+                        root = os.path.normpath(root)
+                        folder = self._getFolder(root)
+                        numFolderFiles = len(folder.fileEntries)
+
+                        folder.fileEntries.extend(
+                            (filePath, fileSortKey(f))
+                            for f in files
+                            if fileFilter(f) and (filePath := os.path.join(root, f)) not in folder.existingFiles
+                        )
+
+                        folder.fileEntries.sort(key=fileEntryKey)
+                        self._notifyFilesAdded(len(folder.fileEntries) - numFolderFiles)
+
+                # Single file paths
+                elif fileFilter(path):
+                    dirname, basename = os.path.split(path)
+                    folder = self._getFolder(dirname)
+
+                    if path not in folder.existingFiles:
+                        key = fileSortKey(basename)
+                        index = bisect_right(folder.fileEntries, key, key=fileEntryKey)
+                        folder.fileEntries.insert(index, (path, key))
+                        self._notifyFilesAdded(1)
+
+        finally:
+            if not self.isAborted():
+                t = (time.monotonic_ns() - self.startTime) / 1_000_000
+                msg = " ".join((
+                    "Added" if self.numInitialFiles else "Loaded",
+                    str(self.numAddedFiles),
+                    "file" if self.numAddedFiles == 1 else "files",
+                    f"in {t:.2f} ms"
+                ))
+
+                print(msg)
+                self.apply(finished=True)
+
+
+    def _notifyFilesAdded(self, numAddedFiles: int):
+        self.numAddedFiles += numAddedFiles
+        if self.numAddedFiles >= self.nextNotify:
+            self.apply()
+            return
+
+        # Force earlier notification when scanning lots of small folders
+        self.forceNotifyCountdown -= 1
+        if self.forceNotifyCountdown <= 0:
+            self.apply()
+
+    def apply(self, finished: bool = False):
+        self.nextNotify = self.numAddedFiles + self.NOTIFY_INTERVAL
+        self.forceNotifyCountdown = self.NOTIFY_INTERVAL_FORCE
+
+        folders = sorted(self.folders.values(), key=Folder.key)
+
+        files = []
+        for folder in folders:
+            files.extend(folder.files)
+
+        commonRoot = getCommonRoot(files)
+        self.receiver.apply.emit(files, commonRoot, finished)
