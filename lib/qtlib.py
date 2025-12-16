@@ -110,6 +110,8 @@ def qimageToNumpyMask(image: QtGui.QImage) -> np.ndarray:
     return np.copy( buffer[:, :image.width()] ) # Remove padding
 
 def qimageToNumpy(image: QtGui.QImage) -> np.ndarray:
+    'Returns BGR(A) format.'
+    # Assume little-endian, where Qt's Format_ARGB32 data is read in BGRA order
     buffer = np.frombuffer(image.constBits(), dtype=np.uint8)
     channels = image.depth() // 8
     width = image.bytesPerLine() // channels

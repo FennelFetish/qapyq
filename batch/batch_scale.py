@@ -162,11 +162,10 @@ class BatchScale(QtWidgets.QWidget):
         ]
 
         scalePreset = self.cboScalePreset.getSelectedPreset()
+
         interpDown = ScaleModelSettings.getInterpDown(scalePreset)
-        if ScaleModelSettings.getLowPassFilter(scalePreset):
-            ops.append(f"<tab>'{interpDown}' interpolation for downscaling (with anti-aliasing)")
-        else:
-            ops.append(f"<tab>'{interpDown}' interpolation for downscaling (no anti-aliasing)")
+        lpFilter = ScaleModelSettings.getLowPassFilter(scalePreset)
+        ops.append(f"<tab>'{interpDown}' interpolation for downscaling (Anti-Aliasing: {lpFilter.capitalize()})")
 
         interpUp = ScaleModelSettings.getInterpUp(scalePreset)
         ops.append(f"<tab>'{interpUp}' interpolation for upscaling")
@@ -238,8 +237,8 @@ class BatchScaleTask(BatchTask):
         interp = scaleConfig.getInterpolationMode(upscale)
 
         # Interpolation mode "Area" already does low-pass filtering when cv.resize is used
-        if not upscale and scaleConfig.lpFilter and interp != cv.INTER_AREA:
-            mat = export.ImageExportTask.filterLowPass(mat, srcWidth, srcHeight, w, h)
+        if not upscale and scaleConfig.useLpFilter and interp != cv.INTER_AREA:
+            mat = export.ImageExportTask.filterLowPass(mat, srcWidth, srcHeight, w, h, scaleConfig.lpFilter)
 
         return cv.resize(mat, (w, h), interpolation=interp)
 

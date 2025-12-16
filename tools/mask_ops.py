@@ -1236,8 +1236,7 @@ class DetectPadMaskOperation(MaskOperation):
         tolerance8Bit = round(tolerance*255)
         fillColor8Bit = round(fillColor*255)
 
-        image = qtlib.qimageToNumpy( self.maskTool._imgview.image.pixmap().toImage() )
-        image[..., :3] = image[..., 2::-1] # Convert RGB(A) -> BGR(A)
+        image = qtlib.qimageToNumpy( self.maskTool._imgview.image.pixmap().toImage() ) # BGR
 
         mat = self.maskItem.toNumpy()
         mat = self.operate(mat, image, minColor8Bit, maxColor8Bit, tolerance8Bit, fillColor8Bit)

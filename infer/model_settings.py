@@ -506,6 +506,12 @@ class MaskModelSettings(BaseSettingsWidget):
 
 
 class ScaleModelSettings(BaseSettingsWidget):
+    class LowPassFilter:
+        Adaptive = "adaptive"
+        Full     = "full"
+        Disabled = "disabled"
+
+
     KEY_BACKEND        = "backend"
     KEY_INTERP_UP      = "interp_up"
     KEY_INTERP_DOWN    = "interp_down"
@@ -517,7 +523,8 @@ class ScaleModelSettings(BaseSettingsWidget):
     DEFAULT_BACKEND     = "upscale"
     DEFAULT_INTERP_UP   = "Lanczos"
     DEFAULT_INTERP_DOWN = "Area"
-    DEFAULT_LPFILTER    = True
+    DEFAULT_LPFILTER    = LowPassFilter.Adaptive
+
 
     @classmethod
     def getInterpUp(cls, preset: dict) -> str:
@@ -528,8 +535,11 @@ class ScaleModelSettings(BaseSettingsWidget):
         return preset.get(cls.KEY_INTERP_DOWN, cls.DEFAULT_INTERP_DOWN)
 
     @classmethod
-    def getLowPassFilter(cls, preset: dict) -> bool:
-        return preset.get(cls.KEY_LPFILTER, cls.DEFAULT_LPFILTER)
+    def getLowPassFilter(cls, preset: dict) -> str:
+        val = preset.get(cls.KEY_LPFILTER, cls.DEFAULT_LPFILTER)
+        if isinstance(val, bool):
+            val = cls.DEFAULT_LPFILTER if val else cls.LowPassFilter.Disabled
+        return val
 
 
     def __init__(self, configAttr: str, backends: Mapping[str, BackendDef]):
@@ -547,13 +557,25 @@ class ScaleModelSettings(BaseSettingsWidget):
         self.cboInterpDown.addItems(INTERP_MODES.keys())
         self.cboInterpDown.setCurrentIndex(3) # Default: Area
 
-        self.chkLpFilter = QtWidgets.QCheckBox("Anti-Aliasing (prevents artifacts when downscaling large images, but might blur)")
-        self.chkLpFilter.setChecked(True)
-
         layout.addWidget(QtWidgets.QLabel("Downscale:"), row, 0)
         layout.addWidget(QtWidgets.QLabel("Interpolation:"), row, 1)
         layout.addWidget(self.cboInterpDown, row, 2)
-        layout.addWidget(self.chkLpFilter, row, 4, 1, 3)
+
+        aaTooltip = "Anti-aliasing prevents artifacts when downscaling images to less than half the size."
+        lblLpFilter = QtWidgets.QLabel("Anti-Alias:")
+        lblLpFilter.setToolTip(aaTooltip)
+
+        self.cboLpFilter = QtWidgets.QComboBox()
+        self.cboLpFilter.setToolTip(aaTooltip)
+        self.cboLpFilter.addItem("Adaptive Filtering (Sharp)", self.LowPassFilter.Adaptive)
+        self.cboLpFilter.addItem("Full Filtering (Smooth)", self.LowPassFilter.Full)
+        self.cboLpFilter.addItem("Disabled", self.LowPassFilter.Disabled)
+
+        aaLayout = QtWidgets.QHBoxLayout()
+        aaLayout.setSpacing(10)
+        aaLayout.addWidget(lblLpFilter)
+        aaLayout.addWidget(self.cboLpFilter, 1)
+        layout.addLayout(aaLayout, row, 4, 1, 2)
 
         row += 1
         layout.addWidget(QtWidgets.QLabel("Upscale:"), row, 0)
@@ -626,7 +648,8 @@ class ScaleModelSettings(BaseSettingsWidget):
         interpUpIndex = self.cboInterpDown.findText( self.getInterpUp(settings) )
         self.cboInterpUp.setCurrentIndex(interpUpIndex)
 
-        self.chkLpFilter.setChecked(self.getLowPassFilter(settings))
+        lpFilterIndex = self.cboLpFilter.findData( self.getLowPassFilter(settings) )
+        self.cboLpFilter.setCurrentIndex(lpFilterIndex)
 
         levels: list[dict] = settings.get(self.KEY_LEVELS, [])
         for i, level in zip((0, 1, 2), levels):
@@ -648,7 +671,7 @@ class ScaleModelSettings(BaseSettingsWidget):
             self.KEY_BACKEND:     self.DEFAULT_BACKEND,
             self.KEY_INTERP_UP:   self.cboInterpUp.currentText(),
             self.KEY_INTERP_DOWN: self.cboInterpDown.currentText(),
-            self.KEY_LPFILTER:    self.chkLpFilter.isChecked(),
+            self.KEY_LPFILTER:    self.cboLpFilter.currentData(),
             self.KEY_LEVELS:      levels
         }
 

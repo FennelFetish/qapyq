@@ -638,7 +638,7 @@ class ClickableTextEdit(QtWidgets.QPlainTextEdit):
 
 
 class ScaleConfig:
-    def __init__(self, interpUp: str, interpDown: str, lpFilter: bool, modelPath: str | None = None):
+    def __init__(self, interpUp: str, interpDown: str, lpFilter: str, modelPath: str | None = None):
         self.interpUp   = INTERP_MODES[interpUp]
         self.interpDown = INTERP_MODES[interpDown]
         self.lpFilter   = lpFilter
@@ -647,6 +647,10 @@ class ScaleConfig:
     @property
     def useUpscaleModel(self) -> bool:
         return self.modelPath is not None
+
+    @property
+    def useLpFilter(self) -> bool:
+        return self.lpFilter != ScaleModelSettings.LowPassFilter.Disabled
 
     def getInterpolationMode(self, upscale: bool) -> int:
         return self.interpUp if upscale else self.interpDown
@@ -754,20 +758,35 @@ class ScalePresetComboBox(QtWidgets.QComboBox):
 
 
 class ImageExportTask(QRunnable):
-    MIN_LP_SIGMA     = 0.2
+    MIN_LP_SIGMA     = 0.1  # At around downscale factor 1.3445 (scale factor 0.744)
 
-    SIGMA_RAMP_START = 1.33333
-    SIGMA_RAMP_END   = 2.4
+    SIGMA_RAMP_START = 1.0
+    SIGMA_RAMP_END   = 2.1
     SIGMA_RAMP_SCALE = (1 / (SIGMA_RAMP_END - SIGMA_RAMP_START)) * math.pi
+
+
+    class Kernels:
+        def __init__(self):
+            self.cross3x3 = cv.getStructuringElement(cv.MORPH_CROSS, (3, 3))
+            self.gaussMoiree = cv.getGaussianKernel(7, 0.75)
+
+            self.amplify = cv.getGaussianKernel(11, 1.5)
+            self.amplify /= self.amplify.max()
+
+            # Isotropic (rotationally invariant) Laplacian high-pass filter: gamma=0.5, scale=4
+            self.isoLaplace = np.array([
+                [ 1,   2, 1],
+                [ 2, -12, 2],
+                [ 1,   2, 1],
+            ], dtype=np.float32)
+
+    KERNELS: Kernels = None
 
 
     class ExportTaskSignals(QObject):
         done     = Signal(str, str)
         progress = Signal(str)
         fail     = Signal(str)
-
-        def __init__(self):
-            super().__init__()
 
 
     def __init__(self, srcFile, destFile, pixmap, targetWidth: int, targetHeight: int, scaleConfig: ScaleConfig):
@@ -785,7 +804,7 @@ class ImageExportTask(QRunnable):
         self.borderMode     = cv.BORDER_REPLICATE
 
 
-    def toImage(self, pixmap):
+    def toImage(self, pixmap: QtGui.QPixmap):
         return pixmap.toImage()
 
     def processImage(self, mat: np.ndarray) -> np.ndarray:
@@ -795,12 +814,17 @@ class ImageExportTask(QRunnable):
     @Slot()
     def run(self):
         try:
-            matSrc = qtlib.qimageToNumpy(self.img)
+            matSrc = qtlib.qimageToNumpy(self.img) # BGR
             if self.scaleConfig.useUpscaleModel:
                 matSrc = self.inferUpscale(matSrc)
 
             self.signals.progress.emit("Saving image...")
             matDest = self.processImage(matSrc)
+
+            if matDest.dtype != np.uint8:
+                np.round(matDest, out=matDest)
+                np.clip(matDest, 0, 255, out=matDest)
+                matDest = matDest.astype(np.uint8)
 
             saveImage(self.destFile, matDest)
             self.signals.done.emit(self.srcFile, self.destFile)
@@ -847,9 +871,10 @@ class ImageExportTask(QRunnable):
         upscale = self.targetWidth > srcWidth or self.targetHeight > srcHeight
         interp = self.scaleConfig.getInterpolationMode(upscale)
 
-        # Interpolation mode "Area" already does low-pass filtering when cv.resize is used
-        if not upscale and self.scaleConfig.lpFilter and interp != cv.INTER_AREA:
-            mat = self.filterLowPass(mat, srcWidth, srcHeight, self.targetWidth, self.targetHeight)
+        # Interpolation mode "Area" already does low-pass filtering when cv.resize is used.
+        # NOTE: "Area" won't preserve details like adaptive filtering.
+        if not upscale and self.scaleConfig.useLpFilter and interp != cv.INTER_AREA:
+            mat = self.filterLowPass(mat, srcWidth, srcHeight, self.targetWidth, self.targetHeight, self.scaleConfig.lpFilter)
 
         dsize = (self.targetWidth, self.targetHeight)
         return cv.resize(mat, dsize, interpolation=interp)
@@ -859,9 +884,9 @@ class ImageExportTask(QRunnable):
         srcWidth, srcHeight = self.calcPolySize(ptsSrc)
         upscale = self.targetWidth > srcWidth or self.targetHeight > srcHeight
 
-        if not upscale and self.scaleConfig.lpFilter:
+        if not upscale and self.scaleConfig.useLpFilter:
             targetWidth, targetHeight = self.calcPolySize(ptsDest) # Account for rotation
-            mat = self.filterLowPass(mat, srcWidth, srcHeight, targetWidth, targetHeight)
+            mat = self.filterLowPass(mat, srcWidth, srcHeight, targetWidth, targetHeight, self.scaleConfig.lpFilter)
 
         # https://docs.opencv.org/3.4/da/d6e/tutorial_py_geometric_transformations.html
         matrix = cv.getAffineTransform(np.float32(ptsSrc), np.float32(ptsDest))
@@ -879,11 +904,11 @@ class ImageExportTask(QRunnable):
     def distance(p0: list[float], p1: list[float]) -> float:
         dx = p0[0] - p1[0]
         dy = p0[1] - p1[1]
-        return np.sqrt(dx*dx + dy*dy)
+        return math.sqrt(dx*dx + dy*dy)
 
 
     @classmethod
-    def filterLowPass(cls, mat: np.ndarray, srcWidth: float, srcHeight: float, targetWidth: float, targetHeight: float):
+    def filterLowPass(cls, mat: np.ndarray, srcWidth: float, srcHeight: float, targetWidth: float, targetHeight: float, filterMode: str) -> np.ndarray:
         # TODO: Properly account for (arbitrary) rotation. Sigma should be a bit higher, max at 45deg.
         downScaleX = srcWidth  / targetWidth
         downScaleY = srcHeight / targetHeight
@@ -892,14 +917,15 @@ class ImageExportTask(QRunnable):
             #print(f"skip blur, scale factor x:{downScaleX}, y:{downScaleY}")
             return mat
 
+        # Frequencies above Nyquist limit are attenuated with a sigma around downscale/2, scikit uses 2*downscale/6 = downscale/3
         # https://scikit-image.org/docs/stable/api/skimage.transform.html#skimage.transform.pyramid_reduce
         # https://www.desmos.com/calculator/u4dyh8mak0
-        sigmaX = 2 * downScaleX / 6
+        sigmaX = downScaleX / 3
         if downScaleX < cls.SIGMA_RAMP_END:
             t = (downScaleX - cls.SIGMA_RAMP_END) * cls.SIGMA_RAMP_SCALE
             sigmaX *= math.cos(t) / 2 + 0.5
 
-        sigmaY = 2 * downScaleY / 6
+        sigmaY = downScaleY / 3
         if downScaleY < cls.SIGMA_RAMP_END:
             t = (downScaleY - cls.SIGMA_RAMP_END) * cls.SIGMA_RAMP_SCALE
             sigmaY *= math.cos(t) / 2 + 0.5
@@ -909,10 +935,111 @@ class ImageExportTask(QRunnable):
             return mat
 
         ksize = (
-            2 * int(np.ceil(3*sigmaY)) + 1,
-            2 * int(np.ceil(3*sigmaX)) + 1
+            2 * math.ceil(3*sigmaX) + 1,
+            2 * math.ceil(3*sigmaY) + 1
         )
 
         #print(f"downscaling by x:{downScaleX} / y:{downScaleY}, gauss sigma x:{sigmaX} / y:{sigmaY} @ kernel size {ksize}")
-        mat = cv.GaussianBlur(mat, ksize, sigmaX=sigmaX, sigmaY=sigmaY)
+
+        if filterMode == ScaleModelSettings.LowPassFilter.Adaptive:
+            mat = mat.astype(np.float32)
+            mask = cls.createBlendMask(mat, targetWidth, targetHeight, max(downScaleX, downScaleY))
+            filtered = cv.GaussianBlur(mat, ksize, sigmaX=sigmaX, sigmaY=sigmaY, borderType=cv.BORDER_REFLECT_101)
+            filtered = mat + mask*(filtered - mat)
+        else:
+            filtered = cv.GaussianBlur(mat, ksize, sigmaX=sigmaX, sigmaY=sigmaY, borderType=cv.BORDER_REFLECT_101)
+
+        return filtered
+
+    @classmethod
+    def createBlendMask(cls, imgF32: np.ndarray, targetW: float, targetH: float, downscale: float) -> np.ndarray:
+        if cls.KERNELS is None:
+            cls.KERNELS = cls.Kernels()
+
+        # Work with float32 luminance in range [0,1]
+        lumi = cv.cvtColor(imgF32, cv.COLOR_BGRA2GRAY)
+        lumi /= 255.0
+
+        # Detect edges
+        mask = cls.filterHighPass(lumi)
+        mask = cls.contrastHard(mask) # Attenuates noise
+
+        # Dilate edges
+        dilation = downscale
+        dilKernel = cls.getEllipseKernel(dilation - 1) # Do one dilation after combining with moirée mask
+        mask = cv.dilate(mask, dilKernel, borderType=cv.BORDER_CONSTANT, borderValue=0)
+
+        # Detect moirée artifacts and merge with edge mask
+        moiree = cls.detectMoiree(lumi, targetW, targetH)
+        moiree *= 1.3
+        np.maximum(mask, moiree, out=mask)
+        np.clip(mask, 0.0, 1.0, out=mask)
+        mask = cls.contrastHard(mask)
+
+        mask = cv.dilate(mask, cls.KERNELS.cross3x3, borderType=cv.BORDER_CONSTANT, borderValue=0)
+
+        # Blur mask by half of the dilation
+        # sigma: ceil(dilation)/6 + (ceil(dilation)-dilation)/6
+        sigma = (2*math.ceil(dilation) - dilation) / 6
+        ksize = 2*math.ceil(3*sigma) + 1
+        mask = cv.GaussianBlur(mask, (ksize, ksize), sigmaX=sigma, sigmaY=sigma, borderType=cv.BORDER_REFLECT_101)
+        #print(f"createBlendMask: dilation: {dilation}, gauss ksize: {ksize}, sigma: {sigma}")
+
+        mask.shape = (*mask.shape[:2], 1)
+        return mask
+
+    @classmethod
+    def detectMoiree(cls, lumi: np.ndarray, targetW: float, targetH: float) -> np.ndarray:
+        # Highlight moirée patterns by calculating the difference between downscaled images.
+        # Interpolation mode "Area" will anti-alias, whereas "Cubic" will exaggerate. The difference shows the artifacts.
+        targetSize  = (round(targetW), round(targetH))
+        scaledArea  = cv.resize(lumi, targetSize, interpolation=cv.INTER_AREA)
+        scaledCubic = cv.resize(lumi, targetSize, interpolation=cv.INTER_CUBIC)
+
+        scaledArea  = cv.sepFilter2D(scaledArea,  -1, cls.KERNELS.gaussMoiree, cls.KERNELS.gaussMoiree, borderType=cv.BORDER_REFLECT_101)
+        scaledCubic = cv.sepFilter2D(scaledCubic, -1, cls.KERNELS.gaussMoiree, cls.KERNELS.gaussMoiree, borderType=cv.BORDER_REFLECT_101)
+
+        diff = np.abs(scaledCubic - scaledArea)
+        diff = cv.normalize(diff, diff, 0.0, 1.0, norm_type=cv.NORM_MINMAX)
+
+        diff = cv.sepFilter2D(diff, -1, cls.KERNELS.amplify, cls.KERNELS.amplify, borderType=cv.BORDER_REFLECT_101)
+        np.clip(diff, 0.0, 1.0, out=diff)
+
+        diff = cls.contrast(diff)
+
+        h, w = lumi.shape[:2]
+        return cv.resize(diff, (w, h), interpolation=cv.INTER_LINEAR)
+
+    @classmethod
+    def filterHighPass(cls, lumi: np.ndarray) -> np.ndarray:
+        mat = cv.filter2D(lumi, -1, cls.KERNELS.isoLaplace, borderType=cv.BORDER_REPLICATE)
+        np.abs(mat, out=mat)
+        np.clip(mat, 0.0, 1.0, out=mat)
         return mat
+
+    @staticmethod
+    def contrast(mat: np.ndarray) -> np.ndarray:
+        # Cubic smoothstep
+        mat2 = mat*mat
+        mat3 = mat2*mat
+        return 3*mat2 - 2*mat3
+
+    @staticmethod
+    def contrastHard(mat: np.ndarray) -> np.ndarray:
+        # Quintic smoothstep
+        #return mat*mat*mat*(mat*(mat*6-15)+10)
+
+        # A good approximation, cheaper to calculate
+        # https://www.desmos.com/calculator/sddlmjhw0o
+        inv = 1.0 - mat
+        inv *= inv
+        mat2 = mat * mat
+        mat2 /= mat2 + inv
+        return mat2
+
+    @staticmethod
+    def getEllipseKernel(radius: float):
+        size = 2*math.ceil(radius) + 1
+        kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (size, size))
+        np.maximum(kernel, kernel.T, out=kernel) # Make symmetric
+        return kernel
