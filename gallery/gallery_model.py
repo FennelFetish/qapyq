@@ -307,22 +307,15 @@ class GalleryModel(QAbstractTableModel):
 
 
     def onFileDataChanged(self, file: str, key: str):
-        item = self.fileItems.get(file)
-        if not item:
+        if key not in (DataKeys.CaptionState, DataKeys.CropState, DataKeys.MaskState):
             return
 
-        roles = []
-
-        match key:
-            case DataKeys.CaptionState | DataKeys.CropState | DataKeys.MaskState:
-                roles.append(self.ROLE_ICONS)
+        roles = [self.ROLE_ICONS]
 
         # Reload caption when it was edited and saved in CaptionWindow
-        if (
-            self.galleryCaption.captionsEnabled
+        if (self.galleryCaption.captionsEnabled
             and key == DataKeys.CaptionState
             and self.filelist.getData(file, key) == DataKeys.IconStates.Saved
-            and (item := self.fileItems[file])
         ):
             roles.append(self.ROLE_CAPTION)
             self._captionCache.pop(file, None)
@@ -331,7 +324,7 @@ class GalleryModel(QAbstractTableModel):
                 with QSignalBlocker(doc):
                     qtlib.setTextPreserveUndo(QTextCursor(doc), self._getCaption(file))
 
-        if roles:
+        if item := self.fileItems.get(file):
             index = self.index(*item.pos)
             self.dataChanged.emit(index, index, roles)
 

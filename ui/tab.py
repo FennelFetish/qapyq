@@ -5,7 +5,6 @@ from PySide6.QtGui import QPixmap
 from config import Config
 from lib import qtlib
 from lib.filelist import FileList
-from lib.qtlib import ColoredMessageStatusBar
 
 
 @Slot()
@@ -51,7 +50,7 @@ class ImgTab(QtWidgets.QMainWindow):
         name = os.path.basename(currentFile) if currentFile else self.EMPTY_TAB_TITLE
         if numFiles := len(self.filelist.files): # No lazy loading
             loading = " - Loading" if self.filelist.isLoading() else ""
-            fileNr = self.filelist.getCurrentNr() + 1
+            fileNr = max(self.filelist.getCurrentNr(), 0) + 1
             name += locale.format_string(f" (%d/%d{loading})", (fileNr, numFiles), grouping=True)
 
         tabIndex = self.tabWidget.indexOf(self)

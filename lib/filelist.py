@@ -565,10 +565,18 @@ class FileList:
 
 
     def _lazyLoadFolder(self):
+        # Lazy loading of the folder needs to be synchronous and finish before further processing.
         if self.currentIndex < 0 and self.currentFile and self._loadReceiver is None:
-            path = os.path.dirname(self.currentFile)
-            self._walkPath(path, False)
-            self._postprocessList(removeDuplicates=True)
+            assert len(self.files) == 1
+
+            path = os.path.abspath(os.path.dirname(self.currentFile))
+            with os.scandir(path) as it:
+                for entry in filter(os.DirEntry.is_file, it):
+                    file = entry.path
+                    if fileFilter(file) and file != self.currentFile:
+                        self.files.append(file)
+
+            self._postprocessList()
 
             try:
                 self.currentIndex = self.indexOf(self.currentFile)
@@ -579,23 +587,11 @@ class FileList:
             numAddedFiles = len(self.files) - 1
             if numAddedFiles > 0:
                 filesStr = "file" if numAddedFiles == 1 else "files"
-                print(f"Added {numAddedFiles} {filesStr}")
-
-    def _walkPath(self, path: str, subfolders=False):
-        path = os.path.abspath(path)
-        for (root, dirs, files) in os.walk(path, topdown=True, followlinks=True):
-            if not subfolders:
-                dirs.clear()
-            root = os.path.normpath(root)
-            self.files.extend(os.path.join(root, f) for f in files if fileFilter(f))
+                print(f"Added {numAddedFiles} {filesStr} (lazy load)")
 
 
-    def _postprocessList(self, removeDuplicates=False):
-        if removeDuplicates:
-            self.files = sorted(set(self.files), key=CachedPathSort())
-        else:
-            self.files.sort(key=CachedPathSort())
-
+    def _postprocessList(self):
+        self.files.sort(key=CachedPathSort())
         self.commonRoot = getCommonRoot(self.files)
 
     def removeCommonRoot(self, path: str, allowEmpty=False) -> str:
@@ -781,7 +777,7 @@ class FileList:
 
 
 class FileListLoadReceiver(QObject):
-    apply = Signal(list, str, bool)
+    apply = Signal(tuple, str, bool)  # wrapped files, common root, finished
 
     def __init__(self, filelist: FileList):
         super().__init__(parent=None)
@@ -791,11 +787,18 @@ class FileListLoadReceiver(QObject):
         self.task: FileListLoadTask | None = None
 
     @Slot(list, str, bool)
-    def _onApply(self, files: list[str], commonRoot: str, finished: bool):
-        if self.filelist is not None:
-            self.filelist._applyLoadedFiles(files, commonRoot, finished)
+    def _onApply(self, wrappedFiles: tuple[list[str]], commonRoot: str, finished: bool):
+        if self.filelist is None:
+            return
+
+        self.filelist._applyLoadedFiles(wrappedFiles[0], commonRoot, finished)
+
         if finished:
             self.filelist = None
+        elif self.task:
+            # Only allow more notifications after the current one is completely processed
+            # to prevent overwhelming the GUI thread.
+            self.task.allowNextNotify()
 
     def startTask(self, paths: list[str]):
         self.task = FileListLoadTask(self, paths)
@@ -828,9 +831,8 @@ class Folder:
 
 
 class FileListLoadTask(QRunnable):
-    NOTIFY_INTERVAL_FIRST = 2000
-    NOTIFY_INTERVAL       = 50000
-    NOTIFY_INTERVAL_FORCE = 10000
+    NOTIFY_INTERVAL_FIRST =   300_000_000  # 300 ms
+    NOTIFY_INTERVAL       = 2_000_000_000  # 2 seconds
 
     def __init__(self, receiver: FileListLoadReceiver, paths: list[str]):
         super().__init__()
@@ -842,15 +844,19 @@ class FileListLoadTask(QRunnable):
 
         self.numInitialFiles = 0
         self.numAddedFiles = 0
-        self.nextNotify = self.NOTIFY_INTERVAL_FIRST
-        self.forceNotifyCountdown = self.NOTIFY_INTERVAL_FORCE
 
         self.folders: dict[str, Folder] = {}
         self._initFolders(receiver.filelist.files)
 
         self._mutex = QMutex()
         self._aborted = False
+        self._nextNotifyTime = time.monotonic_ns() + self.NOTIFY_INTERVAL_FIRST
 
+
+    def allowNextNotify(self):
+        now = time.monotonic_ns()
+        with QMutexLocker(self._mutex):
+            self._nextNotifyTime = now + self.NOTIFY_INTERVAL
 
     def abort(self):
         with QMutexLocker(self._mutex):
@@ -944,24 +950,20 @@ class FileListLoadTask(QRunnable):
 
     def _notifyFilesAdded(self, numAddedFiles: int):
         self.numAddedFiles += numAddedFiles
-        if self.numAddedFiles >= self.nextNotify:
-            self.apply()
-            return
 
-        # Force earlier notification when scanning lots of small folders
-        self.forceNotifyCountdown -= 1
-        if self.forceNotifyCountdown <= 0:
-            self.apply()
+        with QMutexLocker(self._mutex):
+            if self._nextNotifyTime < 0 or time.monotonic_ns() < self._nextNotifyTime:
+                return
+            self._nextNotifyTime = -1
+
+        self.apply()
 
     def apply(self, finished: bool = False):
-        self.nextNotify = self.numAddedFiles + self.NOTIFY_INTERVAL
-        self.forceNotifyCountdown = self.NOTIFY_INTERVAL_FORCE
-
         folders = sorted(self.folders.values(), key=Folder.key)
 
-        files = []
+        files = list[str]()
         for folder in folders:
             files.extend(folder.files)
 
         commonRoot = getCommonRoot(files)
-        self.receiver.apply.emit(files, commonRoot, finished)
+        self.receiver.apply.emit((files,), commonRoot, finished)  # Wrap list in tuple to prevent copy

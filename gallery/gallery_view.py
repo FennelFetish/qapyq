@@ -360,7 +360,7 @@ class GalleryItemMenu(QMenu):
     def _openFilesInNewTab(self):
         filelist = self.view.tab.filelist
         files = filelist.selectedFiles or (filelist.getCurrentFile(),)
-        newTab = self.view.tab.mainWindow.addTab()
+        newTab: ImgTab = self.view.tab.mainWindow.addTab()
         newTab.filelist.loadFilesFixed(files, filelist)
 
     @Slot()

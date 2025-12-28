@@ -119,7 +119,7 @@ class GalleryDelegate(QtWidgets.QStyledItemDelegate):
 
 
     def clearCache(self):
-        self.sizeCache.clear()
+        self.sizeCache = defaultdict(SizeHintCacheRow)
 
     @Slot(QModelIndex, QModelIndex, list)
     def onDataChanged(self, startIndex: QModelIndex, endIndex: QModelIndex, roles: list[int]):

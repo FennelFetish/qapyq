@@ -72,7 +72,7 @@ class GalleryHeader(QtWidgets.QWidget):
 
     @Slot()
     def openFilesInNewTab(self):
-        newTab = self.tab.mainWindow.addTab()
+        newTab: ImgTab = self.tab.mainWindow.addTab()
         newTab.filelist.loadFilesFixed(self.folderFiles, self.tab.filelist)
 
     @Slot()
