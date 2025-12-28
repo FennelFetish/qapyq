@@ -98,7 +98,7 @@ Find more specialized finetuned models on [huggingface.co](https://huggingface.c
   - [Molmo](https://huggingface.co/collections/allenai/molmo-66f379e6fe3b8ef090a8ca19)
   - [Moondream2 (GGUF)](https://huggingface.co/vikhyatk/moondream2)
   - [Ovis1.6](https://huggingface.co/AIDC-AI/Ovis1.6-Gemma2-9B), [Ovis2](https://huggingface.co/collections/AIDC-AI/ovis2-67ab36c7e497429034874464), [Ovis2.5](https://huggingface.co/collections/AIDC-AI/ovis25-689ec1474633b2aab8809335)
-  - [Qwen2-VL](https://huggingface.co/collections/Qwen/qwen2-vl-66cee7455501d7126940800d), [Qwen2.5-VL](https://huggingface.co/collections/Qwen/qwen25-vl-6795ffac22b334a837c0f9a5)
+  - [Qwen2-VL](https://huggingface.co/collections/Qwen/qwen2-vl-66cee7455501d7126940800d), [Qwen2.5-VL](https://huggingface.co/collections/Qwen/qwen25-vl-6795ffac22b334a837c0f9a5), [Qwen3-VL](https://huggingface.co/collections/Qwen/qwen3-vl)
 
 - **LLM**<br>
   Transform existing captions/tags.
@@ -115,7 +115,7 @@ Find more specialized finetuned models on [huggingface.co](https://huggingface.c
     - YOLO/Adetailer detection models
       - Search for YOLO models on [huggingface.co](https://huggingface.co/models?pipeline_tag=object-detection).
     - [Florence-2](https://huggingface.co/collections/microsoft/florence-6669f44df0d87d9c3bfb76de)
-    - [Qwen2.5-VL](https://huggingface.co/collections/Qwen/qwen25-vl-6795ffac22b334a837c0f9a5)
+    - [Qwen3-VL](https://huggingface.co/collections/Qwen/qwen3-vl)
   - Segmentation / Background Removal
     - [InSPyReNet](https://github.com/plemeri/InSPyReNet/blob/main/docs/model_zoo.md) (Plus_Ultra)
     - [RMBG-2.0](https://huggingface.co/briaai/RMBG-2.0)

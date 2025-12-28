@@ -1,5 +1,6 @@
 from typing import Any
-from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, GenerationConfig, set_seed
+from typing_extensions import override
+from transformers import AutoProcessor, AutoConfig, GenerationConfig, set_seed
 import torch, json, math
 from PIL import Image
 from host.imagecache import ImageFile
@@ -8,12 +9,12 @@ from .devmap import DevMap
 from .quant import Quantization
 
 
-class Qwen25VLBackend(CaptionBackend):
+class QwenVLBackend(CaptionBackend):
     DETECT_SYSPROMPT = "You are a helpful assistant"
     DETECT_PROMPT    = "Outline the position of the requested elements and output coordinates in JSON format.\nRequested elements: "
 
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any], modelClass: type):
         modelPath: str = config["model_path"]
         self.generationConfig = GenerationConfig.from_pretrained(modelPath)
 
@@ -23,7 +24,7 @@ class Qwen25VLBackend(CaptionBackend):
         devmap = self.makeDeviceMap(modelPath, self.device, config.get("gpu_layers", 100), config.get("vis_gpu_layers", 100))
         quant = Quantization.getQuantConfig(config.get("quantization", "none"), devmap.hasCpuLayers)
 
-        self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        self.model = modelClass.from_pretrained(
             modelPath,
             torch_dtype=self.dtype,
             device_map=devmap.deviceMap,
@@ -68,7 +69,7 @@ class Qwen25VLBackend(CaptionBackend):
 
 
     @torch.inference_mode()
-    def _runTask(self, image: Image.Image, messages) -> str:
+    def _runTask(self, image: Image.Image, messages: list) -> str:
         inputText = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
         inputs = self.processor(
@@ -136,11 +137,15 @@ class Qwen25VLBackend(CaptionBackend):
             results.append({
                 "name": label,
                 "confidence": 1.0,
-                "p0": (p0x/w, p0y/h),
-                "p1": (p1x/w, p1y/h)
+                "p0": self._normalizePoint(p0x, p0y, w, h),
+                "p1": self._normalizePoint(p1x, p1y, w, h)
             })
 
         return results
+
+    @staticmethod
+    def _normalizePoint(x: int, y: int, imgW: int, imgH: int) -> tuple[float, float]:
+        return (x/imgW, y/imgH)
 
 
     def _getUserContent(self, prompt: str, index: int, imgFile: ImageFile):
@@ -174,7 +179,19 @@ class Qwen25VLBackend(CaptionBackend):
 
 
     @staticmethod
-    def makeDeviceMap(modelPath, device, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
+    def makeDeviceMap(modelPath: str, device, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
+        raise NotImplementedError()
+
+
+
+class Qwen25VLBackend(QwenVLBackend):
+    def __init__(self, config: dict):
+        from transformers import Qwen2_5_VLForConditionalGeneration
+        super().__init__(config, Qwen2_5_VLForConditionalGeneration)
+
+    @staticmethod
+    @override
+    def makeDeviceMap(modelPath: str, device, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
         devmap = DevMap.fromConfig(
             modelPath,
             "num_hidden_layers",
@@ -199,3 +216,73 @@ class Qwen25VLBackend(CaptionBackend):
 
         devmap.setCudaLayer("lm_head")
         return devmap
+
+
+class Qwen3VLBackend(QwenVLBackend):
+    THINK_END = "</think>"
+
+    def __init__(self, config: dict[str, Any]):
+        from transformers import Qwen3VLForConditionalGeneration
+        super().__init__(config, Qwen3VLForConditionalGeneration)
+
+    @override
+    def _runTask(self, image: Image.Image, messages: list) -> str:
+        output = super()._runTask(image, messages)
+
+        thinkIndex = output.find(self.THINK_END)
+        if thinkIndex >= 0:
+            reasoning = output[:thinkIndex]
+            print(f"Reasoning: {reasoning}")
+
+            thinkIndex += len(self.THINK_END)
+            output = output[thinkIndex:].strip()
+
+        return output
+
+    @staticmethod
+    @override
+    def _normalizePoint(x: int, y: int, imgW: int, imgH: int) -> tuple[float, float]:
+        return (x/1000, y/1000)
+
+    @staticmethod
+    @override
+    def makeDeviceMap(modelPath: str, device, llmGpuLayers: int, visGpuLayers: int) -> DevMap:
+        devmap = DevMap.fromConfig(
+            modelPath,
+            "text_config.num_hidden_layers",
+            "vision_config.depth"
+        )
+
+        devmap.setDevice(device)
+
+        devmap.setCudaLayer("model")
+        devmap.setCudaLayer("model.language_model")
+        devmap.setCudaLayer("model.language_model.embed_tokens")
+        devmap.setCudaLayer("model.language_model.norm")
+        devmap.setLLMLayers("model.language_model.layers", llmGpuLayers)
+
+        devmap.setCudaLayer("model.visual")
+        devmap.setCudaLayer("model.visual.patch_embed")
+        devmap.setCudaLayer("model.visual.pos_embed")
+        devmap.setCudaLayer("model.visual.merger")
+        devmap.setCudaLayer("model.visual.deepstack_merger_list")
+
+        if visGpuLayers == 0:
+            visGpuLayers = 1
+
+        devmap.setVisLayers("model.visual.blocks", visGpuLayers)
+
+        devmap.setCudaLayer("lm_head")
+        return devmap
+
+
+
+def getQwenVLBackend(config: dict):
+        modelPath: str = config["model_path"]
+        modelConfig = AutoConfig.from_pretrained(modelPath)
+
+        match modelConfig.model_type:
+            case "qwen2_5_vl":  return Qwen25VLBackend(config)
+            case "qwen3_vl":    return Qwen3VLBackend(config)
+
+        return Qwen3VLBackend(config)

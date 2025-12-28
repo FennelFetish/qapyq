@@ -53,8 +53,8 @@ BackendsCaption = {
     "Ovis-1.6":         BackendDef("ovis16",        BackendTypes.TRANSFORMERS),
     "Ovis-2.0":         BackendDef("ovis2",         BackendTypes.TRANSFORMERS),
     "Ovis-2.5":         BackendDef("ovis25",        BackendTypes.TRANSFORMERS),
-    "Qwen2-VL":         BackendDef("qwen2vl",       BackendTypes.TRANSFORMERS),
-    "Qwen2.5-VL":       BackendDef("qwen25vl",      BackendTypes.TRANSFORMERS),
+    "Qwen-VL 2":        BackendDef("qwen2vl",       BackendTypes.TRANSFORMERS),
+    "Qwen-VL 2.5/3":    BackendDef("qwen25vl",      BackendTypes.TRANSFORMERS),
     #"Qwen2.5-VL VLLM":  BackendDef("qwen25vl-vllm", BackendTypes.VLLM)
 }
 
@@ -71,12 +71,12 @@ BackendsTag = {
 }
 
 BackendsMask = {
-    "BriaAI RMBG-2.0":      MaskBackendDef("bria-rmbg",         BackendTypes.TRANSFORMERS, False),
-    "Florence-2 Detect":    MaskBackendDef("florence2-detect",  BackendTypes.TRANSFORMERS, True),
-    "Florence-2 Segment":   MaskBackendDef("florence2-segment", BackendTypes.TRANSFORMERS, True),
-    "Inspyrenet RemBg":     MaskBackendDef("inspyrenet",        BackendTypes.TORCH,        False, BackendPathModes.FILE),
-    "Qwen2.5-VL Detect":    MaskBackendDef("qwen25vl-detect",   BackendTypes.TRANSFORMERS, True),
-    "Yolo Detect":          MaskBackendDef("yolo-detect",       BackendTypes.ULTRALYTICS,  True)
+    "BriaAI RMBG-2.0":          MaskBackendDef("bria-rmbg",         BackendTypes.TRANSFORMERS, False),
+    "Florence-2 Detect":        MaskBackendDef("florence2-detect",  BackendTypes.TRANSFORMERS, True),
+    "Florence-2 Segment":       MaskBackendDef("florence2-segment", BackendTypes.TRANSFORMERS, True),
+    "Inspyrenet RemBg":         MaskBackendDef("inspyrenet",        BackendTypes.TORCH,        False, BackendPathModes.FILE),
+    "Qwen-VL 2.5/3 Detect":     MaskBackendDef("qwen25vl-detect",   BackendTypes.TRANSFORMERS, True),
+    "Yolo Detect":              MaskBackendDef("yolo-detect",       BackendTypes.ULTRALYTICS,  True)
 }
 
 BackendsUpscale = {
@@ -159,8 +159,8 @@ class BackendLoader:
                 from .backend_qwen2vl import Qwen2VLBackend
                 return Qwen2VLBackend(config)
             case "qwen25vl" | "qwen25vl-detect":
-                from .backend_qwen25vl import Qwen25VLBackend
-                return Qwen25VLBackend(config)
+                from .backend_qwen25vl import getQwenVLBackend
+                return getQwenVLBackend(config)
             case "qwen25vl-vllm":
                 from .backend_vllm_qwen25vl import VllmQwen25Backend
                 return VllmQwen25Backend(config)

@@ -44,7 +44,7 @@ class InferenceSettingsWidget(superqt.QCollapsible):
         layout.setColumnStretch(7, 1)
 
         self.tokensMax = QtWidgets.QSpinBox()
-        self.tokensMax.setRange(10, 5000)
+        self.tokensMax.setRange(10, 100000)
         self.tokensMax.setSingleStep(10)
 
         self._buildFirstRow(layout, QtWidgets.QLabel("Max Tokens:"), self.tokensMax)
