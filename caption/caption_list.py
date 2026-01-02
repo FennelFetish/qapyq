@@ -2,10 +2,12 @@ from __future__ import annotations
 import os
 from enum import Enum
 from typing import Generator
+from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QTimer, QSignalBlocker
 from lib.captionfile import CaptionFile, FileTypeSelector, Keys
 from lib import colorlib, qtlib
+from ui.autocomplete import AutoCompleteSource, getCsvAutoCompleteSource
 from .caption_tab import CaptionTab
 from .caption_highlight import CaptionHighlight
 from .caption_text import BorderlessNavigationTextEdit
@@ -106,12 +108,14 @@ class CaptionList(CaptionTab):
         self.setLayout(layout)
 
 
+    @override
     def onTabEnabled(self):
         if self._needsReload:
             self.reloadCaptions()
         elif self._needsHighlight:
             self._updateHighlight()
 
+    @override
     def onTabDisabled(self):
         pass
 
@@ -379,7 +383,8 @@ class CaptionEntry(QtWidgets.QWidget):
         layout.addWidget(self.txtKey, 0, 1, Qt.AlignmentFlag.AlignTop)
 
         separator = SEPARATORS[keyType]
-        self.txtCaption = AutoSizeTextEdit(captionList.ctx.highlight, separator)
+        autoCompleteSources = [captionList.ctx.groupAutocompleteSource, getCsvAutoCompleteSource()]
+        self.txtCaption = AutoSizeTextEdit(captionList.ctx.highlight, separator, autoCompleteSources)
         qtlib.setMonospace(self.txtCaption)
         self.txtCaption.textChanged.connect(self._setEdited)
         layout.addWidget(self.txtCaption, 0, 3, Qt.AlignmentFlag.AlignTop)
@@ -437,8 +442,8 @@ class AutoSizeTextEdit(BorderlessNavigationTextEdit):
     focusReceived = Signal(object)
     save = Signal()
 
-    def __init__(self, highlight: CaptionHighlight, separator: str):
-        super().__init__(separator)
+    def __init__(self, highlight: CaptionHighlight, separator: str, autoCompleteSources: list[AutoCompleteSource] = []):
+        super().__init__(separator, autoCompleteSources)
         self.highlight = highlight
 
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -472,24 +477,36 @@ class AutoSizeTextEdit(BorderlessNavigationTextEdit):
             scrollBar.setValue(0)
 
 
+    @override
     def wheelEvent(self, e: QtGui.QWheelEvent):
         e.ignore()
 
+    @override
     def keyPressEvent(self, event: QtGui.QKeyEvent):
         if event.key() == Qt.Key.Key_Tab:
-            event.ignore()
+            if not (self.completer and self.completer.isActive()):
+                event.ignore()
+                return
+
         elif event.matches(QtGui.QKeySequence.StandardKey.Save):
             self.save.emit()
             event.accept()
-        else:
-            super().keyPressEvent(event)
+            return
 
+        super().keyPressEvent(event)
+
+    @override
     def focusInEvent(self, e: QtGui.QFocusEvent):
         super().focusInEvent(e)
-        self.moveCursor(QtGui.QTextCursor.MoveOperation.End)
+
+        # Don't move cursor when autocomplete popup was closed
+        if e.reason() != Qt.FocusReason.PopupFocusReason:
+            self.moveCursor(QtGui.QTextCursor.MoveOperation.End)
+
         self.setActivePalette(True)
         self.focusReceived.emit(self)
 
+    @override
     def focusOutEvent(self, e: QtGui.QFocusEvent):
         super().focusOutEvent(e)
         self.moveCursor(QtGui.QTextCursor.MoveOperation.End) # Clear selection

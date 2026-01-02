@@ -4,6 +4,7 @@ from PySide6 import QtGui
 from PySide6.QtCore import Qt, QPointF
 from lib.captionfile import FileTypeSelector
 from lib.util import CaptionSplitter
+from ui.autocomplete import AutoCompleteSource
 from caption.caption_highlight import CaptionHighlight, MatcherNode
 from caption.caption_filter import CaptionRulesProcessor, CaptionRulesSettings
 
@@ -31,6 +32,8 @@ class GalleryCaption:
         self.rulesProcessor: CaptionRulesProcessor | None = None
         self.rulesSettings = CaptionRulesSettings()
         self.rulesSettings.prefixSuffix = False
+
+        self.autoCompleteSources: list[AutoCompleteSource] = []
 
         self.textOpt = QtGui.QTextOption()
         self.textOpt.setAlignment(Qt.AlignmentFlag.AlignHCenter)

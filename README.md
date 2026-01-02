@@ -51,6 +51,7 @@
   - *Focus Mode* where one key stroke adds a tag, saves the file and skips to the next image
   - Tag grouping, merging, sorting, filtering and replacement rules
   - Colored text highlighting
+  - Autocomplete with tags from groups and CSV files
   - CLIP Token Counter
   - Automated captioning with support for grounding
   - Prompt presets

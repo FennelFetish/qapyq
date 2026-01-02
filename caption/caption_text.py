@@ -1,13 +1,16 @@
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QTimer
 from lib import colorlib, qtlib, util
+from ui.autocomplete import TextEditCompleter, AutoCompleteSource
 
 
 class NavigationTextEdit(QtWidgets.QPlainTextEdit):
-    def __init__(self, separator: str):
+    def __init__(self, separator: str, autoCompleteSources: list[AutoCompleteSource] = []):
         super().__init__()
         #self.setTabChangesFocus(True)
-        self.separator = separator
+        self._sep = separator
+
+        self.completer = TextEditCompleter(self, autoCompleteSources, separator) if autoCompleteSources else None
 
     def getCaption(self) -> str:
         return self.toPlainText()
@@ -17,30 +20,41 @@ class NavigationTextEdit(QtWidgets.QPlainTextEdit):
         qtlib.setTextPreserveUndo(cursor, text)
 
 
+    @property
+    def separator(self) -> str:
+        return self._sep
+
+    @separator.setter
+    def separator(self, separator: str):
+        self._sep = separator
+        if self.completer:
+            self.completer.separator = separator
+
+
     def appendToCaption(self, text: str):
         caption = self.toPlainText()
         if caption:
-            caption += self.separator
+            caption += self._sep
         caption += text
 
         self.setCaption(caption)
 
     def removeCaption(self, index: int):
         text = self.toPlainText()
-        sepStrip = self.separator.strip()
+        sepStrip = self._sep.strip()
         captions = (c.strip() for i, c in enumerate(text.split(sepStrip)) if i != index)
-        self.setCaption( self.separator.join(captions) )
+        self.setCaption( self._sep.join(captions) )
 
 
     def getSelectedCaption(self) -> str:
         text = self.toPlainText()
         cursorPos = self.textCursor().position()
-        return self.getCaptionAtCharPos(text, self.separator, cursorPos)[0]
+        return self.getCaptionAtCharPos(text, self._sep, cursorPos)[0]
 
     def getSelectedCaptionIndex(self) -> int:
         text = self.toPlainText()
         cursorPos = self.textCursor().position()
-        return self.getCaptionAtCharPos(text, self.separator, cursorPos)[1]
+        return self.getCaptionAtCharPos(text, self._sep, cursorPos)[1]
 
     @staticmethod
     def getCaptionAtCharPos(text: str, separator: str, charPos: int) -> tuple[str, int]:
@@ -57,7 +71,7 @@ class NavigationTextEdit(QtWidgets.QPlainTextEdit):
     def selectCaption(self, index: int):
         self.setFocus()
         text = self.toPlainText()
-        sepStrip, sepSpaceL, sepSpaceR = util.stripCountPadding(self.separator)
+        sepStrip, sepSpaceL, sepSpaceR = util.stripCountPadding(self._sep)
 
         splitCaptions = text.split(sepStrip)
         if index < 0 or index >= len(splitCaptions):
@@ -84,14 +98,14 @@ class NavigationTextEdit(QtWidgets.QPlainTextEdit):
             moveLineDir = QtGui.QTextCursor.MoveOperation.Up if offsetLine < 0 else QtGui.QTextCursor.MoveOperation.Down
             cursor.movePosition(moveLineDir, QtGui.QTextCursor.MoveMode.MoveAnchor)
 
-        index = self.getCaptionAtCharPos(self.toPlainText(), self.separator, cursor.position())[1]
+        index = self.getCaptionAtCharPos(self.toPlainText(), self._sep, cursor.position())[1]
         index = max(0, index+offset)
         self.selectCaption(index)
 
     @Slot()
     def removeSelectedCaption(self):
         cursor = self.textCursor()
-        index = self.getCaptionAtCharPos(self.toPlainText(), self.separator, cursor.position())[1]
+        index = self.getCaptionAtCharPos(self.toPlainText(), self._sep, cursor.position())[1]
         self.removeCaption(index)
 
         # Set cursor to start of next caption
@@ -102,9 +116,12 @@ class NavigationTextEdit(QtWidgets.QPlainTextEdit):
 
 
     def keyPressEvent(self, event: QtGui.QKeyEvent):
-        if event.modifiers() & Qt.KeyboardModifier.AltModifier:
+        modifiers = event.modifiers()
+        key = event.key()
+
+        if modifiers & Qt.KeyboardModifier.AltModifier:
             move = None
-            match event.key():
+            match key:
                 case Qt.Key.Key_Alt:    move = (0, 0)
                 case Qt.Key.Key_Left:   move = (-1, 0)
                 case Qt.Key.Key_Right:  move = (1, 0)
@@ -118,9 +135,27 @@ class NavigationTextEdit(QtWidgets.QPlainTextEdit):
             if move is not None:
                 event.accept()
                 self.moveCaptionSelection(move[0], move[1])
+
+                if self.completer:
+                    self.completer.hide()
                 return
 
-        super().keyPressEvent(event)
+        elif self.completer:
+            if modifiers & Qt.KeyboardModifier.ControlModifier and key == Qt.Key.Key_Space:
+                self.completer.complete(ignoreMinimum=True)
+                return
+
+            if self.completer.handleKeyPress(event):
+                return
+
+            super().keyPressEvent(event)
+
+            # Qt's keycodes above 0xff are invisible control keys
+            if key <= 0xff or self.completer.isActive():
+                self.completer.complete()
+
+        else:
+            super().keyPressEvent(event)
 
 
     def dropEvent(self, event: QtGui.QDropEvent):
@@ -143,8 +178,8 @@ class CaptionTextEdit(NavigationTextEdit):
     captionReplaced = Signal()
     focusChanged = Signal()
 
-    def __init__(self, context: 'CaptionContext'):
-        super().__init__(context.settings.separator)
+    def __init__(self, context: 'CaptionContext', autoCompleteSources: list[AutoCompleteSource] = []):
+        super().__init__(context.settings.separator, autoCompleteSources)
         from .caption_context import CaptionContext
         self.ctx: CaptionContext = context
         self.ctx.separatorChanged.connect(self._onSeparatorChanged)
@@ -176,7 +211,7 @@ class CaptionTextEdit(NavigationTextEdit):
 
         text = self.toPlainText()
         if text:
-            for current in text.split(self.separator.strip()):
+            for current in text.split(self._sep.strip()):
                 current = current.strip()
                 if caption == current:
                     removed = True
@@ -194,13 +229,13 @@ class CaptionTextEdit(NavigationTextEdit):
         if not removed:
             captions.append(caption)
 
-        self.setCaption( self.separator.join(captions) )
+        self.setCaption( self._sep.join(captions) )
         self.ctx.needsRulesApplied.emit()
 
 
     @Slot()
     def _onSeparatorChanged(self, separator: str):
-        self.separator = separator
+        self.separator = separator  # Set via property
 
 
     def focusInEvent(self, event: QtGui.QFocusEvent):
@@ -244,8 +279,8 @@ class BorderlessNavigationTextEdit(NavigationTextEdit):
     PALETTE_ORIG:   QtGui.QPalette = None
     PALETTE_ACTIVE: QtGui.QPalette = None
 
-    def __init__(self, separator: str):
-        super().__init__(separator)
+    def __init__(self, separator: str, autoCompleteSources: list[AutoCompleteSource] = []):
+        super().__init__(separator, autoCompleteSources)
         self.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
 
         if not BorderlessNavigationTextEdit.PALETTE_ORIG:

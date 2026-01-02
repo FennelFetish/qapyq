@@ -9,6 +9,7 @@ from .caption_filter import CaptionRulesProcessor
 from .caption_settings import CaptionSettings
 from .caption_groups import CaptionGroups
 from .caption_list import CaptionList
+from ui.autocomplete import AutoCompleteSource, GroupNgramAutoCompleteSource, getCsvAutoCompleteSource
 
 
 class CaptionContext(QtWidgets.QTabWidget):
@@ -49,7 +50,7 @@ class CaptionContext(QtWidgets.QTabWidget):
         self.generate = CaptionGenerate(self)
 
         from .caption_text import CaptionTextEdit
-        self.text = CaptionTextEdit(self)
+        self.text = CaptionTextEdit(self, self._setupAutoCompleteSources())
 
         self.addTab(self.settings, "Rules")
         self.addTab(self.groups, "Groups")
@@ -121,6 +122,19 @@ class CaptionContext(QtWidgets.QTabWidget):
         rulesProcessor.setCaptionGroups( (group.captionsExpandWildcards, group.exclusivity, group.combineTags) for group in self.groups.groups )
         rulesProcessor.setConditionalRules(self.conditionals.getFilterRules())
         return rulesProcessor
+
+
+    def _setupAutoCompleteSources(self) -> list[AutoCompleteSource]:
+        self.groupAutocompleteSource = GroupNgramAutoCompleteSource()
+        self.controlUpdated.connect(self._updateGroupAutoComplete)
+        self._updateGroupAutoComplete()
+
+        return [self.groupAutocompleteSource, getCsvAutoCompleteSource()]
+
+    @Slot()
+    def _updateGroupAutoComplete(self):
+        groups = (group.captionsExpandWildcards for group in self.groups.groups)
+        self.groupAutocompleteSource.update(groups)
 
 
 

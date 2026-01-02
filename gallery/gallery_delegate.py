@@ -534,7 +534,8 @@ class GalleryCaptionEditor(QtWidgets.QWidget):
         row += 1
         layout.setRowStretch(row, 1)
 
-        self.txtCaption = BorderlessNavigationTextEdit(self.delegate.caption.separator)
+        caption = self.delegate.caption
+        self.txtCaption = BorderlessNavigationTextEdit(caption.separator, caption.autoCompleteSources)
         self.txtCaption.setActivePalette(True)
         self.txtCaption.textChanged.connect(self._onCaptionChanged)
         layout.addWidget(self.txtCaption, row, 0, 1, 4, Qt.AlignmentFlag.AlignTop)

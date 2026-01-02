@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt, Slot, QSignalBlocker, QTimer
 from lib import qtlib
 from lib.captionfile import FileTypeSelector
 from ui.tab import ImgTab
+from ui.autocomplete import getCsvAutoCompleteSource
 from config import Config
 from .gallery_caption import GalleryCaption
 from .gallery_model import GalleryModel, HeaderItem
@@ -192,6 +193,7 @@ class Gallery(QtWidgets.QWidget):
         cap = self.galleryCaption
         cap.filterNode     = None
         cap.rulesProcessor = None
+        cap.autoCompleteSources = []
 
         if captionWin := self.tab.getWindowContent("caption"):
             from caption.caption_context import CaptionContext
@@ -199,9 +201,14 @@ class Gallery(QtWidgets.QWidget):
             cap.captionHighlight = captionCtx.highlight
             cap.separator        = captionCtx.settings.separator
 
+            cap.autoCompleteSources.append(captionCtx.groupAutocompleteSource)
+
             if self.chkFilterCaptions.isChecked():
                 cap.filterNode      = captionCtx.groups.getGalleryFilterNode()
                 cap.rulesProcessor  = captionCtx.rulesProcessor()
+
+        if not self.isGridView:
+            cap.autoCompleteSources.append(getCsvAutoCompleteSource())
 
     def onCaptionFilterUpdated(self):
         'Called from Caption Window'
