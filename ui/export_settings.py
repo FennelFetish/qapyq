@@ -7,6 +7,7 @@ import cv2 as cv
 import numpy as np
 from PIL import Image
 from lib import colorlib, qtlib, template_parser
+from ui.autocomplete import TemplateTextEdit, AutoCompleteSource, getAutoCompleteSource
 from infer.model_settings import ModelSettingsWindow, ScaleModelSettings
 from config import Config
 
@@ -272,7 +273,7 @@ Examples:
     {{name}}_{{tags.tags#replace:, :_}}.{{ext}}"""
 
 
-    def __init__(self, parser, showInfo=True, showSkip=False) -> None:
+    def __init__(self, parser, showInfo=True, showSkip=False):
         super().__init__()
         self._extension = "ext"
 
@@ -298,7 +299,12 @@ Examples:
             layout.addWidget(txtInfo, row, 0, 1, 4)
             row += 1
 
-        self.txtPathTemplate = QtWidgets.QPlainTextEdit()
+        autoCompleteSources = [
+            getAutoCompleteSource(AutoCompleteSource.Type.Template),
+            getAutoCompleteSource(AutoCompleteSource.Type.PathTemplate)
+        ]
+
+        self.txtPathTemplate = TemplateTextEdit(autoCompleteSources)
         self.txtPathTemplate.textChanged.connect(self.updatePreview)
         qtlib.setMonospace(self.txtPathTemplate)
         qtlib.setShowWhitespace(self.txtPathTemplate)

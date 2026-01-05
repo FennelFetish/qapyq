@@ -8,6 +8,13 @@ class Config:
     toolbarPosition         = "Top"
     exifTransform           = False
 
+    autocomplete = {
+        "auto_popup": True,
+        "popup_size": 7,
+        "suggestion_count": 15,
+        "exclude_categories": [1, 3]
+    }
+
     # Font
     fontMonospace           = "res/font/DejaVuSansMono.ttf"
 
@@ -166,6 +173,8 @@ class Config:
         cls.fontMonospace         = data.get("font_monospace", cls.fontMonospace)
         cls.exifTransform         = bool(data.get("exif_transform", cls.exifTransform))
 
+        cls.autocomplete.update(data.get("autocomplete", {}))
+
         cls.pathExport            = data.get("path_export", cls.pathExport)
         cls.pathDebugLoad         = data.get("path_debug_load", cls.pathDebugLoad)
         cls.exportPresets         = data.get("export_presets", cls.exportPresets)
@@ -229,6 +238,11 @@ class Config:
         data["toolbar_position"]            = cls.toolbarPosition
         data["font_monospace"]              = cls.fontMonospace
         data["exif_transform"]              = cls.exifTransform
+
+        data["autocomplete"] = {
+            k: cls.autocomplete[k]
+            for k in ("auto_popup", "popup_size", "suggestion_count", "exclude_categories")
+        }
 
         data["path_export"]                 = cls.pathExport
         data["path_debug_load"]             = cls.pathDebugLoad

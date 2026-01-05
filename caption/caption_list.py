@@ -7,7 +7,7 @@ from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QTimer, QSignalBlocker
 from lib.captionfile import CaptionFile, FileTypeSelector, Keys
 from lib import colorlib, qtlib
-from ui.autocomplete import AutoCompleteSource, getCsvAutoCompleteSource
+from ui.autocomplete import AutoCompleteSource, getAutoCompleteSource
 from .caption_tab import CaptionTab
 from .caption_highlight import CaptionHighlight
 from .caption_text import BorderlessNavigationTextEdit
@@ -383,7 +383,7 @@ class CaptionEntry(QtWidgets.QWidget):
         layout.addWidget(self.txtKey, 0, 1, Qt.AlignmentFlag.AlignTop)
 
         separator = SEPARATORS[keyType]
-        autoCompleteSources = [captionList.ctx.groupAutocompleteSource, getCsvAutoCompleteSource()]
+        autoCompleteSources = [captionList.ctx.groupAutoCompleteSource, getAutoCompleteSource(AutoCompleteSource.Type.Csv)]
         self.txtCaption = AutoSizeTextEdit(captionList.ctx.highlight, separator, autoCompleteSources)
         qtlib.setMonospace(self.txtCaption)
         self.txtCaption.textChanged.connect(self._setEdited)

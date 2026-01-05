@@ -3,6 +3,7 @@ from PySide6.QtCore import Qt, Slot, Signal, QObject, QSignalBlocker
 from config import Config
 from lib import qtlib
 from lib.colorlib import ColorCharFormats
+from ui.autocomplete import TemplateTextEdit, AutoCompleteSource
 
 
 class PromptSettingsSignals(QObject):
@@ -12,7 +13,7 @@ class PromptSettingsSignals(QObject):
 class PromptWidget(QtWidgets.QWidget):
     signals = PromptSettingsSignals()
 
-    def __init__(self, presetsAttr: str, defaultAttr: str):
+    def __init__(self, presetsAttr: str, defaultAttr: str, autoCompleteSources: list[AutoCompleteSource]):
         super().__init__()
         self.presetsAttr = presetsAttr
         self.defaultAttr = defaultAttr
@@ -61,7 +62,7 @@ class PromptWidget(QtWidgets.QWidget):
         self.lblPrompts = QtWidgets.QLabel("Prompt(s):")
         layout.addWidget(self.lblPrompts, row, 0, Qt.AlignmentFlag.AlignTop)
 
-        self.txtPrompts = QtWidgets.QPlainTextEdit()
+        self.txtPrompts = TemplateTextEdit(autoCompleteSources)
         qtlib.setMonospace(self.txtPrompts)
         qtlib.setShowWhitespace(self.txtPrompts)
         layout.addWidget(self.txtPrompts, row, 1, 1, 4)

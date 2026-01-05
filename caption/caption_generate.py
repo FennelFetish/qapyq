@@ -54,7 +54,7 @@ class CaptionGenerate(CaptionTab):
         layout.setColumnStretch(5, 0)
 
         row = 0
-        self.promptWidget = PromptWidget("promptCaptionPresets", "promptCaptionDefault")
+        self.promptWidget = PromptWidget("promptCaptionPresets", "promptCaptionDefault", self.ctx.tab.templateAutoCompleteSources)
         qtlib.setTextEditHeight(self.promptWidget.txtSystemPrompt, 3, "min")
         qtlib.setTextEditHeight(self.promptWidget.txtPrompts, 3, "min")
         self.promptWidget.lblPrompts.setText("Prompt(s) Template:")
@@ -129,7 +129,7 @@ class CaptionGenerate(CaptionTab):
             self.updatePreview(self.promptWidget.prompts)
 
     @Slot()
-    def _onCaptionEdited(self, caption: str):
+    def _onCaptionEdited(self):
         if self._hasCurrentVar or self._hasRefinedVar:
             self.updatePreview(self.promptWidget.prompts)
 

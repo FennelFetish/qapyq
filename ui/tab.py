@@ -5,6 +5,8 @@ from PySide6.QtGui import QPixmap
 from config import Config
 from lib import qtlib
 from lib.filelist import FileList
+from lib.captionfile import CaptionFile
+from ui.autocomplete import AutoCompleteSource, TemplateAutoCompleteSource, getAutoCompleteSource
 
 
 @Slot()
@@ -41,9 +43,22 @@ class ImgTab(QtWidgets.QMainWindow):
         self.toolName = None
         self.setTool("view")
 
-        self.setCentralWidget(self.imgview)
+        templateSource = getAutoCompleteSource(AutoCompleteSource.Type.Template)
+        self._jsonAutoCompleteSource = TemplateAutoCompleteSource(1.25, jsonKeys=True)
+        self.templateAutoCompleteSources: list[AutoCompleteSource] = [self._jsonAutoCompleteSource, templateSource]
 
+        self.setCentralWidget(self.imgview)
         self.destroyed.connect(queueGC)
+
+
+    def _updateJsonAutocomplete(self, currentFile: str):
+        self._jsonAutoCompleteSource.reset()
+
+        captionFile = CaptionFile(currentFile)
+        if captionFile.loadFromJson():
+            self._jsonAutoCompleteSource.updateJsonKeys(f"captions.{key}" for key in captionFile.captions)
+            self._jsonAutoCompleteSource.updateJsonKeys(f"prompts.{key}"  for key in captionFile.prompts)
+            self._jsonAutoCompleteSource.updateJsonKeys(f"tags.{key}"     for key in captionFile.tags)
 
 
     def onFileChanged(self, currentFile: str):
@@ -56,6 +71,8 @@ class ImgTab(QtWidgets.QMainWindow):
         tabIndex = self.tabWidget.indexOf(self)
         self.tabWidget.setTabText(tabIndex, name)
         self.tabTitleChanged.emit(name)
+
+        self._updateJsonAutocomplete(currentFile)
 
     def onFileListChanged(self, currentFile: str):
         self.onFileChanged(currentFile)

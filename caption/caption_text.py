@@ -116,12 +116,9 @@ class NavigationTextEdit(QtWidgets.QPlainTextEdit):
 
 
     def keyPressEvent(self, event: QtGui.QKeyEvent):
-        modifiers = event.modifiers()
-        key = event.key()
-
-        if modifiers & Qt.KeyboardModifier.AltModifier:
+        if event.modifiers() & Qt.KeyboardModifier.AltModifier:
             move = None
-            match key:
+            match event.key():
                 case Qt.Key.Key_Alt:    move = (0, 0)
                 case Qt.Key.Key_Left:   move = (-1, 0)
                 case Qt.Key.Key_Right:  move = (1, 0)
@@ -140,20 +137,8 @@ class NavigationTextEdit(QtWidgets.QPlainTextEdit):
                     self.completer.hide()
                 return
 
-        elif self.completer:
-            if modifiers & Qt.KeyboardModifier.ControlModifier and key == Qt.Key.Key_Space:
-                self.completer.complete(ignoreMinimum=True)
-                return
-
-            if self.completer.handleKeyPress(event):
-                return
-
-            super().keyPressEvent(event)
-
-            # Qt's keycodes above 0xff are invisible control keys
-            if key <= 0xff or self.completer.isActive():
-                self.completer.complete()
-
+        if self.completer:
+            self.completer.handleKeyPress(event, super().keyPressEvent)
         else:
             super().keyPressEvent(event)
 

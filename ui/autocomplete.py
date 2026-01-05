@@ -1,27 +1,48 @@
 from __future__ import annotations
-import csv, time, os
+import csv, time, os, enum, heapq
 from abc import ABC, abstractmethod
 from typing import Any, NamedTuple, Iterable, Callable
 from typing_extensions import override
 from collections import defaultdict, Counter
 from itertools import islice, takewhile
 from PySide6.QtWidgets import QCompleter, QPlainTextEdit, QTableView
-from PySide6.QtGui import QTextCursor, QKeyEvent, QFont, QColor
+from PySide6.QtGui import QTextCursor, QGuiApplication, QKeyEvent, QFont, QColor
 from PySide6.QtCore import Qt, Signal, Slot, QAbstractTableModel, QModelIndex, QPersistentModelIndex, QTimer, QRunnable, QObject, QThreadPool, QThread
 from difflib import SequenceMatcher
 #from rapidfuzz import fuzz, distance
 from lib import colorlib, qtlib
+from config import Config
 
 
-__CSV_SOURCE: CsvNGramAutoCompleteSource | None = None
+class AutoCompleteSourceType(enum.IntEnum):
+    Csv             = 1
+    Template        = 2
+    PathTemplate    = 3
 
-def getCsvAutoCompleteSource() -> CsvNGramAutoCompleteSource:
-    global __CSV_SOURCE
-    if __CSV_SOURCE is None:
-        __CSV_SOURCE = CsvNGramAutoCompleteSource()
-        __CSV_SOURCE.loadAsync()
+__GLOBAL_AUTOCOMPLETE_SOURCES: dict[AutoCompleteSourceType, AutoCompleteSource] = {}
 
-    return __CSV_SOURCE
+def getAutoCompleteSource(type: AutoCompleteSourceType):
+    if source := __GLOBAL_AUTOCOMPLETE_SOURCES.get(type):
+        return source
+
+    match type:
+        case AutoCompleteSourceType.Csv:
+            source = CsvNGramAutoCompleteSource()
+            source.loadAsync()
+
+        case AutoCompleteSourceType.Template:
+            source = TemplateAutoCompleteSource()
+            source.setupTemplate()
+
+            from lib.captionfile import KeySettingsWindow
+            KeySettingsWindow.signals.keysUpdated.connect(lambda: source.setupTemplate())
+
+        case AutoCompleteSourceType.PathTemplate:
+            source = TemplateAutoCompleteSource()
+            source.setupPathTemplate()
+
+    __GLOBAL_AUTOCOMPLETE_SOURCES[type] = source
+    return source
 
 
 
@@ -32,11 +53,122 @@ class Category(NamedTuple):
     color: QColor
 
 
+
+class SuggestionScore:
+    class Context(NamedTuple):
+        search: str
+        searchParts: list[str]
+        matcher: SequenceMatcher
+
+    __slots__ = ('ctx', 'suggestion', 'prefixScore', '_matchRatio')
+
+    def __init__(self, ctx: Context, suggestion: Suggestion):
+        self.ctx = ctx
+        self.suggestion = suggestion
+
+        self.prefixScore: float = 0.0
+        self._matchRatio: float = -1.0
+
+        numParts = len(ctx.searchParts)
+        for i, part in enumerate(ctx.searchParts):
+            weight = (numParts-i) / numParts
+
+            iSearchInTag = suggestion.tag.find(part)
+            if iSearchInTag == 0:
+                self.prefixScore += 1.0 * weight
+                break
+            elif iSearchInTag > 0:
+                if suggestion.tag[iSearchInTag-1].isspace():
+                    self.prefixScore += 0.75 * weight
+                    break
+                else:
+                    self.prefixScore += 0.5 * weight
+                    break
+
+        # iSearchInTag = suggestion.tag.find(ctx.search)
+        # if iSearchInTag == 0:
+        #     self.prefixScore += 1.0
+        # elif iSearchInTag > 0:
+        #     if suggestion.tag[iSearchInTag-1].isspace():
+        #         self.prefixScore += 0.75
+        #     else:
+        #         self.prefixScore += 0.5
+
+        # iTagInSearch = ctx.search.find(tag)
+        # if iTagInSearch == 0:
+        #     self.prefixScore += 0.1
+        # elif iTagInSearch > 0:
+        #     if ctx.search[iTagInSearch-1].isspace():
+        #         self.prefixScore += 0.075
+        #     else:
+        #         self.prefixScore += 0.05
+
+    @property
+    def matchRatio(self) -> float:
+        if self._matchRatio < 0:
+            # search = self.ctx.search
+            # tag = self.suggestion.tag
+
+            #self._matchRatio = fuzz.token_set_ratio(search, tag)
+            #self._matchRatio = fuzz.partial_token_set_ratio(search, tag)
+            #self._matchRatio = fuzz.token_sort_ratio(search, tag)
+            #self._matchRatio = fuzz.partial_token_sort_ratio(search, tag)
+            #self._matchRatio = fuzz.token_ratio(search, tag)
+            #self._matchRatio = fuzz.partial_token_ratio(search, tag)
+            ####self._matchRatio = fuzz.partial_ratio(search, tag)
+            #self._matchRatio = fuzz.WRatio(search, tag)
+            #self._matchRatio = fuzz.QRatio(search, tag)
+            #self._matchRatio = fuzz.ratio(search, tag)
+
+            #self._matchRatio = distance.Levenshtein.normalized_similarity(search, tag)
+
+            self.ctx.matcher.set_seq1(self.suggestion.tag)
+            self._matchRatio = self.ctx.matcher.ratio()
+
+        return self._matchRatio
+
+    def __lt__(self, other: SuggestionScore) -> bool:
+        prefixDiff = self.prefixScore - other.prefixScore
+        if abs(prefixDiff) > 0.2:
+            return prefixDiff < 0
+
+        f0 = self.suggestion.scoreFactor
+        f1 = other.suggestion.scoreFactor
+
+        ngramDiff = (self.suggestion.nGramRatio * f0) - (other.suggestion.nGramRatio * f1)
+        if abs(ngramDiff) > 0.02:
+            return ngramDiff < 0
+
+        matchDiff = (self.matchRatio * f0) - (other.matchRatio * f1)
+        if abs(matchDiff) > 0.05:
+            return matchDiff < 0
+
+        if self.suggestion.freq != other.suggestion.freq:
+            return self.suggestion.freq < other.suggestion.freq
+
+        return self.suggestion.tag < other.suggestion.tag
+
+    def __eq__(self, other: object) -> bool:
+        return self is other
+
+    def getScores(self) -> tuple:
+        f = self.suggestion.scoreFactor
+        return (
+            self.prefixScore,
+            self.suggestion.nGramRatio * f,
+            self._matchRatio * f,
+            self.suggestion.freq
+        )
+
+
+
 class AutoCompleteModel(QAbstractTableModel):
     CATEGORY: dict[int, Category] = None
     CATEGORY_DEFAULT: Category = None
 
     NUM_SUGGESTIONS = 15
+
+    ROLE_KEEP_ALIAS = Qt.ItemDataRole.UserRole
 
     def __init__(self, autoCompleteSources: list[AutoCompleteSource], parent):
         super().__init__(parent)
@@ -47,10 +179,10 @@ class AutoCompleteModel(QAbstractTableModel):
         self.categoryFont.setPointSizeF(self.categoryFont.pointSizeF() * 0.75)
 
         if AutoCompleteModel.CATEGORY is None:
-            self._initCategories()
+            self._initStatic()
 
     @classmethod
-    def _initCategories(cls):
+    def _initStatic(cls):
         s = 0.8
         v = colorlib.TEXT_HIGHLIGHT_V
         a = 0.65 if colorlib.DARK_THEME else 0.8
@@ -65,6 +197,10 @@ class AutoCompleteModel(QAbstractTableModel):
 
         cls.CATEGORY_DEFAULT = Category("Other", QColor.fromHsvF(0.0, 0.0, v, a))
 
+        try:
+            cls.NUM_SUGGESTIONS = int(Config.autocomplete["suggestion_count"])
+        except: pass
+
 
     def updateSuggestions(self, search: str):
         self.beginResetModel()
@@ -76,97 +212,45 @@ class AutoCompleteModel(QAbstractTableModel):
                     sug = existingSug.max(sug)
                 suggestions[sug.tag] = sug
 
-        matcher = SequenceMatcher(a=search, autojunk=False)
-        scoredSuggestions = list[tuple[Suggestion, tuple]]()
-        for sug in suggestions.values():
-            tag = sug.tag
+        searchWords = search.split(" ", 3)
+        searchParts = [
+            part for i in range(0, len(searchWords))
+            if len(part := " ".join(searchWords[i:])) >= 2
+        ]
 
-            # TODO: Match last words of current search:
-            #       'black swivel cha..' should suggest 'swivel chair'
-            # TODO: Allow wildcard that matches all ngrams: '??? chair'
-            iTagSearch = tag.find(search)
-            if iTagSearch == 0:
-                score = 1.0
-            elif iTagSearch > 0:
-                if tag[iTagSearch-1].isspace():
-                    score = 0.75
-                else:
-                    score = 0.5
-            else:
-                score = 0.0
-
-            # iSearchTag = search.find(tag)
-            # if iSearchTag == 0:
-            #     score += 0.5
-            # elif iSearchTag > 0:
-            #     if search[iSearchTag-1].isspace():
-            #         score += 0.375
-            #     else:
-            #         score += 0.25
-
-            # iSearchTag = search.find(tag)
-            # if iSearchTag > 0:
-            #     if search[iSearchTag-1].isspace():
-            #         score += 0.25
-            #     else:
-            #         score += 0.1
-
-            #ratio = fuzz.token_set_ratio(search, tag)
-            #ratio = fuzz.partial_token_set_ratio(search, tag)
-            #ratio = fuzz.token_sort_ratio(search, tag)
-            #ratio = fuzz.partial_token_sort_ratio(search, tag)
-            #ratio = fuzz.token_ratio(search, tag)
-            #ratio = fuzz.partial_token_ratio(search, tag)
-            #####ratio = fuzz.partial_ratio(search, tag)
-            #ratio = fuzz.WRatio(search, tag)
-            #ratio = fuzz.QRatio(search, tag)
-            #ratio = fuzz.ratio(search, tag)
-
-            #ratio = distance.Levenshtein.normalized_similarity(search, tag)
-
-            matcher.set_seq2(sug.tag)
-            ratio = round(matcher.ratio() * sug.scoreFactor, 2)
-
-            ngramRatio = round(sug.nGramRatio * sug.scoreFactor, 2)
-            scoredSuggestions.append((sug, (score, ngramRatio, ratio, sug.freq)))
-
-        scoredSuggestions.sort(key=self._sortKey, reverse=True)
+        ctx = SuggestionScore.Context(search, searchParts, SequenceMatcher(b=search, autojunk=False))
+        scores = sorted((SuggestionScore(ctx, sug) for sug in suggestions.values()), reverse=True)
 
         # print("Scored Suggestions:")
-        # for i, sug in enumerate(scoredSuggestions[:50], 1):
-        #     print(f"{str(i):2} {sug[0].tag} ({sug[1]})")
+        # for i, score in enumerate(scores[:20], 1):
+        #     print(f"{str(i):2} {score.suggestion.tag} {score.getScores()}")
 
         minRatio = 0
         self.suggestions.clear()
-        itSug = iter(scoredSuggestions)
-        for sug in islice(itSug, self.NUM_SUGGESTIONS):
-            self.suggestions.append(sug[0])
-            minRatio = sug[1][1]
+        itScores = iter(scores)
+        for score in islice(itScores, self.NUM_SUGGESTIONS):
+            self.suggestions.append(score.suggestion)
+            minRatio = score.suggestion.nGramRatio
 
         minRatio *= 0.99
-        self.suggestions.extend(sug[0] for sug in takewhile(lambda sug: sug[1][1] > minRatio, itSug))
+        self.suggestions.extend(score.suggestion for score in takewhile(lambda score: score.suggestion.nGramRatio > minRatio, itScores))
         self.endResetModel()
 
-
-    @staticmethod
-    def _sortKey(entry: tuple[Suggestion, tuple]) -> tuple:
-        return (entry[1], entry[0].tag)
 
     @override
     def rowCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()) -> int:
         return len(self.suggestions)
 
     @override
-    def columnCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex) -> int:
+    def columnCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()) -> int:
         return 2
 
     @override
     def data(self, index: QModelIndex | QPersistentModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        row, col = index.row(), index.column()
-        sug = self.suggestions[row]
+        sug = self.suggestions[index.row()]
 
-        # Tag Column
-        if col == 0:
+        # Column 0: Tag
+        if index.column() == 0:
             match role:
                 case Qt.ItemDataRole.DisplayRole:
                     return f"{sug.tag} → {sug.aliasFor}" if sug.aliasFor else sug.tag
@@ -174,10 +258,15 @@ class AutoCompleteModel(QAbstractTableModel):
                 case Qt.ItemDataRole.EditRole:
                     return sug.aliasFor or sug.tag
 
-        # Category Column
+                case self.ROLE_KEEP_ALIAS:
+                    return sug.tag
+
+        # Column 1: Category / Info
         else:
             match role:
                 case Qt.ItemDataRole.DisplayRole:
+                    if sug.info is not None:
+                        return sug.info
                     return self.CATEGORY.get(sug.category, self.CATEGORY_DEFAULT).name
 
                 case Qt.ItemDataRole.ForegroundRole:
@@ -197,20 +286,43 @@ class AutoCompletePopup(QTableView):
     def __init__(self):
         super().__init__()
         self.setShowGrid(False)
-        self.setAlternatingRowColors(True)
         qtlib.setMonospace(self)
+        #self.setAlternatingRowColors(True)
+        #self.setWindowOpacity(0.9)
 
         self.setSelectionBehavior(self.SelectionBehavior.SelectRows)
         self.setSelectionMode(self.SelectionMode.SingleSelection)
         self.setEditTriggers(self.EditTrigger.NoEditTriggers)
 
-        self.horizontalHeader().hide()
-        self.verticalHeader().hide()
-        self.verticalHeader().setDefaultSectionSize(1)
+        headerH = self.horizontalHeader()
+        headerH.hide()
+        headerH.setSectionResizeMode(headerH.ResizeMode.Fixed)
+
+        headerV = self.verticalHeader()
+        headerV.hide()
+        headerV.setSectionResizeMode(headerV.ResizeMode.ResizeToContents)
+        # headerV.setDefaultSectionSize(16)
+        self._rowHeight = -1
 
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
-    def updateWidth(self):
+
+    @Slot()
+    def _initRowHeight(self):
+        self._rowHeight = max(self.rowHeight(0), 16)
+
+    def updateSize(self, numRows: int) -> int:
+        # Set height
+        numRows = min(numRows, self.verticalHeader().count())
+        rowHeight = self._rowHeight
+        if rowHeight < 0:
+            rowHeight = 20
+            if numRows > 0:
+                QTimer.singleShot(0, self._initRowHeight)
+
+        self.setFixedHeight(numRows * rowHeight + 2)
+
+        # Calc width
         self.resizeColumnsToContents()
         col0w = self.columnWidth(0) + 12
         self.setColumnWidth(0, col0w)
@@ -224,14 +336,30 @@ class AutoCompletePopup(QTableView):
 
 
 class TextEditCompleter:
-    MIN_PREFIX_LEN = 2
-    IGNORE_KEYS = (Qt.Key.Key_Enter, Qt.Key.Key_Return, Qt.Key.Key_Escape, Qt.Key.Key_Shift)
+    @staticmethod
+    def createPunctuationTrans(punctuation: str) -> tuple[dict, str]:
+        punct = punctuation[0]
 
-    PUNCTUATION = ",.:;!?()[]"
-    PUNCTUATION_STRIP = PUNCTUATION + " \t\n"
+        table = {char: punct for char in punctuation[1:]}
+        table["\n"] = punct
+        table["-"]  = " "  # treat dashes as word boundaries
+
+        return str.maketrans(table), punct
+
+    PUNCTUATION_TRANS = createPunctuationTrans(",.:;")
+    SKIP_WORD_PUNCT  = "!?()[]"
+
+
+    MIN_PREFIX_LEN = 2
+    MAX_PREFIX_WORDS = 4
+    SKIP_WORD_MAX_SIMILARITY = 0.75
+
+    IGNORE_KEYS    = (Qt.Key.Key_Enter, Qt.Key.Key_Return, Qt.Key.Key_Escape, Qt.Key.Key_Shift)
+    TAB_NAVIGATION = {Qt.Key.Key_Tab.value: 1, Qt.Key.Key_Backtab.value: -1}
 
     COMPLETE_INTERVAL = 30 # ms
     COMPLETE_INTERVAL_NS = COMPLETE_INTERVAL * 1_000_000
+
 
     def __init__(self, textEdit: QPlainTextEdit, autoCompleteSources: list[AutoCompleteSource], separator: str = ", "):
         self.textEdit = textEdit
@@ -241,11 +369,16 @@ class TextEditCompleter:
 
         self.completer = QCompleter(self.model, parent=textEdit)
         self.completer.setPopup(AutoCompletePopup())
-        self.completer.setMaxVisibleItems(10)
         self.completer.setWidget(textEdit)
         self.completer.setCompletionMode(QCompleter.CompletionMode.UnfilteredPopupCompletion)
         self.completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        self.completer.activated.connect(self._insertCompletion)
+        self.completer.activated[QModelIndex].connect(self._insertCompletion)
+
+        try:
+            visibleItems = max(int(Config.autocomplete["popup_size"]), 1)
+        except:
+            visibleItems = 10
+        self.completer.setMaxVisibleItems(visibleItems)
 
         self._timer = QTimer(textEdit, singleShot=True, interval=self.COMPLETE_INTERVAL)
         self._timer.timeout.connect(self._updateComplete)
@@ -259,47 +392,98 @@ class TextEditCompleter:
         self.completer.popup().hide()
 
 
-    @Slot(str)
-    def _insertCompletion(self, text: str):
-        numWords = len(text.replace("-", " ").split(" "))
+    @Slot(QModelIndex)
+    def _insertCompletion(self, index: QModelIndex):
+        keyMod = QGuiApplication.keyboardModifiers()
 
+        matchText: str  = index.data(AutoCompleteModel.ROLE_KEEP_ALIAS)
+        insertText: str = matchText if keyMod & Qt.KeyboardModifier.ShiftModifier else index.data(Qt.ItemDataRole.EditRole)
+
+        firstMatchWord = self.splitWords(matchText, 1)[0]
+        matcher = SequenceMatcher(autojunk=False)
+
+        trans, punct = self.PUNCTUATION_TRANS
+        text = self.textEdit.toPlainText().translate(trans)
+
+        # Init cursorPos to the first non-whitespace char to the left of text cursor
         cursor = self.textEdit.textCursor()
-        cursor.movePosition(QTextCursor.MoveOperation.Left)
-        cursor.movePosition(QTextCursor.MoveOperation.EndOfWord, QTextCursor.MoveMode.MoveAnchor)
-        cursorPos = cursor.position()
+        cursorPos = max(cursor.position()-1, 0)
+        while cursorPos > 0 and text[cursorPos].isspace():
+            cursorPos -= 1
 
-        for _ in range(100):
-            if cursor.atBlockEnd():
-                text += self.separator
+        # ==== FIND SELECTION START ====
+        leftBound = text.rfind(punct, 0, cursorPos) + 1
+
+        # Skip words to the left of cursor.
+        start   = cursorPos
+        wordEnd = cursorPos + 1
+
+        numSkipWords = max(self._numReplaceWordsLeft(matchText), self._numReplaceWordsLeft(insertText))
+        for w in range(numSkipWords-1, -1, -1):
+            p = text.rfind(" ", leftBound, start)
+            if p >= 0:
+                # Skip additional spaces
+                while p > 0 and text[p-1].isspace():
+                    p -= 1
+
+                start = p
+
+                if w > 0:
+                    # Abort skipping when current word is similar to first word of matchText
+                    skippedWord = text[start+1 : wordEnd]
+                    matcher.set_seqs(skippedWord, firstMatchWord[:len(skippedWord)+3])
+                    if matcher.ratio() >= self.SKIP_WORD_MAX_SIMILARITY:
+                        break
+                    wordEnd = start
+            else:
+                start = leftBound
                 break
 
-            cursor.movePosition(QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.KeepAnchor)
-            selectedText = cursor.selectedText().strip()
-            if selectedText:
-                if selectedText[-1] not in self.PUNCTUATION:
-                    text += " "
+        # Add whitespace to the left
+        cursor.setPosition(start)
+        if not cursor.atBlockStart():
+            if start > leftBound:
+                # Add space between words
+                numSpaces = 1
+            else:
+                # Add space according to separator
+                numSpaces = len(self.separator) - len(self.separator.rstrip())
 
-                cursor.movePosition(QTextCursor.MoveOperation.Left, QTextCursor.MoveMode.KeepAnchor)
+            for p in range(start, min(start+numSpaces, len(text))):
+                if text[p].isspace():
+                    start += 1
+                else:
+                    insertText = " " + insertText
+
+        # ==== FIND SELECTION END ====
+        # Skip to end of word
+        end = cursorPos
+        for p in range(end+1, len(text)):
+            char = text[p]
+            if not (char.isalnum() or char in self.SKIP_WORD_PUNCT):
+                break
+            end = p
+
+        end += 1
+
+        # Skip whitespace to the right of cursor
+        for p in range(end, len(text)):
+            char = text[p]
+            if char.isspace():
+                end = p+1
+            else:
+                if char.isalnum():
+                    end = p-1  # Leave space between words
                 break
 
-        cursor.clearSelection()
-        cursor.setPosition(cursorPos, QTextCursor.MoveMode.KeepAnchor)
-
-        for _ in range(numWords):
-            cursor.movePosition(QTextCursor.MoveOperation.WordLeft, QTextCursor.MoveMode.KeepAnchor)
-            selectedText = cursor.selectedText().strip()
-            if not selectedText:
-                break
-
-            if selectedText[0] in self.PUNCTUATION or cursor.atBlockStart():
-                selectionLen = len(selectedText)
-                selectedText = selectedText.lstrip(self.PUNCTUATION_STRIP) # Remove separator and whitespace after
-                diffLen = selectionLen - len(selectedText)
-                cursor.movePosition(QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.KeepAnchor, n=diffLen)
-                break
+        cursor.setPosition(start)
+        cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
 
         cursor.beginEditBlock()
-        cursor.insertText(text)
+        cursor.insertText(insertText)
+
+        if not keyMod & Qt.KeyboardModifier.ControlModifier and cursor.atBlockEnd():
+            cursor.insertText(self.separator)
 
         # Split ops in undo stack
         cursor.insertText(" ")
@@ -309,16 +493,25 @@ class TextEditCompleter:
         self.textEdit.setTextCursor(cursor)
 
 
-    def complete(self, ignoreMinimum: bool = False):
+    @staticmethod
+    def splitWords(text: str, maxSplit: int = -1) -> list[str]:
+        return text.replace("-", " ").split(" ", maxSplit)
+
+    def _numReplaceWordsLeft(self, text: str) -> int:
+        return len(self.splitWords(text))
+
+
+    def complete(self, force: bool = False):
         popup: AutoCompletePopup = self.completer.popup()
 
         prefix = self.textUnderCursor()
-        if not prefix or (not ignoreMinimum and len(prefix) < self.MIN_PREFIX_LEN):
+        if not prefix or (not force and len(prefix) < self.MIN_PREFIX_LEN):
+            self.completer.setCompletionPrefix("")
             popup.hide()
             self._timer.stop()
             return
 
-        if ignoreMinimum or prefix != self.completer.completionPrefix():
+        if force or prefix != self.completer.completionPrefix():
             self.completer.setCompletionPrefix(prefix)
 
             if self._tLastComplete > time.monotonic_ns() - self.COMPLETE_INTERVAL_NS:
@@ -332,7 +525,7 @@ class TextEditCompleter:
         QTimer.singleShot(0, self._resetSelection)
 
         popup: AutoCompletePopup = self.completer.popup()
-        width = popup.updateWidth()
+        width = popup.updateSize(self.completer.maxVisibleItems())
         rect = self.textEdit.cursorRect()
         rect.setWidth(width)
         self.completer.complete(rect)
@@ -340,17 +533,23 @@ class TextEditCompleter:
         self._tLastComplete = time.monotonic_ns()
 
 
-    def textUnderCursor(self):
+    def textUnderCursor(self) -> str:
         cursor = self.textEdit.textCursor()
-        #cursor.movePosition(QTextCursor.MoveOperation.EndOfWord, QTextCursor.MoveMode.MoveAnchor)
+        trans, punct = self.PUNCTUATION_TRANS
 
-        for _ in range(100):
-            cursor.movePosition(QTextCursor.MoveOperation.PreviousWord, QTextCursor.MoveMode.KeepAnchor)
-            text = cursor.selectedText().lstrip()
-            if not text or text[0] in self.PUNCTUATION or cursor.position() <= 0:
+        for _ in range(self.MAX_PREFIX_WORDS):
+            cursor.movePosition(QTextCursor.MoveOperation.WordLeft, QTextCursor.MoveMode.KeepAnchor)
+            text = cursor.selectedText()
+
+            p = text.translate(trans).rfind(punct) + 1
+            if p > 0:
+                text = text[p:]
                 break
 
-        return text.lstrip(self.PUNCTUATION_STRIP) # Remove separator and whitespace after
+            if cursor.atBlockStart():
+                break
+
+        return text.lstrip()
 
     @Slot()
     def _resetSelection(self):
@@ -359,44 +558,98 @@ class TextEditCompleter:
         popup.scrollToTop()
 
 
-    def handleKeyPress(self, event: QKeyEvent) -> bool:
-        if not self.isActive():
-            return False
-
+    def handleKeyPress(self, event: QKeyEvent, textEditEventHandler: Callable[[QKeyEvent], None]):
         key = event.key()
-        if key in self.IGNORE_KEYS:
-            event.ignore()
-            return True
+        if key == Qt.Key.Key_Space and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            self.complete(force=True)
+            return
 
-        match event.key():
-            case Qt.Key.Key_Tab:     change = 1
-            case Qt.Key.Key_Backtab: change = -1
-            case _:
-                return False
+        if active := self.isActive():
+            if key in self.IGNORE_KEYS:
+                event.ignore()
+                return
 
-        popup: AutoCompletePopup = self.completer.popup()
-        popup.changeSelection(change)
-        event.accept()
-        return True
+            if change := self.TAB_NAVIGATION.get(key):
+                popup: AutoCompletePopup = self.completer.popup()
+                popup.changeSelection(change)
+                event.accept()
+                return
+
+        textEditEventHandler(event)
+
+        # When typing, open the popup only after the key was inserted into the TextEdit by textEditEventHandler.
+        # Qt's keycodes above 0xff are invisible control keys.
+        if (key <= 0xff or active) and Config.autocomplete.get("auto_popup"):
+            self.complete()
 
 
+
+class TemplateTextEditCompleter(TextEditCompleter):
+    MIN_PREFIX_LEN = 1
+
+    PUNCTUATION_TRANS = TextEditCompleter.createPunctuationTrans("#:{}")
+
+    def __init__(self, textEdit: QPlainTextEdit, autoCompleteSources: list[AutoCompleteSource]):
+        super().__init__(textEdit, autoCompleteSources, "}}")
+
+    @override
+    def _numReplaceWordsLeft(self, text: str) -> int:
+        return 1000
+
+    @override
+    def textUnderCursor(self) -> str:
+        text   = self.textEdit.toPlainText()
+        cursor = self.textEdit.textCursor()
+
+        pos = cursor.position()
+        start = text.rfind("{{", 0, pos)
+        if start < 0:
+            return ""  # No block
+
+        if text.rfind("}}", start+2, pos) >= 0:
+            return ""  # Not inside block
+
+        for char in "#:":
+            start = max(start, text.rfind(char, start+1, pos))
+
+        cursor.setPosition(start, QTextCursor.MoveMode.KeepAnchor)
+        return cursor.selectedText()
+
+
+class TemplateTextEdit(QPlainTextEdit):
+    def __init__(self, autoCompleteSources: list[AutoCompleteSource] = []):
+        super().__init__()
+        self.completer = TemplateTextEditCompleter(self, autoCompleteSources) if autoCompleteSources else None
+
+    @override
+    def keyPressEvent(self, event: QKeyEvent):
+        if self.completer:
+            self.completer.handleKeyPress(event, super().keyPressEvent)
+        else:
+            super().keyPressEvent(event)
+
+
+
+# ========== AutoComplete Data Structures ==========
 
 class Suggestion(NamedTuple):
     tag: str
     category: int
     freq: int
-    aliasFor: str
+    aliasFor: str | None
     scoreFactor: float
     nGramRatio: float
+    info: str | None = None
 
     def max(self, other: Suggestion) -> Suggestion:
         return Suggestion(
             self.tag,
             max(self.category, other.category),
-            max(self.freq, other.freq),
+            self.freq + other.freq,
             self.aliasFor or other.aliasFor,
             max(self.scoreFactor, other.scoreFactor),
-            max(self.nGramRatio, other.nGramRatio)
+            max(self.nGramRatio, other.nGramRatio),
+            self.info or other.info
         )
 
 
@@ -404,7 +657,7 @@ class TagData(NamedTuple):
     tag: str
     category: int
     freq: int
-    aliasFor: str
+    aliasFor: str | None
 
     def toSuggestion(self, scoreFactor: float, nGramRatio: float):
         return Suggestion(self.tag, self.category, self.freq, self.aliasFor, scoreFactor, nGramRatio)
@@ -417,6 +670,8 @@ class TagData(NamedTuple):
 
 
 class AutoCompleteSource(ABC):
+    Type = AutoCompleteSourceType
+
     # https://github.com/toriato/stable-diffusion-webui-wd14-tagger/blob/a9eacb1eff904552d3012babfa28b57e1d3e295c/tagger/ui.py#L368
     KAOMOJIS = {
         "0_0", "(o)_(o)", "+_+", "+_-", "._.", "<o>_<o>", "<|>_<|>", "=_=", ">_<", "3_3", "6_9", ">_o", "@_@", "^_^", "o_o", "u_u", "x_x", "|_|", "||_||"
@@ -429,8 +684,8 @@ class AutoCompleteSource(ABC):
 
 
 class NGramAutoCompleteSource(AutoCompleteSource):
-    MIN_RATIO = 0.2
-    MAX_RESULTS = 100
+    MIN_RATIO = 0.1
+    MAX_RESULTS = 300
 
     def __init__(self, scoreFactor: float):
         super().__init__()
@@ -448,7 +703,7 @@ class NGramAutoCompleteSource(AutoCompleteSource):
         for i in range(len(text) - self.n + 1):
             yield text[i:i+self.n]
 
-    def addTag(self, tag: str, category: int, freq: int, aliasFor: str = ""):
+    def addTag(self, tag: str, category: int, freq: int, aliasFor: str | None = None):
         tagData = TagData(tag, category, freq, aliasFor)
         for ngram in self.getNgrams(" " + tag):
             self.ngrams[ngram].add(tagData)
@@ -465,32 +720,33 @@ class NGramAutoCompleteSource(AutoCompleteSource):
             if tags := self.ngrams.get(ngram):
                 candidateTags.update(tags)
 
-        candidates = list[tuple[TagData, float]]()
+        candidates = list[tuple[float, TagData]]()
         for tagData in candidateTags:
             tagNgrams = set(self.getNgrams(tagData.tag))
 
             intersect = len(searchNgrams & tagNgrams)
-            union     = len(searchNgrams | tagNgrams)
-            jaccardIndex = intersect/union
+            union     = len(searchNgrams) + len(tagNgrams) - intersect
+            jaccardIndex = intersect / union
 
             if jaccardIndex >= self.MIN_RATIO:
-                candidates.append((tagData, jaccardIndex))
+                # Use min-heap to remember top results
+                if len(candidates) < self.MAX_RESULTS:
+                    heapq.heappush(candidates, (jaccardIndex, tagData))
+                elif jaccardIndex > candidates[0][0]:
+                    heapq.heapreplace(candidates, (jaccardIndex, tagData))
 
-        candidates.sort(key=lambda x: x[1], reverse=True)
-
-        if len(candidates) > self.MAX_RESULTS:
-            candidates = candidates[:self.MAX_RESULTS]
-
-        #print(f"NUM N-GRAM CANDIDATES: {len(candidates)}, minRatio={candidates[-1][1] if candidates else 'N/A'})")
+        # print(f"NUM N-GRAM CANDIDATES: {len(candidates)}")
+        # print(f"  Minimum: {min(candidates) if candidates else 'N/A'}")
+        # print(f"  Maximum: {max(candidates) if candidates else 'N/A'}")
         # print("Candidate Tags:")
-        # for i, (tag, ratio) in enumerate(candidateData, 1):
+        # for i, (ratio, tag) in enumerate(candidates, 1):
         #     print(f"{str(i):3} {tag} ({ratio:.4f})")
 
-        return [tagData.toSuggestion(self.scoreFactor, ratio) for tagData, ratio in candidates]
+        return [tagData.toSuggestion(self.scoreFactor, ratio) for ratio, tagData in candidates]
 
 
 
-class GroupNgramAutoCompleteSource(NGramAutoCompleteSource):
+class GroupNGramAutoCompleteSource(NGramAutoCompleteSource):
     FREQ = 10_000_000
 
     def __init__(self):
@@ -510,7 +766,6 @@ class GroupNgramAutoCompleteSource(NGramAutoCompleteSource):
 
 
 class CsvNGramAutoCompleteSource(NGramAutoCompleteSource):
-    INVALID_CHAR_TRANS = str.maketrans("", "", "[](){}")
     ALIAS_SEP = ","
 
     def __init__(self):
@@ -536,16 +791,25 @@ class CsvNGramAutoCompleteSource(NGramAutoCompleteSource):
             for file in filter(fileFilter, files):
                 path = os.path.join(root, file)
 
-                t = time.monotonic_ns()
-                numTags, numAliases = self._loadCsv(path, existingTags)
-                t = (time.monotonic_ns() - t) / 1_000_000
-                print(f"AutoComplete: Loaded {numTags} tags ({numAliases} aliases) in {t:.2f} ms from '{path}'")
+                try:
+                    t = time.monotonic_ns()
+                    numTags, numAliases = self._loadCsv(path, existingTags)
+                    t = (time.monotonic_ns() - t) / 1_000_000
+                    print(f"AutoComplete: Loaded {numTags} tags ({numAliases} aliases) in {t:.2f} ms from '{path}'")
+                except:
+                    print(f"AutoComplete: Failed to load tags from '{path}'")
+                    import traceback
+                    traceback.print_exc()
+
 
     def _loadCsv(self, path: str, existingTags: set[str]) -> tuple[int, int]:
         numTags = 0
         numAliases = 0
 
-        with open(path, 'r', newline='') as csvFile:
+        excludeCategories = Config.autocomplete["exclude_categories"]
+
+        bufferSize = 1048576 # 1MB
+        with open(path, 'r', newline='', encoding='utf-8', errors='replace', buffering=bufferSize) as csvFile:
             colTag, colAlias, colCat, colFreq, skipHeaderRow = self._detectColumns(csvFile)
 
             if colTag < 0:
@@ -563,22 +827,28 @@ class CsvNGramAutoCompleteSource(NGramAutoCompleteSource):
 
             for i, row in enumerate(reader):
                 tag = self.prepareTag(row[colTag])
-                if not tag or tag in existingTags:
+                if not tag:
                     continue
-                existingTags.add(tag)
 
                 category = self.toInt(catGetter(row))
-                freq     = self.toInt(freqGetter(row))
+                if category in excludeCategories:
+                    continue
 
-                self.addTag(tag, category, freq)
-                numTags += 1
+                freq = self.toInt(freqGetter(row))
 
-                for alias in aliasGetter(row).split(self.ALIAS_SEP):
-                    if (alias := self.prepareTag(alias)) and alias not in existingTags:
-                        existingTags.add(alias)
-                        self.addTag(alias, category, 0, aliasFor=tag)
-                        numAliases += 1
+                if tag not in existingTags:
+                    existingTags.add(tag)
+                    self.addTag(tag, category, freq)
+                    numTags += 1
 
+                if aliases := aliasGetter(row):
+                    for alias in aliases.split(self.ALIAS_SEP):
+                        if (alias := self.prepareTag(alias)) and alias not in existingTags:
+                            existingTags.add(alias)
+                            self.addTag(alias, category, 0, aliasFor=tag)
+                            numAliases += 1
+
+                # Throttle to keep UI responsive
                 if not (i % 500):
                     QThread.msleep(1)
 
@@ -589,6 +859,8 @@ class CsvNGramAutoCompleteSource(NGramAutoCompleteSource):
         multiTag  = Counter[int]()
         smallNr   = Counter[int]()
         largeNr   = Counter[int]()
+
+        invalidCharTrans = str.maketrans("", "", "[](){}")
 
         reader = csv.reader(csvFile)
         row = next(reader)
@@ -603,7 +875,7 @@ class CsvNGramAutoCompleteSource(NGramAutoCompleteSource):
                     smallNr[col] += 1
                 elif self.ALIAS_SEP in val:
                     multiTag[col] += 1
-                elif val.translate(self.INVALID_CHAR_TRANS):
+                elif val.translate(invalidCharTrans):
                     singleTag[col] += 1
 
         return (
@@ -638,7 +910,6 @@ class CsvNGramAutoCompleteSource(NGramAutoCompleteSource):
             return -1
 
 
-
 class LoadCsvTask(QRunnable):
     FOLDER = "./user/autocomplete/"
 
@@ -652,10 +923,86 @@ class LoadCsvTask(QRunnable):
         self.signals = self.Signals()
 
     def run(self):
-        QThread.msleep(100)
+        QThread.msleep(100)  # Let other stuff initialize first
         csvSource = CsvNGramAutoCompleteSource()
 
         try:
             csvSource.load(self.FOLDER)
         finally:
             self.signals.done.emit((csvSource.ngrams,))
+
+
+
+class TemplateAutoCompleteSource(NGramAutoCompleteSource):
+    MIN_RATIO = 0.01
+
+    FUNC_INFO = {
+        "#lower":           "",
+        "#upper":           "",
+        "#strip":           "",
+        "#oneline":         "",
+        "#default":         "text",
+        "#first":           "count:separator",
+        "#drop":            "count:separator",
+        "#replace":         "search:replace:count",
+        "#replacevar":      "search:var:count",
+        "#shuffle":         "separator",
+        "#shufflekeep":     "count:separator",
+        "#reverse":         "separator",
+        "#join":            "var:separator",
+        "#noprefix":        "prefixes",
+        "#nosubsets":       "var:sep:var sep:word seps",
+        "#nodup":           "separator"
+    }
+
+    def __init__(self, scoreFactor: float = 1.0, jsonKeys: bool = False):
+        super().__init__(scoreFactor)
+        self.jsonKeys = jsonKeys
+
+
+    @override
+    def getSuggestions(self, search: str) -> list[Suggestion]:
+        defaultInfo = "Key Exists" if self.jsonKeys else ""  # Empty string disables category
+        suggestions = super().getSuggestions(search)
+        return [
+            Suggestion(sug.tag.lstrip("{#"), sug.category, sug.freq, "", sug.scoreFactor, sug.nGramRatio, self.FUNC_INFO.get(sug.tag, defaultInfo))
+            for sug in suggestions
+        ]
+
+
+    def addVar(self, var: str, freq: int = 0):
+        self.addTag("{{" + var, -1, freq)
+
+    def addFunc(self, func: str):
+        self.addTag("#" + func, -1, 0)
+
+
+    def setupTemplate(self):
+        assert not self.jsonKeys
+        self.reset()
+
+        for tag in Config.keysTags:
+            self.addVar(f"tags.{tag}")
+        for cap in Config.keysCaption:
+            self.addVar(f"captions.{cap}")
+
+        for var in (
+            "text", "current", "refined",
+            "path", "path.ext", "name", "name.ext", "ext", "folder", #"folder-1",
+            "date", "time", "static", "coinflip"
+        ):
+            self.addVar(var)
+
+        for func in self.FUNC_INFO:
+            self.addTag(func, -1, 0)
+
+    def setupPathTemplate(self):
+        assert not self.jsonKeys
+        self.reset()
+
+        for var in ("w", "h", "region", "rotation"):
+            self.addVar(var)
+
+    def updateJsonKeys(self, keys: Iterable[str]):
+        for key in keys:
+            self.addVar(key, 1)

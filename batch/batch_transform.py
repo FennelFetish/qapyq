@@ -8,6 +8,7 @@ from infer.prompt import PromptWidget, PromptsHighlighter
 from lib import colorlib, qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
+from ui.tab import ImgTab
 from .batch_task import BatchInferenceTask, BatchTaskHandler
 from .batch_log import BatchLog
 
@@ -17,8 +18,9 @@ TRANSFORM_OVERWRITE_MODE_MISSING = "missing"
 
 
 class BatchTransform(QtWidgets.QWidget):
-    def __init__(self, tab, logWidget: BatchLog, bars):
+    def __init__(self, tab: ImgTab, logWidget: BatchLog, bars):
         super().__init__()
+        self.tab = tab
         self.logWidget = logWidget
         self.taskHandler = BatchTaskHandler("Transform", bars, tab.filelist, self.getConfirmOps, self.createTask)
 
@@ -43,7 +45,7 @@ class BatchTransform(QtWidgets.QWidget):
         layout.setColumnStretch(3, 1)
 
         row = 0
-        self.promptWidget = PromptWidget("promptLLMPresets", "promptLLMDefault")
+        self.promptWidget = PromptWidget("promptLLMPresets", "promptLLMDefault", self.tab.templateAutoCompleteSources)
         qtlib.setTextEditHeight(self.promptWidget.txtSystemPrompt, 5, "min")
         qtlib.setTextEditHeight(self.promptWidget.txtPrompts, 10, "min")
         self.promptWidget.lblPrompts.setText("Prompt(s) Template:")
