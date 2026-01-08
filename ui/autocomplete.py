@@ -6,7 +6,7 @@ from typing_extensions import override
 from collections import defaultdict, Counter
 from itertools import islice, takewhile
 from PySide6.QtWidgets import QCompleter, QPlainTextEdit, QTableView
-from PySide6.QtGui import QTextCursor, QGuiApplication, QKeyEvent, QFont, QColor
+from PySide6.QtGui import QTextCursor, QGuiApplication, QKeyEvent, QFont, QColor, QPalette
 from PySide6.QtCore import Qt, Signal, Slot, QAbstractTableModel, QModelIndex, QPersistentModelIndex, QTimer, QRunnable, QObject, QThreadPool, QThread
 from difflib import SequenceMatcher
 #from rapidfuzz import fuzz, distance
@@ -203,7 +203,16 @@ class AutoCompleteModel(QAbstractTableModel):
 
 
     def updateSuggestions(self, search: str):
-        self.beginResetModel()
+        searchWords = list(filter(None, search.split()))
+        search = " ".join(searchWords)
+
+        searchParts = [search]
+        for i in range(1, len(searchWords)):
+            part = " ".join(searchWords[i:])
+            if len(part) >= 2:
+                searchParts.append(part)
+            else:
+                break
 
         suggestions: dict[str, Suggestion] = {}
         for source in self.sources:
@@ -212,12 +221,6 @@ class AutoCompleteModel(QAbstractTableModel):
                     sug = existingSug.max(sug)
                 suggestions[sug.tag] = sug
 
-        searchWords = search.split(" ", 3)
-        searchParts = [
-            part for i in range(0, len(searchWords))
-            if len(part := " ".join(searchWords[i:])) >= 2
-        ]
-
         ctx = SuggestionScore.Context(search, searchParts, SequenceMatcher(b=search, autojunk=False))
         scores = sorted((SuggestionScore(ctx, sug) for sug in suggestions.values()), reverse=True)
 
@@ -225,8 +228,10 @@ class AutoCompleteModel(QAbstractTableModel):
         # for i, score in enumerate(scores[:20], 1):
         #     print(f"{str(i):2} {score.suggestion.tag} {score.getScores()}")
 
-        minRatio = 0
+        self.beginResetModel()
         self.suggestions.clear()
+
+        minRatio = 0
         itScores = iter(scores)
         for score in islice(itScores, self.NUM_SUGGESTIONS):
             self.suggestions.append(score.suggestion)
@@ -283,6 +288,21 @@ class AutoCompleteModel(QAbstractTableModel):
 
 
 class AutoCompletePopup(QTableView):
+    SCROLLBAR_STYLESHEET = None
+
+    @staticmethod
+    def _getScrollbarStylesheet(palette: QPalette) -> str:
+        color = palette.color(palette.ColorRole.Highlight)
+        color = f"rgba({color.red()}, {color.green()}, {color.blue()}, 0.4)"
+
+        return "\n".join((
+            "QScrollBar:vertical {width: 6px; background: transparent; margin: 0}",
+            "QScrollBar::handle:vertical {background: " + color + "; min-height: 20px; border-radius: 3px}",
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {height: 0px}",
+            "QScrollBar::up-arrow:vertical, QScrollBar::down-arrow:vertical, QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {background: none}"
+        ))
+
+
     def __init__(self):
         super().__init__()
         self.setShowGrid(False)
@@ -305,6 +325,10 @@ class AutoCompletePopup(QTableView):
         self._rowHeight = -1
 
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        if AutoCompletePopup.SCROLLBAR_STYLESHEET is None:
+            AutoCompletePopup.SCROLLBAR_STYLESHEET = self._getScrollbarStylesheet(self.palette())
+        self.verticalScrollBar().setStyleSheet(AutoCompletePopup.SCROLLBAR_STYLESHEET)
 
 
     @Slot()
@@ -352,7 +376,9 @@ class TextEditCompleter:
 
     MIN_PREFIX_LEN = 2
     MAX_PREFIX_WORDS = 4
+
     SKIP_WORD_MAX_SIMILARITY = 0.75
+    SKIP_WORD_MAX_LENDIFF    = 2
 
     IGNORE_KEYS    = (Qt.Key.Key_Enter, Qt.Key.Key_Return, Qt.Key.Key_Escape, Qt.Key.Key_Shift)
     TAB_NAVIGATION = {Qt.Key.Key_Tab.value: 1, Qt.Key.Key_Backtab.value: -1}
@@ -399,6 +425,25 @@ class TextEditCompleter:
         matchText: str  = index.data(AutoCompleteModel.ROLE_KEEP_ALIAS)
         insertText: str = matchText if keyMod & Qt.KeyboardModifier.ShiftModifier else index.data(Qt.ItemDataRole.EditRole)
 
+        cursor = self.textEdit.textCursor()
+        if not cursor.hasSelection():
+            insertText = self._selectInsertRegion(cursor, matchText, insertText)
+
+        cursor.beginEditBlock()
+        cursor.insertText(insertText)
+
+        if not keyMod & Qt.KeyboardModifier.ControlModifier and cursor.atBlockEnd():
+            cursor.insertText(self.separator)
+
+        # Split ops in undo stack
+        cursor.insertText(" ")
+        cursor.deletePreviousChar()
+
+        cursor.endEditBlock()
+        self.textEdit.setTextCursor(cursor)
+
+
+    def _selectInsertRegion(self, cursor: QTextCursor, matchText: str, insertText: str) -> str:
         firstMatchWord = self.splitWords(matchText, 1)[0]
         matcher = SequenceMatcher(autojunk=False)
 
@@ -406,38 +451,48 @@ class TextEditCompleter:
         text = self.textEdit.toPlainText().translate(trans)
 
         # Init cursorPos to the first non-whitespace char to the left of text cursor
-        cursor = self.textEdit.textCursor()
         cursorPos = max(cursor.position()-1, 0)
         while cursorPos > 0 and text[cursorPos].isspace():
             cursorPos -= 1
 
         # ==== FIND SELECTION START ====
-        leftBound = text.rfind(punct, 0, cursorPos) + 1
+        start = cursorPos + 1
+        leftBound = text.rfind(punct, 0, start) + 1
 
         # Skip words to the left of cursor.
-        start   = cursorPos
-        wordEnd = cursorPos + 1
+        bestStart = -1
+        remainingSkipWords = max(self._numReplaceWordsLeft(matchText), self._numReplaceWordsLeft(insertText))
+        remainingSkipWords += 1  # Try skipping one more word to handle typos with space like: 'arm chair' => 'armchair'
 
-        numSkipWords = max(self._numReplaceWordsLeft(matchText), self._numReplaceWordsLeft(insertText))
-        for w in range(numSkipWords-1, -1, -1):
+        while remainingSkipWords > 0 and start > leftBound:
+            remainingSkipWords -= 1
+
             p = text.rfind(" ", leftBound, start)
-            if p >= 0:
+            if p < 0:
+                p = leftBound # No more words, abort loop
+                skippedWord = text[p : start]
+            else:
+                skippedWord = text[p+1 : start]
+
                 # Skip additional spaces
                 while p > 0 and text[p-1].isspace():
                     p -= 1
 
-                start = p
+            start = p
 
-                if w > 0:
-                    # Abort skipping when current word is similar to first word of matchText
-                    skippedWord = text[start+1 : wordEnd]
-                    matcher.set_seqs(skippedWord, firstMatchWord[:len(skippedWord)+3])
-                    if matcher.ratio() >= self.SKIP_WORD_MAX_SIMILARITY:
-                        break
-                    wordEnd = start
+            # Since we're checking one extra word to handle typos:
+            # If no similar words were found until the second word (= originally the first word), mark it as the best start.
+            if remainingSkipWords == 1 and bestStart < 0:
+                bestStart = start
             else:
-                start = leftBound
-                break
+                # Check if skipped word is similar to first word of matchText
+                matcher.set_seqs(skippedWord, firstMatchWord[:len(skippedWord) + self.SKIP_WORD_MAX_LENDIFF])
+                if matcher.ratio() >= self.SKIP_WORD_MAX_SIMILARITY:
+                    bestStart = start
+
+        # Set start to the leftmost similar word, if there were any
+        if bestStart >= 0:
+            start = bestStart
 
         # Add whitespace to the left
         cursor.setPosition(start)
@@ -478,19 +533,7 @@ class TextEditCompleter:
 
         cursor.setPosition(start)
         cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
-
-        cursor.beginEditBlock()
-        cursor.insertText(insertText)
-
-        if not keyMod & Qt.KeyboardModifier.ControlModifier and cursor.atBlockEnd():
-            cursor.insertText(self.separator)
-
-        # Split ops in undo stack
-        cursor.insertText(" ")
-        cursor.deletePreviousChar()
-
-        cursor.endEditBlock()
-        self.textEdit.setTextCursor(cursor)
+        return insertText
 
 
     @staticmethod
@@ -500,6 +543,24 @@ class TextEditCompleter:
     def _numReplaceWordsLeft(self, text: str) -> int:
         return len(self.splitWords(text))
 
+
+    def textUnderCursor(self) -> str:
+        cursor = self.textEdit.textCursor()
+        trans, punct = self.PUNCTUATION_TRANS
+
+        for _ in range(self.MAX_PREFIX_WORDS):
+            cursor.movePosition(QTextCursor.MoveOperation.WordLeft, QTextCursor.MoveMode.KeepAnchor)
+            text = cursor.selectedText()
+
+            p = text.translate(trans).rfind(punct) + 1
+            if p > 0:
+                text = text[p:]
+                break
+
+            if cursor.atBlockStart():
+                break
+
+        return text.lstrip().lower()
 
     def complete(self, force: bool = False):
         popup: AutoCompletePopup = self.completer.popup()
@@ -532,24 +593,6 @@ class TextEditCompleter:
 
         self._tLastComplete = time.monotonic_ns()
 
-
-    def textUnderCursor(self) -> str:
-        cursor = self.textEdit.textCursor()
-        trans, punct = self.PUNCTUATION_TRANS
-
-        for _ in range(self.MAX_PREFIX_WORDS):
-            cursor.movePosition(QTextCursor.MoveOperation.WordLeft, QTextCursor.MoveMode.KeepAnchor)
-            text = cursor.selectedText()
-
-            p = text.translate(trans).rfind(punct) + 1
-            if p > 0:
-                text = text[p:]
-                break
-
-            if cursor.atBlockStart():
-                break
-
-        return text.lstrip()
 
     @Slot()
     def _resetSelection(self):
@@ -698,7 +741,7 @@ class NGramAutoCompleteSource(AutoCompleteSource):
 
     def getNgrams(self, text: str) -> Iterable[str]:
         if len(text) < self.n:
-            text = text.rjust(self.n, " ")
+            text = text.center(self.n, " ") # 'ab' => ' ab' (right-justified)
 
         for i in range(len(text) - self.n + 1):
             yield text[i:i+self.n]
@@ -957,6 +1000,7 @@ class TemplateAutoCompleteSource(NGramAutoCompleteSource):
 
     def __init__(self, scoreFactor: float = 1.0, jsonKeys: bool = False):
         super().__init__(scoreFactor)
+        self.n = 2
         self.jsonKeys = jsonKeys
 
 

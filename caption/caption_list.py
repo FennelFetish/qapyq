@@ -6,6 +6,7 @@ from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QTimer, QSignalBlocker
 from lib.captionfile import CaptionFile, FileTypeSelector, Keys
+from lib.filelist import DataKeys
 from lib import colorlib, qtlib
 from ui.autocomplete import AutoCompleteSource, getAutoCompleteSource
 from .caption_tab import CaptionTab
@@ -328,6 +329,7 @@ class CaptionList(CaptionTab):
 
         self._jsonModTime, self._txtModTime = self.getFileModTime(currentFile)
         self.btnSaveAll.setChanged(False)
+        self.ctx.tab.filelist.setData(currentFile, DataKeys.CaptionState, DataKeys.IconStates.Saved)
 
 
     def _askOverwrite(self) -> bool:
@@ -487,11 +489,6 @@ class AutoSizeTextEdit(BorderlessNavigationTextEdit):
             if not (self.completer and self.completer.isActive()):
                 event.ignore()
                 return
-
-        elif event.matches(QtGui.QKeySequence.StandardKey.Save):
-            self.save.emit()
-            event.accept()
-            return
 
         super().keyPressEvent(event)
 

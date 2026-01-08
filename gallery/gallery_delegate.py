@@ -501,6 +501,10 @@ class GalleryCaptionEditor(QtWidgets.QWidget):
 
         self._build()
 
+        self._saveShortcut = QtGui.QShortcut(QtGui.QKeySequence.StandardKey.Save, self, context=Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self._saveShortcut.activated.connect(self.saveCaption)
+
+
     def _build(self):
         labelHeight = self.delegate.LABEL_HEIGHT
 
@@ -611,11 +615,3 @@ class GalleryCaptionEditor(QtWidgets.QWidget):
     def takeFocus(self):
         self.txtCaption.setFocus()
         self.txtCaption.moveCursor(QtGui.QTextCursor.MoveOperation.End)
-
-    @override
-    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
-        if event.matches(QtGui.QKeySequence.StandardKey.Save) and self.txtCaption.hasFocus():
-            self.saveCaption()
-            event.accept()
-            return
-        return super().keyPressEvent(event)

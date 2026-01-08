@@ -133,7 +133,7 @@ class NavigationTextEdit(QtWidgets.QPlainTextEdit):
                 event.accept()
                 self.moveCaptionSelection(move[0], move[1])
 
-                if self.completer:
+                if self.completer and sum(move):
                     self.completer.hide()
                 return
 

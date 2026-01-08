@@ -13,6 +13,7 @@ from .caption_tokens import CaptionTokens
 from .caption_highlight import HighlightState
 from .caption_multi_edit import CaptionMultiEdit
 from .caption_tab import MultiEditSupport
+from .caption_list import AutoSizeTextEdit
 
 
 class CaptionContainer(QtWidgets.QWidget):
@@ -53,6 +54,8 @@ class CaptionContainer(QtWidgets.QWidget):
 
         self.captionMenu.countTokensToggled.connect(self.tokens.setActive)
         self.captionMenu.previewToggled.connect(self._onPreviewToggled)
+
+        self._keyboardShortcuts = self._setupKeyboardShortcuts()
 
         self._loadRules()
 
@@ -247,6 +250,24 @@ class CaptionContainer(QtWidgets.QWidget):
             self.btnMenu.setFixedHeight(h)
             self.btnDestUnlocked.setFixedHeight(h)
             self.chkSkipOnSave.setFixedHeight(h)
+
+
+    def _setupKeyboardShortcuts(self) -> list[QtGui.QShortcut]:
+        # These will be activated even when autocomplete popup has focus
+
+        save = QtGui.QShortcut(QtGui.QKeySequence.StandardKey.Save, self)
+        save.activated.connect(self._saveCaptionShortcut)
+
+        undo = QtGui.QShortcut(QtGui.QKeySequence.StandardKey.Undo, self)
+        undo.activated.connect(self.txtCaption.undo)
+
+        redo = QtGui.QShortcut(QtGui.QKeySequence.StandardKey.Redo, self)
+        redo.activated.connect(self.txtCaption.redo)
+
+        multiEditToggle = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+M"), self)
+        multiEditToggle.activated.connect(self._multiEditToggleShortcut)
+
+        return [save, undo, redo, multiEditToggle]
 
 
     def _loadRules(self):
@@ -448,6 +469,15 @@ class CaptionContainer(QtWidgets.QWidget):
 
 
     @Slot()
+    def _saveCaptionShortcut(self):
+        # Check if any text field from 'List' tab is focused
+        widget = QtWidgets.QApplication.focusWidget()
+        if isinstance(widget, AutoSizeTextEdit):
+            widget.save.emit()
+        else:
+            self.saveCaption()
+
+    @Slot()
     def saveCaption(self):
         # Skip to next file when saving succeeds and skip-on-save is enabled. Don't loop.
         if self.saveCaptionNoSkip() and self.chkSkipOnSave.isChecked():
@@ -554,34 +584,6 @@ class CaptionContainer(QtWidgets.QWidget):
             self._multiEditDeactivate()
 
 
-    def keyPressEvent(self, event: QtGui.QKeyEvent):
-        if event.matches(QtGui.QKeySequence.StandardKey.Save):
-            self.saveCaption()
-            event.accept()
-            return
-
-        if event.matches(QtGui.QKeySequence.StandardKey.Undo):
-            self.txtCaption.undo()
-            event.accept()
-            return
-
-        if event.matches(QtGui.QKeySequence.StandardKey.Redo):
-            self.txtCaption.redo()
-            event.accept()
-            return
-
-        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            match event.key():
-                case Qt.Key.Key_M:
-                    if self.btnMultiEdit.isVisible():
-                        self.btnMultiEdit.click()
-                        event.accept()
-                        return
-
-        event.ignore()
-        super().keyPressEvent(event)
-
-
     def _multiEditActivate(self, selectedFiles: set[str]):
         edited = self.multiEdit.isEdited
         loadFunc = self._multiEditLoadApplyRules if self.isAutoApplyRules() else self._loadCaption
@@ -603,6 +605,11 @@ class CaptionContainer(QtWidgets.QWidget):
                 self._multiEditActivate(self.filelist.selectedFiles)
         else:
             self._multiEditDeactivate()
+
+    @Slot()
+    def _multiEditToggleShortcut(self):
+        if self.btnMultiEdit.isVisible():
+            self.btnMultiEdit.click()
 
 
     @Slot()
