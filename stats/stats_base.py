@@ -5,8 +5,8 @@ from typing_extensions import override
 from collections import Counter
 from PySide6 import QtWidgets
 from PySide6.QtCore import (
-    Qt, Slot, Signal, QSignalBlocker, QSortFilterProxyModel, QModelIndex, QItemSelection, QRegularExpression,
-    QRunnable, QObject, QMutex, QMutexLocker, QThreadPool, QTimer
+    Qt, Slot, Signal, QSignalBlocker, QAbstractListModel, QSortFilterProxyModel, QModelIndex, QPersistentModelIndex, QItemSelection,
+    QRegularExpression, QRunnable, QObject, QMutex, QMutexLocker, QThreadPool, QTimer
 )
 from ui.tab import ImgTab
 from lib import colorlib, qtlib
@@ -116,7 +116,10 @@ class StatsLayout(QtWidgets.QVBoxLayout):
         layout.addWidget(self.btnWithFiles, row, 4)
 
         row += 1
-        self.listFiles = QtWidgets.QListWidget()
+        self.listModel = StatsFileListModel(self, self.tab.filelist)
+
+        self.listFiles = QtWidgets.QListView()
+        self.listFiles.setModel(self.listModel)
         self.listFiles.setAlternatingRowColors(True)
         qtlib.setMonospace(self.listFiles)
         self.listFiles.selectionModel().selectionChanged.connect(self._onFileSelected)
@@ -203,22 +206,19 @@ class StatsLayout(QtWidgets.QVBoxLayout):
         combineClass = self.cboCombineMode.currentData()
         combiner = combineClass()
 
+        hasSelection = False
         for srcIndex in self.getSelectedSourceIndexes():
             combiner.addFiles( self.proxyModel.getFiles(srcIndex) )
+            hasSelection = True
 
         fileSet = combiner.getFiles()
-        if self.chkFilesNegate.isChecked():
-            fileSet = [file for file in self.tab.filelist.getFiles() if file not in fileSet]
-
-        files = sorted(fileSet, key=CachedPathSort())
+        if self.chkFilesNegate.isChecked() and hasSelection:
+            files = [file for file in self.tab.filelist.getFiles() if file not in fileSet]
+        else:
+            files = sorted(fileSet, key=CachedPathSort())
 
         with QSignalBlocker(self.listFiles.selectionModel()):
-            self.listFiles.clear()
-            for file in files:
-                path = self.tab.filelist.removeCommonRoot(file)
-                item = QtWidgets.QListWidgetItem(path)
-                item.setData(self.ROLE_FILEPATH, file)
-                self.listFiles.addItem(item)
+            self.listModel.setFiles(files)
 
         self.groupFiles.setTitle(f"Files ({len(files)})")
 
@@ -229,8 +229,7 @@ class StatsLayout(QtWidgets.QVBoxLayout):
             return
 
         index = selected.indexes()[0]
-        currentItem = self.listFiles.itemFromIndex(index)
-        file: str = currentItem.data(self.ROLE_FILEPATH)
+        file: str = index.data(StatsFileListModel.ROLE_PATH)
 
         try:
             # Changing file normally clears the selection, so disable that.
@@ -271,12 +270,13 @@ class StatsLayout(QtWidgets.QVBoxLayout):
 
 
     def getListedFiles(self) -> Generator[str, None, None] | None:
-        if self.listFiles.count() == 0:
+        if files := self.listModel.files:
+            yield from files
+        else:
             return None
-        return (self.listFiles.item(row).data(self.ROLE_FILEPATH) for row in range(self.listFiles.count()))
 
     def hasListedFiles(self) -> bool:
-        return self.listFiles.count() > 0
+        return self.listModel.rowCount() > 0
 
 
     @Slot()
@@ -335,6 +335,38 @@ class StatsLayout(QtWidgets.QVBoxLayout):
         filesGen = self.getListedFiles()
         if filesGen is not None:
             self.tab.filelist.setSelection(filesGen, updateCurrent=True, clearCurrentSelection=False)
+
+
+
+class StatsFileListModel(QAbstractListModel):
+    ROLE_PATH = Qt.ItemDataRole.UserRole
+
+    def __init__(self, parent, filelist: FileList):
+        super().__init__(parent)
+        self.filelist = filelist
+        self.files: list[str] = []
+
+    def setFiles(self, files: list[str]):
+        self.beginResetModel()
+        self.files = files
+        self.endResetModel()
+
+    @override
+    def rowCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()) -> int:
+        return len(self.files)
+
+    @override
+    def data(self, index: QModelIndex | QPersistentModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        file = self.files[index.row()]
+
+        match role:
+            case Qt.ItemDataRole.DisplayRole:
+                return self.filelist.removeCommonRoot(file)
+
+            case self.ROLE_PATH:
+                return file
+
+        return None
 
 
 
