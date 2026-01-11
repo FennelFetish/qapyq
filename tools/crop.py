@@ -75,6 +75,7 @@ class CropTool(ViewTool):
         self._toolbar.setSelectionSize(self._cropHeight * self._cropAspectRatio, self._cropHeight)
 
 
+    # TODO: Buggy when rotated by 90, and then moving rect
     # TODO: Buggy when nudging outside of image edges when the image is rotated ('_lastCenter' moves outside). -> use polygon for constraing pos to image
     # TODO: Buggy when growing selection when image is rotated: It will also move the edge that should be kept.
     # TODO: Buggy when growing outside of image edges: It will grow in the other direction. It should stop growing instead.
@@ -182,7 +183,11 @@ class CropTool(ViewTool):
         self._lastCenter.setY(mouseCoords.y())
 
         self.updateSelectionRect(mouseCoords)
-        self._mask.setHighlightRegion(self._imgview.viewport().rect(), self._cropRect.rect())
+
+        imgRect = self._imgview.image.boundingRect()
+        imgPoly = self._imgview.image.mapToParent(imgRect)
+        imgPoly = self._imgview.mapFromScene(imgPoly)
+        self._mask.setHighlightRegion(imgPoly, self._cropRect.rect())
 
         # Change selection color depending on crop size
         pen = self.PEN_UPSCALE if self._cropHeight < self._targetHeight else self.PEN_DOWNSCALE
@@ -193,13 +198,18 @@ class CropTool(ViewTool):
         self._toolbar.setSelectionSize(self._cropHeight * self._cropAspectRatio, self._cropHeight)
 
     def setSelectionVisible(self, visible: bool):
-        self._cropRect.setVisible(visible)
-        self._mask.setVisible(visible)
-        self._imgview.scene().update()
+        needsUpdate = (self._cropRect.isVisible() != visible) or (self._mask.isVisible() != visible)
+        if needsUpdate:
+            self._cropRect.setVisible(visible)
+            self._mask.setVisible(visible)
+            self._imgview.scene().update()
 
-    def resetSelection(self, mousePos: QPointF):
+    def resetSelection(self, mousePos: QPointF | None = None):
         self._waitForConfirmation = False
-        self.updateSelection(mousePos)
+        if mousePos is None:
+            self.setSelectionVisible(False)
+        else:
+            self.updateSelection(mousePos)
 
 
     def exportImage(self, selectionRect: QRect) -> bool:
@@ -536,12 +546,12 @@ class SelectionRect(QGraphicsRectItem):
 class MaskRect(QGraphicsRectItem):
     def __init__(self):
         super().__init__(None)
-        self.setFlag(QGraphicsItem.ItemClipsToShape, True)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemClipsToShape, True)
         self._clipPath = QPainterPath()
 
-    def setHighlightRegion(self, viewportRect, selectionRect) -> None:
+    def setHighlightRegion(self, imgPoly, selectionRect) -> None:
         self._clipPath.clear()
-        self._clipPath.addRect(viewportRect)
+        self._clipPath.addPolygon(imgPoly)
         self._clipPath.addRect(selectionRect)
 
     def shape(self) -> QPainterPath:
@@ -601,8 +611,8 @@ class CropContextMenu(QMenu):
         actResetSelection = self.addAction("Reset Selection")
         actResetSelection.triggered.connect(self._onResetSelection)
 
-        actResetSelection = self.addAction("Swap")
-        actResetSelection.triggered.connect(self._onSwap)
+        actSwap = self.addAction("Swap Size")
+        actSwap.triggered.connect(self._onSwap)
 
         self.addSeparator()
 

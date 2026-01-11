@@ -208,6 +208,7 @@ class CropToolBar(QtWidgets.QToolBar):
         self._cropTool._imgview.rotation = rot
         self._cropTool._imgview.updateImageTransform()
         self.updateExport()
+        self._cropTool.resetSelection()
 
     @property
     def rotation(self) -> float:
