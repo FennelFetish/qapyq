@@ -447,7 +447,12 @@ class MenuComboBox(QtWidgets.QComboBox):
 
         text, action = currentEntry
         if text == self.currentText():
-            self.menu.setActiveAction(action)
+            try:
+                self.menu.setActiveAction(action)
+            except Exception as ex:
+                # Why does this happen? RuntimeError: Internal C++ object (PySide6.QtGui.QAction) already deleted.
+                print(f"Failed to set active action in MenuComboBox: {ex} ({type(ex).__name__})")
+                return
 
             setFontBold(action)
             self._activeActions.append(action)
