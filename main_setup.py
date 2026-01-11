@@ -102,6 +102,7 @@ Ovis 2          OK              -
 Ovis 2.5        -               OK
 Qwen2-VL        OK              OK
 Qwen2.5-VL      -               OK
+Qwen3-VL        -               OK
 
 Do you want to install the OLD version of transformers?
 (Compatibility with GGUF models is not affected by this choice.)"""

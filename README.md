@@ -9,17 +9,17 @@
 
 ![Screenshot of qapyq with its 5 windows open.](https://www.alchemists.ch/qapyq/overview-3.jpg)
 
-<a href="https://camo.githubusercontent.com/2cfe9d36a4920abfbe30172373048a8b6e23a796c18b11651c7cdd7105c0433c/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f647261672d6e2d64726f702e676966"><img alt="Edit captions quickly with drag-and-drop support" src="https://camo.githubusercontent.com/2cfe9d36a4920abfbe30172373048a8b6e23a796c18b11651c7cdd7105c0433c/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f647261672d6e2d64726f702e676966" width="30%"></img></a>
-<a href="https://camo.githubusercontent.com/5a27e2ae34499523dfba4d412409af0b7ae3ce7a81f8f966f2c3f9b154151715/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f7461675f6d75742d6578636c75736976652e676966"><img alt="Select one-of-many" src="https://camo.githubusercontent.com/5a27e2ae34499523dfba4d412409af0b7ae3ce7a81f8f966f2c3f9b154151715/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f7461675f6d75742d6578636c75736976652e676966" width="30%"></img></a>
-<a href="https://camo.githubusercontent.com/74f8628523509b94014f88162823125706f9e07933b1e3a24b6ed1bd0a8de9cb/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f72756c65732e676966"><img alt="Apply sorting and filtering rules" src="https://camo.githubusercontent.com/74f8628523509b94014f88162823125706f9e07933b1e3a24b6ed1bd0a8de9cb/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f72756c65732e676966" width="30%"></img></a>
+<a href="https://camo.githubusercontent.com/059f5cef1671955473d5d3e096263cf85910a2d52094c389b2924cca1b1a33c5/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f647261672d6e2d64726f702e676966"><img alt="Edit captions quickly with drag-and-drop support" src="https://camo.githubusercontent.com/059f5cef1671955473d5d3e096263cf85910a2d52094c389b2924cca1b1a33c5/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f647261672d6e2d64726f702e676966" width="30%"></img></a>
+<a href="https://camo.githubusercontent.com/71df5556ba81a944f3a28ed3760644b6f7c0c455b4ed639a80418b51d0cae704/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f7461675f6d75742d6578636c75736976652e676966"><img alt="Select one-of-many" src="https://camo.githubusercontent.com/71df5556ba81a944f3a28ed3760644b6f7c0c455b4ed639a80418b51d0cae704/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f7461675f6d75742d6578636c75736976652e676966" width="30%"></img></a>
+<a href="https://camo.githubusercontent.com/9403e354708969d4c5f1262583294913bd238e8b38df640e2a7fc36a313bf686/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f72756c65732e676966"><img alt="Apply sorting and filtering rules" src="https://camo.githubusercontent.com/9403e354708969d4c5f1262583294913bd238e8b38df640e2a7fc36a313bf686/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f72756c65732e676966" width="30%"></img></a>
 
-<a href="https://camo.githubusercontent.com/2099d08b3e161e7dd1ba906ef7a1a134b078c83001c2ce604f751b26d225168f/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f63726f702e676966"><img alt="Quick cropping" src="https://camo.githubusercontent.com/2099d08b3e161e7dd1ba906ef7a1a134b078c83001c2ce604f751b26d225168f/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f63726f702e676966" width="30%"></img></a>
-<a href="https://camo.githubusercontent.com/9400e59363cb8ba71b2eca5b45ec33e7d06b6e6dd27de427f86fc109f987ebc6/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f636f6d706172652e676966"><img alt="Image comparison" src="https://camo.githubusercontent.com/9400e59363cb8ba71b2eca5b45ec33e7d06b6e6dd27de427f86fc109f987ebc6/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f636f6d706172652e676966" width="30%"></img></a>
-<a href="https://camo.githubusercontent.com/7ccd546901e97b3b5f23723a5200afff2b2bd86a7243fdf5716555bf12770bcf/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f6d61736b2d322e676966"><img alt="Draw masks manually or apply automatic detection and segmentation" src="https://camo.githubusercontent.com/7ccd546901e97b3b5f23723a5200afff2b2bd86a7243fdf5716555bf12770bcf/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f6d61736b2d322e676966" width="30%"></img></a>
+<a href="https://camo.githubusercontent.com/74122b177a2f5a1cd4add5d749b90a49ac2f0cec631363ef861199a7c90566d7/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f63726f702e676966"><img alt="Quick cropping" src="https://camo.githubusercontent.com/74122b177a2f5a1cd4add5d749b90a49ac2f0cec631363ef861199a7c90566d7/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f63726f702e676966" width="30%"></img></a>
+<a href="https://camo.githubusercontent.com/d15df56575d4d69fe2cc04c5ed822e6cc95c0208185df3464a21fc351c4b04fb/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f636f6d706172652e676966"><img alt="Image comparison" src="https://camo.githubusercontent.com/d15df56575d4d69fe2cc04c5ed822e6cc95c0208185df3464a21fc351c4b04fb/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f636f6d706172652e676966" width="30%"></img></a>
+<a href="https://camo.githubusercontent.com/1583a08a56e63f4d6dae0c59f6572310558bb7c9f8e7b79e7e4e53af6e2663ee/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f6d61736b2d322e676966"><img alt="Draw masks manually or apply automatic detection and segmentation" src="https://camo.githubusercontent.com/1583a08a56e63f4d6dae0c59f6572310558bb7c9f8e7b79e7e4e53af6e2663ee/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f6d61736b2d322e676966" width="30%"></img></a>
 
 
-<a href="https://camo.githubusercontent.com/3b132c3a7c20e98f5a7ee7df966ec5074804d40e13dcba22a792bc57843594b4/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f636f6e642d666f6f74776561722d686169722d666c6f6f722e676966"><img alt="Transform tags using conditional rules" src="https://camo.githubusercontent.com/3b132c3a7c20e98f5a7ee7df966ec5074804d40e13dcba22a792bc57843594b4/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f636f6e642d666f6f74776561722d686169722d666c6f6f722e676966" width="30%"></img></a>
-<a href="https://camo.githubusercontent.com/d57801611e8f7d849867425838297b78f910424e8b740575869727f4105d7154/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f6d756c7469656469742d666f6375732d636f6d707265737365642e676966"><img alt="Multi-Edit and Focus Mode" src="https://camo.githubusercontent.com/d57801611e8f7d849867425838297b78f910424e8b740575869727f4105d7154/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f6d756c7469656469742d666f6375732d636f6d707265737365642e676966" width="60%"></img></a>
+<a href="https://camo.githubusercontent.com/b6cf81d56d9d4e9e2bbc8fb031e03e9380bc0a5c5e47b4885edd8ff0cc043b6b/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f636f6e642d666f6f74776561722d686169722d666c6f6f722e676966"><img alt="Transform tags using conditional rules" src="https://camo.githubusercontent.com/b6cf81d56d9d4e9e2bbc8fb031e03e9380bc0a5c5e47b4885edd8ff0cc043b6b/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f636f6e642d666f6f74776561722d686169722d666c6f6f722e676966" width="30%"></img></a>
+<a href="https://camo.githubusercontent.com/b094b255ba1d18d83253dba4f7f813ac6d64ea6cedac7330437eb0791479f062/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f6d756c7469656469742d666f6375732d636f6d707265737365642e676966"><img alt="Multi-Edit and Focus Mode" src="https://camo.githubusercontent.com/b094b255ba1d18d83253dba4f7f813ac6d64ea6cedac7330437eb0791479f062/68747470733a2f2f7777772e616c6368656d697374732e63682f71617079712f6d756c7469656469742d666f6375732d636f6d707265737365642e676966" width="60%"></img></a>
 
 
 ## Features
@@ -30,52 +30,52 @@
   - Modular interface that lets you place windows on different monitors
   - Open multiple tabs
   - Zoom/pan and fullscreen mode
-  - Gallery with thumbnails and optionally captions
-  - Semantic image sorting with text prompts
-  - Compare two images
-  - Measure size, area and pixel distances
-  - Slideshow
+  - Gallery with thumbnails and optionally captions <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#gallery)</sup>
+  - Semantic image sorting with text prompts <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#semantic-sort)</sup>
+  - Compare two images <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#compare-tool)</sup>
+  - Measure size, area and pixel distances <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#measure-tool)</sup>
+  - Slideshow <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#slideshow-tool)</sup>
 
 - **Image/Mask Editor**: Prepare images for training
-  - Crop and save parts of images
-  - Scale images, optionally using AI upscale models
-  - Dynamic save paths with template variables
-  - Manually edit masks with multiple layers
-  - Support for pressure-sensitive drawing pens
-  - Record masking operations into macros
+  - Crop and save parts of images <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#crop-tool)</sup>
+  - Scale images, optionally using AI upscale models <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#scale-tool)</sup>
+  - Dynamic save paths with template variables <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#path-settings)</sup>
+  - Manually edit masks with multiple layers <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#mask-tool)</sup>
+  - Record masking operations into macros <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#macro-recording)</sup>
   - Automated masking
 
 - **Captioning**: Describe images with text
-  - Edit captions manually with drag-and-drop support
-  - *Multi-Edit Mode* for editing captions of multiple images simultaneously
-  - *Focus Mode* where one key stroke adds a tag, saves the file and skips to the next image
-  - Tag grouping, merging, sorting, filtering and replacement rules
+  - Edit captions manually with drag-and-drop support <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#caption-window)</sup>
+  - Save multiple captions in a JSON file per image <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#captions-in-text-files-vs-json-files)</sup>
+  - *Multi-Edit Mode*: Edit captions of multiple images simultaneously <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#multi-edit-mode)</sup>
+  - *Focus Mode*: Add the same tags to many files quickly <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#focus-mode)</sup>
+  - Tag grouping, merging, sorting, filtering and replacement rules <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#rules)</sup>
   - Colored text highlighting
-  - Autocomplete with tags from groups and CSV files
-  - CLIP Token Counter
-  - Automated captioning with support for grounding
-  - Prompt presets
-  - Multi-turn conversations with each answer saved to different entries in a `.json` file
+  - Autocomplete with tags from your groups and CSV files <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#autocomplete)</sup>
+  - CLIP Token Counter <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#token-counter)</sup>
+  - Automated captioning with support for grounding <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Tips-and-Workflows#grounding)</sup>
+  - Dynamic prompts with templates and text transformations <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#templates)</sup>
+  - Multi-turn conversations with VLMs <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#prompts-and-conversations)</sup>
   - Further refinement with LLMs
 
 - **Stats/Filters**: Summarize your data and get an overview
-  - List all tags, image resolutions, masked regions, or size of concept folders
-  - Filter images and create subsets
+  - List all tags, image resolutions, masked regions, or size of concept folders <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#stats)</sup>
+  - Filter images and create subsets <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Tips-and-Workflows#training-on-subsets)</sup>
   - Combine and chain filters
   - Export the summaries as CSV
 
 - **Batch Processing**: Process whole folders at once
-  - Flexible batch captioning, tagging and transformation
+  - Flexible batch captioning, tagging and transformation <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#batch)</sup>
   - Batch scaling of images
   - Batch masking with user-defined macros
   - Batch cropping of images using your macros
-  - Copy and move files, create symlinks, ZIP captions for backups
+  - Copy, move and rename files, create symlinks, ZIP captions for backups
 
 - **AI Assistance**:
   - Support for state-of-the-art captioning and masking models
   - Model and sampling settings, GPU acceleration with CPU offload support
   - On-the-fly NF4 and INT8 quantization
-  - Run inference locally and/or on multiple remote machines over SSH
+  - Run inference locally and/or on multiple remote machines over SSH <sup>[?](https://github.com/FennelFetish/qapyq/wiki/Setup#host-setup-for-remote-inference)</sup>
   - Separate inference subprocess isolates potential crashes and allows complete VRAM cleanup
 
 
@@ -99,7 +99,7 @@ Find more specialized finetuned models on [huggingface.co](https://huggingface.c
   - [Molmo](https://huggingface.co/collections/allenai/molmo-66f379e6fe3b8ef090a8ca19)
   - [Moondream2 (GGUF)](https://huggingface.co/vikhyatk/moondream2)
   - [Ovis1.6](https://huggingface.co/AIDC-AI/Ovis1.6-Gemma2-9B), [Ovis2](https://huggingface.co/collections/AIDC-AI/ovis2-67ab36c7e497429034874464), [Ovis2.5](https://huggingface.co/collections/AIDC-AI/ovis25-689ec1474633b2aab8809335)
-  - [Qwen2-VL](https://huggingface.co/collections/Qwen/qwen2-vl-66cee7455501d7126940800d), [Qwen2.5-VL](https://huggingface.co/collections/Qwen/qwen25-vl-6795ffac22b334a837c0f9a5), [Qwen3-VL](https://huggingface.co/collections/Qwen/qwen3-vl)
+  - [Qwen2-VL](https://huggingface.co/collections/Qwen/qwen2-vl-66cee7455501d7126940800d), [Qwen2.5-VL](https://huggingface.co/collections/Qwen/qwen25-vl-6795ffac22b334a837c0f9a5), [Qwen3-VL](https://huggingface.co/collections/Qwen/qwen3-vl) (Instruct/Thinking)
 
 - **LLM**<br>
   Transform existing captions/tags.
@@ -160,31 +160,13 @@ New dependencies may be added. If the program fails to start or crashes, run the
 
 
 ## User Guide
-
 More information is available in the [Wiki](https://github.com/FennelFetish/qapyq/wiki).<br>
 Use the page index on the right side to find topics and navigate the Wiki.
 
-How to setup and configure AI models: [Model Setup](https://github.com/FennelFetish/qapyq/wiki/Setup#model-setup)
-
-How to use qapyq: [User Guide](https://github.com/FennelFetish/qapyq/wiki/User-Guide)
-
-How to caption with qapyq: [Captioning](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning)
-
-How to use qapyq's features in a workflow: [Tips and Workflows](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Tips-and-Workflows)
+**How to**:
+- Setup and configure AI models: [Model Setup](https://github.com/FennelFetish/qapyq/wiki/Setup#model-setup)
+- Use qapyq: [User Guide](https://github.com/FennelFetish/qapyq/wiki/User-Guide)
+- Caption with qapyq: [Captioning](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning)
+- Use qapyq's features in a workflow: [Tips and Workflows](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Tips-and-Workflows)
 
 If you have questions, please ask in the [Discussions](https://github.com/FennelFetish/qapyq/discussions).
-
-
-## Planned Features
-- [x] Natural sorting of files
-- [x] Gallery list view with captions
-- [x] Summary and stats of captions and tags
-- [ ] Shortcuts and improved ease-of-use
-- [x] AI-assisted mask editing
-- [ ] Overlays (difference image) for comparison tool
-- [x] Image resizing
-- [x] Run inference on remote machines
-- [ ] Adapt new captioning and masking models
-- [ ] Possibly a plugin system for new tools
-- [ ] Integration with ComfyUI
-- [ ] Docs, Screenshots, Video Guides
