@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
 from ui.tab import ImgTab
 import lib.qtlib as qtlib
 from lib.filelist import removeCommonRoot
-from .stats_base import StatsLayout, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
+from .stats_base import StatsLayout, StatsTableView, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
 
 
 class FileSuffixStats(QtWidgets.QWidget):
@@ -19,7 +19,7 @@ class FileSuffixStats(QtWidgets.QWidget):
         self.proxyModel = SuffixProxyModel()
         self.proxyModel.setSourceModel(self.model)
 
-        self.table = QtWidgets.QTableView()
+        self.table = StatsTableView()
         self.table.setModel(self.proxyModel)
 
         self._layout = StatsLayout(tab, "Suffixes", self.proxyModel, self.table)

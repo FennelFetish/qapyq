@@ -4,7 +4,7 @@ from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
 from lib import colorlib, imagerw, qtlib
 from ui.tab import ImgTab
-from .stats_base import StatsLayout, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
+from .stats_base import StatsLayout, StatsTableView, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
 
 
 class ImageSizeStats(QtWidgets.QWidget):
@@ -16,7 +16,7 @@ class ImageSizeStats(QtWidgets.QWidget):
         self.proxyModel = SizeBucketProxyModel()
         self.proxyModel.setSourceModel(self.model)
 
-        self.table = QtWidgets.QTableView()
+        self.table = StatsTableView()
         self.table.setModel(self.proxyModel)
 
         self._layout = StatsLayout(tab, "Size Buckets", self.proxyModel, self.table)

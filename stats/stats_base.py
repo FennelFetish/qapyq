@@ -1,9 +1,9 @@
 from __future__ import annotations
 import os, traceback, time
-from typing import Iterable, Generator, Callable, Any, TypeVar
+from typing import Iterable, Generator, Callable, Any, TypeVar, cast
 from typing_extensions import override
 from collections import Counter
-from PySide6 import QtWidgets
+from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import (
     Qt, Slot, Signal, QSignalBlocker, QAbstractListModel, QSortFilterProxyModel, QModelIndex, QPersistentModelIndex, QItemSelection,
     QRegularExpression, QRunnable, QObject, QMutex, QMutexLocker, QThreadPool, QTimer
@@ -13,8 +13,6 @@ from lib import colorlib, qtlib
 from lib.filelist import FileList, CachedPathSort
 from config import Config
 
-
-# TODO: Context menu "copy cell content" for all tabs
 
 # TODO: Highlight images in gallery for selected rows
 
@@ -335,6 +333,47 @@ class StatsLayout(QtWidgets.QVBoxLayout):
         filesGen = self.getListedFiles()
         if filesGen is not None:
             self.tab.filelist.setSelection(filesGen, updateCurrent=True, clearCurrentSelection=False)
+
+
+
+class MenuViewMixin:
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.menu: QtWidgets.QMenu = None
+        self.menuIndex: QModelIndex | None = None
+
+    #@override
+    def contextMenuEvent(self, event: QtGui.QContextMenuEvent):
+        try:
+            view = cast(QtWidgets.QAbstractItemView, self)
+            self.menuIndex = view.indexAt(event.pos())
+            if self.menuIndex.isValid():
+                if self.menu is None:
+                    self.menu = self._buildMenu(QtWidgets.QMenu(parent=view))
+
+                self._updateMenu()
+                self.menu.exec_(event.globalPos())
+        finally:
+            self.menuIndex = None
+
+    def _buildMenu(self, menu: QtWidgets.QMenu) -> QtWidgets.QMenu:
+        actCopyContent = menu.addAction("Copy")
+        actCopyContent.triggered.connect(self._copyCellContent)
+        return menu
+
+    def _updateMenu(self):
+        pass
+
+    @Slot()
+    def _copyCellContent(self):
+        assert self.menuIndex is not None
+        view = cast(QtWidgets.QAbstractItemView, self)
+        cellContent = view.model().data(self.menuIndex, Qt.ItemDataRole.DisplayRole)
+        QtWidgets.QApplication.clipboard().setText(str(cellContent))
+
+
+class StatsTableView(MenuViewMixin, QtWidgets.QTableView): pass
+class StatsTreeView(MenuViewMixin, QtWidgets.QTreeView): pass
 
 
 

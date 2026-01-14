@@ -10,7 +10,7 @@ from lib import colorlib, imagerw, qtlib
 from ui.tab import ImgTab
 from ui.export_settings import PathSettings, ExportVariableParser
 from config import Config
-from .stats_base import StatsLayout, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
+from .stats_base import StatsLayout, StatsTableView, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
 
 
 # TODO: Region Position (how centered)
@@ -43,7 +43,7 @@ class MaskStats(QtWidgets.QWidget):
         self.proxyModel = MaskProxyModel()
         self.proxyModel.setSourceModel(self.model)
 
-        self.table = QtWidgets.QTableView()
+        self.table = StatsTableView()
         self.table.setModel(self.proxyModel)
 
         topLayout = QtWidgets.QHBoxLayout()

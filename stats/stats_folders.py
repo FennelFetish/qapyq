@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
 from lib.filelist import folderSortKey, removeCommonRoot
 from ui.tab import ImgTab
 import lib.qtlib as qtlib
-from .stats_base import StatsLayout, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
+from .stats_base import StatsLayout, StatsTreeView, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
 
 
 # TODO: When filter is active, selection of parent folder should only select filtered subfolders.
@@ -21,7 +21,7 @@ class FolderStats(QtWidgets.QWidget):
         self.proxyModel = FolderProxyModel()
         self.proxyModel.setSourceModel(self.model)
 
-        self.tree = QtWidgets.QTreeView()
+        self.tree = StatsTreeView()
         self.tree.setUniformRowHeights(True)
         self.tree.setModel(self.proxyModel)
         self.tree.setSortingEnabled(True)

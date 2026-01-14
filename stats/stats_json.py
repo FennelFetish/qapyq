@@ -5,7 +5,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
 import lib.qtlib as qtlib
 from ui.tab import ImgTab
-from .stats_base import StatsLayout, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
+from .stats_base import StatsLayout, StatsTableView, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
 
 
 class JsonStats(QtWidgets.QWidget):
@@ -17,7 +17,7 @@ class JsonStats(QtWidgets.QWidget):
         self.proxyModel = JsonProxyModel()
         self.proxyModel.setSourceModel(self.model)
 
-        self.table = QtWidgets.QTableView()
+        self.table = StatsTableView()
         self.table.setModel(self.proxyModel)
 
         self._layout = StatsLayout(tab, "Keys", self.proxyModel, self.table)

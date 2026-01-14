@@ -13,7 +13,7 @@ from caption.caption_container import CaptionContainer
 from caption.caption_groups import CaptionControlGroup
 from caption.caption_preset import CaptionPreset, CaptionPresetConditional, MutualExclusivity
 from caption.caption_highlight import MatcherNode
-from .stats_base import StatsLayout, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
+from .stats_base import StatsLayout, StatsTableView, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
 
 
 class TagStats(QtWidgets.QWidget):
@@ -315,7 +315,7 @@ class TagProxyModel(StatsBaseProxyModel):
 
 
 
-class TagTableView(QtWidgets.QTableView):
+class TagTableView(StatsTableView):
     captionRulesChanged = Signal()
 
     def __init__(self, tagStats: TagStats):
@@ -323,12 +323,8 @@ class TagTableView(QtWidgets.QTableView):
         self.tagStats = tagStats
         self.tab = tagStats.tab
 
-        self._menu = self._buildMenu()
-        self._index: QModelIndex | None = None
-
-    def _buildMenu(self) -> QtWidgets.QMenu:
-        menu = QtWidgets.QMenu("Tag Menu", self)
-
+    @override
+    def _buildMenu(self, menu: QtWidgets.QMenu) -> QtWidgets.QMenu:
         actAdd = menu.addAction("Add to Caption")
         actAdd.triggered.connect(self._addTags)
 
@@ -338,15 +334,14 @@ class TagTableView(QtWidgets.QTableView):
         actFocus = menu.addAction("Add to Focus")
         actFocus.triggered.connect(self._focusTags)
 
-        menu.addSeparator()
-
         actBan = menu.addAction("Ban")
         actBan.triggered.connect(self._banTags)
 
         menu.addSeparator()
         menu.addMenu(self._buildBatchMenu())
 
-        return menu
+        menu.addSeparator()
+        return super()._buildMenu(menu)
 
     def _buildBatchMenu(self) -> QtWidgets.QMenu:
         batchMenu = QtWidgets.QMenu("Batch")
@@ -365,8 +360,8 @@ class TagTableView(QtWidgets.QTableView):
 
         return batchMenu
 
-
-    def _rebuildGroupMenu(self):
+    @override
+    def _updateMenu(self):
         self._groupMenu.clear()
 
         captionWin: CaptionContainer | None = self.tab.getWindowContent("caption")
@@ -383,20 +378,11 @@ class TagTableView(QtWidgets.QTableView):
             actEmpty = self._groupMenu.addAction("Caption Window not open")
             actEmpty.setEnabled(False)
 
-    def contextMenuEvent(self, event):
-        try:
-            self._index = self.indexAt(event.pos())
-            if self._index.isValid():
-                self._rebuildGroupMenu()
-                self._menu.exec_(event.globalPos())
-        finally:
-            self._index = None
-
 
     def currentTag(self) -> str:
-        if self._index is None:
+        if self.menuIndex is None:
             return ""
-        return self.model().data(self._index, TagModel.ROLE_TAG)
+        return self.model().data(self.menuIndex, TagModel.ROLE_TAG)
 
     def selectedTags(self) -> Iterable[str]:
         return (
