@@ -603,7 +603,8 @@ class TextEditCompleter:
 
     def handleKeyPress(self, event: QKeyEvent, textEditEventHandler: Callable[[QKeyEvent], None]):
         key = event.key()
-        if key == Qt.Key.Key_Space and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+        ctrl = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+        if ctrl and key == Qt.Key.Key_Space:
             self.complete(force=True)
             return
 
@@ -622,7 +623,7 @@ class TextEditCompleter:
 
         # When typing, open the popup only after the key was inserted into the TextEdit by textEditEventHandler.
         # Qt's keycodes above 0xff are invisible control keys.
-        if (key <= 0xff or active) and Config.autocomplete.get("auto_popup"):
+        if (active or (not ctrl and key <= 0xff)) and Config.autocomplete.get("auto_popup"):
             self.complete()
 
 

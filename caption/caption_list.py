@@ -485,10 +485,11 @@ class AutoSizeTextEdit(BorderlessNavigationTextEdit):
 
     @override
     def keyPressEvent(self, event: QtGui.QKeyEvent):
-        if event.key() == Qt.Key.Key_Tab:
-            if not (self.completer and self.completer.isActive()):
-                event.ignore()
-                return
+        if (event.key() in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab)
+            and not (self.completer and self.completer.isActive())
+        ):
+            event.ignore()
+            return
 
         super().keyPressEvent(event)
 

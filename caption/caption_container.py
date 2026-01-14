@@ -476,6 +476,10 @@ class CaptionContainer(QtWidgets.QWidget):
             widget.save.emit()
         else:
             self.saveCaption()
+            widget = self.txtCaption
+
+        if widget.completer:
+            widget.completer.hide()
 
     @Slot()
     def saveCaption(self):
@@ -551,6 +555,9 @@ class CaptionContainer(QtWidgets.QWidget):
 
 
     def onFileChanged(self, currentFile: str):
+        if self.txtCaption.completer:
+            self.txtCaption.completer.hide()
+
         if not self.multiEdit.active:
             self.loadCaption()
             self.txtCaption.document().clearUndoRedoStacks()
@@ -599,6 +606,9 @@ class CaptionContainer(QtWidgets.QWidget):
 
     @Slot()
     def _multiEditToggle(self, state: bool):
+        if self.txtCaption.completer:
+            self.txtCaption.completer.hide()
+
         #self.chkSkipOnSave.setEnabled(not state)
         if state:
             if (not self.multiEdit.active) and self.filelist.selectedFiles:
