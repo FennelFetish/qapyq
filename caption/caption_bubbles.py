@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import NamedTuple
+from typing import NamedTuple, Generator
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Signal, Slot
@@ -11,6 +11,8 @@ from .caption_context import CaptionContext
 
 
 class CaptionBubbles(ReorderWidget):
+    PROXY_STYLE: QtWidgets.QProxyStyle = None
+
     remove = Signal(int)
     dropped = Signal(str)
     clicked = Signal(int)
@@ -34,6 +36,9 @@ class CaptionBubbles(ReorderWidget):
 
         self._selectedIndex = -1
 
+        if CaptionBubbles.PROXY_STYLE is None:
+            CaptionBubbles.PROXY_STYLE = BubbleProxyStyle(QtWidgets.QApplication.style())
+
         layout = FlowLayout(spacing=5)
         self.setLayout(layout)
         self.updateBubbles()
@@ -46,7 +51,7 @@ class CaptionBubbles(ReorderWidget):
     def getCaptions(self) -> list[str]:
         return [bubble.text for bubble in self.getBubbles()]
 
-    def getBubbles(self):
+    def getBubbles(self) -> Generator[Bubble]:
         layout: QtWidgets.QLayout = self.layout()
         for i in range(layout.count()):
             item = layout.itemAt(i)
@@ -63,6 +68,12 @@ class CaptionBubbles(ReorderWidget):
     def updateBubbles(self):
         oldBubbles = list[Bubble](self.getBubbles())
         colorMap = BubbleColorMap(self.ctx)
+
+        numFiles, tagFreq = self.ctx.container.multiEdit.getTagFrequency()
+        if tagFreq:
+            tooltip = lambda i: f"{tagFreq[i]} / {numFiles} Files"
+        else:
+            tooltip = lambda i: ""
 
         i = -1
         for i, caption in enumerate(self.text.split(self.separator)):
@@ -83,6 +94,7 @@ class CaptionBubbles(ReorderWidget):
 
             bubble.text = caption
             bubble.forceUpdateWidth()
+            bubble.setToolTip(tooltip(i))
 
         for i in range(i+1, len(oldBubbles)):
             oldBubbles[i].deleteLater()
@@ -141,6 +153,14 @@ class CaptionBubbles(ReorderWidget):
 
 
 
+class BubbleProxyStyle(QtWidgets.QProxyStyle):
+    @override
+    def styleHint(self, hint, option=None, widget=None, returnData=None):
+        if hint == QtWidgets.QStyle.StyleHint.SH_ToolTip_WakeUpDelay:
+            return 0
+        return super().styleHint(hint, option, widget, returnData)
+
+
 class BubbleColor(NamedTuple):
     bg: str     = colorlib.BUBBLE_BG
     border: str = colorlib.BUBBLE_BG
@@ -158,6 +178,7 @@ class BubbleColor(NamedTuple):
 class Bubble(QtWidgets.QFrame):
     def __init__(self, bubbles: CaptionBubbles, index, showWeights=True, showRemove=False, editable=True):
         super().__init__()
+        self.setStyle(CaptionBubbles.PROXY_STYLE)
 
         self.bubbles = bubbles
         self.index = index

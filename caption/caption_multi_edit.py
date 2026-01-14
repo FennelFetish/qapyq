@@ -268,6 +268,12 @@ class CaptionMultiEdit:
                 self._splitTagFiles[splitTag].update(tag.files.values())
 
 
+    def getTagFrequency(self) -> tuple[int, list[int] | None]:
+        if self.active:
+            return len(self._files), [len(tag.files) for tag in self._tags]
+        return 0, None
+
+
     def ensureFullPresence(self, index: int) -> bool:
         if not (0 <= index < len(self._tags)):
             return False
