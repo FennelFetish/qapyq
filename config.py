@@ -24,6 +24,7 @@ class Config:
     pathMaskMacros          = "./user/mask-macros/"
     pathEmbeddingTemplates  = "./user/embedding-prompt-templates/"
     pathEmbeddingCache      = "./.cache/embedding/"
+    pathVaeConfig           = "./res/vae-conf/"
     pathExport              = "."
     pathDebugLoad           = ""
 
@@ -50,6 +51,10 @@ class Config:
     slideshowInterval       = 4.0
     slideshowShuffle        = False
     slideshowFade           = True
+
+    # Compare
+    compareVaePath          = ""
+    compareVaeType          = ""
 
     # Crop
     cropSizePresets         = ["512x512", "512x768", "768x768", "768x1152", "1024x1024", "1024x1536"]
@@ -186,6 +191,9 @@ class Config:
         cls.slideshowShuffle      = bool(data.get("slideshow_shuffle", cls.slideshowShuffle))
         cls.slideshowFade         = bool(data.get("slideshow_fade", cls.slideshowFade))
 
+        cls.compareVaePath        = data.get("compare_vae_path", cls.compareVaePath)
+        cls.compareVaeType        = data.get("compare_vae_type", cls.compareVaeType)
+
         cls.cropSizePresets       = data.get("crop_size_presets", cls.cropSizePresets)
         cls.cropSizeStep          = int(data.get("crop_size_step", cls.cropSizeStep))
         cls.cropWheelStep         = float(data.get("crop_wheel_step", cls.cropWheelStep))
@@ -254,6 +262,9 @@ class Config:
         data["slideshow_interval"]          = cls.slideshowInterval
         data["slideshow_shuffle"]           = cls.slideshowShuffle
         data["slideshow_fade"]              = cls.slideshowFade
+
+        data["compare_vae_path"]            = cls.compareVaePath
+        data["compare_vae_type"]            = cls.compareVaeType
 
         data["crop_size_presets"]           = cls.cropSizePresets
         data["crop_size_step"]              = cls.cropSizeStep

@@ -6,10 +6,9 @@ from PySide6.QtGui import QImage, QPainter, QTabletEvent, QPointingDevice, QKeyS
 from PySide6 import QtWidgets
 import cv2 as cv
 import numpy as np
+from lib import imagerw, qtlib
 from lib.filelist import FileList, DataKeys
 from lib.mask_macro import MaskingMacro, MacroOp, MacroOpItem
-from lib.qtlib import numpyToQImageMask, qimageToNumpyMask
-import lib.imagerw as imagerw
 import ui.export_settings as export
 from config import Config
 from .view import ViewTool
@@ -488,10 +487,10 @@ class MaskItem(QtWidgets.QGraphicsRectItem):
 
 
     def toNumpy(self) -> np.ndarray:
-        return qimageToNumpyMask(self.image)
+        return qtlib.qimageToNumpy(self.image)
 
     def fromNumpy(self, data: np.ndarray) -> None:
-        image = numpyToQImageMask(data)
+        image = qtlib.numpyToQImage(data)
         self.setImage(image)
 
 

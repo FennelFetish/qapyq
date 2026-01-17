@@ -51,6 +51,10 @@ class ImgTab(QtWidgets.QMainWindow):
         self.destroyed.connect(queueGC)
 
 
+    def statusBar(self) -> 'TabStatusBar':
+        return super().statusBar()
+
+
     def _updateJsonAutocomplete(self, currentFile: str):
         self._jsonAutoCompleteSource.reset()
 

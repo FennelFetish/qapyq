@@ -284,6 +284,10 @@ class InferenceProcess(QObject):
         config = self.procCfg.translateConfig(config, ["model_path", "text_model_path", "vision_model_path"])
         self._setup(config, "setup_embed", "embed")
 
+    def setupVae(self, config: dict):
+        config = self.procCfg.translateConfig(config, ["model_path"])
+        self._setup(config, "setup_vae", "VAE")
+
     def setupMasking(self, config: dict):
         config = self.procCfg.translateConfig(config, ["model_path"])
         self._query({
@@ -417,6 +421,13 @@ class InferenceProcess(QObject):
             "img_data": imgData,
             "w": w,
             "h": h
+        })
+        return (answer["w"], answer["h"], answer["img"]) if answer else (0, 0, b"")
+
+    def vaeRoundtrip(self, imgPath: str) -> tuple[int, int, bytes]:
+        answer = self._query({
+            "cmd": "vae_roundtrip",
+            "img": imgPath
         })
         return (answer["w"], answer["h"], answer["img"]) if answer else (0, 0, b"")
 

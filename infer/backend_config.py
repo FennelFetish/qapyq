@@ -208,6 +208,11 @@ class BackendLoader:
                 from .embedding.siglip_onnx import SiglipOnnx
                 return SiglipOnnx(config)
 
+            # VAE
+            case "vae":
+                from .vae import VaeBackend
+                return VaeBackend(config)
+
             # Tokenizer
             case "tokens":
                 from .tokens import Tokens

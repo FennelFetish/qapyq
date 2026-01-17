@@ -5,7 +5,7 @@ import os, json, re
 import numpy as np
 from config import Config
 import tools.mask_ops as mask_ops
-from lib.qtlib import numpyToQImageMask, qimageToNumpyMask
+from lib import qtlib
 from infer.inference import InferenceChain
 from infer.inference_proc import InferenceProcess
 
@@ -270,7 +270,7 @@ class MaskingMacro:
             return mat
 
         height, width = mat.shape
-        image = numpyToQImageMask(mat)
+        image = qtlib.numpyToQImage(mat)
 
         # Prepare painter
         pen = QPen()
@@ -322,7 +322,7 @@ class MaskingMacro:
         painter.end()
 
         # Convert QImage to numpy
-        return qimageToNumpyMask(image)
+        return qtlib.qimageToNumpy(image)
 
 
 

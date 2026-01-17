@@ -5,8 +5,10 @@ screenshots/
 benchmark/
 .cache/
 
-*.log
 *.json
+!res/vae-conf/*.json
+
+*.log
 *.zip
 *.bak
 

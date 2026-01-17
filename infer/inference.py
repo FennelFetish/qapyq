@@ -388,7 +388,7 @@ class InferenceSession:
             # Execute task while recording its futures
             chain = taskFunc()
             if futures := proc.getRecordedFutures():
-                if chain:
+                if isinstance(chain, InferenceChain):
                     # InferenceChain.resultCallback comes here
                     assert chain.callback is not None
                     resultCb = ChainCallback(chain.callback, self, procState, file, len(futures))

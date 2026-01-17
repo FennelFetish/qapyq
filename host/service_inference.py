@@ -10,6 +10,7 @@ class InferenceService(Service):
         self.llmBackend = LastBackendLoader(self.backendLoader)
         self.tagBackend = LastBackendLoader(self.backendLoader)
         self.embedBackend = LastBackendLoader(self.backendLoader)
+        self.vaeBackend = LastBackendLoader(self.backendLoader)
 
         self.loop = MessageLoop(protocol)
 
@@ -36,6 +37,11 @@ class InferenceService(Service):
     @msghandler("setup_embed")
     def setupEmbedding(self, msg: dict):
         self.embedBackend.getBackend(msg.get("config", {}))
+        return {"cmd": msg["cmd"]}
+
+    @msghandler("setup_vae")
+    def setupVae(self, msg: dict):
+        self.vaeBackend.getBackend(msg.get("config", {}))
         return {"cmd": msg["cmd"]}
 
     @msghandler("setup_masking", "setup_upscale")
@@ -177,3 +183,15 @@ class InferenceService(Service):
     #         "cmd": msg["cmd"],
     #         "scores": scores
     #     }
+
+
+    @msghandler("vae_roundtrip")
+    def vaeRoundtrip(self, msg: dict):
+        imgFile = ImageFile.fromMsg(msg)
+        w, h, img = self.vaeBackend.getBackend().vaeRoundtrip(imgFile)
+        return {
+            "cmd": msg["cmd"],
+            "w": w,
+            "h": h,
+            "img": img
+        }

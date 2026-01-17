@@ -1,5 +1,5 @@
 from __future__ import annotations
-from PySide6.QtCore import QRectF, Qt
+from PySide6.QtCore import QRect, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QTransform, QPalette
 from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsView
 from lib import colorlib, imagerw
@@ -160,10 +160,15 @@ class ImgItem(QGraphicsPixmapItem):
         self.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
         self.filepath = ""
 
+    def clearImage(self):
+        self.filepath = ""
+        if not self.pixmap().isNull():
+            self.setPixmap(QPixmap())
+
     def loadImage(self, path: str) -> bool:
         self.filepath = path
         if not path:
-            self.setPixmap(QPixmap())
+            self.clearImage()
             return False
 
         image = imagerw.loadQImage(path)
@@ -174,7 +179,7 @@ class ImgItem(QGraphicsPixmapItem):
             return False
         return True
 
-    def updateTransform(self, vpRect: QRectF, rotation: float):
+    def updateTransform(self, vpRect: QRect | QRectF, rotation: float):
         imgRect = self.boundingRect()
         if imgRect.width() == 0 or imgRect.height() == 0:
             return

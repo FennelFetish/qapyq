@@ -101,7 +101,7 @@ class ExportWidget(QtWidgets.QWidget):
     MODE_AUTO = "auto"
     MODE_MANUAL = "manual"
 
-    FILE_FILTER = "Images (*.png *.jpg *.jpeg *.webp);;All Files (*)"
+    FILE_FILTER = "Images (*.jpg *.jpeg *.jxl *.png *.tiff *.webp);;All Files (*)"
 
 
     def __init__(self, configKey: str, filelist, showInterpolation=True):

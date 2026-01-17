@@ -38,9 +38,14 @@ def setMonospace(textWidget, fontSizeFactor=1.0, bold=False):
         font.setPointSizeF(font.pointSizeF() * fontSizeFactor)
     textWidget.setFont(font)
 
-def setFontBold(widget, bold: bool = True):
+def setFontBold(widget: QtWidgets.QWidget, bold: bool = True):
     font = widget.font()
     font.setBold(bold)
+    widget.setFont(font)
+
+def setFontSize(widget: QtWidgets.QWidget, size: float):
+    font = widget.font()
+    font.setPointSizeF(font.pointSizeF() * size)
     widget.setFont(font)
 
 
@@ -76,47 +81,69 @@ def setTextPreserveUndo(cursor: QtGui.QTextCursor, text: str):
     cursor.endEditBlock()
 
 
-def numpyToQImageMask(mat: np.ndarray) -> QtGui.QImage:
+
+def numpyToQImage(mat: np.ndarray, fromRGB: bool = False) -> QtGui.QImage:
+    'Expects BGR(A) format.'
+
+    Format = QtGui.QImage.Format
+
+    if len(mat.shape) == 2:
+        h, w = mat.shape
+        lineLen = w
+        format = Format.Format_Grayscale8
+    else:
+        h, w, channels = mat.shape
+        lineLen = w * channels
+        mat = mat.reshape((h, lineLen), copy=False)
+
+        match channels:
+            case 1: format = Format.Format_Grayscale8
+            case 3: format = Format.Format_RGB888   if fromRGB else Format.Format_BGR888
+            case 4: format = Format.Format_RGBA8888 if fromRGB else Format.Format_ARGB32
+            case _:
+                raise ValueError(f"Invalid number of channels: {channels}")
+
     # QImage needs alignment to 32bit/4bytes. Add padding.
-    height, width = mat.shape
-    bytesPerLine = ((width+3) // 4) * 4
-    if width != bytesPerLine:
-        padded = np.zeros((height, bytesPerLine), dtype=np.uint8)
-        padded[:, :width] = mat
+    linePad = -lineLen % 4
+    bytesPerLine = lineLen + linePad
+    if linePad:
+        padded = np.zeros((h, bytesPerLine), dtype=np.uint8)
+        padded[:, :lineLen] = mat
         mat = padded
+    else:
+        mat = np.ascontiguousarray(mat)
 
-    return QtGui.QImage(mat, width, height, QtGui.QImage.Format.Format_Grayscale8)
-
-def numpyToQImage(mat: np.ndarray) -> QtGui.QImage:
-    if len(mat.shape) < 3:
-        return numpyToQImageMask(mat)
-
-    # QImage needs alignment to 32bit/4bytes. Add padding.
-    height, width, channels = mat.shape
-    lineLen = width * channels
-    bytesPerLine = ((lineLen+3) // 4) * 4
-    if lineLen != bytesPerLine:
-        padded = np.zeros((height, bytesPerLine//channels, channels), dtype=np.uint8)
-        padded[:, :width, :] = mat
-        mat = padded
-
-    format = QtGui.QImage.Format.Format_ARGB32 if channels == 4 else QtGui.QImage.Format.Format_RGB32
-    return QtGui.QImage(mat, width, height, format)
+    return QtGui.QImage(mat.data, w, h, bytesPerLine, format)
 
 
-def qimageToNumpyMask(image: QtGui.QImage) -> np.ndarray:
-    buffer = np.frombuffer(image.constBits(), dtype=np.uint8)
-    buffer.shape = (image.height(), image.bytesPerLine())
-    return np.copy( buffer[:, :image.width()] ) # Remove padding
-
-def qimageToNumpy(image: QtGui.QImage) -> np.ndarray:
+def qimageToNumpy(image: QtGui.QImage, toRGB: bool = False, grayscaleChannelDim: bool = False) -> np.ndarray:
     'Returns BGR(A) format.'
     # Assume little-endian, where Qt's Format_ARGB32 data is read in BGRA order
-    buffer = np.frombuffer(image.constBits(), dtype=np.uint8)
-    channels = image.depth() // 8
-    width = image.bytesPerLine() // channels
-    buffer.shape = (image.height(), width, channels)
-    return np.copy( buffer[:, :image.width(), :] ).squeeze() # Remove padding
+
+    Format = QtGui.QImage.Format
+
+    bytesPerPx = image.depth() // 8
+    if bytesPerPx < 1:
+        image = image.convertToFormat(Format.Format_Grayscale8)
+        bytesPerPx = 1
+        channels = 1
+    else:
+        channels = image.bitPlaneCount() // 8
+
+    mat = np.frombuffer(image.constBits(), dtype=np.uint8)
+    width = image.bytesPerLine() // bytesPerPx
+    mat.shape = (image.height(), width, bytesPerPx)
+
+    mat = mat[:, :image.width(), :channels]  # Remove padding
+    mat = np.copy(mat)
+
+    if channels == 1:
+        return mat if grayscaleChannelDim else mat.squeeze(2)
+
+    if toRGB != (image.format() in (Format.Format_RGB888, Format.Format_RGBA8888, Format.Format_RGBA8888_Premultiplied)):
+        mat[:, :, [0, 2]] = mat[:, :, [2, 0]]  # RGB(A) -> BGR(A) or vice versa
+
+    return mat
 
 
 

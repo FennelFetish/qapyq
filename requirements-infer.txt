@@ -1,5 +1,6 @@
 # Inference
 transformers
+diffusers
 accelerate
 
 # Quantization
@@ -16,7 +17,7 @@ sentencepiece
 
 # Ovis 2.5
 # triton version 3.4 for torch 2.8
-triton-windows<3.5; platform_system == "Windows"  
+triton-windows<3.5; platform_system == "Windows"
 
 # YOLO
 ultralytics
