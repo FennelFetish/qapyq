@@ -5,7 +5,8 @@ class Config:
     guiScale                = 1.0
     qtStyle                 = "Fusion"
     colorScheme             = ""
-    toolbarPosition         = "Top"
+    toolbarPosition         = "top"
+    toolToolbarPosition     = "right"
     exifTransform           = False
 
     autocomplete = {
@@ -175,6 +176,7 @@ class Config:
         cls.qtStyle               = data.get("qt_style", cls.qtStyle)
         cls.colorScheme           = data.get("color_scheme", cls.colorScheme)
         cls.toolbarPosition       = data.get("toolbar_position", cls.toolbarPosition)
+        cls.toolToolbarPosition   = data.get("tool_toolbar_position", cls.toolToolbarPosition)
         cls.fontMonospace         = data.get("font_monospace", cls.fontMonospace)
         cls.exifTransform         = bool(data.get("exif_transform", cls.exifTransform))
 
@@ -244,6 +246,7 @@ class Config:
         data["qt_style"]                    = cls.qtStyle
         data["color_scheme"]                = cls.colorScheme
         data["toolbar_position"]            = cls.toolbarPosition
+        data["tool_toolbar_position"]       = cls.toolToolbarPosition
         data["font_monospace"]              = cls.fontMonospace
         data["exif_transform"]              = cls.exifTransform
 

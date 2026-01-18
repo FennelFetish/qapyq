@@ -39,7 +39,7 @@ class ImgTab(QtWidgets.QMainWindow):
         self._windowContent: dict[str, QtWidgets.QWidget] = dict()
 
         self.tools = dict()
-        self._toolbar = None
+        self._toolbar: QtWidgets.QToolBar | None = None
         self.toolName = None
         self.setTool("view")
 
@@ -85,6 +85,11 @@ class ImgTab(QtWidgets.QMainWindow):
     def takeFocus(self):
         return TakeFocus(self.imgview)
 
+    @Slot(bool)
+    def _onToolBarDocked(self, topLevel: bool):
+        if not topLevel and self._toolbar:
+            Config.toolToolbarPosition = qtlib.toolbarAreaToString(self.toolBarArea(self._toolbar))
+
 
     def setTool(self, toolName: str):
         if toolName not in self.tools:
@@ -94,10 +99,14 @@ class ImgTab(QtWidgets.QMainWindow):
 
         # Replace toolbar
         if self._toolbar:
+            self._toolbar.topLevelChanged.disconnect()
             self.removeToolBar(self._toolbar)
+
         self._toolbar = self.imgview.tool.getToolbar()
         if self._toolbar:
-            self.addToolBar(Qt.RightToolBarArea, self._toolbar)
+            self._toolbar.setAllowedAreas(Qt.ToolBarArea.RightToolBarArea | Qt.ToolBarArea.LeftToolBarArea)
+            self.addToolBar(qtlib.toolbarAreaFromString(Config.toolToolbarPosition), self._toolbar)
+            self._toolbar.topLevelChanged.connect(self._onToolBarDocked)
             self._toolbar.show()
 
     def createTool(self, toolName: str):

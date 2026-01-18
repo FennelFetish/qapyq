@@ -1,5 +1,5 @@
-from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, QTimer
+from PySide6 import QtWidgets, QtGui
+from PySide6.QtCore import Qt, Slot, QTimer, QRect
 import random
 from config import Config
 from lib.qtlib import GreenButton
@@ -26,8 +26,6 @@ class SlideshowTool(ViewTool):
         self._cursorTimer.timeout.connect(lambda: self.tab.imgview.setCursor(Qt.CursorShape.BlankCursor))
 
         self._toolbar = SlideshowToolbar(self)
-        self._toolbar.setFloatable(False)
-        self._toolbar.setMovable(False)
 
         self._oldPixmap = None
         self._oldImageItem = None
@@ -169,10 +167,18 @@ class SlideshowTool(ViewTool):
         self._oldPixmap = None
 
 
-    def onMouseMove(self, event):
+    def onMouseMove(self, event: QtGui.QMouseEvent):
         super().onMouseMove(event)
-        w = self._imgview.width()
-        if event.position().x() > w-80:
+
+        rect = self._toolbar.rect()
+        match self.tab.toolBarArea(self._toolbar):
+            case Qt.ToolBarArea.RightToolBarArea:  rect.adjust(80, 0, 0, 0)
+            case Qt.ToolBarArea.LeftToolBarArea:   rect.adjust(0, 0, -80, 0)
+            case Qt.ToolBarArea.BottomToolBarArea: rect.adjust(0, 80, 0, 0)
+            case Qt.ToolBarArea.TopToolBarArea:    rect.adjust(0, 0, 0, -80)
+
+        rect = QRect(self._toolbar.mapToGlobal(rect.topLeft()), rect.size())
+        if rect.contains(event.globalPos()):
             self._toolbar.show()
 
         self._cursorTimer.start()
@@ -221,13 +227,13 @@ class SlideshowTool(ViewTool):
 
 
 class SlideshowToolbar(QtWidgets.QToolBar):
-    def __init__(self, slideshowTool):
+    def __init__(self, slideshowTool: SlideshowTool):
         super().__init__()
         self._slideshowTool = slideshowTool
 
         self._hideTimer = QTimer()
         self._hideTimer.setSingleShot(True)
-        self._hideTimer.timeout.connect(lambda: self.hide())
+        self._hideTimer.timeout.connect(self._hideToolBar)
 
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(1, 1, 1, 1)
@@ -303,6 +309,12 @@ class SlideshowToolbar(QtWidgets.QToolBar):
             timer.start()
             self.btnPlay.setText("■") # ❚❚
             self.btnPlay.setChanged(True)
+
+
+    @Slot()
+    def _hideToolBar(self):
+        if not self.isFloating():
+            self.hide()
 
     def startHideTimeout(self):
         self._hideTimer.start(self._slideshowTool._hideTimeout)

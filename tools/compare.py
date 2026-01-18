@@ -310,7 +310,7 @@ class CompareToolBar(QtWidgets.QToolBar):
         widget.setLayout(layout)
         self.addWidget(widget)
 
-        self.setFixedWidth(180)
+        self.setMinimumWidth(180)
 
 
     def _buildOverlayGroup(self):

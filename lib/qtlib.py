@@ -81,6 +81,25 @@ def setTextPreserveUndo(cursor: QtGui.QTextCursor, text: str):
     cursor.endEditBlock()
 
 
+def toolbarAreaToString(toolbarArea: Qt.ToolBarArea) -> str:
+    match toolbarArea:
+        case Qt.ToolBarArea.TopToolBarArea:    return "top"
+        case Qt.ToolBarArea.BottomToolBarArea: return "bottom"
+        case Qt.ToolBarArea.LeftToolBarArea:   return "left"
+        case Qt.ToolBarArea.RightToolBarArea:  return "right"
+        case _:
+            return "top"
+
+def toolbarAreaFromString(toolbarArea: str) -> Qt.ToolBarArea:
+    match toolbarArea.lower():
+        case "top":    return Qt.ToolBarArea.TopToolBarArea
+        case "bottom": return Qt.ToolBarArea.BottomToolBarArea
+        case "left":   return Qt.ToolBarArea.LeftToolBarArea
+        case "right":  return Qt.ToolBarArea.RightToolBarArea
+        case _:
+            return Qt.ToolBarArea.TopToolBarArea
+
+
 
 def numpyToQImage(mat: np.ndarray, fromRGB: bool = False) -> QtGui.QImage:
     'Expects BGR(A) format.'

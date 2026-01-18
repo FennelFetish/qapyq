@@ -23,8 +23,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.auxWindows: dict[str, aux_window.AuxiliaryWindow] = dict()
         self.menu = MainMenu(self)
+
         self.toolbar = MainToolBar(self, self.menu)
-        self.addToolBar(self.toolbar.loadDockedArea(), self.toolbar)
+        self.addToolBar(qtlib.toolbarAreaFromString(Config.toolbarPosition), self.toolbar)
 
         self._previousTab: ImgTab | None = None
         self._fullscreenTab: ImgTab | None = None
@@ -252,7 +253,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ThumbnailCache().shutdown()
 
         aux_window.saveWindowPos(self, "main")
-        self.toolbar.saveDockedArea()
+        Config.toolbarPosition = qtlib.toolbarAreaToString(self.toolBarArea(self.toolbar))
 
         if self._fullscreenTab:
             self._fullscreenTab.close()
@@ -521,25 +522,6 @@ class MainToolBar(QtWidgets.QToolBar):
         widget = self.widgetForAction(self.actMenu)
         pos = widget.mapToGlobal(QPoint(0, widget.height()))
         self.actMenu.menu().popup(pos)
-
-
-    def saveDockedArea(self):
-        match self.mainWindow.toolBarArea(self):
-            case Qt.ToolBarArea.TopToolBarArea:    area = "Top"
-            case Qt.ToolBarArea.BottomToolBarArea: area = "Bottom"
-            case Qt.ToolBarArea.LeftToolBarArea:   area = "Left"
-            case Qt.ToolBarArea.RightToolBarArea:  area = "Right"
-            case _: area = "Top"
-        Config.toolbarPosition = area
-
-    @staticmethod
-    def loadDockedArea():
-        match Config.toolbarPosition:
-            case "Top":    return Qt.ToolBarArea.TopToolBarArea
-            case "Bottom": return Qt.ToolBarArea.BottomToolBarArea
-            case "Left":   return Qt.ToolBarArea.LeftToolBarArea
-            case "Right":  return Qt.ToolBarArea.RightToolBarArea
-        return Qt.ToolBarArea.TopToolBarArea
 
 
 
