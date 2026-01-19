@@ -16,7 +16,7 @@ echo Using Python %PYTHON%
 
 :launch
 cd /d "%~dp0%"
-%PYTHON% main.py "%1"
+%PYTHON% main.py %*
 
 :end
 endlocal

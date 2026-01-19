@@ -15,7 +15,7 @@ set NO_ALBUMENTATIONS_UPDATE="1"
 set YOLO_OFFLINE="True"
 
 cd /d "%~dp0%"
-%PYTHON% main_host.py "%1"
+%PYTHON% main_host.py %*
 
 :end
 endlocal

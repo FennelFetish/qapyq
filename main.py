@@ -546,11 +546,17 @@ def applyStyle(app: QtWidgets.QApplication):
     colorlib.initColors(colorScheme)
 
 
-def loadInitialImage(win: MainWindow):
-    loadPath = sys.argv[1] if len(sys.argv) > 1 else Config.pathDebugLoad
-    if loadPath:
-        tab: ImgTab = win.tabWidget.currentWidget()
-        tab.filelist.load(loadPath)
+def loadInitialPaths(win: MainWindow):
+    tab: ImgTab = win.tabWidget.currentWidget()
+
+    if len(sys.argv) > 1:
+        # Skip first (script name)
+        itArg = iter(sys.argv)
+        next(itArg)
+        tab.filelist.loadAll(itArg)
+    elif Config.pathDebugLoad:
+        tab.filelist.load(Config.pathDebugLoad)
+
 
 def restoreWindows(win: MainWindow):
     for winName in Config.windowOpen:
@@ -571,7 +577,7 @@ def main() -> int:
 
     win = MainWindow(app)
     win.show()
-    loadInitialImage(win)
+    loadInitialPaths(win)
     restoreWindows(win)
     return app.exec()
 

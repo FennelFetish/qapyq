@@ -1,7 +1,6 @@
 #!/bin/bash
 
 script_dir="$(dirname "$(readlink -f "$0")")"
-device="$1"
 
 venv_name=".venv"
 venv_path="${script_dir}/${venv_name}"
@@ -21,4 +20,4 @@ export NO_ALBUMENTATIONS_UPDATE=1
 export YOLO_OFFLINE="True"
 
 cd "$script_dir"
-exec ${python_exec} "./main_host.py" "$device"
+exec ${python_exec} "./main_host.py" "$@"

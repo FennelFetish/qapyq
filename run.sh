@@ -32,6 +32,6 @@ export MALLOC_TOP_PAD_=2097152          # 2 MB
 # Replace current process so it appears correctly in process monitors.
 # Write output to terminal and logfile.
 cd "$script_dir"
-exec ${python_exec} "./main.py" "$1" > >(tee "./last.log") 2>&1
+exec ${python_exec} "./main.py" "$@" > >(tee "./last.log") 2>&1
 
 # TODO: Open images in new tab if program already runs
