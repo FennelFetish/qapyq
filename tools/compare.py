@@ -3,7 +3,7 @@ from typing_extensions import override
 import numpy as np
 import cv2 as cv
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Signal, Slot, QRectF, QPoint, QTimer, QThreadPool, QRunnable, QObject, QMutex, QMutexLocker
+from PySide6.QtCore import Qt, Signal, Slot, QRect, QRectF, QPoint, QTimer, QThreadPool, QRunnable, QObject, QMutex, QMutexLocker
 from PySide6.QtGui import QColor, QPen, QPainterPath, QImage, QPixmap, QMouseEvent, QCursor, QTransform
 from ui.imgview import ImgView, ImgItem
 from lib import qtlib
@@ -40,9 +40,10 @@ class CompareTool(ViewTool):
     def loadCompareImage(self, path: str):
         self._image.loadImage(path)
         self._image.updateClip(self._imgview)
-        self._toolbar.chkAutoVae.setChecked(False)
+        self._toolbar.vae.autoProcess = False
 
         self.updateOverlay()
+        self._toolbar.updateInfo(self._image)
 
     def setCompareImage(self, image: QImage):
         self._image.filepath = ""
@@ -50,12 +51,14 @@ class CompareTool(ViewTool):
         self._image.updateClip(self._imgview)
 
         self.updateOverlay()
+        self._toolbar.updateInfo(self._image)
 
 
     def onFileChanged(self, currentFile: str):
-        self._toolbar.vaeFileDone = ""
-        if self._toolbar.chkAutoVae.isChecked():
-            self._toolbar.vaeEncode(force=True)
+        vaeBox = self._toolbar.vae
+        vaeBox.fileDone = ""
+        if vaeBox.autoProcess:
+            vaeBox.vaeProcess(force=True)
 
         self.updateOverlay()
 
@@ -79,8 +82,8 @@ class CompareTool(ViewTool):
 
         self.updateOverlay()
 
-        if self._toolbar.chkAutoVae.isChecked():
-            self._toolbar.vaeEncode()
+        if self._toolbar.vae.autoProcess:
+            self._toolbar.vae.vaeProcess()
 
     @override
     def onDisabled(self, imgview):
@@ -91,7 +94,7 @@ class CompareTool(ViewTool):
         imgview.scene().removeItem(self._overlay)
         imgview._guiScene.removeItem(self._dividerLine)
 
-        self._toolbar.abortAllVaeTasks()
+        self._toolbar.vae.abortAllTasks()
         self._overlay.clearImage()
         self._overlayUpdateTimer.stop()
 
@@ -99,6 +102,7 @@ class CompareTool(ViewTool):
     def onSceneUpdate(self):
         super().onSceneUpdate()
         self._imgview.updateImageSmoothness(self._image)
+        self._imgview.updateImageSmoothness(self._overlay)
         self.updateDividerLine( self._imgview.mapFromGlobal(QCursor.pos()) )
 
     @override
@@ -161,8 +165,8 @@ class CompareTool(ViewTool):
         rect2 = img2.mapRectToScene(img2.boundingRect())
         intersection = rect1.intersected(rect2)
 
-        rect1 = img1.mapRectFromScene(intersection).toRect()
-        rect2 = img2.mapRectFromScene(intersection).toRect()
+        rect1 = self._roundRect(img1.mapRectFromScene(intersection))
+        rect2 = self._roundRect(img2.mapRectFromScene(intersection))
 
         mat1 = qtlib.qimageToNumpy(img1.pixmap().copy(rect1).toImage())
         mat2 = qtlib.qimageToNumpy(img2.pixmap().copy(rect2).toImage())
@@ -176,6 +180,15 @@ class CompareTool(ViewTool):
                 mat2 = cv.resize(mat2, (w1, h1), interpolation=cv.INTER_AREA)
 
         return intersection, mat1, mat2
+
+    @staticmethod
+    def _roundRect(rect: QRectF) -> QRect:
+        x = round(rect.x())
+        y = round(rect.y())
+        w = round(rect.right() - x)
+        h = round(rect.bottom() - y)
+        return QRect(x, y, w, h)
+
 
     @Slot()
     def exportOverlay(self):
@@ -296,15 +309,13 @@ class CompareToolBar(QtWidgets.QToolBar):
         super().__init__("Compare")
         self.compareTool = compareTool
 
-        self._threadPool: QThreadPool | None = None
-        self._tasks: dict[str, VaeRoundtripTask] = dict()
-
-        self.vaeFileDone: str = ""
-
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(1, 1, 1, 1)
+        layout.addWidget(self._buildInfoGroup())
         layout.addWidget(self._buildOverlayGroup())
-        layout.addWidget(self._buildVaeGroup())
+
+        self.vae = VaeGroupBox(compareTool)
+        layout.addWidget(self.vae)
 
         widget = QtWidgets.QWidget()
         widget.setLayout(layout)
@@ -313,9 +324,83 @@ class CompareToolBar(QtWidgets.QToolBar):
         self.setMinimumWidth(180)
 
 
+    def _buildInfoGroup(self):
+        fileLayout = QtWidgets.QVBoxLayout()
+        fileLayout.setContentsMargins(0, 0, 0, 0)
+        fileLayout.setSpacing(2)
+
+        self.txtFile = QtWidgets.QLineEdit()
+        self.txtFile.setReadOnly(True)
+        qtlib.setFontSize(self.txtFile, 0.9)
+        fileLayout.addWidget(self.txtFile)
+
+        btnChooseFile = QtWidgets.QPushButton("Choose File...")
+        btnChooseFile.setMaximumHeight(22)
+        btnChooseFile.clicked.connect(self._chooseCompareFile)
+        fileLayout.addWidget(btnChooseFile)
+
+        gridLayout = QtWidgets.QGridLayout()
+        gridLayout.setContentsMargins(0, 0, 0, 0)
+        gridLayout.setColumnStretch(1, 1)
+
+        row = 0
+        self.lblSize = QtWidgets.QLabel()
+        self.lblSize.setTextFormat(Qt.TextFormat.PlainText)
+        self.lblSize.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        gridLayout.addWidget(QtWidgets.QLabel("Size:"), row, 0)
+        gridLayout.addWidget(self.lblSize, row, 1)
+
+        row += 1
+        self.lblAspect = QtWidgets.QLabel()
+        self.lblAspect.setTextFormat(Qt.TextFormat.PlainText)
+        self.lblAspect.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        gridLayout.addWidget(QtWidgets.QLabel("AR:"), row, 0)
+        gridLayout.addWidget(self.lblAspect, row, 1)
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setSpacing(8)
+        layout.addLayout(fileLayout)
+        layout.addLayout(gridLayout)
+
+        group = QtWidgets.QGroupBox("Comparing to")
+        group.setLayout(layout)
+        return group
+
+    @Slot()
+    def _chooseCompareFile(self):
+        path = self.compareTool._image.filepath or Config.pathExport
+        path, filter = QtWidgets.QFileDialog.getOpenFileName(self, "Select Image", path, export.ExportWidget.FILE_FILTER)
+        if path:
+            self.compareTool.loadCompareImage(path)
+
+    def updateInfo(self, image: ClipImgItem):
+        if image.pixmap().isNull():
+            self.txtFile.clear()
+            self.lblSize.clear()
+            self.lblAspect.clear()
+            return
+
+        if image.filepath:
+            self.txtFile.setText(image.filepath)
+        else:
+            self.txtFile.setText(os.path.basename(self.compareTool._toolbar.vae.fileDone) + " [VAE]")
+
+        w, h = image.pixmap().size().toTuple()
+        self.lblSize.setText(f"{w}x{h}")
+
+        if min(w, h) > 0:
+            aspect = w / h
+            aspectText = f"{aspect:.3f}" if aspect >= 1 else f"{aspect:.3f}  (1:{1/aspect:.3f})"
+            self.lblAspect.setText(aspectText)
+        else:
+            self.lblAspect.clear()
+
+
     def _buildOverlayGroup(self):
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(1, 1, 1, 1)
+        layout.setSpacing(2)
 
         self.radioOverlayNone = QtWidgets.QRadioButton("None")
         self.radioOverlayNone.setChecked(True)
@@ -324,6 +409,8 @@ class CompareToolBar(QtWidgets.QToolBar):
         self.radioOverlayDiff = QtWidgets.QRadioButton("Difference")
         self.radioOverlayDiff.toggled.connect(self._onOverlayChanged)
         layout.addWidget(self.radioOverlayDiff)
+
+        layout.addSpacing(4)
 
         self.btnExportOverlay = QtWidgets.QPushButton("Export Overlay...")
         self.btnExportOverlay.clicked.connect(self.compareTool.exportOverlay)
@@ -340,7 +427,20 @@ class CompareToolBar(QtWidgets.QToolBar):
         self.compareTool.updateOverlay()
 
 
-    def _buildVaeGroup(self):
+
+class VaeGroupBox(QtWidgets.QGroupBox):
+    def __init__(self, compareTool: CompareTool):
+        super().__init__("VAE Encode/Decode")
+        self.compareTool = compareTool
+        self.fileDone: str = ""
+
+        self._threadPool: QThreadPool | None = None
+        self._tasks: dict[str, VaeRoundtripTask] = dict()
+
+        self.setLayout(self._build())
+
+
+    def _build(self):
         layout = QtWidgets.QGridLayout()
         layout.setVerticalSpacing(2)
         layout.setContentsMargins(1, 1, 1, 1)
@@ -366,27 +466,26 @@ class CompareToolBar(QtWidgets.QToolBar):
         layout.addWidget(self.txtVaePath, row, 0, 1, 2)
 
         row += 1
-        btnChooseVae = QtWidgets.QPushButton("Choose VAE...")
-        btnChooseVae.setMaximumHeight(22)
-        btnChooseVae.clicked.connect(self._chooseVae)
-        layout.addWidget(btnChooseVae, row, 0, 1, 2)
+        btnChooseModel = QtWidgets.QPushButton("Choose VAE...")
+        btnChooseModel.setMaximumHeight(22)
+        btnChooseModel.clicked.connect(self._chooseModel)
+        layout.addWidget(btnChooseModel, row, 0, 1, 2)
 
         row += 1
         layout.setRowMinimumHeight(row, 8)
 
         row += 1
-        btnVae = QtWidgets.QPushButton("Process")
-        btnVae.clicked.connect(lambda: self.vaeEncode(force=True))
-        layout.addWidget(btnVae, row, 0, 1, 2)
+        btnProcess = QtWidgets.QPushButton("Process")
+        btnProcess.clicked.connect(lambda: self.vaeProcess(force=True))
+        layout.addWidget(btnProcess, row, 0, 1, 2)
 
         row += 1
-        self.chkAutoVae = QtWidgets.QCheckBox("Auto Process")
-        self.chkAutoVae.toggled.connect(self._onAutoVaeToggled)
-        layout.addWidget(self.chkAutoVae, row, 0, 1, 2, Qt.AlignmentFlag.AlignCenter)
+        self.chkAutoProcess = QtWidgets.QCheckBox("Auto Process")
+        self.chkAutoProcess.toggled.connect(self._onAutoProcessToggled)
+        layout.addWidget(self.chkAutoProcess, row, 0, 1, 2, Qt.AlignmentFlag.AlignCenter)
 
-        group = QtWidgets.QGroupBox("VAE Encode/Decode")
-        group.setLayout(layout)
-        return group
+        return layout
+
 
     def _loadVaeTypes(self) -> list[str]:
         folder = Config.pathVaeConfig
@@ -402,7 +501,11 @@ class CompareToolBar(QtWidgets.QToolBar):
         return entries
 
     @Slot()
-    def _chooseVae(self):
+    def _onVaeTypeChanged(self, vaeType: str):
+        Config.compareVaeType = vaeType
+
+    @Slot()
+    def _chooseModel(self):
         path = self.txtVaePath.text() or Config.pathExport
         fileFilter = "Model File (*.safetensors *.ckpt)"
 
@@ -411,29 +514,35 @@ class CompareToolBar(QtWidgets.QToolBar):
             self.txtVaePath.setText(path)
             Config.compareVaePath = path
 
-    @Slot()
-    def _onVaeTypeChanged(self, vaeType: str):
-        Config.compareVaeType = vaeType
+
+    @property
+    def autoProcess(self) -> bool:
+        return self.chkAutoProcess.isChecked()
+
+    @autoProcess.setter
+    def autoProcess(self, value: bool):
+        self.chkAutoProcess.setChecked(value)
 
     @Slot()
-    def _onAutoVaeToggled(self, state: bool):
+    def _onAutoProcessToggled(self, state: bool):
         if state:
-            self.vaeEncode()
+            self.vaeProcess()
 
-    def abortAllVaeTasks(self):
+
+    def abortAllTasks(self):
         for task in self._tasks.values():
             task.abort()
 
-    def vaeEncode(self, force: bool = False):
+    def vaeProcess(self, force: bool = False):
         file = self.compareTool.tab.filelist.getCurrentFile()
-        if not force and file == self.vaeFileDone:
+        if not force and file == self.fileDone:
             return
 
         task = self._tasks.get(file)
         if task and not task.isAborted():
             return
 
-        self.abortAllVaeTasks()
+        self.abortAllTasks()
         self._tasks = {}
 
         vaePath = self.txtVaePath.text()
@@ -449,7 +558,7 @@ class CompareToolBar(QtWidgets.QToolBar):
 
         self._tasks[file] = task
         self.compareTool.tab.statusBar().showMessage("Loading VAE...", 0)
-        self.vaeFileDone = ""
+        self.fileDone = ""
 
         if self._threadPool is None:
             self._threadPool = QThreadPool(self, maxThreadCount=1)
@@ -461,7 +570,7 @@ class CompareToolBar(QtWidgets.QToolBar):
 
     @Slot(QImage)
     def _onVaeDone(self, file: str, image: QImage, duration: float):
-        self.vaeFileDone = file
+        self.fileDone = file
         self._tasks.pop(file, None)
 
         self.compareTool.setCompareImage(image)

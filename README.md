@@ -41,8 +41,9 @@
   - Scale images, optionally using AI upscale models <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#scale-tool)</sup>
   - Dynamic save paths with template variables <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#path-settings)</sup>
   - Manually edit masks with multiple layers <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#mask-tool)</sup>
+  - Generate masks with AI models <sup>[?](https://github.com/FennelFetish/qapyq/wiki/Setup#mask)</sup>
   - Record masking operations into macros <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#macro-recording)</sup>
-  - Automated masking
+  - VAE-encode images and check their latent representation <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#vae-reconstruction)</sup>
 
 - **Captioning**: Describe images with text
   - Edit captions manually with drag-and-drop support <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#caption-window)</sup>
@@ -84,13 +85,13 @@ These are the supported architectures with links to the original models.<br>
 Find more specialized finetuned models on [huggingface.co](https://huggingface.co/models).
 
 - **Tagging**<br>
-  Generate keyword captions for images.
+  Models for generating keyword captions for images.
   - [JoyTag](https://github.com/fpgaminer/joytag)
   - [PixAI Tagger (onnx)](https://huggingface.co/deepghs/pixai-tagger-v0.9-onnx)
   - [WD (onnx)](https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3) (eva02 recommended)
 
 - **Captioning**<br>
-  Generate complete-sentence captions for images.
+  Models for generating complete-sentence captions for images.
   - [Florence-2](https://huggingface.co/collections/microsoft/florence-6669f44df0d87d9c3bfb76de)
   - [Gemma3 (GGUF)](https://huggingface.co/collections/unsloth/gemma-3-67d12b7e8816ec6efa7e4e5b)
   - [InternVL2](https://huggingface.co/collections/OpenGVLab/internvl-20-667d3961ab5eb12c7ed1463e), [InternVL2.5](https://huggingface.co/collections/OpenGVLab/internvl25-673e1019b66e2218f68d7c1c), [InternVL2.5-MPO](https://huggingface.co/collections/OpenGVLab/internvl25-mpo-6753fed98cd828219b12f849), [InternVL3](https://huggingface.co/collections/OpenGVLab/internvl3-67f7f690be79c2fe9d74fe9d), [InternVL3.5](https://huggingface.co/collections/OpenGVLab/internvl35-core-68b08a936ded8dc59597179c) (Github Format)
@@ -102,16 +103,16 @@ Find more specialized finetuned models on [huggingface.co](https://huggingface.c
   - [Qwen2-VL](https://huggingface.co/collections/Qwen/qwen2-vl-66cee7455501d7126940800d), [Qwen2.5-VL](https://huggingface.co/collections/Qwen/qwen25-vl-6795ffac22b334a837c0f9a5), [Qwen3-VL](https://huggingface.co/collections/Qwen/qwen3-vl) (Instruct/Thinking)
 
 - **LLM**<br>
-  Transform existing captions/tags.
-  - Models in GGUF format with embedded chat template (llama-cpp backend).
+  Models for transforming existing captions/tags.
+  - Any model in GGUF format with embedded chat template (llama-cpp backend).
 
 - **Upscaling**<br>
-  Resize images to higher resolutions.
-  - Model architectures supported by the [spandrel](https://github.com/chaiNNer-org/spandrel?tab=readme-ov-file#model-architecture-support) backend.
+  Models for resizing images to higher resolutions.
+  - Architectures supported by the [spandrel](https://github.com/chaiNNer-org/spandrel?tab=readme-ov-file#model-architecture-support) backend.
   - Find more models at [openmodeldb.info](https://openmodeldb.info/).
 
 - **Masking**<br>
-  Generate greyscale masks.
+  Models for generating greyscale masks.
   - Box Detection
     - YOLO/Adetailer detection models
       - Search for YOLO models on [huggingface.co](https://huggingface.co/models?pipeline_tag=object-detection).
@@ -123,10 +124,14 @@ Find more specialized finetuned models on [huggingface.co](https://huggingface.c
     - [Florence-2](https://huggingface.co/collections/microsoft/florence-6669f44df0d87d9c3bfb76de)
 
 - **Embedding**<br>
-  Sort images by their similarity to a prompt.
+  Models for sorting images by their similarity to a prompt.
   - [CLIP](https://huggingface.co/openai/clip-vit-large-patch14)
   - [SigLIP](https://huggingface.co/google/siglip2-so400m-patch14-384)
   - [SigLIP (ONNX)](https://huggingface.co/onnx-community/siglip2-so400m-patch14-384-ONNX), [SigLIP2-giant-opt (ONNX)](https://huggingface.co/onnx-community/siglip2-giant-opt-patch16-384-ONNX)<br>(recommended: largest text model + fp16 vision model)
+
+- **VAE**<br>
+  Models for previewing the latent representation of images.
+  - [Flux.1](https://huggingface.co/Comfy-Org/Lumina_Image_2.0_Repackaged/tree/main/split_files/vae), [Flux.2](https://huggingface.co/black-forest-labs/FLUX.2-dev/tree/main/vae), [SD1.5](https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/main/vae), [SDXL](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/main/vae), [Qwen](https://huggingface.co/Qwen/Qwen-Image-2512/tree/main/vae)
 
 
 ## Setup
