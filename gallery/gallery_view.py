@@ -1,8 +1,9 @@
 from typing import Iterable
 from typing_extensions import override
-from PySide6.QtCore import Qt, Signal, Slot, QPoint, QSignalBlocker, QTimer, QModelIndex, QPersistentModelIndex, QObject
-from PySide6.QtWidgets import QTableView, QHeaderView, QMenu
-from PySide6.QtGui import QGuiApplication, QCursor, QWheelEvent, QKeyEvent
+from PySide6 import QtWidgets
+from PySide6.QtWidgets import QTableView, QHeaderView
+from PySide6.QtCore import Qt, Signal, Slot, QPoint, QSignalBlocker, QTimer, QModelIndex, QPersistentModelIndex, QObject, QMimeData, QUrl
+from PySide6.QtGui import QGuiApplication, QCursor, QWheelEvent, QKeyEvent, QMouseEvent, QDrag
 from ui.tab import ImgTab
 from .gallery_caption import GalleryCaption
 from .gallery_model import GalleryModel, FileItem, SelectionState
@@ -325,7 +326,7 @@ class GalleryMouseHandler(QObject):
 
 
 
-class GalleryItemMenu(QMenu):
+class GalleryItemMenu(QtWidgets.QMenu):
     def __init__(self, galleryView: GalleryView):
         super().__init__("Gallery")
         self.view = galleryView
@@ -350,6 +351,16 @@ class GalleryItemMenu(QMenu):
         actUnloadSelection = self.addAction(f"Unload Selected {strFiles}")
         actUnloadSelection.triggered.connect(self._unloadSelectedFiles)
 
+        self.addSeparator()
+
+        dragStartWidget = DragStartWidget(f"Drag {strFiles}")
+        dragStartWidget.dragStarted.connect(self._startDragFiles)
+
+        actDrag = QtWidgets.QWidgetAction(self)
+        actDrag.setDefaultWidget(dragStartWidget)
+        self.addAction(actDrag)
+
+
     @Slot()
     def _sortBySimilarity(self):
         filelist = self.view.tab.filelist
@@ -371,3 +382,60 @@ class GalleryItemMenu(QMenu):
         else:
             currentFile = filelist.getCurrentFile()
             filelist.filterFiles(lambda file: file != currentFile)
+
+    @Slot()
+    def _startDragFiles(self):
+        self.close()
+
+        filelist = self.view.tab.filelist
+        if filelist.selectedFiles:
+            urls = [QUrl.fromLocalFile(file) for file in filelist.selection.sorted]
+        elif filelist.getCurrentFile():
+            urls = [QUrl.fromLocalFile(filelist.getCurrentFile())]
+        else:
+            return
+
+        data = QMimeData()
+        data.setUrls(urls)
+
+        # Set the source to GalleryView, otherwise file managers won't receive the drag.
+        drag = QDrag(self.view)
+        drag.setMimeData(data)
+        drag.exec(Qt.DropAction.CopyAction)
+
+
+
+class DragStartWidget(QtWidgets.QWidget):
+    dragStarted = Signal()
+
+    def __init__(self, text: str):
+        super().__init__()
+        self.setToolTip("Drag from here to copy the selected files into another application.")
+        self.setCursor(Qt.CursorShape.DragCopyCursor)
+
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(0, 1, 1, 1)
+        layout.setSpacing(0)
+        layout.setColumnMinimumWidth(0, 28)
+        layout.setColumnMinimumWidth(2, 6)
+        layout.setColumnStretch(3, 1)
+
+        labelIcon = QtWidgets.QLabel("🡸")
+        labelIcon.setContentsMargins(11, 4, 0, 0)
+        layout.addWidget(labelIcon, 0, 0)
+
+        label = QtWidgets.QLabel(text)
+        layout.addWidget(label, 0, 1)
+
+        label2 = QtWidgets.QLabel("(Click and hold)")
+        label2.setEnabled(False)
+        layout.addWidget(label2, 0, 3)
+
+        self.setLayout(layout)
+
+    def mousePressEvent(self, event: QMouseEvent):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.dragStarted.emit()
+            event.accept()
+        else:
+            super().mousePressEvent(event)
