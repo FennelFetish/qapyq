@@ -1,5 +1,5 @@
 # Inference
-transformers
+transformers<5.0
 diffusers
 accelerate
 
