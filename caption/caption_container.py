@@ -489,6 +489,8 @@ class CaptionContainer(QtWidgets.QWidget):
                 self.filelist.setNextFile()
 
     def saveCaptionNoSkip(self) -> bool:
+        text = self.txtCaption.rstripCaption()
+
         if self.multiEdit.active:
             if self.multiEdit.saveCaptions(self.destSelector):
                 self.btnSave.setChanged(False)
@@ -497,7 +499,6 @@ class CaptionContainer(QtWidgets.QWidget):
                 return False
 
         else:
-            text = self.txtCaption.getCaption()
             currentFile = self.filelist.getCurrentFile()
 
             if self.destSelector.saveCaption(currentFile, text):

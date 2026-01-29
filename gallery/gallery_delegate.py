@@ -547,11 +547,6 @@ class GalleryCaptionEditor(QtWidgets.QWidget):
         self.setLayout(layout)
 
 
-    @property
-    def caption(self) -> str:
-        return self.txtCaption.getCaption()
-
-
     def updateData(self, index: QModelIndex | QPersistentModelIndex):
         self.txtCaption.separator = self.delegate.caption.separator
 
@@ -607,7 +602,8 @@ class GalleryCaptionEditor(QtWidgets.QWidget):
 
     @Slot()
     def saveCaption(self):
-        if self.delegate.caption.captionSrc.saveCaption(self.file, self.caption):
+        text = self.txtCaption.rstripCaption()
+        if self.delegate.caption.captionSrc.saveCaption(self.file, text):
             self.delegate.view.tab.filelist.setData(self.file, DataKeys.CaptionState, DataKeys.IconStates.Saved)
             self.setEdited(False)
 

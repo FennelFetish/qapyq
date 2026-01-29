@@ -298,17 +298,19 @@ class CaptionList(CaptionTab):
         tags: dict[str, str] = dict()
         captions: dict[str, str] = dict()
         for entry in self.entries:
-            if not entry.text:
+            entryText = entry.textField.rstripCaption()
+
+            if not entryText:
                 continue
 
             entry.edited = False
             match entry.keyType:
                 case KeyType.Tags:
-                    tags[entry.keyName] = entry.text
+                    tags[entry.keyName] = entryText
                 case KeyType.Caption:
-                    captions[entry.keyName] = entry.text
+                    captions[entry.keyName] = entryText
                 case KeyType.TextFile:
-                    FileTypeSelector.saveCaptionTxt(currentFile, entry.text)
+                    FileTypeSelector.saveCaptionTxt(currentFile, entryText)
                     saveStates.append(f"TXT File")
 
         if jsonExists or tags or captions:

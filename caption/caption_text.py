@@ -31,6 +31,20 @@ class NavigationTextEdit(QtWidgets.QPlainTextEdit):
             self.completer.separator = separator
 
 
+    def rstripCaption(self) -> str:
+        "Strips comma and space characters from the end and sets the stripped text as new caption. Returns the stripped text."
+
+        # Strip trailing separators that were added with autocomplete. Only strip space and comma.
+        # Keep other separators (e.g. points) that end sentences.
+        # Keep newlines/empty lines that are intentionally used as caption dropout in txt files.
+        text = self.getCaption()
+        textStrip = text.rstrip(", ")
+        if len(textStrip) < len(text):
+            self.setCaption(textStrip)
+
+        return textStrip
+
+
     def appendToCaption(self, text: str):
         caption = self.toPlainText()
         if caption:
