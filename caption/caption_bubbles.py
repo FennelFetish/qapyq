@@ -54,8 +54,8 @@ class CaptionBubbles(ReorderWidget):
     def getBubbles(self) -> Generator[Bubble]:
         layout: QtWidgets.QLayout = self.layout()
         for i in range(layout.count()):
-            item = layout.itemAt(i)
-            if (widget := item.widget()) and isinstance(widget, Bubble): # Why is there other stuff in there? -> It's the ReorderWidget's drag target
+            widget = layout.itemAt(i).widget()
+            if isinstance(widget, Bubble): # Why is there other stuff in there? -> It's the ReorderWidget's drag target
                 yield widget
 
     def getBubbleAt(self, index: int) -> Bubble | None:
@@ -66,8 +66,14 @@ class CaptionBubbles(ReorderWidget):
         return None
 
     def updateBubbles(self):
+        # Postpone updates from caption generation until drag is finished
+        if self.isDragActive():
+            self.setPostDragCallback(lambda text=self.text: self.setText(text))
+            return
+
         oldBubbles = list[Bubble](self.getBubbles())
         colorMap = BubbleColorMap(self.ctx)
+        layout: FlowLayout = self.layout()
 
         numFiles, tagFreq = self.ctx.container.multiEdit.getTagFrequency()
         if tagFreq:
@@ -85,7 +91,7 @@ class CaptionBubbles(ReorderWidget):
             else:
                 bubble = Bubble(self, i, self.showWeights, self.showRemove, self.editable)
                 bubble.setFocusProxy(self)
-                self.layout().addWidget(bubble)
+                layout.addWidget(bubble)
 
             color = colorMap.getBubbleColor(i, caption)
             if i == self._selectedIndex:
@@ -96,8 +102,10 @@ class CaptionBubbles(ReorderWidget):
             bubble.forceUpdateWidth()
             bubble.setToolTip(tooltip(i))
 
-        for i in range(i+1, len(oldBubbles)):
-            oldBubbles[i].deleteLater()
+        for i in range(len(oldBubbles)-1, i, -1):
+            bubble = layout.takeAt(i).widget()
+            bubble.deleteLater()
+
 
     def setSelectedBubble(self, index: int):
         if index == self._selectedIndex:

@@ -1,6 +1,6 @@
 from typing import Iterable, Callable
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Signal, QSize, QRect, QPoint, QMimeData, QTimer
+from PySide6.QtCore import Qt, Signal, Slot, QSize, QRect, QPoint, QMimeData, QTimer
 import numpy as np
 from lib import colorlib, qtlib
 
@@ -134,9 +134,17 @@ class ReorderWidget(QtWidgets.QWidget):
         self.scrollBorderSize = 40
         self.scrollBorderSpeed = 12
 
+        self._postDragCallback: Callable | None = None
+
 
     def enableBorderScroll(self, scrollArea: QtWidgets.QScrollArea):
         self._scrollArea = scrollArea
+
+    def isDragActive(self) -> bool:
+        return self._dragTarget != None
+
+    def setPostDragCallback(self, callback: Callable):
+        self._postDragCallback = callback
 
 
     def _createDragTarget(self, pixmap: QtGui.QPixmap, index: int):
@@ -211,7 +219,15 @@ class ReorderWidget(QtWidgets.QWidget):
 
         self._removeDragTarget()
         layout.activate()
-        QTimer.singleShot(0, self.orderChanged.emit)
+        QTimer.singleShot(0, self._onDragFinished)
+
+    @Slot()
+    def _onDragFinished(self):
+        if self._postDragCallback:
+            self._postDragCallback()
+            self._postDragCallback = None
+
+        self.orderChanged.emit()
 
 
     def widgetUnderCursor(self, pos: QPoint) -> QtWidgets.QWidget | None:
