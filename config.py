@@ -1,5 +1,6 @@
 class Config:
     version                 = "1.0"
+    startTime               = 0
     windowTitle             = "qapyq"
     windowIcon              = "res/qapyq.png"
     guiScale                = 1.0
@@ -154,7 +155,8 @@ class Config:
 
     @classmethod
     def load(cls) -> bool:
-        import json, os
+        import json, os, time
+        cls.startTime = time.monotonic_ns()
 
         try:
             if os.path.exists(cls.pathConfig):

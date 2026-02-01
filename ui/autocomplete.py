@@ -839,7 +839,7 @@ class CsvNGramAutoCompleteSource(NGramAutoCompleteSource):
                     t = time.monotonic_ns()
                     numTags, numAliases = self._loadCsv(path, existingTags)
                     t = (time.monotonic_ns() - t) / 1_000_000
-                    print(f"AutoComplete: Loaded {numTags} tags ({numAliases} aliases) in {t:.2f} ms from '{path}'")
+                    print(f"AutoComplete: Loaded {numTags} tags (+{numAliases} aliases) in {t:.2f} ms from '{path}'")
                 except:
                     print(f"AutoComplete: Failed to load tags from '{path}'")
                     import traceback
@@ -967,7 +967,11 @@ class LoadCsvTask(QRunnable):
         self.signals = self.Signals()
 
     def run(self):
-        QThread.msleep(100)  # Let other stuff initialize first
+        # Don't block at app start. Let other stuff initialize first.
+        timeSinceStart = time.monotonic_ns() - Config.startTime
+        delay = 1500 if timeSinceStart < 1_000_000_000 else 200
+        QThread.msleep(delay)
+
         csvSource = CsvNGramAutoCompleteSource()
 
         try:
