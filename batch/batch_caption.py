@@ -1,14 +1,14 @@
 from typing import Callable
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, QSignalBlocker
+from PySide6.QtCore import Qt, Slot
 from config import Config
 from infer.inference_proc import InferenceProcess
 from infer.inference_settings import InferencePresetWidget, RemoteInferenceConfig
 from infer.tag_settings import TagPresetWidget
-from infer.prompt import PromptWidget, PromptsHighlighter
+from infer.prompt import PromptWidget
 from lib import colorlib, qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
-from lib.template_parser import TemplateVariableParser, VariableHighlighter
+from lib.template_parser import TemplateVariableParser
 from ui.tab import ImgTab
 from .batch_task import BatchInferenceTask, BatchTaskHandler
 from .batch_log import BatchLog
@@ -37,39 +37,22 @@ class BatchCaption(QtWidgets.QWidget):
         layout.addLayout(self.taskHandler.startButtonLayout)
         self.setLayout(layout)
 
-        self._parser = None
-        self._highlighter = VariableHighlighter()
-
 
     def _buildCaptionSettings(self):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
-        layout.setColumnStretch(0, 0)
-        layout.setColumnStretch(1, 0)
-        layout.setColumnStretch(2, 0)
         layout.setColumnStretch(3, 1)
 
         row = 0
         self.promptWidget = PromptWidget("promptCaptionPresets", "promptCaptionDefault", self.tab.templateAutoCompleteSources)
         qtlib.setTextEditHeight(self.promptWidget.txtSystemPrompt, 5, "min")
-        qtlib.setTextEditHeight(self.promptWidget.txtPrompts, 10, "min")
-        self.promptWidget.lblPrompts.setText("Prompt(s) Template:")
+        qtlib.setTextEditHeight(self.promptWidget.txtPrompts, 5, "min")
+        qtlib.setTextEditHeight(self.promptWidget.txtPreview, 5, "min")
         self.promptWidget.txtPrompts.textChanged.connect(self._updatePreview)
-        self.promptWidget.layout().setRowStretch(1, 1)
-        self.promptWidget.layout().setRowStretch(2, 2)
+        self.promptWidget.refreshPreviewClicked.connect(self.refreshPreview)
         layout.addWidget(self.promptWidget, row, 0, 1, 4)
-        layout.setRowStretch(row, 3)
-
-        row += 1
-        self.txtPromptPreview = QtWidgets.QPlainTextEdit()
-        self.txtPromptPreview.setReadOnly(True)
-        qtlib.setMonospace(self.txtPromptPreview)
-        qtlib.setTextEditHeight(self.txtPromptPreview, 5, "min")
-        qtlib.setShowWhitespace(self.txtPromptPreview)
-        layout.addWidget(QtWidgets.QLabel("Prompt(s) Preview:"), row, 0, Qt.AlignmentFlag.AlignTop)
-        layout.addWidget(self.txtPromptPreview, row, 1, 1, 3)
-        layout.setRowStretch(row, 4)
+        layout.setRowStretch(row, 1)
 
         row += 1
         self.chkStripAround = QtWidgets.QCheckBox("Surrounding whitespace")
@@ -140,28 +123,23 @@ class BatchCaption(QtWidgets.QWidget):
 
 
     def onFileChanged(self, currentFile):
-        self._parser = TemplateVariableParser(currentFile)
+        self.promptWidget.parser.setup(currentFile)
         self._updateParser()
 
     @Slot()
+    def refreshPreview(self):
+        self.onFileChanged(self.tab.filelist.getCurrentFile())
+
+    @Slot()
     def _updateParser(self):
-        if self._parser:
-            self._parser.stripAround = self.chkStripAround.isChecked()
-            self._parser.stripMultiWhitespace = self.chkStripMulti.isChecked()
-            self._updatePreview()
+        self.promptWidget.parser.stripAround = self.chkStripAround.isChecked()
+        self.promptWidget.parser.stripMultiWhitespace = self.chkStripMulti.isChecked()
+        self._updatePreview()
 
     @Slot()
     def _updatePreview(self):
-        text = self.promptWidget.prompts
-        preview, varPositions = self._parser.parseWithPositions(text)
-        self.txtPromptPreview.setPlainText(preview)
-
         disabled = not self.captionGroup.isChecked()
-
-        with QSignalBlocker(self.promptWidget.txtPrompts):
-            self._highlighter.highlight(self.promptWidget.txtPrompts, self.txtPromptPreview, varPositions, disabled)
-            PromptsHighlighter.highlightPromptSeparators(self.promptWidget.txtPrompts)
-            PromptsHighlighter.highlightPromptSeparators(self.txtPromptPreview)
+        self.promptWidget.updatePreview(disabledColors=disabled)
 
 
     def getConfirmOps(self) -> list[str]:

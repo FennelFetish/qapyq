@@ -3,12 +3,12 @@ from typing import Callable
 from enum import Enum, auto
 from typing_extensions import override
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, QSignalBlocker
+from PySide6.QtCore import Qt, Slot
 from config import Config
 from infer.prompt import PromptWidget
 from lib import colorlib, qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
-from lib.template_parser import TemplateVariableParser, VariableHighlighter
+from lib.template_parser import TemplateVariableParser
 from ui.tab import ImgTab
 from .batch_task import BatchTask, BatchTaskHandler
 from .batch_log import BatchLog
@@ -66,9 +66,6 @@ class BatchApply(QtWidgets.QWidget):
         layout.addLayout(self.taskHandler.startButtonLayout)
         self.setLayout(layout)
 
-        self._parser = None
-        self._highlighter = VariableHighlighter()
-
         self._onWriteModeChanged(0)
 
 
@@ -76,33 +73,18 @@ class BatchApply(QtWidgets.QWidget):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
-        layout.setColumnStretch(0, 0)
-        layout.setColumnStretch(1, 0)
         layout.setColumnStretch(2, 1)
 
         row = 0
-        self.promptWidget = PromptWidget("templateApplyPresets", "templateApplyDefault", self.tab.templateAutoCompleteSources)
-        qtlib.setTextEditHeight(self.promptWidget.txtPrompts, 10, "min")
-        self.promptWidget.hideSystemPrompt()
-        self.promptWidget.lblPreset.setText("Template Preset")
+        self.promptWidget = PromptWidget("templateApplyPresets", "templateApplyDefault", self.tab.templateAutoCompleteSources, showSystemPrompt=False)
+        qtlib.setTextEditHeight(self.promptWidget.txtPrompts, 5, "min")
+        qtlib.setTextEditHeight(self.promptWidget.txtPreview, 5, "min")
+        self.promptWidget.lblPreset.setText("Template Preset:")
         self.promptWidget.lblPrompts.setText("Template:")
-        self.promptWidget.txtPrompts.textChanged.connect(self._updatePreview)
+        self.promptWidget.lblPreview.setText("Preview:")
+        self.promptWidget.connectDefaultPreviewUpdate(False)
+        self.promptWidget.refreshPreviewClicked.connect(self.refreshPreview)
         layout.addWidget(self.promptWidget, row, 0, 1, 3)
-        layout.setRowStretch(row, 1)
-
-        row += 1
-        self.txtPreview = QtWidgets.QPlainTextEdit()
-        self.txtPreview.setReadOnly(True)
-        qtlib.setMonospace(self.txtPreview)
-        qtlib.setTextEditHeight(self.txtPreview, 10, "min")
-        qtlib.setShowWhitespace(self.txtPreview)
-        layout.addWidget(QtWidgets.QLabel("Preview:"), row, 0)
-        layout.addWidget(self.txtPreview, row, 1, 2, 2)
-
-        row += 1
-        btnUpdatePreview = QtWidgets.QPushButton("Regenerate")
-        btnUpdatePreview.clicked.connect(self.regeneratePreview)
-        layout.addWidget(btnUpdatePreview, row, 0, Qt.AlignmentFlag.AlignTop)
         layout.setRowStretch(row, 1)
 
         row += 1
@@ -118,7 +100,6 @@ class BatchApply(QtWidgets.QWidget):
         self.chkStripMulti.checkStateChanged.connect(self._updateParser)
         layout.addWidget(self.chkStripMulti, row, 2)
 
-
         groupBox = QtWidgets.QGroupBox("Format")
         groupBox.setLayout(layout)
         return groupBox
@@ -127,11 +108,6 @@ class BatchApply(QtWidgets.QWidget):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
-        layout.setColumnStretch(0, 0)
-        layout.setColumnStretch(1, 0)
-        layout.setColumnStretch(2, 0)
-        layout.setColumnStretch(3, 0)
-        layout.setColumnStretch(4, 0)
         layout.setColumnStretch(5, 1)
         layout.setColumnMinimumWidth(2, 20)
         layout.setColumnMinimumWidth(4, 4)
@@ -181,9 +157,6 @@ class BatchApply(QtWidgets.QWidget):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
-        layout.setColumnStretch(0, 0)
-        layout.setColumnStretch(1, 0)
-        layout.setColumnStretch(2, 0)
         layout.setColumnStretch(3, 1)
         layout.setColumnMinimumWidth(2, 4)
 
@@ -207,11 +180,11 @@ class BatchApply(QtWidgets.QWidget):
 
 
     def onFileChanged(self, currentFile):
-        self._parser = TemplateVariableParser(currentFile)
+        self.promptWidget.parser.setup(currentFile)
         self._updateParser()
 
     @Slot()
-    def regeneratePreview(self):
+    def refreshPreview(self):
         self.onFileChanged(self.tab.filelist.getCurrentFile())
 
 
@@ -266,19 +239,9 @@ class BatchApply(QtWidgets.QWidget):
 
     @Slot()
     def _updateParser(self):
-        if self._parser:
-            self._parser.stripAround = self.chkStripAround.isChecked()
-            self._parser.stripMultiWhitespace = self.chkStripMulti.isChecked()
-            self._updatePreview()
-
-    @Slot()
-    def _updatePreview(self):
-        text = self.promptWidget.prompts
-        preview, varPositions = self._parser.parseWithPositions(text)
-        self.txtPreview.setPlainText(preview)
-
-        with QSignalBlocker(self.promptWidget.txtPrompts):
-            self._highlighter.highlight(self.promptWidget.txtPrompts, self.txtPreview, varPositions)
+        self.promptWidget.parser.stripAround = self.chkStripAround.isChecked()
+        self.promptWidget.parser.stripMultiWhitespace = self.chkStripMulti.isChecked()
+        self.promptWidget.updatePreview(False)
 
 
     def getConfirmOps(self) -> list[str]:

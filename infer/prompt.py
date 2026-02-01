@@ -3,6 +3,7 @@ from PySide6.QtCore import Qt, Slot, Signal, QObject, QSignalBlocker
 from config import Config
 from lib import qtlib
 from lib.colorlib import ColorCharFormats
+from lib.template_parser import TemplateVariableParser, VariableHighlighter
 from ui.autocomplete import TemplateTextEdit, AutoCompleteSource
 
 
@@ -13,62 +14,25 @@ class PromptSettingsSignals(QObject):
 class PromptWidget(QtWidgets.QWidget):
     signals = PromptSettingsSignals()
 
-    def __init__(self, presetsAttr: str, defaultAttr: str, autoCompleteSources: list[AutoCompleteSource]):
+    refreshPreviewClicked = Signal()
+
+
+    def __init__(
+        self,
+        presetsAttr: str,
+        defaultAttr: str,
+        autoCompleteSources: list[AutoCompleteSource],
+        showSystemPrompt: bool = True,
+        parser: TemplateVariableParser | None = None
+    ):
         super().__init__()
         self.presetsAttr = presetsAttr
         self.defaultAttr = defaultAttr
 
-        layout = QtWidgets.QGridLayout()
-        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
-        layout.setColumnStretch(0, 0)
-        layout.setColumnStretch(1, 0)
-        layout.setColumnStretch(2, 1)
-        layout.setColumnStretch(3, 0)
-        layout.setColumnStretch(4, 0)
+        self.parser = parser or TemplateVariableParser()
+        self._highlighter = VariableHighlighter()
 
-        row = 0
-        self.lblPreset = QtWidgets.QLabel("Prompt Preset:")
-        layout.addWidget(self.lblPreset, row, 0)
-
-        self.preset = QtWidgets.QComboBox()
-        self.preset.setEditable(True)
-        self.preset.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
-        self.preset.editTextChanged.connect(self._onPresetNameEdited)
-        self.preset.currentIndexChanged.connect(self.loadPreset)
-        layout.addWidget(self.preset, row, 1, 1, 2)
-
-        self.btnSave = QtWidgets.QPushButton("Create")
-        self.btnSave.setEnabled(False)
-        self.btnSave.clicked.connect(self.savePreset)
-        layout.addWidget(self.btnSave, row, 3, Qt.AlignmentFlag.AlignRight)
-
-        self.btnDelete = QtWidgets.QPushButton("Delete")
-        self.btnDelete.setEnabled(False)
-        self.btnDelete.clicked.connect(self.deletePreset)
-        layout.addWidget(self.btnDelete, row, 4)
-
-        row += 1
-        self.lblSystemPrompt = QtWidgets.QLabel("System Prompt:")
-        layout.addWidget(self.lblSystemPrompt, row, 0, Qt.AlignmentFlag.AlignTop)
-
-        self.txtSystemPrompt = QtWidgets.QPlainTextEdit()
-        qtlib.setMonospace(self.txtSystemPrompt)
-        qtlib.setShowWhitespace(self.txtSystemPrompt)
-        layout.addWidget(self.txtSystemPrompt, row, 1, 1, 4)
-
-        row += 1
-        self.lblPrompts = QtWidgets.QLabel("Prompt(s):")
-        layout.addWidget(self.lblPrompts, row, 0, Qt.AlignmentFlag.AlignTop)
-
-        self.txtPrompts = TemplateTextEdit(autoCompleteSources)
-        qtlib.setMonospace(self.txtPrompts)
-        qtlib.setShowWhitespace(self.txtPrompts)
-        layout.addWidget(self.txtPrompts, row, 1, 1, 4)
-
-        self.setLayout(layout)
-
+        self.setLayout(self._build(autoCompleteSources, showSystemPrompt))
 
         selectedPreset = Config.inferSelectedPresets.get(self.presetsAttr)
         self.reloadPresetList(selectedPreset)
@@ -76,9 +40,135 @@ class PromptWidget(QtWidgets.QWidget):
         self.signals.presetListUpdated.connect(self._onPresetListChanged)
 
 
-    def hideSystemPrompt(self):
-        self.lblSystemPrompt.hide()
-        self.txtSystemPrompt.hide()
+    def _build(self, autoCompleteSources: list[AutoCompleteSource], showSystemPrompt: bool):
+        self.splitter = QtWidgets.QSplitter(Qt.Orientation.Vertical)
+        self.splitter.setHandleWidth(8)
+
+        presetLayout = self._buildPresetRow()
+
+        # System prompt row
+        self.lblSystemPrompt = QtWidgets.QLabel("System Prompt:")
+        self.txtSystemPrompt = QtWidgets.QPlainTextEdit()
+        qtlib.setMonospace(self.txtSystemPrompt)
+
+        if showSystemPrompt:
+            self._addSplitterRow(self.txtSystemPrompt, self.lblSystemPrompt)
+
+        # Prompt row
+        self.lblPrompts = QtWidgets.QLabel("Prompt Template:")
+        self.txtPrompts = TemplateTextEdit(autoCompleteSources)
+        qtlib.setMonospace(self.txtPrompts)
+        self._addSplitterRow(self.txtPrompts, self.lblPrompts)
+
+        # Preview row
+        previewLayout = QtWidgets.QVBoxLayout()
+        previewLayout.setContentsMargins(0, 0, 0, 0)
+        previewLayout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        self.lblPreview = QtWidgets.QLabel("Prompt Preview:")
+        self.lblPreview.setMinimumWidth(Config.batchWinLegendWidth)
+        previewLayout.addWidget(self.lblPreview)
+
+        self.btnRefreshPreview = QtWidgets.QPushButton("Refresh")
+        self.btnRefreshPreview.setMaximumHeight(22)
+        self.btnRefreshPreview.clicked.connect(self.refreshPreviewClicked.emit)
+        previewLayout.addWidget(self.btnRefreshPreview)
+
+        self.txtPreview = QtWidgets.QPlainTextEdit()
+        self.txtPreview.setReadOnly(True)
+        self.txtPreview.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+        qtlib.setMonospace(self.txtPreview)
+        qtlib.setShowWhitespace(self.txtPreview)
+
+        self.previewWidget = self._addSplitterRow(self.txtPreview, None, previewLayout)
+
+        # Compose main widget layout
+        stretchFactors = (1, 4, 3) if showSystemPrompt else (4, 3)
+        for i, stretch in enumerate(stretchFactors):
+            self.splitter.setStretchFactor(i, stretch)
+
+        mainLayout = QtWidgets.QVBoxLayout()
+        mainLayout.setContentsMargins(0, 0, 0, 0)
+        mainLayout.addLayout(presetLayout)
+        mainLayout.addWidget(self.splitter)
+        return mainLayout
+
+    def _buildPresetRow(self) -> QtWidgets.QLayout:
+        layout = QtWidgets.QGridLayout()
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setColumnStretch(1, 1)
+
+        self.lblPreset = QtWidgets.QLabel("Prompt Preset:")
+        self.lblPreset.setMinimumWidth(Config.batchWinLegendWidth)
+        layout.addWidget(self.lblPreset, 0, 0)
+
+        self.preset = QtWidgets.QComboBox()
+        self.preset.setEditable(True)
+        self.preset.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
+        self.preset.editTextChanged.connect(self._onPresetNameEdited)
+        self.preset.currentIndexChanged.connect(self.loadPreset)
+        layout.addWidget(self.preset, 0, 1)
+
+        self.btnSave = QtWidgets.QPushButton("Create")
+        self.btnSave.setEnabled(False)
+        self.btnSave.clicked.connect(self.savePreset)
+        layout.addWidget(self.btnSave, 0, 2)
+
+        self.btnDelete = QtWidgets.QPushButton("Delete")
+        self.btnDelete.setEnabled(False)
+        self.btnDelete.clicked.connect(self.deletePreset)
+        layout.addWidget(self.btnDelete, 0, 3)
+
+        return layout
+
+    def _addSplitterRow(self, widget: QtWidgets.QWidget, label: QtWidgets.QLabel | None, labelLayout: QtWidgets.QLayout | None = None) -> QtWidgets.QWidget:
+        layout = QtWidgets.QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        if label:
+            label.setMinimumWidth(Config.batchWinLegendWidth)
+            layout.addWidget(label, 0, Qt.AlignmentFlag.AlignTop)
+        else:
+            layout.addLayout(labelLayout, 0)
+
+        layout.addWidget(widget, 1)
+
+        widget = QtWidgets.QWidget()
+        widget.setLayout(layout)
+        self.splitter.addWidget(widget)
+        return widget
+
+
+    def connectDefaultPreviewUpdate(self, promptSeperators: bool = True):
+        self.txtPrompts.textChanged.connect(lambda: self.updatePreview(promptSeperators))
+
+    def setPreviewVisible(self, visible: bool):
+        parented = self.previewWidget.parent() is not None
+        if parented == visible:
+            return
+
+        if visible:
+            sizes = self.splitter.sizes()
+            self.splitter.addWidget(self.previewWidget)
+            if any(s > 10 for s in sizes):
+                self.splitter.setSizes(sizes + [sizes[-1]//2])
+        else:
+            self.previewWidget.setParent(None)
+
+    def updatePreview(self, promptSeperators: bool = True, disabledColors: bool = False) -> bool:
+        text = self.prompts
+        preview, varPositions = self.parser.parseWithPositions(text)
+        self.txtPreview.setPlainText(preview)
+
+        with QSignalBlocker(self.txtPrompts):
+            self._highlighter.highlight(self.txtPrompts, self.txtPreview, varPositions, disabledColors)
+
+            if promptSeperators:
+                PromptsHighlighter.highlightPromptSeparators(self.txtPrompts)
+                PromptsHighlighter.highlightPromptSeparators(self.txtPreview)
+
+        return len(varPositions) > 0
 
 
     @property

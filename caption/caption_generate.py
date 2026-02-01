@@ -2,16 +2,15 @@ import os, re, traceback, weakref
 from typing import Iterable
 from enum import Enum
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Slot, Signal, QThreadPool, QRunnable, QObject, QSignalBlocker, QMutex, QMutexLocker
+from PySide6.QtCore import Qt, Slot, Signal, QThreadPool, QRunnable, QObject, QMutex, QMutexLocker
 from infer.inference import Inference
 from infer.inference_proc import InferenceProcess
 from infer.inference_settings import InferencePresetWidget, RemoteInferenceConfig
 from infer.tag_settings import TagPresetWidget
-from infer.prompt import PromptWidget, PromptsHighlighter
-from lib.template_parser import TemplateVariableParser, VariableHighlighter
+from infer.prompt import PromptWidget
+from lib.template_parser import TemplateVariableParser
 from lib.filelist import DataKeys
 import lib.qtlib as qtlib
-from config import Config
 from .caption_tab import CaptionTab, MultiEditSupport
 from .caption_context import CaptionContext
 
@@ -25,14 +24,11 @@ class ApplyMode(Enum):
 class CaptionGenerate(CaptionTab):
     def __init__(self, context):
         super().__init__(context)
+        self._task: InferenceTask | None = None
 
-        self._highlighter = VariableHighlighter()
         self._parser = CurrentVariableParser(context)
-
         self._hasCurrentVar = False
         self._hasRefinedVar = False
-
-        self._task = None
 
         self._build()
 
@@ -45,68 +41,49 @@ class CaptionGenerate(CaptionTab):
     def _build(self):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
-        layout.setColumnStretch(0, 0)
-        layout.setColumnStretch(1, 0)
-        layout.setColumnStretch(2, 1)
-        layout.setColumnStretch(3, 0)
-        layout.setColumnStretch(4, 0)
-        layout.setColumnStretch(5, 0)
+        layout.setColumnStretch(0, 1)
 
         row = 0
-        self.promptWidget = PromptWidget("promptCaptionPresets", "promptCaptionDefault", self.ctx.tab.templateAutoCompleteSources)
+        self.promptWidget = PromptWidget("promptCaptionPresets", "promptCaptionDefault", self.ctx.tab.templateAutoCompleteSources, parser=self._parser)
         qtlib.setTextEditHeight(self.promptWidget.txtSystemPrompt, 3, "min")
         qtlib.setTextEditHeight(self.promptWidget.txtPrompts, 3, "min")
-        self.promptWidget.lblPrompts.setText("Prompt(s) Template:")
+        qtlib.setTextEditHeight(self.promptWidget.txtPreview, 3, "min")
         self.promptWidget.txtPrompts.textChanged.connect(self._onPromptChanged)
-        self.promptWidget.layout().setRowStretch(1, 1)
-        self.promptWidget.layout().setRowStretch(2, 1)
-        layout.addWidget(self.promptWidget, row, 0, 1, 6)
-        layout.setRowStretch(row, 2)
-
-        row += 1
-        self.lblPromptPreview = QtWidgets.QLabel("Prompt(s) Preview:")
-        layout.addWidget(self.lblPromptPreview, row, 0, Qt.AlignmentFlag.AlignTop)
-
-        self.txtPromptPreview = QtWidgets.QPlainTextEdit()
-        self.txtPromptPreview.setReadOnly(True)
-        qtlib.setMonospace(self.txtPromptPreview)
-        qtlib.setTextEditHeight(self.txtPromptPreview, 3, "min")
-        qtlib.setShowWhitespace(self.txtPromptPreview)
-        layout.addWidget(self.txtPromptPreview, row, 1, 1, 5)
-        layout.setRowStretch(row, 2)
+        self.promptWidget.refreshPreviewClicked.connect(self._refreshPreview)
+        layout.addWidget(self.promptWidget, row, 0, 1, 4)
+        layout.setRowStretch(row, 1)
 
         row += 1
         self.inferSettings = InferencePresetWidget()
-        layout.addWidget(self.inferSettings, row, 0, 1, 6)
+        layout.addWidget(self.inferSettings, row, 0, 1, 4)
 
         row += 1
         self.tagSettings = TagPresetWidget()
-        layout.addWidget(self.tagSettings, row, 0, 1, 6)
+        layout.addWidget(self.tagSettings, row, 0, 1, 4)
 
         row += 1
         self.statusBar = qtlib.ColoredMessageStatusBar()
         self.statusBar.layout().setContentsMargins(0, 0, 8, 0)
         self.statusBar.setSizeGripEnabled(False)
-        layout.addWidget(self.statusBar, row, 0, 1, 4)
+        layout.addWidget(self.statusBar, row, 0)
 
         self.cboMode = QtWidgets.QComboBox()
         self.cboMode.addItem("Append", ApplyMode.Append)
         self.cboMode.addItem("Prepend", ApplyMode.Prepend)
         self.cboMode.addItem("Replace", ApplyMode.Replace)
-        layout.addWidget(self.cboMode, row, 3)
+        layout.addWidget(self.cboMode, row, 1)
 
         self.cboCapTag = QtWidgets.QComboBox()
         self.cboCapTag.addItem("Caption")
         self.cboCapTag.addItem("Tags")
         self.cboCapTag.addItem("Caption, Tags")
         self.cboCapTag.addItem("Tags, Caption")
-        layout.addWidget(self.cboCapTag, row, 4)
+        layout.addWidget(self.cboCapTag, row, 2)
 
         self.btnGenerate = QtWidgets.QPushButton("Generate")
         self.btnGenerate.setMinimumWidth(100)
         self.btnGenerate.clicked.connect(self.generate)
-        layout.addWidget(self.btnGenerate, row, 5)
+        layout.addWidget(self.btnGenerate, row, 3)
         self._updateGenerateButton()
 
         self.setLayout(layout)
@@ -124,40 +101,32 @@ class CaptionGenerate(CaptionTab):
             self._updateGenerateButton()
 
     @Slot()
+    def _refreshPreview(self):
+        self.onFileChanged(self.ctx.tab.filelist.getCurrentFile())
+
+    @Slot()
     def _onControlUpdated(self):
         if self._hasRefinedVar:
-            self.updatePreview(self.promptWidget.prompts)
+            self.updatePreview()
 
     @Slot()
     def _onCaptionEdited(self):
         if self._hasCurrentVar or self._hasRefinedVar:
-            self.updatePreview(self.promptWidget.prompts)
+            self.updatePreview()
 
     @Slot()
     def _onPromptChanged(self):
         prompt = self.promptWidget.prompts
         self._hasCurrentVar = CurrentVariableParser.currentInPrompt(prompt)
         self._hasRefinedVar = CurrentVariableParser.refinedInPrompt(prompt)
-        self.updatePreview(prompt)
+        self.updatePreview()
 
-
-    def updatePreview(self, prompt: str):
+    def updatePreview(self):
         if self._hasRefinedVar:
             self._parser.updateRefinedCaption(self.ctx.text.getCaption())
 
-        preview, varPositions = self._parser.parseWithPositions(prompt)
-        self.txtPromptPreview.setPlainText(preview)
-
-        with QSignalBlocker(self.promptWidget.txtPrompts):
-            self._highlighter.highlight(self.promptWidget.txtPrompts, self.txtPromptPreview, varPositions)
-            PromptsHighlighter.highlightPromptSeparators(self.promptWidget.txtPrompts)
-            PromptsHighlighter.highlightPromptSeparators(self.txtPromptPreview)
-
-        # Update visibility of preview
-        previewVisible = len(varPositions) > 0
-        self.lblPromptPreview.setVisible(previewVisible)
-        self.txtPromptPreview.setVisible(previewVisible)
-        self.layout().setRowStretch(1, 2 if previewVisible else 0)
+        hasVars = self.promptWidget.updatePreview()
+        self.promptWidget.setPreviewVisible(hasVars)
 
     def _updateGenerateButton(self):
         text = "Generate"
@@ -319,16 +288,14 @@ class FrozenCurrentVariableParser(TemplateVariableParser):
         if needsRefined or CurrentVariableParser.currentInPrompt(prompt):
             filelist = context.tab.filelist
             srcSelector = context.container.srcSelector
+
             for file in imgPaths:
                 caption = filelist.getData(file, DataKeys.Caption)
                 if caption is None:
                     caption = srcSelector.loadCaption(file)
                 self.currentCaptions[file] = caption
 
-        if needsRefined:
-            self.rulesProcessor = context.createRulesProcessor()
-        else:
-            self.rulesProcessor = None
+        self.rulesProcessor = context.createRulesProcessor() if needsRefined else None
 
     def _getImgProperties(self, var: str) -> str | None:
         match var:

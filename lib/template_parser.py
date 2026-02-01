@@ -8,20 +8,21 @@ from .colorlib import ColorCharFormats
 
 
 class TemplateVariableParser:
+    PATTERN_VARS        = re.compile( r'{{([^}]+)}}' )
+    PATTERN_MULTI_SPACE = re.compile( r'(?m) {2,}|\n{2,}' )
+
+    PREFIX_KEEP_VAR     = "!"
+    PREFIX_CAPTION      = "captions."
+    PREFIX_PROMPT       = "prompts."
+    PREFIX_TAG          = "tags."
+
+
     def __init__(self, imgPath: str = None):
         self.imgPath: str = imgPath
         self.captionFile: CaptionFile | None = None
 
         self.stripAround = True
         self.stripMultiWhitespace = True
-
-        self._patternVars = re.compile( r'{{([^}]+)}}' )
-        self._patternMultiSpace = re.compile( r'(?m) {2,}|\n{2,}' )
-
-        self._keepVarPrefix = "!"
-        self._captionPrefix = "captions."
-        self._promptPrefix = "prompts."
-        self._tagPrefix = "tags."
 
         self.missingVars = set()
 
@@ -41,11 +42,11 @@ class TemplateVariableParser:
     def parse(self, text: str) -> str:
         self.missingVars.clear()
         #text = text.replace('\r\n', '\n') # FIXME: Required on windows? Messes with positions
-        text = self._patternVars.sub(self._replace, text)
+        text = self.PATTERN_VARS.sub(self._replace, text)
         if self.stripAround:
             text = text.strip()
         if self.stripMultiWhitespace:
-            text = self._patternMultiSpace.sub(self._replaceSpace, text)
+            text = self.PATTERN_MULTI_SPACE.sub(self._replaceSpace, text)
         return text
 
     def _replace(self, match: re.Match) -> str:
@@ -63,7 +64,7 @@ class TemplateVariableParser:
 
         self.missingVars.clear()
         #text = text.replace('\r\n', '\n') # FIXME: Required on windows? Messes with positions
-        for match in self._patternVars.finditer(text):
+        for match in self.PATTERN_VARS.finditer(text):
             value = self._getValue(match.group(1))
             lenValue = len(value)
 
@@ -115,7 +116,7 @@ class TemplateVariableParser:
         start = 0
         totalShift = 0 # Account for removed characters
 
-        for match in self._patternMultiSpace.finditer(text):
+        for match in self.PATTERN_MULTI_SPACE.finditer(text):
             matchStart = match.start()+1 # Keep one whitespace character
             matchEnd = match.end()
             matchLen = matchEnd - matchStart
@@ -142,24 +143,24 @@ class TemplateVariableParser:
         var = var.lstrip()
 
         optional = True
-        if var.startswith(self._keepVarPrefix):
-            var = var[len(self._keepVarPrefix):].lstrip()
+        if var.startswith(self.PREFIX_KEEP_VAR):
+            var = var[len(self.PREFIX_KEEP_VAR):].lstrip()
             optional = False
 
         var, *funcs = var.split("#")
         var = var.strip()
 
         value = None
-        if var.startswith(self._captionPrefix):
-            name = var[len(self._captionPrefix):]
+        if var.startswith(self.PREFIX_CAPTION):
+            name = var[len(self.PREFIX_CAPTION):]
             value =  self.getCaptionFile().getCaption(name)
 
-        elif var.startswith(self._promptPrefix):
-            name = var[len(self._promptPrefix):]
+        elif var.startswith(self.PREFIX_PROMPT):
+            name = var[len(self.PREFIX_PROMPT):]
             value =  self.getCaptionFile().getPrompt(name)
 
-        elif var.startswith(self._tagPrefix):
-            name = var[len(self._tagPrefix):]
+        elif var.startswith(self.PREFIX_TAG):
+            name = var[len(self.PREFIX_TAG):]
             value =  self.getCaptionFile().getTags(name)
 
         elif var == "text":
