@@ -607,6 +607,9 @@ class GalleryCaptionEditor(QtWidgets.QWidget):
             self.delegate.view.tab.filelist.setData(self.file, DataKeys.CaptionState, DataKeys.IconStates.Saved)
             self.setEdited(False)
 
+        if self.txtCaption.completer:
+            self.txtCaption.completer.hide()
+
 
     def takeFocus(self):
         self.txtCaption.setFocus()
