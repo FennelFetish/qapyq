@@ -425,6 +425,8 @@ class TextEditCompleter:
         matchText: str  = index.data(AutoCompleteModel.ROLE_KEEP_ALIAS)
         insertText: str = matchText if keyMod & Qt.KeyboardModifier.ShiftModifier else index.data(Qt.ItemDataRole.EditRole)
 
+        matchText, insertText = self.transformInsertText(matchText, insertText)
+
         cursor = self.textEdit.textCursor()
         if not cursor.hasSelection():
             insertText = self._selectInsertRegion(cursor, matchText, insertText)
@@ -537,11 +539,16 @@ class TextEditCompleter:
 
 
     @staticmethod
+    def transformInsertText(matchText: str, insertText: str) -> tuple[str, str]:
+        return matchText, insertText
+
+    @staticmethod
     def splitWords(text: str, maxSplit: int = -1) -> list[str]:
         return text.replace("-", " ").split(" ", maxSplit)
 
-    def _numReplaceWordsLeft(self, text: str) -> int:
-        return len(self.splitWords(text))
+    @staticmethod
+    def _numReplaceWordsLeft(text: str) -> int:
+        return len(TextEditCompleter.splitWords(text))
 
 
     def textUnderCursor(self) -> str:
@@ -637,7 +644,13 @@ class TemplateTextEditCompleter(TextEditCompleter):
         super().__init__(textEdit, autoCompleteSources, "}}")
 
     @override
-    def _numReplaceWordsLeft(self, text: str) -> int:
+    @staticmethod
+    def transformInsertText(matchText: str, insertText: str) -> tuple[str, str]:
+        return matchText.lstrip("#"), insertText.lstrip("#")
+
+    @override
+    @staticmethod
+    def _numReplaceWordsLeft(text: str) -> int:
         return 1000
 
     @override
@@ -989,18 +1002,20 @@ class TemplateAutoCompleteSource(NGramAutoCompleteSource):
         "#upper":           "",
         "#strip":           "",
         "#oneline":         "",
-        "#default":         "text",
-        "#first":           "count:separator",
-        "#drop":            "count:separator",
-        "#replace":         "search:replace:count",
-        "#replacevar":      "search:var:count",
-        "#shuffle":         "separator",
-        "#shufflekeep":     "count:separator",
-        "#reverse":         "separator",
-        "#join":            "var:separator",
-        "#noprefix":        "prefixes",
-        "#nosubsets":       "var:sep:var sep:word seps",
-        "#nodup":           "separator"
+        "#default":         ":Text",
+        "#defaultvar":      ":Var",
+        "#first":           ":Count:Separator",
+        "#drop":            ":Count:Separator",
+        "#replace":         ":Search:Replace:Count",
+        "#replacevar":      ":Search:Var:Count",
+        "#shuffle":         ":Separator",
+        "#shufflekeep":     ":Count:Separator",
+        "#reverse":         ":Separator",
+        "#join":            ":Var:Separator",
+        "#noprefix":        ":Prefixes",
+        "#nosubsets":       ":Var:Sep:VarSep:WordSeps",
+        "#nodup":           ":Separator",
+        "#ifcontains":      ":Search:TrueVal:FalseVal"
     }
 
     def __init__(self, scoreFactor: float = 1.0, jsonKeys: bool = False):
@@ -1014,16 +1029,13 @@ class TemplateAutoCompleteSource(NGramAutoCompleteSource):
         defaultInfo = "Key Exists" if self.jsonKeys else ""  # Empty string disables category
         suggestions = super().getSuggestions(search)
         return [
-            Suggestion(sug.tag.lstrip("{#"), sug.category, sug.freq, "", sug.scoreFactor, sug.nGramRatio, self.FUNC_INFO.get(sug.tag, defaultInfo))
+            Suggestion(sug.tag.lstrip("{"), sug.category, sug.freq, "", sug.scoreFactor, sug.nGramRatio, self.FUNC_INFO.get(sug.tag, defaultInfo))
             for sug in suggestions
         ]
 
 
     def addVar(self, var: str, freq: int = 0):
         self.addTag("{{" + var, -1, freq)
-
-    def addFunc(self, func: str):
-        self.addTag("#" + func, -1, 0)
 
 
     def setupTemplate(self):

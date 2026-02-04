@@ -290,8 +290,11 @@ class TemplateVariableParser:
                 return value.strip()
             case "oneline":
                 return value.replace("\n", "").replace("\r", "")
+
             case "default":
                 return value if (value or not args) else args[0]
+            case "defaultvar":
+                return value if (value or not args) else self._getValue(args[0])
 
             case "replace":
                 if len(args) > 1 and args[0]:
@@ -355,6 +358,13 @@ class TemplateVariableParser:
                 for prefix in self._getFuncArg(args, 0, "A ,a ,The ,the ").split(","):
                     value = value.removeprefix(prefix)
                 return value
+
+            case "ifcontains":
+                if search := self._getFuncArg(args, 0, ""):
+                    argIndex = 1 if (search in value) else 2
+                    return self._getFuncArg(args, argIndex, "")
+
+            # TODO: Function for limiting text to max token count
 
         return value
 
