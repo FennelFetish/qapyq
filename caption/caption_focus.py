@@ -12,7 +12,8 @@ HELP = [
     "[1-9]: Select tag",
     "Alt+[1-9]: Unselect tag",
     "[0]: Unselect all tags",
-    "[R]: Reload"
+    "[R]: Reload",
+    "Ctrl+[K]: Toggle keyboard shortcuts"
 ]
 
 HELP2 = [
@@ -193,8 +194,9 @@ class CaptionFocus(CaptionTab):
             self.selectTag(tag, self.chkMutuallyExclusive.isChecked())
 
     def onNumberPressed(self, index: int, unselect: bool):
-        if index == 0 and self.bubbles:
-            self.unselectAllTags()
+        if index <= 0:
+            if self.bubbles:
+                self.unselectAllTags()
 
         elif index-1 < len(self.bubbles):
             tag = self.bubbles[index - 1].text
@@ -233,8 +235,13 @@ class CaptionFocus(CaptionTab):
         self._setCaption(tagGen)
 
     def _setCaption(self, tagGen: Callable[[Iterable[str]], Iterable[str]]):
-        text = self.ctx.text.getCaption()
-        tags = (tag.strip() for tag in text.split(self.separator.strip())) if text else ()
+        tags = list[str]()
+        if text := self.ctx.text.getCaption():
+            tags.extend( tag.strip() for tag in text.split(self.separator.strip()) )
+
+            # Remove empty tag at end that was inserted with autocomplete
+            if not tags[-1]:
+                tags.pop()
 
         newText = self.separator.join(tagGen(tags))
         if newText != text:
@@ -329,7 +336,7 @@ class FocusEnabledButton(qtlib.GreenButton):
 
 class KeyEventFilter(QObject):
     def __init__(self, focus: CaptionFocus):
-        super().__init__()
+        super().__init__(focus)
         self.focus = focus
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
@@ -341,6 +348,7 @@ class KeyEventFilter(QObject):
         match key:
             case Qt.Key.Key_Escape:
                 self.focus.btnFocusEnable.setChecked(False)
+                self.focus.ctx.text.setFocus()
                 return True
             case Qt.Key.Key_Return:
                 # Don't loop

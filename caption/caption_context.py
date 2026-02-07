@@ -104,6 +104,23 @@ class CaptionContext(QtWidgets.QTabWidget):
 
 
     @Slot()
+    def tryToggleFocus(self):
+        if self.currentWidget() is not self.focus:
+            return
+
+        focusEnabled = not self.focus.btnFocusEnable.isChecked()
+        if focusEnabled:
+            if self.text.completer:
+                self.text.completer.hide()
+
+            self.focus.btnFocusEnable.setFocus()
+        else:
+            self.text.setFocus()
+
+        self.focus.btnFocusEnable.setChecked(focusEnabled)
+
+
+    @Slot()
     def _invalidateRulesProcessor(self):
         self._cachedRulesProcessor = None
 

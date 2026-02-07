@@ -267,7 +267,10 @@ class CaptionContainer(QtWidgets.QWidget):
         multiEditToggle = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+M"), self)
         multiEditToggle.activated.connect(self._multiEditToggleShortcut)
 
-        return [save, undo, redo, multiEditToggle]
+        focusToggle = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+K"), self)
+        focusToggle.activated.connect(self.ctx.tryToggleFocus)
+
+        return [save, undo, redo, multiEditToggle, focusToggle]
 
 
     def _loadRules(self):
