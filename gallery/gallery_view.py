@@ -189,7 +189,10 @@ class GalleryView(QTableView):
     def rowIsVisible(self, row: int) -> bool:
         index = self.model().index(row, 0)
         if index.isValid():
-            return self.visualRect(index).intersects(self.rect())
+            itemRect = self.visualRect(index)
+            visibleRect = itemRect.intersected(self.rect())
+            return visibleRect.height() > 0.75 * itemRect.height()
+
         return False
 
 
@@ -240,6 +243,7 @@ class GalleryView(QTableView):
 
 
 
+# TODO: Right-click shouldn't select image but only open context menu.
 class GalleryMouseHandler(QObject):
     def __init__(self, view: GalleryView):
         super().__init__(view)
