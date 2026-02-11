@@ -25,6 +25,7 @@ class TemplateVariableParser:
         self.stripMultiWhitespace = True
 
         self.missingVars = set()
+        self.storedVars: dict[str, str] = dict()
 
 
     def setup(self, imgPath: str, captionFile: CaptionFile | None = None):
@@ -41,13 +42,20 @@ class TemplateVariableParser:
 
     def parse(self, text: str) -> str:
         self.missingVars.clear()
-        #text = text.replace('\r\n', '\n') # FIXME: Required on windows? Messes with positions
-        text = self.PATTERN_VARS.sub(self._replace, text)
-        if self.stripAround:
-            text = text.strip()
-        if self.stripMultiWhitespace:
-            text = self.PATTERN_MULTI_SPACE.sub(self._replaceSpace, text)
-        return text
+
+        try:
+            #text = text.replace('\r\n', '\n') # FIXME: Required on windows? Messes with positions
+            text = self.PATTERN_VARS.sub(self._replace, text)
+
+            if self.stripAround:
+                text = text.strip()
+            if self.stripMultiWhitespace:
+                text = self.PATTERN_MULTI_SPACE.sub(self._replaceSpace, text)
+
+            return text
+
+        finally:
+            self.storedVars.clear()
 
     def _replace(self, match: re.Match) -> str:
         return self._getValue(match.group(1))
@@ -63,33 +71,38 @@ class TemplateVariableParser:
         promptLen = 0
 
         self.missingVars.clear()
-        #text = text.replace('\r\n', '\n') # FIXME: Required on windows? Messes with positions
-        for match in self.PATTERN_VARS.finditer(text):
-            value = self._getValue(match.group(1))
-            lenValue = len(value)
 
-            textBetweenVars = text[start:match.start()]
-            lenBetweenVars = match.start() - start
+        try:
+            #text = text.replace('\r\n', '\n') # FIXME: Required on windows? Messes with positions
+            for match in self.PATTERN_VARS.finditer(text):
+                value = self._getValue(match.group(1))
+                lenValue = len(value)
 
-            positions.append([
-                match.start(), match.end(),
-                promptLen+lenBetweenVars, promptLen+lenBetweenVars+lenValue
-            ])
+                textBetweenVars = text[start:match.start()]
+                lenBetweenVars = match.start() - start
 
-            promptLen += lenBetweenVars + lenValue
-            parts.append(textBetweenVars)
-            parts.append(value)
-            start = match.end()
+                positions.append([
+                    match.start(), match.end(),
+                    promptLen+lenBetweenVars, promptLen+lenBetweenVars+lenValue
+                ])
 
-        parts.append(text[start:])
-        prompt = "".join(parts)
+                promptLen += lenBetweenVars + lenValue
+                parts.append(textBetweenVars)
+                parts.append(value)
+                start = match.end()
 
-        if self.stripAround:
-            prompt = self._stripAround(prompt, positions)
-        if self.stripMultiWhitespace:
-            prompt = self._stripMultiWhitespace(prompt, positions)
+            parts.append(text[start:])
+            prompt = "".join(parts)
 
-        return prompt, positions
+            if self.stripAround:
+                prompt = self._stripAround(prompt, positions)
+            if self.stripMultiWhitespace:
+                prompt = self._stripMultiWhitespace(prompt, positions)
+
+            return prompt, positions
+
+        finally:
+            self.storedVars.clear()
 
     def _stripAround(self, text: str, positions: list) -> str:
         # Strip left
@@ -239,6 +252,9 @@ class TemplateVariableParser:
             case "time":
                 return datetime.now().strftime('%H%M%S')
 
+        if args := self._matchNameGetArgs(var, "load"):
+            return self.storedVars.get(args[0].strip(), "")
+
         if args := self._matchNameGetArgs(var, "static"):
             return args[0]
 
@@ -280,6 +296,11 @@ class TemplateVariableParser:
         func = func.strip()
 
         match func:
+            case "store":
+                if var := self._getFuncArg(args, 0, "").strip():
+                    self.storedVars[var] = value
+                    return ""
+
             case "lower":
                 return value.lower()
             case "upper":

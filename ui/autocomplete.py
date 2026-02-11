@@ -997,7 +997,25 @@ class LoadCsvTask(QRunnable):
 class TemplateAutoCompleteSource(NGramAutoCompleteSource):
     MIN_RATIO = 0.01
 
+    VAR_INFO = {
+        "{{text":           "",
+        "{{current":        "",
+        "{{refined":        "",
+        "{{path":           "",
+        "{{path.ext":       "",
+        "{{name":           "",
+        "{{name.ext":       "",
+        "{{ext":            "",
+        "{{folder":         "",
+        "{{date":           "",
+        "{{time":           "",
+        "{{load":           ":Name",
+        "{{static":         ":Text",
+        "{{coinflip":       ":TrueText:FalseText:Chance",
+    }
+
     FUNC_INFO = {
+        "#store":           ":Name",
         "#lower":           "",
         "#upper":           "",
         "#strip":           "",
@@ -1015,8 +1033,11 @@ class TemplateAutoCompleteSource(NGramAutoCompleteSource):
         "#noprefix":        ":Prefixes",
         "#nosubsets":       ":Var:Sep:VarSep:WordSeps",
         "#nodup":           ":Separator",
-        "#ifcontains":      ":Search:TrueVal:FalseVal"
+        "#ifcontains":      ":Search:TrueText:FalseText"
     }
+
+    ALL_INFO = VAR_INFO | FUNC_INFO
+
 
     def __init__(self, scoreFactor: float = 1.0, jsonKeys: bool = False):
         super().__init__(scoreFactor)
@@ -1029,7 +1050,7 @@ class TemplateAutoCompleteSource(NGramAutoCompleteSource):
         defaultInfo = "Key Exists" if self.jsonKeys else ""  # Empty string disables category
         suggestions = super().getSuggestions(search)
         return [
-            Suggestion(sug.tag.lstrip("{"), sug.category, sug.freq, "", sug.scoreFactor, sug.nGramRatio, self.FUNC_INFO.get(sug.tag, defaultInfo))
+            Suggestion(sug.tag.lstrip("{"), sug.category, sug.freq, "", sug.scoreFactor, sug.nGramRatio, self.ALL_INFO.get(sug.tag, defaultInfo))
             for sug in suggestions
         ]
 
@@ -1047,12 +1068,8 @@ class TemplateAutoCompleteSource(NGramAutoCompleteSource):
         for cap in Config.keysCaption:
             self.addVar(f"captions.{cap}")
 
-        for var in (
-            "text", "current", "refined",
-            "path", "path.ext", "name", "name.ext", "ext", "folder", #"folder-1",
-            "date", "time", "static", "coinflip"
-        ):
-            self.addVar(var)
+        for var in self.VAR_INFO:
+            self.addTag(var, -1, 0)
 
         for func in self.FUNC_INFO:
             self.addTag(func, -1, 0)
