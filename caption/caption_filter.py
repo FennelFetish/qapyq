@@ -86,8 +86,11 @@ class SortCaptionFilter(CaptionFilter):
             # TODO: Fuzzy
             # Calculate Jaccard Index as similarity score
             numIntersect = len(self.uniqueWords & other.uniqueWords)
-            numUnion     = len(self.words) + len(other.words) - numIntersect
+            numUnion     = len(self.uniqueWords) + len(other.uniqueWords) - numIntersect
             return numIntersect / numUnion
+
+        def indexSortKey(self) -> int:
+            return self.index
 
 
     ORDER_PREFIX_MAX = -1
@@ -176,7 +179,7 @@ class SortCaptionFilter(CaptionFilter):
             edges.discard(node)
 
             # Sort to make final order stable
-            node.edges = sorted(edges, key=lambda node: node.index)
+            node.edges = sorted(edges, key=self.CaptionSortNode.indexSortKey)
 
         # Partition, sort, apply
         for comp in self._findSortedComponents(nodes):
@@ -224,7 +227,7 @@ class SortCaptionFilter(CaptionFilter):
     def _sortComponent(self, nodes: list['SortCaptionFilter.CaptionSortNode']) -> list['SortCaptionFilter.CaptionSortNode']:
         numNodes = len(nodes)
         if numNodes <= 2:
-            nodes.sort(key=lambda n: n.index)
+            nodes.sort(key=self.CaptionSortNode.indexSortKey)
             return nodes
 
         for i, node in enumerate(nodes):
@@ -234,8 +237,8 @@ class SortCaptionFilter(CaptionFilter):
         adj = np.zeros((numNodes, numNodes), dtype=np.float64)
         for node in nodes:
             for edge in node.edges:
-                # Only process each edge once
-                if node.compIndex >= edge.compIndex:
+                # Only process each edge once. Diagonal (self-references) are impossible.
+                if node.compIndex > edge.compIndex:
                     weight = node.edgeWeight(edge)
                     adj[node.compIndex, edge.compIndex] = weight
                     adj[edge.compIndex, node.compIndex] = weight
@@ -253,7 +256,7 @@ class SortCaptionFilter(CaptionFilter):
 
         # Sign of Fiedler is arbitrary: Make sort stable by reversing the order if node with smallest original index lies in the second half.
         # TODO: This breaks stable sorting for the rest. See 'test_3word_star_stable' unit test.
-        minPos = nodesSorted.index(min(nodesSorted, key=lambda n: n.index))
+        minPos = nodesSorted.index(min(nodesSorted, key=self.CaptionSortNode.indexSortKey))
         if minPos > len(nodes) // 2:
             nodesSorted.reverse()
 
