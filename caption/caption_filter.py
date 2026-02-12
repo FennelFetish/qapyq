@@ -1,5 +1,7 @@
-from typing import Iterable
 import re
+import numpy as np
+from typing import Iterable
+from collections import defaultdict
 from .caption_preset import MutualExclusivity
 from .caption_conditionals import ConditionalFilterRule
 from .caption_highlight import MatcherNode
@@ -70,12 +72,33 @@ class WhitelistGroupsFilter(CaptionFilter):
 
 
 class SortCaptionFilter(CaptionFilter):
+    class CaptionSortNode:
+        def __init__(self, caption: str, index: int):
+            self.caption = caption
+            self.index = index
+            self.compIndex = index
+            self.words = [word for word in caption.split(" ") if word]
+            self.uniqueWords = set(self.words)
+            self.edges: list[SortCaptionFilter.CaptionSortNode] = None
+
+        def edgeWeight(self, other: 'SortCaptionFilter.CaptionSortNode') -> float:
+            'Symmetric: Same weight for A=>B and B=>A'
+            # TODO: Fuzzy
+            # Calculate Jaccard Index as similarity score
+            numIntersect = len(self.uniqueWords & other.uniqueWords)
+            numUnion     = len(self.words) + len(other.words) - numIntersect
+            return numIntersect / numUnion
+
+
     ORDER_PREFIX_MAX = -1
     ORDER_SUFFIX_MIN = 1_000_000
-    ORDER_NOTFOUND = ORDER_SUFFIX_MIN - 1
+    ORDER_NOTFOUND   = ORDER_SUFFIX_MIN - 1
 
-    def __init__(self):
+
+    def __init__(self, sortNonGroup: bool):
         super().__init__()
+        self.sortNonGroup = sortNonGroup
+
         self.captionOrder = dict[str, int]()
         self.matcherNode: MatcherNode[int] = None
 
@@ -99,6 +122,7 @@ class SortCaptionFilter(CaptionFilter):
         for i, cap in enumerate(suffixCaptions):
             self.captionOrder[cap] = self.ORDER_SUFFIX_MIN + i
 
+
     def _sortKey(self, caption: str) -> int:
         if order := self.captionOrder.get(caption):
             return order
@@ -114,8 +138,126 @@ class SortCaptionFilter(CaptionFilter):
 
         return self.ORDER_NOTFOUND
 
+
     def filterCaptions(self, captions: list[str]) -> list[str]:
-        return sorted(captions, key=self._sortKey)
+        if not self.sortNonGroup:
+            return sorted(captions, key=self._sortKey)
+
+        captionKeys = [(cap, self._sortKey(cap)) for cap in captions]
+        captionKeys.sort(key=lambda capKey: capKey[1])
+
+        newCaptions = list[str]()
+        suffixes = list[str]()
+
+        # Build graph: Nodes=Captions, Edges=Shared words
+        nodes = list[self.CaptionSortNode]()
+
+        # Create nodes and word-to-nodes mapping
+        wordNodes = defaultdict[str, set[self.CaptionSortNode]](set)
+        for i, capKey in enumerate(captionKeys):
+            if capKey[1] < self.ORDER_NOTFOUND:
+                newCaptions.append(capKey[0])
+                continue
+            if capKey[1] > self.ORDER_NOTFOUND:
+                suffixes.append(capKey[0])
+                continue
+
+            node = self.CaptionSortNode(capKey[0], i)
+            nodes.append(node)
+
+            for word in node.words:
+                wordNodes[word].add(node)
+
+        # Set node edges
+        for node in nodes:
+            edges = set[self.CaptionSortNode]()
+            for word in node.words:
+                edges.update(wordNodes[word])
+            edges.discard(node)
+
+            # Sort to make final order stable
+            node.edges = sorted(edges, key=lambda node: node.index)
+
+        # Partition, sort, apply
+        for comp in self._findSortedComponents(nodes):
+            newCaptions.extend(n.caption for n in comp)
+
+        newCaptions.extend(suffixes)
+        return newCaptions
+
+
+    def _findSortedComponents(self, nodes: list['SortCaptionFilter.CaptionSortNode']) -> list[list['SortCaptionFilter.CaptionSortNode']]:
+        visited = set[self.CaptionSortNode]()
+        components = list[list[self.CaptionSortNode]]()
+
+        # Partition graph into connected components using DFS traversal
+        for node in nodes:
+            if node in visited:
+                continue
+
+            if not node.edges:
+                visited.add(node)
+                components.append([node])
+                continue
+
+            comp = list[self.CaptionSortNode]()
+
+            stack = [node]
+            while stack:
+                n = stack.pop()
+                if n in visited:
+                    continue
+
+                visited.add(n)
+                comp.append(n)
+
+                for edge in n.edges:
+                    if edge not in visited:
+                        stack.append(edge)
+
+            comp = self._sortComponent(comp)
+            components.append(comp)
+
+        components.sort(key=lambda comp: min(n.index for n in comp))
+        return components
+
+    def _sortComponent(self, nodes: list['SortCaptionFilter.CaptionSortNode']) -> list['SortCaptionFilter.CaptionSortNode']:
+        numNodes = len(nodes)
+        if numNodes <= 2:
+            nodes.sort(key=lambda n: n.index)
+            return nodes
+
+        for i, node in enumerate(nodes):
+            node.compIndex = i
+
+        # Build adjacency matrix
+        adj = np.zeros((numNodes, numNodes), dtype=np.float64)
+        for node in nodes:
+            for edge in node.edges:
+                # Only process each edge once
+                if node.compIndex >= edge.compIndex:
+                    weight = node.edgeWeight(edge)
+                    adj[node.compIndex, edge.compIndex] = weight
+                    adj[edge.compIndex, node.compIndex] = weight
+
+        # Find node order and flatten graph using spectral seriation,
+        # a heuristic approximation of the NP-hard linear arrangement problem.
+        # The Fiedler vector partitions the graph into two parts with minimal cuts (direction of least connectivity),
+        # and thus it represents a principal direction along which the nodes can be sorted.
+        degree = np.diag(adj.sum(axis=0))       # Diagonal matrix with sum of edge weight
+        laplace = degree - adj                  # Laplacian matrix (symmetric)
+        vals, vecs = np.linalg.eigh(laplace)    # Eigendecomposition
+        fiedler = vecs[:, 1]                    # Fiedler vector (eigenvector corresponding to the second smallest eigenvalue)
+
+        nodesSorted = [nodes[int(i)] for i in np.argsort(fiedler, kind='stable')]
+
+        # Sign of Fiedler is arbitrary: Make sort stable by reversing the order if node with smallest original index lies in the second half.
+        # TODO: This breaks stable sorting for the rest. See 'test_3word_star_stable' unit test.
+        minPos = nodesSorted.index(min(nodesSorted, key=lambda n: n.index))
+        if minPos > len(nodes) // 2:
+            nodesSorted.reverse()
+
+        return nodesSorted
 
 
 
@@ -442,7 +584,7 @@ class CaptionRulesSettings:
 
 
 class CaptionRulesProcessor:
-    def __init__(self, separator: str, removeDup: bool, sortCaptions: bool, whitelistGroups: bool):
+    def __init__(self, separator: str, removeDup: bool, sortCaptions: bool, sortNonGroupCaptions: bool, whitelistGroups: bool):
         self.separator = separator
         self.removeDup = removeDup
         self.sortCaptions = sortCaptions
@@ -456,7 +598,7 @@ class CaptionRulesProcessor:
         self.banFilter = BannedCaptionFilter()
         self.whitelistFilter = WhitelistGroupsFilter()
         self.conditionalsFilter = ConditionalsFilter()
-        self.sortFilter = SortCaptionFilter()
+        self.sortFilter = SortCaptionFilter(sortNonGroupCaptions)
         self.combineFilter = TagCombineFilter(sortCaptions)
         self.subsetFilter = SubsetFilter()
         self.prefixSuffixFilter = PrefixSuffixFilter()

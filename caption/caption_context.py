@@ -132,7 +132,14 @@ class CaptionContext(QtWidgets.QTabWidget):
     def createRulesProcessor(self) -> CaptionRulesProcessor:
         cfg = self.settings
 
-        rulesProcessor = CaptionRulesProcessor(cfg.separator, cfg.isRemoveDuplicates, cfg.isSortCaptions, cfg.isWhitelistGroups)
+        rulesProcessor = CaptionRulesProcessor(
+            cfg.separator,
+            cfg.isRemoveDuplicates,
+            cfg.isSortCaptions,
+            cfg.isSortNonGroupCaptions,
+            cfg.isWhitelistGroups
+        )
+
         rulesProcessor.setPrefixSuffix(cfg.prefix, cfg.suffix, cfg.isAddPrefixSeparator, cfg.isAddSuffixSeparator)
         rulesProcessor.setSearchReplacePairs(cfg.searchReplacePairs)
         rulesProcessor.setBannedCaptions(cfg.bannedCaptions)

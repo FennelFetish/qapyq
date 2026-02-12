@@ -67,10 +67,17 @@ class CaptionSettings(CaptionTab):
         self.chkRemoveDup.toggled.connect(self._emitUpdate)
         layout.addWidget(self.chkRemoveDup, row, 1, Qt.AlignmentFlag.AlignTop)
 
-        self.chkSortCaptions = QtWidgets.QCheckBox("Sort Captions")
+        row += 1
+        self.chkSortCaptions = QtWidgets.QCheckBox("Sort Tags")
         self.chkSortCaptions.setChecked(True)
+        self.chkSortCaptions.toggled.connect(self._onSortToggled)
         self.chkSortCaptions.toggled.connect(self._emitUpdate)
-        layout.addWidget(self.chkSortCaptions, row, 2, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.chkSortCaptions, row, 1, Qt.AlignmentFlag.AlignTop)
+
+        self.chkSortNonGroupCaptions = QtWidgets.QCheckBox("Sort Non-Group Tags")
+        self.chkSortNonGroupCaptions.setChecked(False)
+        self.chkSortNonGroupCaptions.toggled.connect(self._emitUpdate)
+        layout.addWidget(self.chkSortNonGroupCaptions, row, 2, Qt.AlignmentFlag.AlignTop)
 
         row += 1
         layout.setRowMinimumHeight(row, 4)
@@ -99,9 +106,9 @@ class CaptionSettings(CaptionTab):
         qtlib.setShowWhitespace(self.txtSuffix)
         self.txtSuffix.textChanged.connect(self._emitUpdate)
         layout.addWidget(QtWidgets.QLabel("Suffix:"), row, 4, Qt.AlignmentFlag.AlignTop)
-        layout.addWidget(self.txtSuffix, row, 5, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.txtSuffix, row, 5, 2, 1, Qt.AlignmentFlag.AlignTop)
 
-        row += 1
+        row += 2
         # spacing
 
         row += 1
@@ -124,6 +131,14 @@ class CaptionSettings(CaptionTab):
         btnAddBanned.clicked.connect(self.banSelectedCaption)
         layout.addWidget(btnAddBanned, row, 4, Qt.AlignmentFlag.AlignTop)
 
+
+    @Slot()
+    def _onSortToggled(self):
+        sortEnabled = self.chkSortCaptions.isChecked()
+        self.chkSortNonGroupCaptions.setEnabled(sortEnabled)
+        if not sortEnabled:
+            with QSignalBlocker(self.chkSortNonGroupCaptions):
+                self.chkSortNonGroupCaptions.setChecked(False)
 
     @Slot()
     def _emitUpdate(self):
@@ -162,6 +177,10 @@ class CaptionSettings(CaptionTab):
         return self.chkSortCaptions.isChecked()
 
     @property
+    def isSortNonGroupCaptions(self) -> bool:
+        return self.chkSortNonGroupCaptions.isChecked()
+
+    @property
     def isWhitelistGroups(self) -> bool:
         return self.chkWhitelistGroups.isChecked()
 
@@ -197,16 +216,17 @@ class CaptionSettings(CaptionTab):
 
     def getPreset(self):
         preset = CaptionPreset()
-        preset.prefix           = self.txtPrefix.toPlainText()
-        preset.suffix           = self.txtSuffix.toPlainText()
-        preset.separator        = self.txtSeparator.text()
-        preset.prefixSeparator  = self.chkPrefixSeparator.isChecked()
-        preset.suffixSeparator  = self.chkSuffixSeparator.isChecked()
-        preset.removeDuplicates = self.chkRemoveDup.isChecked()
-        preset.sortCaptions     = self.chkSortCaptions.isChecked()
-        preset.whitelistGroups  = self.chkWhitelistGroups.isChecked()
-        preset.searchReplace    = self.searchReplacePairs
-        preset.banned           = self.bannedCaptions
+        preset.prefix                   = self.txtPrefix.toPlainText()
+        preset.suffix                   = self.txtSuffix.toPlainText()
+        preset.separator                = self.txtSeparator.text()
+        preset.prefixSeparator          = self.chkPrefixSeparator.isChecked()
+        preset.suffixSeparator          = self.chkSuffixSeparator.isChecked()
+        preset.removeDuplicates         = self.chkRemoveDup.isChecked()
+        preset.sortCaptions             = self.chkSortCaptions.isChecked()
+        preset.sortNonGroupCaptions     = self.chkSortNonGroupCaptions.isChecked()
+        preset.whitelistGroups          = self.chkWhitelistGroups.isChecked()
+        preset.searchReplace            = self.searchReplacePairs
+        preset.banned                   = self.bannedCaptions
 
         preset.autoApplyRules = self.ctx.container.isAutoApplyRules()
 
@@ -296,6 +316,7 @@ class CaptionSettings(CaptionTab):
             self.chkSuffixSeparator.setChecked(preset.suffixSeparator)
             self.chkRemoveDup.setChecked(preset.removeDuplicates)
             self.chkSortCaptions.setChecked(preset.sortCaptions)
+            self.chkSortNonGroupCaptions.setChecked(preset.sortNonGroupCaptions)
             self.chkWhitelistGroups.setChecked(preset.whitelistGroups)
 
             self.ctx.container.setAutoApplyRules(preset.autoApplyRules)

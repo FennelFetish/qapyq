@@ -1,7 +1,7 @@
 import sys, os
 sys.path.append( os.path.abspath(os.path.join(os.path.dirname(__file__), '..')) )
 
-import unittest
+import unittest, itertools
 from caption.caption_filter import CaptionRulesProcessor
 from caption.caption_preset import MutualExclusivity
 
@@ -22,18 +22,19 @@ class CaptionFilterTest(BaseCaptionFilterTest):
         seperator = ", "
         removeDup = True
         sortCaptions = True
+        sortNonGroup = False
         whitelistGroups = False
 
         groups = [
             (["straight-on", "from side", "from behind", "standing", "sitting"], MutualExclusivity.Disabled, False),
-            (["long pants", "black pants", "white pants", "denim pants", "pants"], MutualExclusivity.Disabled, True),
-            (["black tank top", "white tank top", "frilled tank top", "polka dot tank top"], MutualExclusivity.Disabled, True),
-            (["long hair", "dark hair", "blonde hair", "brown hair", "black hair", "hair ornament"], MutualExclusivity.Disabled, True)
+            (["long pants", "black pants", "white pants", "denim pants", "pants"], MutualExclusivity.Disabled, True), # Combine enabled
+            (["black tank top", "white tank top", "frilled tank top", "polka dot tank top"], MutualExclusivity.Disabled, True), # Combine enabled
+            (["long hair", "dark hair", "blonde hair", "brown hair", "black hair", "hair ornament"], MutualExclusivity.Disabled, True) # Combine enabled
         ]
 
         bans = ["realistic", "blurry"]
 
-        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, sortCaptions, whitelistGroups)
+        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, sortCaptions, sortNonGroup, whitelistGroups)
         self.rulesProcessor.setBannedCaptions(bans)
         self.rulesProcessor.setCaptionGroups(groups)
 
@@ -109,13 +110,14 @@ class CaptionFilterPrefixSuffixTest(BaseCaptionFilterTest):
         seperator = ", "
         removeDup = True
         sortCaptions = True
+        sortNonGroup = False
         whitelistGroups = False
 
         groups = [
-            (["long pants", "black pants", "white pants", "denim pants", "pants"], MutualExclusivity.Disabled, True)
+            (["long pants", "black pants", "white pants", "denim pants", "pants"], MutualExclusivity.Disabled, True) # Combine enabled
         ]
 
-        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, sortCaptions, whitelistGroups)
+        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, sortCaptions, sortNonGroup, whitelistGroups)
         self.rulesProcessor.setPrefixSuffix(prefix, suffix, prefixSuffixSep, prefixSuffixSep)
         self.rulesProcessor.setCaptionGroups(groups)
 
@@ -194,6 +196,7 @@ class CaptionFilterMutualExclusivityTest(BaseCaptionFilterTest):
         seperator = ", "
         removeDup = True
         sortCaptions = True
+        sortNonGroup = False
         whitelistGroups = False
 
         groups = [
@@ -202,7 +205,7 @@ class CaptionFilterMutualExclusivityTest(BaseCaptionFilterTest):
             (["lying", "sitting", "standing"], MutualExclusivity.Priority, False)
         ]
 
-        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, sortCaptions, whitelistGroups)
+        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, sortCaptions, sortNonGroup, whitelistGroups)
         self.rulesProcessor.setCaptionGroups(groups)
 
     def tearDown(self):
@@ -228,6 +231,101 @@ class CaptionFilterMutualExclusivityTest(BaseCaptionFilterTest):
         # MutuallyExclusiveFilter does not modify combined tags
         caption  = "black white pants"
         expected = "black white pants"
+        self.assertProcessedEqual(caption, expected)
+
+
+
+class CaptionFilterSortNonGroupTest(BaseCaptionFilterTest):
+    def setUp(self):
+        seperator = ", "
+        removeDup = False
+        sortCaptions = True
+        sortNonGroup = True
+        whitelistGroups = False
+
+        groups = [
+            (["GA0", "GA1", "GA2", "GA0 GA1"], MutualExclusivity.Disabled, False),
+            (["GB0", "GB1", "GB2", "GB0 GB1"], MutualExclusivity.Disabled, False)
+        ]
+
+        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, sortCaptions, sortNonGroup, whitelistGroups)
+        self.rulesProcessor.setCaptionGroups(groups)
+
+    def tearDown(self):
+        del self.rulesProcessor
+
+
+    def test_sort_all_permutations(self):
+        caption  = "B, C,   A B, B C, C D"
+
+        expectedA = "A, A B, B, B C, C, C D, D"
+        expectedD = "D, C D, C, B C, B, A B, A"
+
+        tags = [tag.strip() for tag in caption.split(",")]
+        for perm in itertools.permutations(tags):
+            joined = ", ".join(perm)
+            self.assertProcessedEqual(f"A, {joined}, D", expectedA)
+            self.assertProcessedEqual(f"D, {joined}, A", expectedD)
+
+    def test_groups_first(self):
+        caption  = "A, GA2, GA0 GA1, B, GA0, A B, GA1, B C, extra, C"
+        expected = "GA0, GA1, GA2, GA0 GA1, A, A B, B, B C, C, extra"
+        self.assertProcessedEqual(caption, expected)
+
+    def test_stable(self):
+        caption  = "5, 4, 6, 3, 7, GA0, 2, 8, 1, 9, 0, GB0"
+        expected = "GA0, GB0, 5, 4, 6, 3, 7, 2, 8, 1, 9, 0"
+        self.assertProcessedEqual(caption, expected)
+
+    def test_rearrange(self):
+        caption  = "B, B C, A, C, A B"
+        expected = "A, A B, B, B C, C"
+        self.assertProcessedEqual(caption, expected)
+
+    def test_2components(self):
+        caption  = "0, 1 2, extra, A, C, 0 1, A B, 2, B C"
+        expected = "0, 0 1, 1 2, 2, extra, A, A B, B C, C"
+        self.assertProcessedEqual(caption, expected)
+
+    # TODO: This makes an interleaved pattern. Maybe break cycles in the graph?
+    def test_ring(self):
+        caption  = "B C, D E, A B, extra, C D, E A"
+        expected = "A B, E A, B C, D E, C D, extra"
+        self.assertProcessedEqual(caption, expected)
+
+    # TODO: This fails because the order is reversed and 'C X D' / 'E X F' are swapped
+    # def test_3word_star_stable(self):
+    #     caption  = "A, C X D, extra, E X F, A X B"
+    #     expected = "A, A X B, C X D, E X F, extra"
+    #     self.assertProcessedEqual(caption, expected)
+
+    def test_fork(self):
+        caption  = "A B, C Y, X 0, C X, B C, Y 0"
+        expected = "A B, B C, C X, C Y, Y 0, X 0"
+        self.assertProcessedEqual(caption, expected)
+
+    def test_edge_weight(self):
+        caption  = "A B C, C D E,   C D, B C,   B C E, B D E,   A, C"
+        expected = "A, A B C, B C, B C E, C, C D, C D E, B D E"
+        self.assertProcessedEqual(caption, expected)
+
+        caption  = "A B C, C D E,   C D, B C,   B D E, A B D,   A, E"
+        expected = "A, A B C, A B D, B C, C D, B D E, C D E, E"
+        self.assertProcessedEqual(caption, expected)
+
+    def test_duplicates(self):
+        caption  = "A, B, A, B, A"
+        expected = "A, A, A, B, B"
+        self.assertProcessedEqual(caption, expected)
+
+    def test_duplicates2(self):
+        caption  = "B C, A, B, A B, A, B, A"
+        expected = "B C, B, B, A B, A, A, A"
+        self.assertProcessedEqual(caption, expected)
+
+    def test_empty(self):
+        caption  = ""
+        expected = ""
         self.assertProcessedEqual(caption, expected)
 
 

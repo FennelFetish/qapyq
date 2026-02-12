@@ -1,7 +1,7 @@
 import os, enum
 from typing import Callable, Iterable
 from PySide6 import QtGui, QtWidgets
-from PySide6.QtCore import Qt, Slot, Signal, QTimer
+from PySide6.QtCore import Qt, Slot, Signal, QTimer, QSignalBlocker
 from caption.caption_preset import CaptionPreset, CaptionPresetConditional, MutualExclusivity
 from caption.caption_filter import CaptionRulesProcessor
 from caption.caption_conditionals import ConditionalRule
@@ -70,6 +70,7 @@ class BatchRules(QtWidgets.QWidget):
         btnMenu.setMenu(self._menu)
         return btnMenu
 
+
     def _buildSubTabs(self):
         self.subtabWidget = QtWidgets.QTabWidget()
         self.subtabWidget.setCornerWidget(self._buildMenuButton(), Qt.Corner.TopLeftCorner)
@@ -92,98 +93,115 @@ class BatchRules(QtWidgets.QWidget):
     def _buildRules(self):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
-        layout.setColumnStretch(0, 0)
-        layout.setColumnStretch(1, 0)
-        layout.setColumnStretch(2, 0)
-        layout.setColumnStretch(3, 0)
-        layout.setColumnStretch(4, 1)
-        layout.setColumnStretch(5, 0)
-        layout.setColumnStretch(6, 0)
+        layout.setColumnMinimumWidth(3, 12)
+        layout.setColumnStretch(5, 1)
+        layout.setColumnStretch(6, 1)
 
+        self._buildRulesLeftColumn(layout)
+        self._buildRulesRightColumn(layout)
+
+        layout.setRowStretch(layout.rowCount()-1, 1)
+
+        widget = QtWidgets.QWidget()
+        widget.setLayout(layout)
+        return widget
+
+    def _buildRulesLeftColumn(self, layout: QtWidgets.QGridLayout):
         row = 0
         self.txtSeparator = QtWidgets.QLineEdit(", ")
         self.txtSeparator.editingFinished.connect(self.updatePreview)
         qtlib.setMonospace(self.txtSeparator)
-        layout.addWidget(QtWidgets.QLabel("Separator:"), row, 0)
-        layout.addWidget(self.txtSeparator, row, 1)
+        layout.addWidget(QtWidgets.QLabel("Separator:"), row, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.txtSeparator, row, 1, 1, 2, Qt.AlignmentFlag.AlignTop)
+
+        row += 1
+        self.chkPrefixSeparator = QtWidgets.QCheckBox("Append separator to prefix")
+        self.chkPrefixSeparator.setChecked(True)
+        self.chkPrefixSeparator.checkStateChanged.connect(self.updatePreview)
+        layout.addWidget(self.chkPrefixSeparator, row, 1, Qt.AlignmentFlag.AlignTop)
+
+        self.chkSuffixSeparator = QtWidgets.QCheckBox("Prepend separator to suffix")
+        self.chkSuffixSeparator.setChecked(True)
+        self.chkSuffixSeparator.checkStateChanged.connect(self.updatePreview)
+        layout.addWidget(self.chkSuffixSeparator, row, 2, Qt.AlignmentFlag.AlignTop)
+
+        row += 1
+        layout.addWidget(QtWidgets.QLabel("Options:"), row, 0, Qt.AlignmentFlag.AlignTop)
 
         self.chkRemoveDup = QtWidgets.QCheckBox("Remove Duplicates/Subsets")
         self.chkRemoveDup.setChecked(False)
         self.chkRemoveDup.checkStateChanged.connect(self.updatePreview)
-        layout.addWidget(self.chkRemoveDup, row, 2)
-
-        self.chkSortCaptions = QtWidgets.QCheckBox("Sort Captions")
-        self.chkSortCaptions.setChecked(False)
-        self.chkSortCaptions.checkStateChanged.connect(self.updatePreview)
-        layout.addWidget(self.chkSortCaptions, row, 3, 1, 2)
+        layout.addWidget(self.chkRemoveDup, row, 1, Qt.AlignmentFlag.AlignTop)
 
         row += 1
+        self.chkSortCaptions = QtWidgets.QCheckBox("Sort Tags")
+        self.chkSortCaptions.setChecked(False)
+        self.chkSortCaptions.checkStateChanged.connect(self._onSortToggled)
+        self.chkSortCaptions.checkStateChanged.connect(self.updatePreview)
+        layout.addWidget(self.chkSortCaptions, row, 1, Qt.AlignmentFlag.AlignTop)
+
+        self.chkSortNonGroupCaptions = QtWidgets.QCheckBox("Sort Non-Group Tags")
+        self.chkSortNonGroupCaptions.setEnabled(False)
+        self.chkSortNonGroupCaptions.setChecked(False)
+        self.chkSortNonGroupCaptions.checkStateChanged.connect(self.updatePreview)
+        layout.addWidget(self.chkSortNonGroupCaptions, row, 2, Qt.AlignmentFlag.AlignTop)
+
+        row += 1
+        layout.setRowMinimumHeight(row, 4)
+
+        row += 1
+        self.tableReplace = EditableTable(2)
+        self.tableReplace.setHorizontalHeaderLabels(["Search Pattern", "Replacement"])
+        self.tableReplace.contentChanged.connect(self.updatePreview)
+        layout.addWidget(QtWidgets.QLabel("Replace:"), row, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.tableReplace, row, 1, 3, 2)
+
+    def _buildRulesRightColumn(self, layout: QtWidgets.QGridLayout):
+        row = 0
         self.txtPrefix = QtWidgets.QPlainTextEdit()
         self.txtPrefix.textChanged.connect(self.updatePreview)
         qtlib.setMonospace(self.txtPrefix)
         qtlib.setTextEditHeight(self.txtPrefix, 2)
         qtlib.setShowWhitespace(self.txtPrefix)
-        layout.addWidget(QtWidgets.QLabel("Prefix:"), row, 0, Qt.AlignmentFlag.AlignTop)
-        layout.addWidget(self.txtPrefix, row, 1, 1, 5)
+        layout.addWidget(QtWidgets.QLabel("Prefix:"), row, 4, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.txtPrefix, row, 5, 2, 3, Qt.AlignmentFlag.AlignTop)
 
-        self.chkPrefixSeparator = QtWidgets.QCheckBox("Append Separator")
-        self.chkPrefixSeparator.setChecked(True)
-        self.chkPrefixSeparator.checkStateChanged.connect(self.updatePreview)
-        layout.addWidget(self.chkPrefixSeparator, row, 6, Qt.AlignmentFlag.AlignTop)
-
-        row += 1
+        row += 2
         self.txtSuffix = QtWidgets.QPlainTextEdit()
         self.txtSuffix.textChanged.connect(self.updatePreview)
         qtlib.setMonospace(self.txtSuffix)
         qtlib.setTextEditHeight(self.txtSuffix, 2)
         qtlib.setShowWhitespace(self.txtSuffix)
-        layout.addWidget(QtWidgets.QLabel("Suffix:"), row, 0, Qt.AlignmentFlag.AlignTop)
-        layout.addWidget(self.txtSuffix, row, 1, 1, 5)
+        layout.addWidget(QtWidgets.QLabel("Suffix:"), row, 4, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.txtSuffix, row, 5, 2, 3, Qt.AlignmentFlag.AlignTop)
 
-        self.chkSuffixSeparator = QtWidgets.QCheckBox("Prepend Separator")
-        self.chkSuffixSeparator.setChecked(True)
-        self.chkSuffixSeparator.checkStateChanged.connect(self.updatePreview)
-        layout.addWidget(self.chkSuffixSeparator, row, 6, Qt.AlignmentFlag.AlignTop)
+        row += 2
+        # spacing
 
         row += 1
-        layout.setRowMinimumHeight(row, 8)
-
-        row += 1
-        layout.addWidget(QtWidgets.QLabel("Replace:"), row, 0)
-
-        lblBanned = QtWidgets.QLabel("Banned:")
-        lblBanned.setMinimumWidth(lblBanned.sizeHint().width() + 12)
-        layout.addWidget(lblBanned, row, 3)
-
         self.chkWhitelistGroups = QtWidgets.QCheckBox("Groups are Whitelists (Ban all other tags)")
         self.chkWhitelistGroups.toggled.connect(lambda checked: self.banWidget.setEnabled(not checked))
         self.chkWhitelistGroups.toggled.connect(self.updatePreview)
-        layout.addWidget(self.chkWhitelistGroups, row, 4)
+        layout.addWidget(self.chkWhitelistGroups, row, 5, Qt.AlignmentFlag.AlignBottom)
 
         self.txtBanAdd = QtWidgets.QLineEdit()
-        self.txtBanAdd.setMinimumWidth(200)
+        self.txtBanAdd.setMinimumWidth(150)
+        self.txtBanAdd.setMaximumWidth(300)
         self.txtBanAdd.returnPressed.connect(self._addBanned)
         qtlib.setMonospace(self.txtBanAdd)
-        layout.addWidget(self.txtBanAdd, row, 5)
+        layout.addWidget(self.txtBanAdd, row, 6)
 
         btnBanAdd = QtWidgets.QPushButton("Add Banned")
         btnBanAdd.clicked.connect(self._addBanned)
-        layout.addWidget(btnBanAdd, row, 6)
+        layout.addWidget(btnBanAdd, row, 7)
 
         row += 1
-        self.tableReplace = EditableTable(2)
-        self.tableReplace.contentChanged.connect(self.updatePreview)
-        self.tableReplace.setHorizontalHeaderLabels(["Search Pattern", "Replacement"])
-        layout.addWidget(self.tableReplace, row, 0, 1, 3)
+        layout.addWidget(QtWidgets.QLabel("Banned:"), row, 4, Qt.AlignmentFlag.AlignTop)
 
         self.banWidget = SortedStringFlowWidget()
         self.banWidget.changed.connect(self._onBannedChanged)
-        layout.addWidget(qtlib.BaseColorScrollArea(self.banWidget), row, 3, 1, 4)
+        layout.addWidget(qtlib.BaseColorScrollArea(self.banWidget), row, 5, 2, 3)
 
-        widget = QtWidgets.QWidget()
-        widget.setLayout(layout)
-        return widget
 
     def _buildGroups(self):
         self.groupLayout = QtWidgets.QVBoxLayout()
@@ -250,6 +268,7 @@ class BatchRules(QtWidgets.QWidget):
 
         self.txtPreview = QtWidgets.QPlainTextEdit()
         self.txtPreview.setReadOnly(True)
+        self.txtPreview.viewport().setCursor(Qt.CursorShape.ArrowCursor)
         qtlib.setMonospace(self.txtPreview)
         qtlib.setTextEditHeight(self.txtPreview, 3, mode="min")
         qtlib.setShowWhitespace(self.txtPreview)
@@ -265,6 +284,15 @@ class BatchRules(QtWidgets.QWidget):
         self.captionFile = CaptionFile(currentFile)
         self.captionFile.loadFromJson()
         self.updatePreview()
+
+
+    @Slot()
+    def _onSortToggled(self):
+        sortEnabled = self.chkSortCaptions.isChecked()
+        self.chkSortNonGroupCaptions.setEnabled(sortEnabled)
+        if not sortEnabled:
+            with QSignalBlocker(self.chkSortNonGroupCaptions):
+                self.chkSortNonGroupCaptions.setChecked(False)
 
 
     @property
@@ -348,6 +376,7 @@ class BatchRules(QtWidgets.QWidget):
             self.chkSuffixSeparator.setChecked(preset.suffixSeparator)
             self.chkRemoveDup.setChecked(preset.removeDuplicates)
             self.chkSortCaptions.setChecked(preset.sortCaptions)
+            self.chkSortNonGroupCaptions.setChecked(preset.sortNonGroupCaptions)
             self.chkWhitelistGroups.setChecked(preset.whitelistGroups)
             self.tableReplace.setContent(preset.searchReplace)
             self.banWidget.setItems(preset.banned)
@@ -409,7 +438,14 @@ class BatchRules(QtWidgets.QWidget):
         suffix = self.txtSuffix.toPlainText()
         suffixSep = self.chkSuffixSeparator.isChecked()
 
-        rulesProcessor = CaptionRulesProcessor(separator, self.chkRemoveDup.isChecked(), self.chkSortCaptions.isChecked(), self.chkWhitelistGroups.isChecked())
+        rulesProcessor = CaptionRulesProcessor(
+            separator,
+            self.chkRemoveDup.isChecked(),
+            self.chkSortCaptions.isChecked(),
+            self.chkSortNonGroupCaptions.isChecked(),
+            self.chkWhitelistGroups.isChecked()
+        )
+
         rulesProcessor.setPrefixSuffix(prefix, suffix, prefixSep, suffixSep)
         rulesProcessor.setSearchReplacePairs(self.tableReplace.getContent())
         rulesProcessor.setBannedCaptions(self.bannedCaptions)

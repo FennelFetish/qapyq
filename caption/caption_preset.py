@@ -19,10 +19,11 @@ class CaptionPreset:
         self.prefixSeparator = True
         self.suffixSeparator = True
 
-        self.autoApplyRules: bool   = False
-        self.removeDuplicates: bool = True
-        self.sortCaptions: bool     = True
-        self.whitelistGroups: bool  = False
+        self.autoApplyRules: bool           = False
+        self.removeDuplicates: bool         = True
+        self.sortCaptions: bool             = True
+        self.sortNonGroupCaptions: bool     = False
+        self.whitelistGroups: bool          = False
 
         self.groups         = list[CaptionPresetGroup]()
         self.wildcards      = dict[str, list[str]]()
@@ -52,6 +53,7 @@ class CaptionPreset:
             "auto_apply_rules": self.autoApplyRules,
             "remove_duplicates": self.removeDuplicates,
             "sort_captions": self.sortCaptions,
+            "sort_nongroup_captions": self.sortNonGroupCaptions,
             "whitelist_groups": self.whitelistGroups,
             "groups": groupData,
             "wildcards": self.wildcards,
@@ -69,18 +71,19 @@ class CaptionPreset:
         with open(path, 'r') as file:
             data: dict = json.load(file)
 
-        self.prefix             = data.get("prefix", "")
-        self.suffix             = data.get("suffix", "")
-        self.separator          = data.get("separator", ", ")
-        self.prefixSeparator    = data.get("prefix_separator", True)
-        self.suffixSeparator    = data.get("suffix_separator", True)
-        self.autoApplyRules     = data.get("auto_apply_rules", False)
-        self.removeDuplicates   = data.get("remove_duplicates", True)
-        self.sortCaptions       = data.get("sort_captions", True)
-        self.whitelistGroups    = data.get("whitelist_groups", False)
-        self.searchReplace      = data.get("search_replace", [])
-        self.banned             = data.get("banned", [])
-        self.wildcards          = data.get("wildcards", {})
+        self.prefix                     = data.get("prefix", "")
+        self.suffix                     = data.get("suffix", "")
+        self.separator                  = data.get("separator", ", ")
+        self.prefixSeparator            = data.get("prefix_separator", True)
+        self.suffixSeparator            = data.get("suffix_separator", True)
+        self.autoApplyRules             = data.get("auto_apply_rules", False)
+        self.removeDuplicates           = data.get("remove_duplicates", True)
+        self.sortCaptions               = data.get("sort_captions", True)
+        self.sortNonGroupCaptions       = data.get("sort_nongroup_captions", False)
+        self.whitelistGroups            = data.get("whitelist_groups", False)
+        self.searchReplace              = data.get("search_replace", [])
+        self.banned                     = data.get("banned", [])
+        self.wildcards                  = data.get("wildcards", {})
 
         self.groups.clear()
         for group in data.get("groups", []):
