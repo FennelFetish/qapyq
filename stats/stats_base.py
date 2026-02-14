@@ -56,11 +56,12 @@ class StatsLayout(QtWidgets.QVBoxLayout):
         col1Widget = QtWidgets.QWidget()
         col1Widget.setLayout(self.col1Layout)
 
+        self.groupTable = self._buildTableGroup(name)
         self.groupFiles = self._buildFilesGroup(name)
 
         self.splitter = QtWidgets.QSplitter()
         self.splitter.addWidget(col1Widget)
-        self.splitter.addWidget(self._buildTableGroup(name))
+        self.splitter.addWidget(self.groupTable)
         self.splitter.addWidget(self.groupFiles)
         self.splitter.setStretchFactor(0, 0)
         self.splitter.setStretchFactor(1, 1)
@@ -202,15 +203,15 @@ class StatsLayout(QtWidgets.QVBoxLayout):
     @Slot()
     def _onRowsSelected(self, newItem: QItemSelection, oldItem: QItemSelection):
         combineClass = self.cboCombineMode.currentData()
-        combiner = combineClass()
+        combiner: CombineMode = combineClass()
 
-        hasSelection = False
+        numRows = 0
         for srcIndex in self.getSelectedSourceIndexes():
             combiner.addFiles( self.proxyModel.getFiles(srcIndex) )
-            hasSelection = True
+            numRows += 1
 
         fileSet = combiner.getFiles()
-        if self.chkFilesNegate.isChecked() and hasSelection:
+        if self.chkFilesNegate.isChecked() and numRows:
             files = [file for file in self.tab.filelist.getFiles() if file not in fileSet]
         else:
             files = sorted(fileSet, key=CachedPathSort())
@@ -219,6 +220,7 @@ class StatsLayout(QtWidgets.QVBoxLayout):
             self.listModel.setFiles(files)
 
         self.groupFiles.setTitle(f"Files ({len(files)})")
+        self.groupTable.setTitle(f"{self.name} ({numRows} Selected)" if numRows else self.name)
 
 
     @Slot()
@@ -458,6 +460,9 @@ class CombineModeMultiple:
         return set(f for f, count in self.fileCounter.items() if count > 1)
 
 
+CombineMode = CombineModeUnion | CombineModeIntersection | CombineModeExclusive | CombineModeMultiple
+
+
 
 class ExportCsv:
     ROLE_CSV = Qt.ItemDataRole.UserRole + 1000
@@ -500,7 +505,6 @@ class ExportCsv:
             child = model.index(row, 0, parent)
             if model.hasChildren(child):
                 cls.writeRows(writer, model, child)
-
 
 
 
@@ -593,10 +597,7 @@ class StatsProgressBar(qtlib.ProgressBar):
 
         super().__init__()
         self.setFixedHeight(20)
-
-        font = self.font()
-        font.setPointSizeF(font.pointSizeF() * 0.9)
-        self.setFont(font)
+        qtlib.setFontSize(self, 0.9)
 
     @Slot()
     def setProgress(self, current: int, total: int):
