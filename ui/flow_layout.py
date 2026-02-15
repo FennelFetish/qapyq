@@ -438,15 +438,18 @@ class ReorderDragHandle(qtlib.VerticalSeparator):
 
 class StringFlowBubble(QtWidgets.QFrame):
     removeClicked = Signal(object)
+    textEdited = Signal(object)
 
     def __init__(self, text: str):
         super().__init__()
         self.setContentsMargins(0, 0, 0, 0)
 
         self.button = qtlib.EditablePushButton(text, self._buttonStyleFunc)
+        self.button.textEmpty.connect(self._remove)
+        self.button.textChanged.connect(self._onTextEdited)
 
         btnRemove = qtlib.BubbleRemoveButton()
-        btnRemove.clicked.connect(lambda: self.removeClicked.emit(self))
+        btnRemove.clicked.connect(self._remove)
 
         layout = QtWidgets.QHBoxLayout()
         layout.setContentsMargins(1, 0, 2, 0)
@@ -460,6 +463,15 @@ class StringFlowBubble(QtWidgets.QFrame):
     @staticmethod
     def _buttonStyleFunc(button: qtlib.EditablePushButton):
         qtlib.setMonospace(button, 0.9)
+
+    @Slot()
+    def _remove(self):
+        self.removeClicked.emit(self)
+
+    @Slot()
+    def _onTextEdited(self, text: str):
+        self.button.text = text.strip()
+        self.textEdited.emit(self)
 
     @property
     def text(self):
@@ -503,13 +515,16 @@ class SortedStringFlowWidget(QtWidgets.QWidget):
             return False
 
         self.flowLayout.addWidget(self._createBubble(label))
-        self.flowLayout.items.sort(key=lambda item: item.widget().text)
-        self.flowLayout.invalidate()
+        self._sortItems()
         self.changed.emit()
         return True
 
     def hasItem(self, label: str) -> bool:
         return any(bubble.text == label for bubble in self.bubbles())
+
+    def _sortItems(self):
+        self.flowLayout.items.sort(key=lambda item: item.widget().text)
+        self.flowLayout.invalidate()
 
     def _createBubble(self, label: str):
         bubble = StringFlowBubble(label)
@@ -517,6 +532,7 @@ class SortedStringFlowWidget(QtWidgets.QWidget):
             bubble.setEnabled(False)
 
         bubble.removeClicked.connect(self._onRemoveClicked)
+        bubble.textEdited.connect(self._onTextEdited)
         return bubble
 
     def setItems(self, labels: Iterable[str]) -> None:
@@ -533,6 +549,8 @@ class SortedStringFlowWidget(QtWidgets.QWidget):
     def getItems(self) -> list[str]:
         return [bubble.text for bubble in self.bubbles()]
 
+
+    @Slot(object)
     def _onRemoveClicked(self, bubble: StringFlowBubble):
         index = self.flowLayout.indexOf(bubble)
         if index < 0:
@@ -542,6 +560,19 @@ class SortedStringFlowWidget(QtWidgets.QWidget):
         item.widget().deleteLater()
         self.flowLayout.invalidate()
         self.changed.emit()
+
+    @Slot(object)
+    def _onTextEdited(self, bubble: StringFlowBubble):
+        duplicate = any(
+            otherBubble.text == bubble.text and otherBubble is not bubble
+            for otherBubble in self.bubbles()
+        )
+
+        if duplicate:
+            self._onRemoveClicked(bubble)
+        else:
+            self._sortItems()
+            self.changed.emit()
 
 
     def dragEnterEvent(self, event):
