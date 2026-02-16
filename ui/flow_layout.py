@@ -1,6 +1,6 @@
 from typing import Iterable, Callable
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Signal, Slot, QSize, QRect, QPoint, QMimeData, QTimer
+from PySide6.QtCore import Qt, Signal, Slot, QSize, QRect, QPoint, QMimeData, QTimer, QEvent, QObject
 import numpy as np
 from lib import colorlib, qtlib
 
@@ -110,14 +110,15 @@ class ReorderWidget(QtWidgets.QWidget):
     COLOR_FACTORS_BRIGHTER = [1.60, 1.90, 2.00, 1.0] # BGRA
     COLOR_FACTORS_DARKER   = [0.75, 0.82, 0.85, 1.0]
 
-    orderChanged = Signal()
-    receivedDrop = Signal(str)
+    orderChanged = Signal(object)  # dragged widget
+    receivedDrop = Signal(str)     # text from mime data
 
     def __init__(self, giveDrop=False, takeDrop=False):
         super().__init__()
         self.setAcceptDrops(True)
 
         self._dragStartPos: QPoint | None = None
+        self._dragChild: QtWidgets.QWidget | None = None
         self._dragTarget: QtWidgets.QWidget | None = None
         self._dragOrigIndex: int = -1
         self._dragCurrentIndex: int = -1
@@ -127,7 +128,7 @@ class ReorderWidget(QtWidgets.QWidget):
         self.giveDrop = giveDrop # Remove from self widget if another widget is drop target
         self.takeDrop = takeDrop # Remove from source widget if self is drop target
 
-        self.dragStartMinDistance: int = 0
+        self.dragStartMinDistance: int = QtWidgets.QApplication.startDragDistance()
         self.showCursorPicture = True
 
         self._scrollArea: QtWidgets.QScrollArea | None = None
@@ -219,15 +220,14 @@ class ReorderWidget(QtWidgets.QWidget):
 
         self._removeDragTarget()
         layout.activate()
-        QTimer.singleShot(0, self._onDragFinished)
+        QTimer.singleShot(0, lambda: self._onDragFinished(widget))
 
-    @Slot()
-    def _onDragFinished(self):
+    def _onDragFinished(self, widget: QtWidgets.QWidget):
         if self._postDragCallback:
             self._postDragCallback()
             self._postDragCallback = None
 
-        self.orderChanged.emit()
+        self.orderChanged.emit(widget)
 
 
     def widgetUnderCursor(self, pos: QPoint) -> QtWidgets.QWidget | None:
@@ -246,6 +246,7 @@ class ReorderWidget(QtWidgets.QWidget):
         return False
 
 
+    # Mouse tracking disabled: Will receive move events only when dragging
     def mouseMoveEvent(self, event: QtGui.QMouseEvent):
         if event.buttons() != Qt.MouseButton.LeftButton:
             event.ignore()
@@ -258,17 +259,21 @@ class ReorderWidget(QtWidgets.QWidget):
                 event.ignore()
                 return
             else:
-                dx, dy = abs(pos.x() - self._dragStartPos.x()), abs(pos.y() - self._dragStartPos.y())
+                dx = abs(pos.x() - self._dragStartPos.x())
+                dy = abs(pos.y() - self._dragStartPos.y())
                 if max(dx, dy) < self.dragStartMinDistance:
                     event.ignore()
                     return
 
                 pos = self._dragStartPos
-                self._dragStartPos = None
 
-        if widget := self.widgetUnderCursor(pos): # Only drag direct children
+        widget = self._dragChild or self.widgetUnderCursor(pos) # Only drag direct children
+        if widget:
             self._startDrag(widget)
             event.accept()
+
+        self._dragChild = None
+        self._dragStartPos = None
 
     def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
         if event.mimeData().hasText():
@@ -408,6 +413,50 @@ class ReorderWidget(QtWidgets.QWidget):
         return i
 
 
+    # === Event Filter ===
+    # Child widgets may override mouse events, so event handlers in this ReorderWidget container won't receive mouse press events.
+    # An event filter is added recursively to all child widgets to properly handle press events and select the correct widget for dragging
+    # (not necessary for ManualStartReorderWidget).
+    # If the event filter is not added, it will fall back to handling press events in mouseMoveEvent().
+
+    # Instead of registering the event filter manually on all added child widgets,
+    # eventFilter() could also watch for QEvent.Type.ChildAdded/ChildRemoved events.
+    def recursiveInstallEventFilter(self, widget: QObject):
+        if isinstance(widget, QtWidgets.QWidget):
+            widget.installEventFilter(self)
+
+        for child in widget.children():
+            self.recursiveInstallEventFilter(child)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        mouseEvent: QtGui.QMouseEvent = event
+        match event.type():
+            case QEvent.Type.MouseButtonPress:
+                if mouseEvent.button() == Qt.MouseButton.LeftButton:
+                    self._setDragStartPos(mouseEvent.position().toPoint(), watched)
+                    return False
+
+            case QEvent.Type.MouseButtonRelease:
+                if mouseEvent.button() == Qt.MouseButton.LeftButton:
+                    self._dragStartPos = None
+                    self._dragChild = None
+                    return False
+
+        return super().eventFilter(watched, event)
+
+    def _setDragStartPos(self, startPos: QPoint, widget: QtWidgets.QWidget):
+        self._dragStartPos = widget.mapTo(self, startPos)
+
+        # Register direct child for dragging
+        for _ in range(100):
+            parent = widget.parentWidget()
+            if parent is self:
+                break
+            widget = parent  # Can be None
+
+        self._dragChild = widget
+
+
 
 class ManualStartReorderWidget(ReorderWidget):
     def __init__(self):
@@ -444,7 +493,7 @@ class StringFlowBubble(QtWidgets.QFrame):
         super().__init__()
         self.setContentsMargins(0, 0, 0, 0)
 
-        self.button = qtlib.EditablePushButton(text, self._buttonStyleFunc)
+        self.button = qtlib.EditablePushButton(text, self._buttonStyleFunc, strip=True)
         self.button.textEmpty.connect(self._remove)
         self.button.textChanged.connect(self._onTextEdited)
 
@@ -461,16 +510,17 @@ class StringFlowBubble(QtWidgets.QFrame):
         self.setColor(colorlib.BUBBLE_BG, colorlib.BUBBLE_TEXT)
 
     @staticmethod
-    def _buttonStyleFunc(button: qtlib.EditablePushButton):
+    def _buttonStyleFunc(button: QtWidgets.QWidget, edit: qtlib.AbortableLineEdit | None):
         qtlib.setMonospace(button, 0.9)
+        if edit:
+            edit.setTextMargins(4, 0, 0, 0)
 
     @Slot()
     def _remove(self):
         self.removeClicked.emit(self)
 
     @Slot()
-    def _onTextEdited(self, text: str):
-        self.button.text = text.strip()
+    def _onTextEdited(self):
         self.textEdited.emit(self)
 
     @property

@@ -271,7 +271,6 @@ class CaptionControlGroup(QtWidgets.QWidget):
         self.buttonWidget = ReorderWidget(giveDrop=True, takeDrop=True)
         self.buttonWidget.setLayout(self.buttonLayout)
         self.buttonWidget.setMinimumHeight(14)
-        self.buttonWidget.dragStartMinDistance = 6
         self.buttonWidget.dataCallback = lambda widget: widget.text
         self.buttonWidget.orderChanged.connect(self.groups._emitUpdatedApplyRules)
         self.buttonWidget.orderChanged.connect(self._updateCombineWords)
@@ -484,6 +483,7 @@ class CaptionControlGroup(QtWidgets.QWidget):
         button.textEmpty.connect(self._removeCaption)
         button.textChanged.connect(lambda: self.groups._emitUpdatedApplyRules())
         self.buttonLayout.addWidget(button)
+        self.buttonWidget.recursiveInstallEventFilter(button)
 
 
     @Slot()
@@ -554,15 +554,17 @@ class GroupButton(qtlib.EditablePushButton):
     buttonClicked = Signal(object)
 
     def __init__(self, text: str):
-        super().__init__(text, self.stylerFunc, extraWidth=3)
+        super().__init__(text, self.stylerFunc, extraWidth=3, strip=True)
         self.clicked.connect(self._onClicked)
 
         self.checked = False
         self.color = ""
 
     @staticmethod
-    def stylerFunc(button):
+    def stylerFunc(button: QtWidgets.QWidget, edit: qtlib.AbortableLineEdit | None):
         qtlib.setMonospace(button, 1.05)
+        if edit:
+            edit.setTextMargins(2, 0, 0, 0)
 
     def setChecked(self, checked: bool, color: str, force=False):
         self.checked = checked

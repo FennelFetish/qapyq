@@ -24,7 +24,6 @@ class CaptionBubbles(ReorderWidget):
         super().__init__()
         self.dataCallback = lambda widget: widget.text
         self.receivedDrop.connect(self._onDrop)
-        self.dragStartMinDistance = 6
 
         self.ctx = context
 
@@ -65,6 +64,12 @@ class CaptionBubbles(ReorderWidget):
             return bubble
         return None
 
+    def indexForBubble(self, widget: QtWidgets.QWidget) -> int:
+        for i, bubble in enumerate(self.getBubbles()):
+            if bubble is widget:
+                return i
+        return -1
+
     def updateBubbles(self):
         # Postpone updates from caption generation until drag is finished
         if self.isDragActive():
@@ -92,6 +97,7 @@ class CaptionBubbles(ReorderWidget):
                 bubble = Bubble(self, i, self.showWeights, self.showRemove, self.editable)
                 bubble.setFocusProxy(self)
                 layout.addWidget(bubble)
+                self.recursiveInstallEventFilter(bubble)
 
             color = colorMap.getBubbleColor(i, caption)
             if i == self._selectedIndex:
@@ -127,7 +133,7 @@ class CaptionBubbles(ReorderWidget):
         if bubble := self.getBubbleAt(srcIndex):
             layout: FlowLayout = self.layout()
             layout.insertWidget(destIndex, bubble)
-            self.orderChanged.emit()
+            self.orderChanged.emit(bubble)
             return destIndex
 
         return -1

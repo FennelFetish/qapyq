@@ -329,17 +329,19 @@ class CaptionContainer(QtWidgets.QWidget):
         self.ctx.captionEdited.emit(text)
 
     @Slot()
-    def _onBubbleOrderChanged(self):
+    def _onBubbleOrderChanged(self, draggedWidget: QtWidgets.QWidget):
         text = self.captionSeparator.join(self.bubbles.getCaptions())
         self.txtCaption.setCaption(text)
+
+        index = self.bubbles.indexForBubble(draggedWidget)
+        self.txtCaption.selectCaption(index)
 
     @Slot()
     def _moveBubbleNext(self, clickedIndex: int):
         selectedIndex = self.txtCaption.getSelectedCaptionIndex()
         if clickedIndex != selectedIndex:
             targetIndex = selectedIndex + 1
-            targetIndex = self.bubbles.moveBubble(clickedIndex, targetIndex)
-            self.txtCaption.selectCaption(targetIndex)
+            self.bubbles.moveBubble(clickedIndex, targetIndex)
 
     @Slot()
     def _onControlUpdated(self):

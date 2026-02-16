@@ -219,28 +219,66 @@ class EllipsisLabel(QtWidgets.QLabel):
 
 
 
+class AbortableLineEdit(QtWidgets.QLineEdit):
+    focusLost = Signal()
+
+    def __init__(self, text: str | None = None):
+        super().__init__(text)
+        self._origText = text
+
+    def setText(self, text: str | None):
+        self._origText = text
+        super().setText(text)
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent):
+        if event.key() == Qt.Key.Key_Escape:
+            self.setText(self._origText)
+            self.editingFinished.emit()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+
+    def focusOutEvent(self, event: QtGui.QFocusEvent):
+        super().focusOutEvent(event)
+
+        # editingFinished is only emitted on focus loss when the text was changed
+        self.focusLost.emit()
+
+
 class EditablePushButton(QtWidgets.QWidget):
+    TEXT_OPT = QtGui.QTextOption()
+    TEXT_OPT.setFlags(QtGui.QTextOption.Flag.IncludeTrailingSpaces)
+    TEXT_OPT.setWrapMode(QtGui.QTextOption.WrapMode.NoWrap)
+
     clicked     = Signal(str)
     textChanged = Signal(str)
     textEmpty   = Signal(object)
 
-    def __init__(self, text, stylerFunc=None, parent=None, extraWidth=0):
+    def __init__(
+        self,
+        text: str | None,
+        stylerFunc: Callable[[QtWidgets.QWidget, AbortableLineEdit | None], None] | None = None,
+        parent = None,
+        extraWidth: int = 0,
+        strip: bool = False
+    ):
         super().__init__(parent)
         self.stylerFunc = stylerFunc
         self.extraWidth = 12 + extraWidth
+        self.strip = strip
 
-        self.button = QtWidgets.QPushButton(text)
+        self.button = QtWidgets.QPushButton(text.strip() if (strip and text) else text)
         self.button.clicked.connect(self.click)
         self.button.mousePressEvent = self._button_mousePressEvent
         self.button.mouseReleaseEvent = self._button_mouseReleaseEvent
         self.edit = None
 
         if stylerFunc:
-            stylerFunc(self.button)
+            stylerFunc(self.button, None)
 
         self._updateWidth()
         layout = QtWidgets.QVBoxLayout()
-        layout.setSizeConstraint(QtWidgets.QLayout.SetFixedSize)
+        layout.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetFixedSize)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.button)
         self.setLayout(layout)
@@ -251,6 +289,9 @@ class EditablePushButton(QtWidgets.QWidget):
 
     @text.setter
     def text(self, text: str) -> None:
+        if self.strip:
+            text = text.strip()
+
         self.activeWidget().setText(text)
         self._updateWidth()
 
@@ -266,29 +307,30 @@ class EditablePushButton(QtWidgets.QWidget):
         self.clicked.emit(self.button.text())
         self.button.setDown(False)
 
-    def _button_mousePressEvent(self, event):
+    def _button_mousePressEvent(self, event: QtGui.QMouseEvent):
         # This fixes dragging of CaptionControlGroup elements:
         # To start the drag, ReorderWidget must receive mouse events, which would be swallowed without this.
         # (mouse tracking is off, so events are only reeived when holding a mouse button)
         event.ignore()
 
-    def _button_mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.click()
-            event.accept()
-        elif event.button() == Qt.MouseButton.RightButton:
-            self.setEditMode()
-            event.accept()
+    def _button_mouseReleaseEvent(self, event: QtGui.QMouseEvent):
+        match event.button():
+            case Qt.MouseButton.LeftButton:
+                self.click()
+                event.accept()
+            case Qt.MouseButton.RightButton:
+                self.setEditMode()
+                event.accept()
 
     def setEditMode(self):
-        self.edit = QtWidgets.QLineEdit()
-        self.edit.setText(self.button.text())
-        self.edit.setFixedWidth(self.button.width())
+        self.edit = AbortableLineEdit(self.button.text())
+        self.edit.setFixedSize(self.button.size())
         self.edit.textChanged.connect(self._updateWidth)
         self.edit.editingFinished.connect(self._editFinished)
+        self.edit.focusLost.connect(self._editFinished)
 
         if self.stylerFunc:
-            self.stylerFunc(self.edit)
+            self.stylerFunc(self.edit, self.edit)
 
         self.layout().replaceWidget(self.button, self.edit)
         self.button.hide()
@@ -296,13 +338,19 @@ class EditablePushButton(QtWidgets.QWidget):
 
     @Slot()
     def _editFinished(self):
+        if self.edit is None:
+            return
+
         text = self.edit.text()
+        if self.strip:
+            text = text.strip()
+
         self.button.setText(text)
-        self.button.setFixedWidth(self.edit.width())
         self.button.show()
         self.layout().replaceWidget(self.edit, self.button)
         self.edit.deleteLater()
         self.edit = None
+        self._updateWidth()
 
         if text:
             self.textChanged.emit(text)
@@ -313,8 +361,8 @@ class EditablePushButton(QtWidgets.QWidget):
     def _updateWidth(self):
         widget = self.activeWidget()
         text = widget.text()
-        width = widget.fontMetrics().boundingRect(text).width() + self.extraWidth
-        widget.setFixedWidth(width)
+        width = widget.fontMetrics().horizontalAdvance(text, self.TEXT_OPT)
+        widget.setFixedWidth(width + self.extraWidth)
 
 
 
