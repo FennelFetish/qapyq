@@ -20,7 +20,8 @@ class Inference(metaclass=Singleton):
         self._tokenizerProc: InferenceProcess | None = None
 
 
-    def _getHosts(self) -> list[tuple[str, dict]]:
+    @staticmethod
+    def getHosts(expandProcCount: bool = True) -> list[tuple[str, dict]]:
         hosts = dict[str, dict]()
         for hostName, hostCfg in Config.inferHosts.items():
             if not hostCfg.get("active"):
@@ -31,9 +32,11 @@ class Inference(metaclass=Singleton):
                 hostCfg["remote"] = True
 
             hosts[hostName] = hostCfg
-            procCount = hostCfg.get("proc_count", 1)
-            for i in range(2, procCount+1):
-                hosts[f"{hostName}[{i}]"] = hostCfg
+
+            if expandProcCount:
+                procCount = hostCfg.get("proc_count", 1)
+                for i in range(2, procCount+1):
+                    hosts[f"{hostName}[{i}]"] = hostCfg
 
         if hosts:
             return sorted(hosts.items(), key=lambda item: item[1].get("priority", 1.0), reverse=True)
@@ -44,7 +47,7 @@ class Inference(metaclass=Singleton):
         procStates: list[ProcState] = []
         hostnames = []
         with QMutexLocker(self._mutex):
-            for hostName, hostCfg in self._getHosts():
+            for hostName, hostCfg in self.getHosts():
                 proc = self._procs.get(hostName)
                 if proc in self._procsInUse:
                     continue

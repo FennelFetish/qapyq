@@ -190,8 +190,18 @@ class BatchMask(QtWidgets.QWidget):
             self.macroVis.reload(path)
 
 
-    def getConfirmOps(self) -> list[str]:
+    def getConfirmOps(self) -> tuple[list[str], bool]:
+        try:
+            macro = MaskingMacro()
+            macro.loadFrom(self.cboMacro.currentData())
+            needsInference = macro.needsInference()
+        except:
+            needsInference = False
+
         ops = [f"Generate masks using the '{self.cboMacro.currentText()}' macro"]
+
+        if needsInference:
+            ops.append("The macro uses AI detection or segmentation models")
 
         if self.destPathSettings.skipExistingFiles:
             ops.append("Skip the mask generation if the target file already exists")
@@ -227,7 +237,7 @@ class BatchMask(QtWidgets.QWidget):
         else:
             ops.append("Save images using new filenames with an increasing counter")
 
-        return ops
+        return ops, needsInference
 
 
     def saveExportPreset(self):

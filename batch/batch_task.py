@@ -329,7 +329,7 @@ class BatchTaskHandler(QObject):
     def __init__(
         self, name: str, bars: tuple,
         filelist: FileList,
-        confirmOps: Callable[[], list[str]],
+        confirmOps: Callable[[], tuple[list[str], bool]],
         taskFactory: Callable[[list[str]], BatchTask]
     ):
         super().__init__()
@@ -408,7 +408,7 @@ class BatchTaskHandler(QObject):
             return
 
         try:
-            confirmOps = self.confirmOps()
+            confirmOps, needsInference = self.confirmOps()
         except Exception as ex:
             print(f"Batch confirmation failed: {ex}")
             return
@@ -416,7 +416,7 @@ class BatchTaskHandler(QObject):
         files = fileSelection.getFiles(self.filelist)
         if not files:
             return
-        if not BatchUtil.confirmStart(self.name, len(files), confirmOps, parent):
+        if not BatchUtil.confirmStart(self.name, len(files), confirmOps, needsInference, parent):
             return
 
         try:
@@ -501,7 +501,12 @@ class BatchTaskHandler(QObject):
 
 class BatchUtil:
     @staticmethod
-    def confirmStart(name: str, numFiles: int, operations: list[str], parent: QtWidgets.QWidget | None = None) -> bool:
+    def _getHostName(name: str, cfg: dict) -> str:
+        count = cfg.get("proc_count", 1)
+        return f"{name} (x{count})" if count > 1 else name
+
+    @classmethod
+    def confirmStart(cls, name: str, numFiles: int, operations: list[str], needsInference: bool, parent: QtWidgets.QWidget | None = None) -> bool:
         opText = ""
         for op in filter(None, operations):
             if op.startswith("<tab>"):
@@ -509,10 +514,16 @@ class BatchUtil:
             else:
                 opText += f"• {op}<br>"
 
-        text = f"This Batch will:<br><br>" \
-               f"• Process {numFiles} files<br>" \
-               + opText + \
-                "<br>Do you want to continue?"
+        hostsText = ""
+        if needsInference:
+            hosts = ", ".join(cls._getHostName(name, cfg) for name, cfg in Inference.getHosts(False))
+            hostsText = f"• Use hosts if available: {hosts}<br>"
+
+        text = "This Batch will:<br><br>" \
+             +f"• Process {numFiles} files<br>" \
+             + opText \
+             + hostsText \
+             + "<br>Do you want to continue?"
 
         dialog = QtWidgets.QMessageBox(parent)
         dialog.setIcon(QtWidgets.QMessageBox.Icon.Question)

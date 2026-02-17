@@ -478,7 +478,7 @@ class BatchRules(QtWidgets.QWidget):
         self._updateSubtabText()
 
 
-    def getConfirmOps(self) -> list[str]:
+    def getConfirmOps(self) -> tuple[list[str], bool]:
         loadKey = f"{self.srcSelector.type}.{self.srcSelector.name.strip()}"
         ops = [
             f"Load values from .json files [{loadKey}]",
@@ -493,7 +493,7 @@ class BatchRules(QtWidgets.QWidget):
             storeText = colorlib.htmlRed(storeText + " and overwrite the content!")
         ops.append(storeText)
 
-        return ops
+        return ops, False
 
 
     def createTask(self, files: list[str]) -> BatchTask:

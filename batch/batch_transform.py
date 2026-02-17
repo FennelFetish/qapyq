@@ -105,7 +105,7 @@ class BatchTransform(QtWidgets.QWidget):
         self.promptWidget.updatePreview()
 
 
-    def getConfirmOps(self) -> list[str]:
+    def getConfirmOps(self) -> tuple[list[str], bool]:
         ops = [f"Use '{self.inferSettings.getSelectedPresetName()}' to transform Captions"]
 
         targetName = self.destSelector.name.strip()
@@ -123,7 +123,7 @@ class BatchTransform(QtWidgets.QWidget):
         if self.spinRounds.value() > 1:
             ops.append(f"Do {self.spinRounds.value()} rounds of transformations")
 
-        return ops
+        return ops, True
 
 
     def createTask(self, files: list[str]) -> BatchInferenceTask:

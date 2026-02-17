@@ -155,7 +155,7 @@ class BatchScale(QtWidgets.QWidget):
         self.pathSettings.updatePreview()
 
 
-    def getConfirmOps(self) -> list[str]:
+    def getConfirmOps(self) -> tuple[list[str], bool]:
         ops = [
             f"Resize the images using the '{self.cboScaleMode.currentText()}' mode",
             f"Use the '{self.cboScalePreset.currentText()}' scaling preset:"
@@ -170,7 +170,8 @@ class BatchScale(QtWidgets.QWidget):
         interpUp = ScaleModelSettings.getInterpUp(scalePreset)
         ops.append(f"<tab>'{interpUp}' interpolation for upscaling")
 
-        if self.cboScalePreset.getScaleConfigFactory().needsInference():
+        needsInference = self.cboScalePreset.getScaleConfigFactory().needsInference()
+        if needsInference:
             ops.append("<tab>Use AI upscaling if needed")
 
         if self.pathSettings.overwriteFiles:
@@ -178,7 +179,7 @@ class BatchScale(QtWidgets.QWidget):
         else:
             ops.append("Save images using new filenames with an increasing counter")
 
-        return ops
+        return ops, needsInference
 
     def saveExportPreset(self):
         Config.exportPresets[self.EXPORT_PRESET_KEY] = {

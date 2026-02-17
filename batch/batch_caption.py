@@ -142,7 +142,7 @@ class BatchCaption(QtWidgets.QWidget):
         self.promptWidget.updatePreview(disabledColors=disabled)
 
 
-    def getConfirmOps(self) -> list[str]:
+    def getConfirmOps(self) -> tuple[list[str], bool]:
         ops = []
 
         targetName = self.destCaption.name.strip()
@@ -174,7 +174,7 @@ class BatchCaption(QtWidgets.QWidget):
                 tagText = colorlib.htmlRed(tagText + " and overwrite the content!")
             ops.append(tagText)
 
-        return ops
+        return ops, True
 
 
     def createTask(self, files: list[str]) -> BatchInferenceTask:

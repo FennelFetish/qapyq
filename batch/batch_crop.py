@@ -288,7 +288,7 @@ class BatchCrop(QtWidgets.QWidget):
             self.cboInputMacro.setCurrentIndex(index)
 
 
-    def getConfirmOps(self) -> list[str]:
+    def getConfirmOps(self) -> tuple[list[str], bool]:
         ops = []
 
         match self.cboInputMaskMode.currentData():
@@ -323,7 +323,7 @@ class BatchCrop(QtWidgets.QWidget):
             case OutputMaskType.Alpha:
                 ops.append("Save the cropped mask as the alpha channel in the cropped images")
 
-        return ops
+        return ops, False
 
 
     def saveExportPreset(self):

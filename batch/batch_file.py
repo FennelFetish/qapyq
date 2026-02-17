@@ -58,7 +58,7 @@ class BatchFile(QtWidgets.QWidget):
         self.maskSettings.onFileChanged(currentFile)
 
 
-    def getConfirmOps(self) -> list[str]:
+    def getConfirmOps(self) -> tuple[list[str], bool]:
         pathTemplate = self.destinationSettings.destinationPathTemplate
         ops = []
 
@@ -128,7 +128,7 @@ class BatchFile(QtWidgets.QWidget):
         else:
             ops.append(f"Skip captions")
 
-        return ops
+        return ops, False
 
 
     def createTask(self, files: list[str]) -> BatchTask:

@@ -244,7 +244,7 @@ class BatchApply(QtWidgets.QWidget):
         self.promptWidget.updatePreview(False)
 
 
-    def getConfirmOps(self) -> list[str]:
+    def getConfirmOps(self) -> tuple[list[str], bool]:
         ops = []
 
         if self.backupSettings.isChecked():
@@ -265,7 +265,7 @@ class BatchApply(QtWidgets.QWidget):
         if self.chkDeleteJson.isChecked():
             ops.append(colorlib.htmlRed('Delete all .json files!'))
 
-        return ops
+        return ops, False
 
 
     def createTask(self, files: list[str]) -> BatchTask:
