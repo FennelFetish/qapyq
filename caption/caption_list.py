@@ -14,12 +14,7 @@ from .caption_highlight import CaptionHighlight
 from .caption_text import BorderlessNavigationTextEdit
 
 
-# List all captions and tags from current json file for comparison.
-# Only load and highlight captions when tab is active.
-
 # TODO: Add button (below key?) for loading it into the main text field, and setting the source of FileTypeSelector.
-# TODO: Update list when standard caption is saved. Only reload the saved value, keep rest.
-#       --> No, instead, check file modification time and confirm overwrite.
 
 
 class KeyType(Enum):
@@ -50,6 +45,7 @@ DELAY_SCROLL  = 20
 class CaptionList(CaptionTab):
     def __init__(self, context):
         super().__init__(context)
+        self._skipDataChangedReload = False
         self._needsReload = True
         self._needsHighlight = False
 
@@ -63,6 +59,8 @@ class CaptionList(CaptionTab):
         self._build()
 
         self.ctx.tab.filelist.addListener(self)
+        self.ctx.tab.filelist.addDataListener(self)
+
         self.ctx.controlUpdated.connect(self._updateHighlight)
         self.ctx.multiEditToggled.connect(lambda state: QTimer.singleShot(1, self._updateHighlight))
 
@@ -129,6 +127,17 @@ class CaptionList(CaptionTab):
 
     def onFileListChanged(self, currentFile: str):
         self.onFileChanged(currentFile)
+
+    def onFileDataChanged(self, file: str, key: str):
+        if self._skipDataChangedReload or key != DataKeys.CaptionState:
+            return
+
+        filelist = self.ctx.tab.filelist
+        if file != filelist.getCurrentFile() or filelist.getData(file, key) != DataKeys.IconStates.Saved:
+            return
+
+        if not any(entry.edited for entry in self.entries):
+            self.onFileChanged(file)
 
 
     @property
@@ -331,7 +340,13 @@ class CaptionList(CaptionTab):
 
         self._jsonModTime, self._txtModTime = self.getFileModTime(currentFile)
         self.btnSaveAll.setChanged(False)
-        self.ctx.tab.filelist.setData(currentFile, DataKeys.CaptionState, DataKeys.IconStates.Saved)
+
+        try:
+            # Skip reloading from onFileDataChanged
+            self._skipDataChangedReload = True
+            self.ctx.tab.filelist.setData(currentFile, DataKeys.CaptionState, DataKeys.IconStates.Saved)
+        finally:
+            self._skipDataChangedReload = False
 
 
     def _askOverwrite(self) -> bool:
