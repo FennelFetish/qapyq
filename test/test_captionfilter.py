@@ -330,5 +330,96 @@ class CaptionFilterSortNonGroupTest(BaseCaptionFilterTest):
 
 
 
+class CaptionFilterSearchReplaceTest(BaseCaptionFilterTest):
+    def setUp(self):
+        seperator = ". "  # Point
+        removeDup = False
+        sortCaptions = False
+        sortNonGroup = False
+        whitelistGroups = False
+
+        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, sortCaptions, sortNonGroup, whitelistGroups)
+        #self.rulesProcessor.setPrefixSuffix("", ".", False, False)
+        self.rulesProcessor.setCaptionGroups([])
+
+    def tearDown(self):
+        del self.rulesProcessor
+
+
+    def test_no_replace(self):
+        self.rulesProcessor.setSearchReplacePairs([])
+
+        caption  = "This is a sentence. A second sentence follows."
+        expected = "This is a sentence. A second sentence follows"
+        self.assertProcessedEqual(caption, expected)
+
+    def test_empty(self):
+        self.rulesProcessor.setSearchReplacePairs([("a", "b")])
+
+        caption  = ""
+        expected = ""
+        self.assertProcessedEqual(caption, expected)
+
+    def test_simple(self):
+        self.rulesProcessor.setSearchReplacePairs([
+            ("sentence", "pile of watermelons")
+        ])
+
+        caption  = "This is a sentence. A second sentence follows."
+        expected = "This is a pile of watermelons. A second pile of watermelons follows"
+        self.assertProcessedEqual(caption, expected)
+
+    def test_simple2(self):
+        self.rulesProcessor.setSearchReplacePairs([
+            ("sentence", "pile of watermelons"),
+            ("This is a", "Look at that"),
+            (r"\.", "!!"),
+        ])
+
+        caption  = "This is a sentence. A second sentence follows."
+        expected = "Look at that pile of watermelons!! A second pile of watermelons follows!!"
+        self.assertProcessedEqual(caption, expected)
+
+    def test_cascading(self):
+        self.rulesProcessor.setSearchReplacePairs([
+            ("sentence", "pile of watermelons"),
+            ("watermelons", "burning tires")
+        ])
+
+        caption  = "This is a sentence. A second sentence follows."
+        expected = "This is a pile of burning tires. A second pile of burning tires follows"
+        self.assertProcessedEqual(caption, expected)
+
+    def test_group_reference(self):
+        self.rulesProcessor.setSearchReplacePairs([
+            ("(.+) sentence", "{{0}} watermelon {{0}}")
+        ])
+
+        caption  = "this is a sentence."
+        expected = "this is a watermelon this is a"
+        self.assertProcessedEqual(caption, expected)
+
+    def test_parser(self):
+        self.rulesProcessor.setSearchReplacePairs([
+            ('"(.*?)"', '"{{0#replace:.:#replace:bla:foo}}"'),
+            ('blabla', 'text')
+        ])
+
+        caption  = 'The image contains blabla reading "blabla". A watermark "site.com" is in the corner.'
+        expected = 'The image contains text reading "foofoo". A watermark "sitecom" is in the corner'
+        self.assertProcessedEqual(caption, expected)
+
+    def test_parser2(self):
+        self.rulesProcessor.setSearchReplacePairs([
+            ('"(.*?)"', '"{{0#replace:.:}}"'),
+            ('(reading|watermark) "(.*?)"', '{{0#upper}} -{{1#replace:site:URL}}-')
+        ])
+
+        caption  = 'The image contains a text reading "sub.web.site". A watermark "site.com" is in the corner.'
+        expected = 'The image contains a text READING -subwebURL-. A WATERMARK -URLcom- is in the corner'
+        self.assertProcessedEqual(caption, expected)
+
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

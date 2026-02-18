@@ -1,18 +1,22 @@
 import re
 import numpy as np
 from typing import Iterable
+from typing_extensions import override
+from abc import ABC, abstractmethod
 from collections import defaultdict
+from lib.template_parser import TemplateVariableParser
 from .caption_preset import MutualExclusivity
 from .caption_conditionals import ConditionalFilterRule
 from .caption_highlight import MatcherNode
 
 
-class CaptionFilter:
+class CaptionFilter(ABC):
     def __init__(self):
         pass
 
+    @abstractmethod
     def filterCaptions(self, captions: list[str]) -> list[str]:
-        raise NotImplementedError("You must override this method in your subclass.")
+        ...
 
 
 
@@ -189,7 +193,7 @@ class SortCaptionFilter(CaptionFilter):
         return newCaptions
 
 
-    def _findSortedComponents(self, nodes: list['SortCaptionFilter.CaptionSortNode']) -> list[list['SortCaptionFilter.CaptionSortNode']]:
+    def _findSortedComponents(self, nodes: list[CaptionSortNode]) -> list[list[CaptionSortNode]]:
         visited = set[self.CaptionSortNode]()
         components = list[list[self.CaptionSortNode]]()
 
@@ -224,7 +228,7 @@ class SortCaptionFilter(CaptionFilter):
         components.sort(key=lambda comp: min(n.index for n in comp))
         return components
 
-    def _sortComponent(self, nodes: list['SortCaptionFilter.CaptionSortNode']) -> list['SortCaptionFilter.CaptionSortNode']:
+    def _sortComponent(self, nodes: list[CaptionSortNode]) -> list[CaptionSortNode]:
         numNodes = len(nodes)
         if numNodes <= 2:
             nodes.sort(key=self.CaptionSortNode.indexSortKey)
@@ -505,8 +509,31 @@ class SubsetFilter(CaptionFilter):
 
 
 class SearchReplaceFilter:
+    class ReplacementParser(TemplateVariableParser):
+        def __init__(self):
+            super().__init__("") # Values from CaptionFile are unavailable
+            self.matchGroups: dict[int, str] = dict()
+
+        @override
+        def _getImgProperties(self, var: str) -> str | None:
+            try:
+                val = self.matchGroups.get(int(var))
+                if val is not None:
+                    return val
+            except ValueError:
+                pass
+
+            return super()._getImgProperties(var)
+
+        def getReplacement(self, replacement: str, match: re.Match) -> str:
+            self.matchGroups.clear()
+            self.matchGroups.update(enumerate(match.groups()))
+            return self.parse(replacement)
+
+
     def __init__(self):
         self.replacePairs: list[tuple[re.Pattern, str]] = list()
+        self.varParser = self.ReplacementParser()
 
     def setup(self, searchReplacePairs: list[tuple[str, str]]) -> None:
         self.replacePairs.clear()
@@ -521,7 +548,7 @@ class SearchReplaceFilter:
 
     def filterText(self, text: str) -> str:
         for pattern, replacement in self.replacePairs:
-            text = pattern.sub(replacement, text)
+            text = pattern.sub(lambda match: self.varParser.getReplacement(replacement, match), text)
         return text
 
 
