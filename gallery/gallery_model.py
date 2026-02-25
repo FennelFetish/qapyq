@@ -330,11 +330,10 @@ class GalleryModel(QAbstractTableModel):
 
 
     def highlightFiles(self, files: list[str]):
-        toggleFiles = self._highlightedFiles.symmetric_difference(files)
-
+        updateFiles = self._highlightedFiles.union(files)
         self._highlightedFiles = set(files)
 
-        for file in toggleFiles:
+        for file in updateFiles:
             if item := self.fileItems.get(file):
                 index = self.index(*item.pos)
                 self.dataChanged.emit(index, index, [self.ROLE_HIGHLIGHT])

@@ -76,12 +76,15 @@ class GalleryView(QTableView):
         with QSignalBlocker(self):
             self.setItemDelegate(None)
             if self.delegate:
+                highlightState = self.delegate.highlightState
                 self.delegate.deleteLater()
+            else:
+                highlightState = None
 
             if mode == self.VIEW_MODE_GRID:
-                self.delegate = GalleryGridDelegate(self, self.galleryCaption)
+                self.delegate = GalleryGridDelegate(self, self.galleryCaption, highlightState)
             else:
-                self.delegate = GalleryListDelegate(self, self.galleryCaption)
+                self.delegate = GalleryListDelegate(self, self.galleryCaption, highlightState)
 
             self.model().dataChanged.connect(self.delegate.onDataChanged)
             self.setItemDelegate(self.delegate)

@@ -290,11 +290,19 @@ class CaptionMultiEdit:
         self._edited |= edited
         return edited
 
+
+    def getTag(self, index: int) -> str:
+        try:
+            return self._tags[index].tag
+        except IndexError:
+            return ""
+
     def getTagFiles(self, index: int) -> list[str]:
-        if 0 <= index < len(self._tags):
+        try:
             tagData = self._tags[index]
             return list( tagData.files.keys() )
-        return []
+        except IndexError:
+            return []
 
 
     def _getOpCodes(self, a: list[TagData], b: list[str]) -> Generator[tuple[str, int, int, int, int]]:

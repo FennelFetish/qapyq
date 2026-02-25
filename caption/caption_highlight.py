@@ -122,6 +122,19 @@ class CaptionHighlight:
         return self._cachedMatcherNode
 
 
+    def getCaptionColor(self, caption: str) -> str | None:
+        if color := self.colors.get(caption):
+            return color
+
+        captionWords = [word for word in caption.split(" ") if word]
+        matchFormats = self.matchNode.match(captionWords)
+        if len(matchFormats) != len(captionWords):
+            return None
+
+        colors = set(format.color for format in matchFormats.values())
+        return next(iter(colors)) if len(colors) == 1 else None
+
+
     @staticmethod
     def _duplicateLinebreakPresence(presenceList: list[float] | None, newlines: list[int]):
         if presenceList:
@@ -451,6 +464,8 @@ TPayload = TypeVar("TPayload")
 
 class MatcherNode(Generic[TPayload]):
     'Matches and splits captions into components as defined in Caption Groups.'
+
+    __slots__ = ('name', 'children', 'payload')
 
     def __init__(self, name: str = ""):
         self.name = name

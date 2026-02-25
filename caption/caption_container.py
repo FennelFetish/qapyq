@@ -654,7 +654,9 @@ class CaptionContainer(QtWidgets.QWidget):
         gallery: Gallery | None = self.ctx.tab.getWindowContent("gallery")
         if gallery:
             files = self.multiEdit.getTagFiles(index) # Empty list for index<0
-            gallery.highlightFiles(files)
+            tag   = self.multiEdit.getTag(index)
+            color = self.ctx.highlight.getCaptionColor(tag)
+            gallery.highlightFiles(files, tag, color)
 
     @Slot()
     def _updateTextCursorHighlight(self):

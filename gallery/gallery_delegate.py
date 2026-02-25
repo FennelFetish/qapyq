@@ -33,14 +33,56 @@ class SizeHintCacheRow:
 
 
 
+class TagHighlightState:
+    BUBBLE_HEIGHT = 20
+    BUBBLE_OFFSET = 4
+
+    def __init__(self, palette: QtGui.QPalette):
+        self.tag: str = ""
+        self.brushBubble = QtGui.QBrush(colorlib.BUBBLE_BG)
+
+        selectionColor = palette.color(QtGui.QPalette.ColorRole.Highlight)
+        highlightBg = QtGui.QColor(selectionColor)
+        highlightBg.setAlphaF(0.25)
+        self.brushCaptionBg = QtGui.QBrush(highlightBg)
+        self.brushCorner = QtGui.QBrush(selectionColor)
+
+        self.penBubbleBorder = QtGui.QPen(colorlib.BUBBLE_BG)
+        self.penBubbleBorder.setWidth(1)
+
+        self.penBubbleText = QtGui.QPen(colorlib.BUBBLE_TEXT)
+
+        self.fontBubbleText = qtlib.getMonospaceFont()
+        self.fontBubbleText.setBold(True)
+
+        self._fontMetrics = QFontMetrics(self.fontBubbleText)
+
+        self.textOpt = QtGui.QTextOption()
+        self.textOpt.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.textOpt.setWrapMode(QtGui.QTextOption.WrapMode.NoWrap)
+
+    def update(self, tag: str, color: str | None, thumbnailWidth: int):
+        self.tag = tag
+        self.brushBubble.setColor(color or colorlib.BUBBLE_BG)
+
+        # Left-align when text is too wide (show start of tag instead of middle)
+        textWidth = self._fontMetrics.horizontalAdvance(tag)
+        maxWidth = thumbnailWidth - GalleryDelegate.BORDER_SIZE - self.BUBBLE_OFFSET*2
+        if textWidth > maxWidth:
+            self.textOpt.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        else:
+            self.textOpt.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+
+
 class GalleryDelegate(QtWidgets.QStyledItemDelegate):
     HEADER_HEIGHT = 32
 
     BORDER_SIZE = 6
-    BORDER_SIZE_SECONDARY = 3
+    BORDER_SIZE_HALF = BORDER_SIZE // 2
 
 
-    def __init__(self, galleryView, galleryCaption: GalleryCaption):
+    def __init__(self, galleryView, galleryCaption: GalleryCaption, highlightState: TagHighlightState | None = None):
         super().__init__(galleryView)
         self.sizeCache = defaultdict(SizeHintCacheRow)
         self.fastRender = False
@@ -52,8 +94,10 @@ class GalleryDelegate(QtWidgets.QStyledItemDelegate):
         self.view: GalleryView = galleryView
         self.caption = galleryCaption
 
+        palette = QtWidgets.QApplication.palette()
+        self.highlightState = highlightState or TagHighlightState(palette)
         self._initIcons()
-        self._initPens()
+        self._initPens(palette)
 
     def _initIcons(self):
         self.icons = {
@@ -71,32 +115,29 @@ class GalleryDelegate(QtWidgets.QStyledItemDelegate):
             DataKeys.IconStates.Changed:    (QtGui.QPen(colorRed),   QtGui.QBrush(colorRed)),
         }
 
-    def _initPens(self):
-        palette = QtWidgets.QApplication.palette()
+    def _initPens(self, palette: QtGui.QPalette):
         textColor = palette.color(QtGui.QPalette.ColorRole.Text)
         selectionColor = palette.color(QtGui.QPalette.ColorRole.Highlight)
 
-        self.PEN_TEXT = QtGui.QPen(textColor)
-        self.PEN_TEXT_ERROR = QtGui.QPen(colorlib.RED)
+        self.penText = QtGui.QPen(textColor)
+        self.penTextError = QtGui.QPen(colorlib.RED)
 
-        self.PEN_PRIMARY = QtGui.QPen(selectionColor)
-        self.PEN_PRIMARY.setStyle(Qt.PenStyle.SolidLine)
-        self.PEN_PRIMARY.setWidth(self.BORDER_SIZE)
-        self.PEN_PRIMARY.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        self.penBorderPrimary = QtGui.QPen(selectionColor)
+        self.penBorderPrimary.setStyle(Qt.PenStyle.SolidLine)
+        self.penBorderPrimary.setWidth(self.BORDER_SIZE)
+        self.penBorderPrimary.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
 
-        self.PEN_SECONDARY = QtGui.QPen(selectionColor)
-        self.PEN_SECONDARY.setStyle(Qt.PenStyle.DotLine)
-        self.PEN_SECONDARY.setWidth(self.BORDER_SIZE_SECONDARY)
-        self.PEN_SECONDARY.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-
-        highlightBg = QtGui.QColor(selectionColor)
-        highlightBg.setAlphaF(0.25)
-        self.BRUSH_HIGHLIGHT_BG = QtGui.QBrush(highlightBg)
-        self.BRUSH_HIGHLIGHT = QtGui.QBrush(selectionColor)
+        self.penBorderSecondary = QtGui.QPen(selectionColor)
+        self.penBorderSecondary.setStyle(Qt.PenStyle.DotLine)
+        self.penBorderSecondary.setWidth(self.BORDER_SIZE_HALF)
+        self.penBorderSecondary.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
 
 
     def itemWidth(self) -> int:
         return self.view.itemWidth
+
+    def thumbnailWidth(self) -> int:
+        return self.view.columnWidth(0) - self.BORDER_SIZE - self.xSpacing
 
     def spacing(self) -> int:
         return 4
@@ -136,11 +177,10 @@ class GalleryDelegate(QtWidgets.QStyledItemDelegate):
 
     def _adjustRect(self, rect: QRect, column: int):
         xOffset = round((column / (self.numColumns-1)) * self.xSpacing) if self.numColumns > 1 else 0
-        halfBorder = self.BORDER_SIZE // 2
         spacing = self.spacing()
 
-        x = rect.left()   + halfBorder + xOffset
-        y = rect.top()    + halfBorder + spacing
+        x = rect.left()   + self.BORDER_SIZE_HALF + xOffset
+        y = rect.top()    + self.BORDER_SIZE_HALF + spacing
         w = rect.width()  - self.BORDER_SIZE - self.xSpacing
         h = rect.height() - self.BORDER_SIZE - spacing*2
         return QRect(x, y, w, h)
@@ -153,8 +193,8 @@ class GalleryDelegate(QtWidgets.QStyledItemDelegate):
             return
 
         if not self.fastRender:
-            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-            painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
         rect = self._adjustRect(option.rect, index.column())
         self.paintItem(painter, rect, index, filename)
@@ -162,35 +202,52 @@ class GalleryDelegate(QtWidgets.QStyledItemDelegate):
     def paintItem(self, painter: QPainter, rect: QRect, index: QModelIndex | QPersistentModelIndex, filename: str):
         raise NotImplementedError()
 
-    def paintHightlightBg(self, painter: QtGui.QPainter, x: int, y: int, w: int, h: int):
+    def paintHightlightBg(self, painter: QPainter, x: int, y: int, w: int, h: int):
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(self.BRUSH_HIGHLIGHT_BG)
+        painter.setBrush(self.highlightState.brushCaptionBg)
         painter.drawRect(x, y, w, h)
 
-    def paintHighlight(self, painter: QtGui.QPainter, x: int, y: int, w: int, h: int):
-        w += x
-        h += y
-        s = 32
+    def paintHighlight(self, painter: QPainter, x: int, y: int, w: int, h: int):
+        l = w + x  # left
+        b = h + y  # bottom
+        s = 32     # corner size
+
+        hlState = self.highlightState
+        painter.save()
+        painter.setOpacity(0.9)
 
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(self.BRUSH_HIGHLIGHT)
+        painter.setBrush(hlState.brushCorner)
 
         painter.drawConvexPolygon((QPoint(x, y), QPoint(x+s, y), QPoint(x, y+s))) # Top left
-        painter.drawConvexPolygon((QPoint(w, y), QPoint(w, y+s), QPoint(w-s, y))) # Top right
-        painter.drawConvexPolygon((QPoint(x, h), QPoint(x, h-s), QPoint(x+s, h))) # Bottom left
-        painter.drawConvexPolygon((QPoint(w, h), QPoint(w-s, h), QPoint(w, h-s))) # Bottom right
+        painter.drawConvexPolygon((QPoint(l, y), QPoint(l, y+s), QPoint(l-s, y))) # Top right
+        # painter.drawConvexPolygon((QPoint(x, b), QPoint(x, b-s), QPoint(x+s, b))) # Bottom left
+        # painter.drawConvexPolygon((QPoint(l, b), QPoint(l-s, b), QPoint(l, b-s))) # Bottom right
 
-    def paintBorder(self, painter: QtGui.QPainter, x: int, y: int, w: int, h: int, selectionState: int):
+        textRect = QRect(x+self.BORDER_SIZE_HALF, b-hlState.BUBBLE_HEIGHT, w-self.BORDER_SIZE, hlState.BUBBLE_HEIGHT)
+        painter.setPen(hlState.penBubbleBorder)
+        painter.setBrush(hlState.brushBubble)
+        r = hlState.BUBBLE_OFFSET * 2
+        painter.drawRoundedRect(textRect, r, r)
+
+        textRect.adjust(hlState.BUBBLE_OFFSET, 0, -hlState.BUBBLE_OFFSET, 0)
+        painter.setPen(hlState.penBubbleText)
+        painter.setFont(hlState.fontBubbleText)
+        painter.drawText(textRect, hlState.tag, hlState.textOpt)
+
+        painter.restore()
+
+    def paintBorder(self, painter: QPainter, x: int, y: int, w: int, h: int, selectionState: int):
         painter.setBrush(Qt.BrushStyle.NoBrush)
 
         if selectionState == SelectionState.Primary:
-            painter.setPen(self.PEN_PRIMARY)
+            painter.setPen(self.penBorderPrimary)
             painter.drawRect(x, y, w, h)
         elif selectionState == SelectionState.Secondary:
-            painter.setPen(self.PEN_SECONDARY)
+            painter.setPen(self.penBorderSecondary)
             painter.drawRect(x, y, w, h)
 
-    def paintIcons(self, painter: QtGui.QPainter, x, y, icons: dict[str, DataKeys.IconStates]):
+    def paintIcons(self, painter: QPainter, x, y, icons: dict[str, DataKeys.IconStates]):
         sizeX, sizeY = 20, 20
         for iconKey, iconState in sorted(icons.items(), key=lambda item: item[0]):
             pen, brush = self.iconColors[iconState]
@@ -251,10 +308,10 @@ class GalleryDelegate(QtWidgets.QStyledItemDelegate):
 class GalleryGridDelegate(GalleryDelegate):
     TEXT_MAX_HEIGHT = 200
     TEXT_SPACING = 4
-    TEXT_SPACING_BOTTOM = TEXT_SPACING + GalleryDelegate.BORDER_SIZE//2 + 2
+    TEXT_SPACING_BOTTOM = TEXT_SPACING + GalleryDelegate.BORDER_SIZE_HALF + 2
 
-    def __init__(self, galleryView, galleryCaption: GalleryCaption):
-        super().__init__(galleryView, galleryCaption)
+    def __init__(self, galleryView, galleryCaption: GalleryCaption, highlightState: TagHighlightState | None = None):
+        super().__init__(galleryView, galleryCaption, highlightState)
 
         self.layoutCache: OrderedDict[tuple[int, int], LayoutInfo] = OrderedDict()
 
@@ -308,13 +365,13 @@ class GalleryGridDelegate(GalleryDelegate):
     def paintItem(self, painter: QPainter, rect: QRect, index: QModelIndex | QPersistentModelIndex, filename: str):
         x, y, w, h = rect.left(), rect.top(), rect.width(), rect.height()
 
-        pen = self.PEN_TEXT
+        pen = self.penText
         imgH = 0
 
         pixmap: QPixmap | None = index.data(Qt.ItemDataRole.DecorationRole)
         if pixmap is not None:
             if pixmap.isNull():
-                pen = self.PEN_TEXT_ERROR
+                pen = self.penTextError
             else:
                 imgH = round((pixmap.height() / pixmap.width()) * w)
                 painter.drawPixmap(x, y, w, imgH, pixmap)
@@ -329,7 +386,7 @@ class GalleryGridDelegate(GalleryDelegate):
         if self.fastRender:
             return
 
-        textX = x + self.BORDER_SIZE // 2
+        textX = x + self.BORDER_SIZE_HALF
         textY = y + imgH + self.TEXT_SPACING
         textW = w - self.BORDER_SIZE
         textH = rect.bottom() - textY
@@ -373,8 +430,8 @@ class GalleryListDelegate(GalleryDelegate):
     LABEL_HEIGHT = 18
     TEXT_SPACING = 6
 
-    def __init__(self, galleryView, galleryCaption: GalleryCaption):
-        super().__init__(galleryView, galleryCaption)
+    def __init__(self, galleryView, galleryCaption: GalleryCaption, highlightState: TagHighlightState | None = None):
+        super().__init__(galleryView, galleryCaption, highlightState)
 
         self.sizeUpdateTimer = QTimer(singleShot=True, interval=50)
         self.sizeUpdateTimer.timeout.connect(self.view.updateVisibleRows)
@@ -386,6 +443,10 @@ class GalleryListDelegate(GalleryDelegate):
     @override
     def itemWidth(self) -> int:
         return 800
+
+    @override
+    def thumbnailWidth(self) -> int:
+        return self.view.itemWidth
 
 
     @override
@@ -412,28 +473,28 @@ class GalleryListDelegate(GalleryDelegate):
 
     @override
     def paintItem(self, painter: QPainter, rect: QRect, index: QModelIndex | QPersistentModelIndex, filename: str):
-        x, y, w, h = rect.left(), rect.top(), rect.width(), rect.height()
+        x, y, h = rect.left(), rect.top(), rect.height()
 
-        pen = self.PEN_TEXT
+        pen = self.penText
         imgW = self.view.itemWidth
         imgH = 0
 
         pixmap: QPixmap | None = index.data(Qt.ItemDataRole.DecorationRole)
         if pixmap is not None:
             if pixmap.isNull():
-                pen = self.PEN_TEXT_ERROR
+                pen = self.penTextError
             else:
                 imgH = round((pixmap.height() / pixmap.width()) * imgW)
                 painter.drawPixmap(x, y, imgW, imgH, pixmap)
 
         textX = x + imgW + self.TEXT_SPACING
-        textY = y - self.BORDER_SIZE//2
+        textY = y - self.BORDER_SIZE_HALF
         textW = rect.right() - textX
         textH = self.LABEL_HEIGHT + 2
 
         if index.data(GalleryModel.ROLE_HIGHLIGHT):
             self.paintHightlightBg(painter, textX, textY, textW, textH)
-            self.paintHighlight(painter, x, y, imgW, imgH)
+            self.paintHighlight(painter, x, y, imgW, imgH-self.BORDER_SIZE_HALF)
 
         self.paintIcons(painter, x+4, y+4, index.data(GalleryModel.ROLE_ICONS))
         self.paintBorder(painter, x, y, imgW, h, index.data(GalleryModel.ROLE_SELECTION))
@@ -470,7 +531,7 @@ class GalleryListDelegate(GalleryDelegate):
         rect.setHeight(rowSize.height())
         rect = self._adjustRect(rect, index.column())
 
-        h = rect.height() - self.LABEL_HEIGHT - self.BORDER_SIZE//2
+        h = rect.height() - self.LABEL_HEIGHT - self.BORDER_SIZE_HALF
         editor.txtCaption.setFixedHeight(max(h, 0))
 
         x = self.view.itemWidth + self.TEXT_SPACING

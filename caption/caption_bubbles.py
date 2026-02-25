@@ -311,7 +311,7 @@ class BubbleColorMap:
         self.mutedColors: dict[str, str] = dict()
 
     def getBubbleColor(self, index: int, caption: str) -> BubbleColor:
-        bg = self._getBubbleColor(caption)
+        bg = self.highlight.getCaptionColor(caption)
         if bg is None:
             bg = colorlib.BUBBLE_BG_HOVER if self.ctx.container.isHovered(caption) else colorlib.BUBBLE_BG
 
@@ -322,18 +322,6 @@ class BubbleColorMap:
             return BubbleColor(bg, bold=True)
         else:
             return BubbleColor(bg, text=self._getMutedColor(bg))
-
-    def _getBubbleColor(self, caption: str) -> str | None:
-        if color := self.highlight.colors.get(caption):
-            return color
-
-        captionWords = [word for word in caption.split(" ") if word]
-        matchFormats = self.highlight.matchNode.match(captionWords)
-        if len(matchFormats) != len(captionWords):
-            return None
-
-        colors = set(format.color for format in matchFormats.values())
-        return next(iter(colors)) if len(colors) == 1 else None
 
     def _getMutedColor(self, color: str) -> str:
         mutedColor = self.mutedColors.get(color)

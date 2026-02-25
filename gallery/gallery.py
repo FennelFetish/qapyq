@@ -352,7 +352,10 @@ class Gallery(QtWidgets.QWidget):
         self.updateStatusBar()
 
 
-    def highlightFiles(self, files: list[str]):
+    def highlightFiles(self, files: list[str], tag: str, color: str | None):
+        delegate = self.galleryView.delegate
+        delegate.highlightState.update(tag, color, delegate.thumbnailWidth())
+
         self.galleryModel.highlightFiles(files)
         self.updateStatusBar()
 
