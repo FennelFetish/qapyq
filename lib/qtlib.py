@@ -63,6 +63,11 @@ def setTextEditHeight(textEdit, numRows, mode=None):
     else:
         textEdit.setFixedHeight(height)
 
+def setSingleLineTextEdit(textEdit: QtWidgets.QPlainTextEdit):
+    setTextEditHeight(textEdit, 1)
+    textEdit.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.NoWrap)
+    textEdit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
 def setShowWhitespace(textEdit):
     doc = textEdit.document()
     opt = doc.defaultTextOption()

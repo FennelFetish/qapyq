@@ -308,7 +308,7 @@ Examples:
         self.txtPathTemplate.textChanged.connect(self.updatePreview)
         qtlib.setMonospace(self.txtPathTemplate)
         qtlib.setShowWhitespace(self.txtPathTemplate)
-        qtlib.setTextEditHeight(self.txtPathTemplate, 1)
+        qtlib.setSingleLineTextEdit(self.txtPathTemplate)
         layout.addWidget(QtWidgets.QLabel("Template:"), row, 0, Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self.txtPathTemplate, row, 1, 1, 2)
 
@@ -319,6 +319,7 @@ Examples:
         row += 1
         self.txtPreview = QtWidgets.QPlainTextEdit()
         self.txtPreview.setReadOnly(True)
+        self.txtPreview.viewport().setCursor(Qt.CursorShape.ArrowCursor)
         qtlib.setMonospace(self.txtPreview)
         qtlib.setShowWhitespace(self.txtPreview)
         qtlib.setTextEditHeight(self.txtPreview, 2)
