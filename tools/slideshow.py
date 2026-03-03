@@ -8,21 +8,21 @@ from .view import ViewTool
 
 
 class SlideshowTool(ViewTool):
+    HIDE_TIMEOUT = 600
+
     def __init__(self, tab):
         super().__init__(tab)
         self._shuffle = Config.slideshowShuffle
-        self._hideTimeout = 600
 
         self._history = [] # Indices
         self._historyIndex = 0
 
-        self._playTimer = QTimer()
+        self._playTimer = QTimer(parent=self.tab.imgview)
         self._playTimer.timeout.connect(self.next)
         self.setInterval(Config.slideshowInterval)
 
         self._cursor = Qt.CursorShape.ArrowCursor
-        self._cursorTimer = QTimer()
-        self._cursorTimer.setInterval(self._hideTimeout)
+        self._cursorTimer = QTimer(parent=self.tab.imgview, interval=self.HIDE_TIMEOUT)
         self._cursorTimer.timeout.connect(lambda: self.tab.imgview.setCursor(Qt.CursorShape.BlankCursor))
 
         self._toolbar = SlideshowToolbar(self)
@@ -159,6 +159,7 @@ class SlideshowTool(ViewTool):
         self.tab.filelist.removeListener(self)
         self.tab.filelist.removeSelectionListener(self)
 
+        self._cursorTimer.stop()
         imgview.setCursor(self._cursor)
         self._cursor = None
 
@@ -317,7 +318,7 @@ class SlideshowToolbar(QtWidgets.QToolBar):
             self.hide()
 
     def startHideTimeout(self):
-        self._hideTimer.start(self._slideshowTool._hideTimeout)
+        self._hideTimer.start(SlideshowTool.HIDE_TIMEOUT)
 
     def enterEvent(self, event):
         self._hideTimer.stop()

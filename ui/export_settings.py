@@ -810,6 +810,10 @@ class ImageExportTask(QRunnable):
 
         self.borderMode     = cv.BORDER_REPLICATE
 
+        # Initialize kernels in main thread
+        if ImageExportTask.KERNELS is None:
+            ImageExportTask.KERNELS = ImageExportTask.Kernels()
+
 
     def toImage(self, pixmap: QtGui.QPixmap):
         return pixmap.toImage()
@@ -960,9 +964,6 @@ class ImageExportTask(QRunnable):
 
     @classmethod
     def createBlendMask(cls, imgF32: np.ndarray, targetW: float, targetH: float, downscale: float) -> np.ndarray:
-        if cls.KERNELS is None:
-            cls.KERNELS = cls.Kernels()
-
         # Work with float32 luminance in range [0,1]
         lumi = cv.cvtColor(imgF32, cv.COLOR_BGRA2GRAY)
         lumi /= 255.0

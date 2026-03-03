@@ -277,8 +277,11 @@ class GalleryModel(QAbstractTableModel):
 
     @Slot(str)
     def onThumbnailLoaded(self, file: str):
-        row = self.fileItems[file].pos.row
-        self._thumbnailUpdateQueue.add(row)
+        try:
+            fileItem = self.fileItems[file]
+            self._thumbnailUpdateQueue.add(fileItem.pos.row)
+        except KeyError:
+            pass
 
 
     def onFileChanged(self, currentFile: str):

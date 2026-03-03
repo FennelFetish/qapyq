@@ -567,13 +567,12 @@ class ConfirmRect(QGraphicsRectItem):
         self._scene = scene
         self.alpha = ConfirmRect.ALPHA
 
-        self.color = QColor(60, 255, 60, self.alpha)
-        self.brush = QBrush(self.color)
-        self.setBrush(self.brush)
+        self._color = QColor(60, 255, 60, self.alpha)
+        self._brush = QBrush(self._color)
+        self.setBrush(self._brush)
         self.setPen(QPen(QColor(0, 0, 0, 0)))
 
-        self.timer = QTimer()
-        self.timer.setInterval(40)
+        self.timer = QTimer(parent=scene, interval=40)
         self.timer.timeout.connect(self.anim)
 
     def startAnim(self):
@@ -587,9 +586,9 @@ class ConfirmRect(QGraphicsRectItem):
             self.setVisible(False)
             return
 
-        self.color.setAlpha(self.alpha)
-        self.brush.setColor(self.color)
-        self.setBrush(self.brush)
+        self._color.setAlpha(self.alpha)
+        self._brush.setColor(self._color)
+        self.setBrush(self._brush)
         self._scene.update()
 
         self.alpha = max(0, self.alpha-7)
