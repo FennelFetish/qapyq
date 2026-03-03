@@ -352,10 +352,12 @@ class MaskToolBar(QtWidgets.QToolBar):
                 self.listHistory.addItem(entry.title)
             self.listHistory.setCurrentRow(maskItem.historyIndex)
 
+    @Slot()
     def undoHistory(self):
         row = max(self.listHistory.currentRow()-1, 0)
         self.listHistory.setCurrentRow(row)
 
+    @Slot()
     def redoHistory(self):
         row = min(self.listHistory.currentRow()+1, self.listHistory.count()-1)
         self.listHistory.setCurrentRow(row)

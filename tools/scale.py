@@ -1,5 +1,5 @@
 from typing import Callable
-from PySide6 import QtWidgets
+from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QThreadPool, QSignalBlocker
 import numpy as np
 from config import Config
@@ -20,6 +20,10 @@ class ScaleTool(ViewTool):
         super().__init__(tab)
         self._lastExportedFile = ""
         self._toolbar = ScaleToolBar(self)
+
+        save = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+E"), tab, context=Qt.ShortcutContext.WindowShortcut)
+        save.activated.connect(self.exportImage)
+        self.addShortcuts(save)
 
     def imgSize(self) -> Size | None:
         if pixmap := self._imgview.image.pixmap():
@@ -110,16 +114,6 @@ class ScaleTool(ViewTool):
             return True
 
         return super().onMousePress(event)
-
-
-    def onKeyPress(self, event):
-        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            match event.key():
-                case Qt.Key.Key_E:
-                    self.exportImage()
-                    return
-
-        return super().onKeyPress(event)
 
 
 

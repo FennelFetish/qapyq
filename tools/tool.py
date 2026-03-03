@@ -1,3 +1,5 @@
+from PySide6.QtGui import QShortcut
+from PySide6.QtWidgets import QToolBar
 from ui.dropview import DropZone
 from ui.imgview import ImgView
 from ui.tab import ImgTab
@@ -7,9 +9,16 @@ class Tool:
     def __init__(self, tab: ImgTab):
         self.tab: ImgTab = tab
         self._imgview: ImgView = None
+        self._shortcuts: list[QShortcut] = []
 
-    def getToolbar(self):
+    def addShortcuts(self, *shortcuts: QShortcut):
+        for shortcut in shortcuts:
+            shortcut.setEnabled(False)
+        self._shortcuts.extend(shortcuts)
+
+    def getToolbar(self) -> QToolBar | None:
         return None
+
 
     def onEnabled(self, imgview: ImgView):
         self._imgview = imgview
@@ -17,8 +26,14 @@ class Tool:
         for rect in self.getDropRects():
             imgview.addDropZone(DropZone(rect))
 
+        for shortcut in self._shortcuts:
+            shortcut.setEnabled(True)
+
     def onDisabled(self, imgview: ImgView):
         self._imgview = None
+
+        for shortcut in self._shortcuts:
+            shortcut.setEnabled(False)
 
 
     def onSceneUpdate(self):

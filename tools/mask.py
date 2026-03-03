@@ -1,8 +1,7 @@
 import os
-from typing import ForwardRef
 from typing_extensions import override
 from PySide6.QtCore import Qt, Slot, Signal, QEvent, QRunnable, QObject, QThreadPool
-from PySide6.QtGui import QImage, QPainter, QTabletEvent, QPointingDevice, QKeySequence
+from PySide6.QtGui import QImage, QPainter, QTabletEvent, QPointingDevice, QShortcut, QKeySequence
 from PySide6 import QtWidgets
 import cv2 as cv
 import numpy as np
@@ -13,8 +12,6 @@ import ui.export_settings as export
 from config import Config
 from .view import ViewTool
 from .mask_ops import MaskOperation
-
-MaskItem = ForwardRef("MaskItem")
 
 
 class MaskTool(ViewTool):
@@ -30,7 +27,21 @@ class MaskTool(ViewTool):
         from .mask_toolbar import MaskToolBar
         self._toolbar = MaskToolBar(self)
 
-    def createMask(self, name: str = None) -> MaskItem:
+        self._initShortcuts()
+
+    def _initShortcuts(self):
+        save = QShortcut(QKeySequence("Ctrl+E"), self.tab, context=Qt.ShortcutContext.WindowShortcut)
+        save.activated.connect(self.exportMask)
+
+        undo = QShortcut(QKeySequence.StandardKey.Undo, self.tab, context=Qt.ShortcutContext.WindowShortcut)
+        undo.activated.connect(self._toolbar.undoHistory)
+
+        redo = QShortcut(QKeySequence.StandardKey.Redo, self.tab, context=Qt.ShortcutContext.WindowShortcut)
+        redo.activated.connect(self._toolbar.redoHistory)
+
+        self.addShortcuts(save, undo, redo)
+
+    def createMask(self, name: str = None) -> 'MaskItem':
         if not name:
             name = "Layer 0"
 
@@ -411,22 +422,6 @@ class MaskTool(ViewTool):
         return True
 
 
-    def onKeyPress(self, event):
-        if event.matches(QKeySequence.StandardKey.Undo):
-            self._toolbar.undoHistory()
-        elif event.matches(QKeySequence.StandardKey.Redo):
-            self._toolbar.redoHistory()
-
-        elif event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            match event.key():
-                case Qt.Key.Key_E:
-                    self.exportMask()
-                    return
-
-        return super().onKeyPress(event)
-
-
-
 
 class HistoryEntry:
     def __init__(self, title: str, mask: np.ndarray | None, macroItem: MacroOpItem | None = None):
@@ -450,14 +445,14 @@ class MaskItem(QtWidgets.QGraphicsRectItem):
         self.historyIndex = 0
 
     @staticmethod
-    def new(name: str, image: QImage) -> MaskItem:
+    def new(name: str, image: QImage) -> 'MaskItem':
         maskItem = MaskItem(name)
         maskItem.setImage(image)
         maskItem.history.append( HistoryEntry("New", None) )
         return maskItem
 
     @staticmethod
-    def load(name: str, imgData: np.ndarray) -> MaskItem:
+    def load(name: str, imgData: np.ndarray) -> 'MaskItem':
         maskItem = MaskItem(name)
         maskItem.fromNumpy(imgData)
         maskItem.addHistory("Load", np.copy(imgData)) # TODO: copy necessary?
@@ -547,9 +542,6 @@ class MaskExportTask(QRunnable):
     class ExportTaskSignals(QObject):
         done = Signal(str, str)
         fail = Signal(str)
-
-        def __init__(self):
-            super().__init__()
 
     def __init__(self, srcFile, destFile, mask):
         super().__init__()
