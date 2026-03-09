@@ -1,15 +1,18 @@
 from __future__ import annotations
-from PySide6.QtCore import QRect, QRectF, Qt
-from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QTransform, QPalette
-from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsView
-from lib import colorlib, imagerw
+from enum import IntEnum
+from typing_extensions import override
+from PySide6.QtCore import Qt, QRect, QRectF
+from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QTransform, QPalette, QShortcut, QKeySequence, QMouseEvent, QWheelEvent
+from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsView, QGraphicsItem, QGraphicsScene
+from lib import colorlib, imagerw, videorw
+from lib.filelist import FileList
 from .dropview import DropView
 
 
 class ImgView(DropView):
     SHOW_PIXEL_SIZE_SQUARED = 8**2
 
-    def __init__(self, filelist):
+    def __init__(self, filelist: FileList):
         super().__init__()
 
         self.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.SmoothPixmapTransform)
@@ -31,6 +34,10 @@ class ImgView(DropView):
         self.image = ImgItem()
         self.scene().addItem(self.image)
 
+        self._playShortcut = QShortcut(QKeySequence(" "), self, context=Qt.ShortcutContext.WindowShortcut)
+        self._playShortcut.setEnabled(False)
+        self._playShortcut.activated.connect(lambda: self.image.togglePlay())
+
     def _setupBackground(self):
         palette = self.palette()
         baseColor = palette.color(QPalette.ColorRole.Base)
@@ -50,8 +57,22 @@ class ImgView(DropView):
         self.setBackgroundBrush(bgBrush)
 
 
-    def onFileChanged(self, currentFile):
-        if self.image.loadImage(currentFile):
+    def onFileChanged(self, currentFile: str):
+        isVideoFile = videorw.isVideoFile(currentFile)
+        if isVideoFile != (self.image.TYPE == MediaItemMixin.ItemType.Video):
+            self.image.removeFromScene(self.scene(), self._guiScene)
+            self.image.deleteLater()
+
+            if isVideoFile:
+                from .video_player import VideoItem
+                self.image = VideoItem(self)
+            else:
+                self.image = ImgItem()
+
+            self.image.addToScene(self.scene(), self._guiScene)
+            self._playShortcut.setEnabled(isVideoFile)
+
+        if self.image.loadFile(currentFile):
             self.resetView()
             self.updateImageTransform()
             self.updateView()
@@ -61,14 +82,15 @@ class ImgView(DropView):
             self.setFocus()
             self.activateWindow()
 
-    def onFileListChanged(self, currentFile):
-        self.onFileChanged(currentFile)
+    def onFileListChanged(self, currentFile: str):
+        if currentFile != self.image.filepath:
+            self.onFileChanged(currentFile)
 
 
     def updateImageTransform(self):
         self.image.updateTransform(self.viewport().rect(), self.rotation)
 
-    def updateImageSmoothness(self, imgItem):
+    def updateImageSmoothness(self, imgItem: ImgItem):
         p0 = imgItem.mapToParent(0, 0)
         p0 = self.mapFromScene(p0)
 
@@ -121,15 +143,17 @@ class ImgView(DropView):
         self._tool.onMouseEnter(event)
 
     def mouseMoveEvent(self, event):
-        super().mouseMoveEvent(event)
-        self._tool.onMouseMove(event)
+        if not self.image.onMouseMove(event):
+            super().mouseMoveEvent(event)
+            self._tool.onMouseMove(event)
 
     def leaveEvent(self, event):
         super().leaveEvent(event)
+        self.image.onMouseLeave()
         self._tool.onMouseLeave(event)
 
-    def mousePressEvent(self, event):
-        if not self._tool.onMousePress(event):
+    def mousePressEvent(self, event: QMouseEvent):
+        if not (self.image.onMousePress(event) or self._tool.onMousePress(event)):
             super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
@@ -137,7 +161,7 @@ class ImgView(DropView):
         self._tool.onMouseRelease(event)
 
     def wheelEvent(self, event):
-        if not self._tool.onMouseWheel(event):
+        if not (self._tool.onMouseWheel(event) or self.image.onMouseWheel(event)):
             super().wheelEvent(event)
 
     def tabletEvent(self, event):
@@ -153,33 +177,32 @@ class ImgView(DropView):
 
 
 
-class ImgItem(QGraphicsPixmapItem):
+class MediaItemMixin:
+    class ItemType(IntEnum):
+        Image = 0
+        Video = 1
+
+
     def __init__(self):
-        super().__init__(None)
-        self.setShapeMode(QGraphicsPixmapItem.ShapeMode.BoundingRectShape)
-        self.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
         self.filepath = ""
 
     def clearImage(self):
         self.filepath = ""
-        if not self.pixmap().isNull():
-            self.setPixmap(QPixmap())
 
-    def loadImage(self, path: str) -> bool:
+    def loadFile(self, path: str) -> bool:
         self.filepath = path
         if not path:
             self.clearImage()
             return False
-
-        image = imagerw.loadQImage(path)
-        pixmap = QPixmap.fromImage(image)
-        self.setPixmap(pixmap)
-        if pixmap.isNull():
-            print(f"Failed to load image: {path}")
-            return False
         return True
 
-    def updateTransform(self, vpRect: QRect | QRectF, rotation: float):
+    def addToScene(self: QGraphicsItem, scene: QGraphicsScene, guiScene: QGraphicsScene):
+        scene.addItem(self)
+
+    def removeFromScene(self: QGraphicsItem, scene: QGraphicsScene, guiScene: QGraphicsScene):
+        scene.removeItem(self)
+
+    def updateTransform(self: QGraphicsItem, vpRect: QRect | QRectF, rotation: float):
         imgRect = self.boundingRect()
         if imgRect.width() == 0 or imgRect.height() == 0:
             return
@@ -196,6 +219,56 @@ class ImgItem(QGraphicsPixmapItem):
         transform *= QTransform.fromScale(scale, scale)
         self.setTransform(transform)
 
+    def setSmooth(self, enabled: bool):
+        pass
+
+    def togglePlay(self):
+        pass
+
+    def onMouseMove(self, event: QMouseEvent) -> bool:
+        return False
+
+    def onMousePress(self, event: QMouseEvent) -> bool:
+        return False
+
+    def onMouseWheel(self, event: QWheelEvent) -> bool:
+        return False
+
+    def onMouseLeave(self):
+        pass
+
+
+class ImgItem(QGraphicsPixmapItem, MediaItemMixin):
+    TYPE = MediaItemMixin.ItemType.Image
+
+    def __init__(self):
+        super().__init__()
+        self.setShapeMode(QGraphicsPixmapItem.ShapeMode.BoundingRectShape)
+        self.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
+
+    def deleteLater(self):
+        pass
+
+    @override
+    def clearImage(self):
+        super().clearImage()
+        if not self.pixmap().isNull():
+            self.setPixmap(QPixmap())
+
+    @override
+    def loadFile(self, path: str) -> bool:
+        if not super().loadFile(path):
+            return False
+
+        image = imagerw.loadQImage(path)
+        pixmap = QPixmap.fromImage(image)
+        self.setPixmap(pixmap)
+        if pixmap.isNull():
+            print(f"Failed to load image: {path}")
+            return False
+        return True
+
+    @override
     def setSmooth(self, enabled: bool):
         mode = Qt.TransformationMode.SmoothTransformation if enabled else Qt.TransformationMode.FastTransformation
         if mode != self.transformationMode():

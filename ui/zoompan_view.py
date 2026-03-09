@@ -1,5 +1,7 @@
+from typing_extensions import override
 from PySide6.QtCore import QCoreApplication, QPointF, QRectF, Qt
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsView
+from PySide6.QtGui import QMouseEvent, QWheelEvent
 from config import Config
 
 
@@ -25,8 +27,7 @@ class ZoomPanView(QGraphicsView):
         self.setMouseTracking(True)
 
     def updateView(self):
-        w = self.viewport().width()
-        h = self.viewport().height()
+        w, h = self.viewport().size().toTuple()
         self._guiScene.setSceneRect(0, 0, w, h)
 
         wz = w / self.zoom
@@ -37,35 +38,46 @@ class ZoomPanView(QGraphicsView):
         self.setSceneRect(rect)
         self.fitInView(rect)
 
+    def resetView(self):
+        self.pan = QPointF(0, 0)
+        self.zoom = 1.0
+
+    @override
     def drawForeground(self, painter, rect):
         self._guiScene.render(painter, rect)
 
-
+    @override
     def resizeEvent(self, event):
         self.updateView()
 
-    def mouseMoveEvent(self, event):
+    @override
+    def mouseMoveEvent(self, event: QMouseEvent):
         if self._eventState is not None:
             self._eventState.onMove(event.position())
 
-    def mousePressEvent(self, event):
+    @override
+    def mousePressEvent(self, event: QMouseEvent):
         if (self._eventState is None) and (event.button() == self.PAN_BUTTON):
             self._eventState = ViewPan(self, event.position())
-    
-    def mouseDoubleClickEvent(self, event):
+
+    @override
+    def mouseDoubleClickEvent(self, event: QMouseEvent):
         self.mousePressEvent(event)
 
-    def mouseReleaseEvent(self, event):
+    @override
+    def mouseReleaseEvent(self, event: QMouseEvent):
         self._eventState = None
 
+    @override
     def leaveEvent(self, event):
         self._eventState = None
 
-    def wheelEvent(self, event):
+    @override
+    def wheelEvent(self, event: QWheelEvent):
         zoomSteps = event.angleDelta().y() / 120.0 # 8*15° standard
         self.zoom *= self.zoomFactor ** zoomSteps
         self.zoom = max(self.zoom, self.zoomMin)
-        
+
         mousePos = event.position().toPoint()
         oldPos = self.mapToScene(mousePos)
         ZoomPanView.updateView(self)
@@ -74,16 +86,13 @@ class ZoomPanView(QGraphicsView):
         self.pan -= (newPos - oldPos) * self.zoom
         self.updateView()
 
-    def resetView(self):
-        self.pan = QPointF(0, 0)
-        self.zoom = 1.0
 
 
 class ViewPan:
     def __init__(self, view: ZoomPanView, startPos: QPointF):
         self._view = view
         self._startPos = QPointF(startPos)
-        
+
     def onMove(self, position: QPointF):
         self._view.pan += self._startPos - position
         self._view.updateView()
