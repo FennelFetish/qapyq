@@ -9,6 +9,8 @@ import lib.qtlib as qtlib
 # Also rectangular measurement? selected via tool bar?
 
 class MeasureTool(ViewTool):
+    CURSOR = Qt.CursorShape.CrossCursor
+
     def __init__(self, tab):
         super().__init__(tab)
         self._startPoint = QPointF()
@@ -142,7 +144,7 @@ class MeasureTool(ViewTool):
     def onEnabled(self, imgview):
         super().onEnabled(imgview)
         self._cursor = imgview.cursor()
-        imgview.setCursor(Qt.CursorShape.CrossCursor)
+        imgview.setCursor(self.CURSOR)
 
         imgview._guiScene.addItem(self._line)
         imgview._guiScene.addItem(self._rect)
@@ -194,9 +196,11 @@ class MeasureTool(ViewTool):
     def onMouseEnter(self, event):
         self._crosshairH.setVisible(True)
         self._crosshairV.setVisible(True)
+        self._imgview.setCursor(self.CURSOR)
         self._imgview.scene().update()
 
     def onMouseLeave(self, event):
         self._crosshairH.setVisible(False)
         self._crosshairV.setVisible(False)
+        self._imgview.setCursor(self._cursor)
         self._imgview.scene().update()

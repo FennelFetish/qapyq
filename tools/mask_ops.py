@@ -74,7 +74,12 @@ class MaskOperation(QtWidgets.QWidget):
         pass
 
     def onCursorVisible(self, visible: bool):
-        pass
+        cursor = self._origCursor
+        if visible and self._altCursor:
+            cursor = self._altCursor
+
+        self.maskTool._imgview.setCursor(cursor)
+
 
 
 
@@ -172,6 +177,7 @@ class DrawMaskOperation(MaskOperation):
 
     @override
     def onCursorVisible(self, visible: bool):
+        super().onCursorVisible(visible)
         self._cursor.setVisible(visible)
 
 

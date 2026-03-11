@@ -140,27 +140,28 @@ class ImgView(DropView):
 
     def enterEvent(self, event):
         super().enterEvent(event)
+        self.image.onMouseEnter()
         self._tool.onMouseEnter(event)
-
-    def mouseMoveEvent(self, event):
-        if not self.image.onMouseMove(event):
-            super().mouseMoveEvent(event)
-            self._tool.onMouseMove(event)
 
     def leaveEvent(self, event):
         super().leaveEvent(event)
         self.image.onMouseLeave()
         self._tool.onMouseLeave(event)
 
+    def mouseMoveEvent(self, event: QMouseEvent):
+        if not self.image.onMouseMove(event):
+            super().mouseMoveEvent(event)
+            self._tool.onMouseMove(event)
+
     def mousePressEvent(self, event: QMouseEvent):
         if not (self.image.onMousePress(event) or self._tool.onMousePress(event)):
             super().mousePressEvent(event)
 
-    def mouseReleaseEvent(self, event):
+    def mouseReleaseEvent(self, event: QMouseEvent):
         super().mouseReleaseEvent(event)
         self._tool.onMouseRelease(event)
 
-    def wheelEvent(self, event):
+    def wheelEvent(self, event: QWheelEvent):
         if not (self._tool.onMouseWheel(event) or self.image.onMouseWheel(event)):
             super().wheelEvent(event)
 
@@ -233,6 +234,9 @@ class MediaItemMixin:
 
     def onMouseWheel(self, event: QWheelEvent) -> bool:
         return False
+
+    def onMouseEnter(self):
+        pass
 
     def onMouseLeave(self):
         pass

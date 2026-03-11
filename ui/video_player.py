@@ -20,6 +20,7 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
         super().__init__()
         self.imgview = imgview
         self._fps: float = 0.0
+        self._mouseInside = False
 
         self.setAspectRatioMode(Qt.AspectRatioMode.IgnoreAspectRatio)
 
@@ -115,18 +116,23 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
     @override
     def onMouseMove(self, event: QMouseEvent) -> bool:
         sceneW, sceneH = self.playbackControls.scene().sceneRect().size().toTuple()
+
         expanded = (event.pos().y() > sceneH - PlaybackControls.SEEK_BAR_HEIGHT_EXPANDED)
-        redraw = self.playbackControls.setExpanded(expanded)
+        expandedChanged = self.playbackControls.setExpanded(expanded)
 
         if expanded:
             x = self.playbackControls.mapFromParent(event.pos()).x()
             self.playbackControls.requestThumbnail(self.filepath, x, sceneW)
-            redraw = True
-        # else:
-        #     self.playbackControls.seekThumbnail.hide()
-
-        if redraw:
             self._redrawMainViewport()
+        elif expandedChanged:
+            self._redrawMainViewport()
+
+        if expanded == self._mouseInside:
+            self._mouseInside ^= True
+            if self._mouseInside:
+                self.imgview.tool.onMouseEnter(None)
+            else:
+                self.imgview.tool.onMouseLeave(None)
 
         return expanded
 
@@ -154,8 +160,15 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
         self.player.setPosition(round(videoPos))
         return True
 
+
+    @override
+    def onMouseEnter(self):
+        self._mouseInside = True
+
     @override
     def onMouseLeave(self):
+        self._mouseInside = False
+
         self.playbackControls.seekThumbnail.hide()
         if self.playbackControls.setExpanded(False):
             self._redrawMainViewport()
