@@ -1,3 +1,4 @@
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QShortcut
 from PySide6.QtWidgets import QToolBar
 from ui.dropview import DropZone
@@ -28,6 +29,8 @@ class Tool:
 
         for shortcut in self._shortcuts:
             shortcut.setEnabled(True)
+
+        imgview.setCursor(Qt.CursorShape.ArrowCursor)
 
     def onDisabled(self, imgview: ImgView):
         self._imgview = None

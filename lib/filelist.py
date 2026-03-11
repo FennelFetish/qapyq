@@ -148,6 +148,14 @@ class FileSelection:
             self._sortedFiles = sorted(self.files, key=CachedPathSort())
         return self._sortedFiles
 
+    def sortedIndexOf(self, file: str) -> int:
+        sortedFiles = self.sorted
+        index = bisect_left(sortedFiles, sortKey(file), key=sortKey)
+        if index < len(sortedFiles) and sortedFiles[index] == file:
+            return index
+        raise ValueError(f"File not in selection")
+
+
     def add(self, element: str):
         self.files.add(element)
         if self._sortedFiles is not None:
@@ -523,9 +531,7 @@ class FileList:
                 self.currentIndex = self.order.nextSelected(self.currentIndex, indexOffset)
             else:
                 sortedSelection = self.selection.sorted
-                index = bisect_left(sortedSelection, sortKey(self.currentFile), key=sortKey)
-                if index >= len(sortedSelection) or sortedSelection[index] != self.currentFile:
-                    raise ValueError("Current file not in selected files")
+                index = self.selection.sortedIndexOf(self.currentFile) # raises when not found
                 index = (index + indexOffset) % len(sortedSelection)
                 self.currentIndex = self.indexOf(sortedSelection[index]) # raises when not found
 

@@ -1,28 +1,87 @@
+import random
+from typing import NamedTuple
+from collections import deque
+from itertools import islice
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QTimer, QRect
-import random
 from config import Config
 from lib.qtlib import GreenButton
 from ui.imgview import ImgItem
 from .view import ViewTool
 
 
+class HistoryEntry(NamedTuple):
+    idx: int
+    lcgState: int
+
+    @staticmethod
+    def initState(idx: int) -> 'HistoryEntry':
+        return HistoryEntry(idx, idx)
+
+
+
+# Linear congruential generator for random sequences without repeats
+class LCG:
+    # PCG Parameters
+    A = 6364136223846793005  # 'a' must be (5 mod 8) and coprime to 'm' for full period
+    #C = 1442695040888963407
+
+    PERIODS = 1  # Increased periods adds randomness but also more repeats
+
+    def __init__(self, count: int):
+        self.count = max(count, 1)
+
+        self.m = 1 << (self.count * self.PERIODS - 1).bit_length()
+        self.a = self.A % self.m
+        self.aInv = pow(self.a, -1, self.m)
+
+        self.q = self.m // self.count
+        self.bound = self.count * self.q
+
+        # Randomizing c changes the order of the cycle. Must be odd.
+        minC = (self.count // 8) | 1 if self.count >= 16 else 1
+        self.c = random.randrange(minC, max(self.count, 2), 2)
+
+        #print(f"m={self.m}, c={self.c}, a={self.a}, aInv={self.aInv}, q={self.q}, bound={self.bound}")
+
+    def next(self, state: int) -> HistoryEntry:
+        while True:
+            state = (self.a * state + self.c) % self.m
+            if state < self.bound:
+                index = state // self.q
+                return HistoryEntry(index, state)
+
+    def prev(self, state: int) -> HistoryEntry:
+        while True:
+            state = (self.aInv * (state - self.c)) % self.m
+            if state < self.bound:
+                index = state // self.q
+                return HistoryEntry(index, state)
+
+
+
 class SlideshowTool(ViewTool):
-    HIDE_TIMEOUT = 600
+    HISTORY_MAX_LENGTH = 300
+    HISTORY_SEARCH_LENGTH = 30
+    HISTORY_SEARCH_MIN_ATTEMPTS = 5
+
+    HIDE_TIMEOUT = 600  # ms
 
     def __init__(self, tab):
         super().__init__(tab)
+        self._lcg: LCG | None = None
         self._shuffle = Config.slideshowShuffle
 
-        self._history = [] # Indices
+        self._history: deque[HistoryEntry] = deque(maxlen=self.HISTORY_MAX_LENGTH)
         self._historyIndex = 0
+        self._rememberHistory = True
 
         self._playTimer = QTimer(parent=self.tab.imgview)
         self._playTimer.timeout.connect(self.next)
         self.setInterval(Config.slideshowInterval)
 
         self._cursor = Qt.CursorShape.ArrowCursor
-        self._cursorTimer = QTimer(parent=self.tab.imgview, interval=self.HIDE_TIMEOUT)
+        self._cursorTimer = QTimer(parent=self.tab.imgview, singleShot=True, interval=self.HIDE_TIMEOUT)
         self._cursorTimer.timeout.connect(lambda: self.tab.imgview.setCursor(Qt.CursorShape.BlankCursor))
 
         self._toolbar = SlideshowToolbar(self)
@@ -40,95 +99,184 @@ class SlideshowTool(ViewTool):
 
     @Slot()
     def setShuffle(self, shuffle: bool):
-        self.resetHistory()
         self._shuffle = shuffle
         Config.slideshowShuffle = shuffle
+        self.resetHistory()
 
     @Slot()
     def setFade(self, fade: bool):
         self._fade = fade
         Config.slideshowFade = fade
 
+        self._oldPixmap = self._imgview.image.pixmap() if fade else None
+
+
+    def _printHistory(self):
+        history = ", ".join(
+            f"[{entry.idx}, {entry.lcgState}]" if i == self._historyIndex else f"({entry.idx}, {entry.lcgState})"
+            for i, entry in enumerate(self._history)
+        )
+
+        print(f"[{history}] @ {self._historyIndex}")
+
 
     @Slot()
     def next(self):
-        with self.tab.takeFocus() as filelist:
-            if not self._shuffle:
-                filelist.setNextFile()
-                return
+        #with self.tab.takeFocus() as filelist:
+        filelist = self.tab.filelist
+        if not self._shuffle:
+            filelist.setNextFile()
+            return
 
-            filelist._lazyLoadFolder()
-            self._historyIndex += 1
-            if self._historyIndex < len(self._history):
-                filelist.setCurrentIndex(self._history[self._historyIndex])
-            elif filelist.getNumFiles() > 0:
-                index = self.getRandomIndex()
-                filelist.setCurrentIndex(index)
-                self._history.append(index)
+        filelist._lazyLoadFolder()
+        self._historyIndex += 1
 
+        if self._historyIndex < len(self._history):
+            self._setIndexNoHistory(self._history[self._historyIndex].idx)
+        elif filelist.getNumFiles() > 0:
+            entry = self.getRandomEntry(self._history[-1].lcgState)
+            self._history.append(entry)
+            self._historyIndex = len(self._history) - 1
+            self._setIndexNoHistory(entry.idx)
+        else:
+            self._historyIndex = 0
+
+        #self._printHistory()
 
     def prev(self):
-        with self.tab.takeFocus() as filelist:
-            if not self._shuffle:
-                filelist.setPrevFile()
-                return
+        #with self.tab.takeFocus() as filelist:
+        filelist = self.tab.filelist
+        if not self._shuffle:
+            filelist.setPrevFile()
+            return
 
-            filelist._lazyLoadFolder()
-            self._historyIndex -= 1
-            if self._historyIndex >= 0:
-                filelist.setCurrentIndex(self._history[self._historyIndex])
-            elif filelist.getNumFiles() > 0:
-                self._historyIndex = 0
-                index = self.getRandomIndex(False)
-                filelist.setCurrentIndex(index)
-                self._history.insert(0, index)
+        filelist._lazyLoadFolder()
+        self._historyIndex -= 1
 
-    def getRandomIndex(self, tail=True) -> int:
+        if self._historyIndex >= 0:
+            self._setIndexNoHistory(self._history[self._historyIndex].idx)
+        elif filelist.getNumFiles() > 0:
+            entry = self.getRandomEntry(self._history[0].lcgState, forward=False)
+            self._history.appendleft(entry)
+            self._historyIndex = 0
+            self._setIndexNoHistory(entry.idx)
+        else:
+            self._historyIndex = 0
+
+        #self._printHistory()
+
+    def getRandomEntry(self, state: int, forward: bool = True) -> HistoryEntry:
         filelist = self.tab.filelist
         numFiles = filelist.getNumFiles()
         if numFiles <= 0:
-            return 0
-
-        region = self._history[-10:] if tail else self._history[:10]
-        attempts = 3
-        index = 0
+            return HistoryEntry(0, state)
 
         numSelectedFiles = len(filelist.selectedFiles)
         if numSelectedFiles > 1:
-            while attempts > 0:
+            numFiles = numSelectedFiles
+            idxMap = lambda index: filelist.indexOf(filelist.selection.sorted[index])
+        else:
+            idxMap = lambda index: index
+
+        lcg = self._getLCG(numFiles)
+        if forward:
+            lcgFunc = lcg.next
+            history = reversed(self._history)
+        else:
+            lcgFunc = lcg.prev
+            history = self._history
+
+        searchLen = min(self.HISTORY_SEARCH_LENGTH, int(lcg.count * 0.9))
+        region = set[int](entry.idx for entry in islice(history, searchLen))
+
+        attempts = self.HISTORY_SEARCH_MIN_ATTEMPTS + random.randint(0, self.HISTORY_SEARCH_MIN_ATTEMPTS)
+        for _ in range(1000):
+            index, state = lcgFunc(state)
+            index = idxMap(index)
+
+            if index not in region:
+                break
+
+            if index != filelist.currentIndex:
                 attempts -= 1
-                index = random.randint(0, numSelectedFiles-1)
-                index = filelist.indexOf(filelist.selection.sorted[index])
-                if index not in region:
+                if attempts <= 0:
                     break
 
-        else:
-            while attempts > 0 and (index := random.randint(0, numFiles-1)) in region:
-                attempts -= 1
+        return HistoryEntry(index, state)
 
-        return index
+    def _getLCG(self, numFiles: int) -> LCG:
+        if self._lcg is None or self._lcg.count != numFiles:
+            self._lcg = LCG(numFiles)
+        return self._lcg
 
 
-    def resetHistory(self):
-        self._history = list()
+    def resetHistory(self, addCurrent: bool = True):
+        self._history.clear()
         self._historyIndex = 0
+        self._lcg = None
+
+        if addCurrent and self._shuffle:
+            filelist = self.tab.filelist
+            filelist._lazyLoadFolder()
+
+            if filelist.selection:
+                state = filelist.selection.sortedIndexOf(filelist.currentFile)
+            else:
+                state = filelist.currentIndex
+
+            self._history.append(HistoryEntry(filelist.currentIndex, state))
+
+        #self._printHistory()
+
+    def _insertHistory(self, index: int):
+        # Ensure max history size before inserting
+        if len(self._history) >= self.HISTORY_MAX_LENGTH:
+            if self._historyIndex > 0:
+                self._history.popleft()
+                self._historyIndex -= 1
+            else:
+                self._history.pop()
+
+        lcgState = self._history[self._historyIndex].lcgState
+        self._historyIndex += 1
+
+        self._history.insert(self._historyIndex, HistoryEntry(index, lcgState))
+        #self._printHistory()
+
+    def _setIndexNoHistory(self, index: int):
+        try:
+            self._rememberHistory = False
+            self.tab.filelist.setCurrentIndex(index)
+        finally:
+            self._rememberHistory = True
 
 
-    def onFileChanged(self, currentFile):
-        if self._fade and self._oldPixmap:
-            self._oldImageItem.setPixmap(self._oldPixmap)
-            self._oldImageItem.updateTransform(self._imgview.viewport().rect(), 0)
-            self._oldImageItem.startAnim()
-        self._oldPixmap = self._imgview.image.pixmap()
+    def onFileChanged(self, currentFile: str):
+        # When shuffle is enabled, remember manual image changes and insert the index at the current history position.
+        if self._rememberHistory and self._shuffle and currentFile:
+            self.tab.filelist._lazyLoadFolder()
+            self._insertHistory(self.tab.filelist.currentIndex)
+
+        if self._fade:
+            if self._oldPixmap:
+                self._oldImageItem.setPixmap(self._oldPixmap)
+                self._oldImageItem.updateTransform(self._imgview.viewport().rect(), 0)
+                self._oldImageItem.startAnim()
+
+            self._oldPixmap = self._imgview.image.pixmap()
 
         if self._playTimer.isActive():
             self._playTimer.start()
 
     def onFileListChanged(self, currentFile):
+        self._oldPixmap = None
         self.resetHistory()
 
-        self._oldPixmap = None
-        self.onFileChanged(currentFile)
+        try:
+            self._rememberHistory = False
+            self.onFileChanged(currentFile)
+        finally:
+            self._rememberHistory = True
 
     def onFileSelectionChanged(self, selectedFiles: set[str]):
         self.resetHistory()
@@ -139,6 +287,8 @@ class SlideshowTool(ViewTool):
 
     def onEnabled(self, imgview):
         super().onEnabled(imgview)
+        self.resetHistory()
+
         self.tab.statusBar().hide()
         self._toolbar.startHideTimeout()
         self.tab.filelist.addListener(self)
@@ -148,13 +298,12 @@ class SlideshowTool(ViewTool):
 
         self._oldImageItem = FadeImgItem()
         imgview.scene().addItem(self._oldImageItem)
-        self._oldPixmap = imgview.image.pixmap()
+        self._oldPixmap = imgview.image.pixmap() if self._fade else None
 
     def onDisabled(self, imgview):
         if self._playTimer.isActive():
             self._toolbar.togglePlay()
 
-        self.resetHistory()
         self.tab.statusBar().show()
         self.tab.filelist.removeListener(self)
         self.tab.filelist.removeSelectionListener(self)
@@ -166,6 +315,9 @@ class SlideshowTool(ViewTool):
         imgview.scene().removeItem(self._oldImageItem)
         self._oldImageItem = None
         self._oldPixmap = None
+
+        super().onDisabled(imgview)
+        self.resetHistory(addCurrent=False)
 
 
     def onMouseMove(self, event: QtGui.QMouseEvent):
@@ -185,7 +337,7 @@ class SlideshowTool(ViewTool):
         self._cursorTimer.start()
         self.tab.imgview.setCursor(self._cursor)
 
-    def onMouseWheel(self, event) -> bool:
+    def onMouseWheel(self, event: QtGui.QWheelEvent) -> bool:
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             return False
 
@@ -208,7 +360,7 @@ class SlideshowTool(ViewTool):
         self._cursorTimer.stop()
 
 
-    def onKeyPress(self, event):
+    def onKeyPress(self, event: QtGui.QKeyEvent):
         match event.key():
             case Qt.Key.Key_Space:
                 self._toolbar.togglePlay()
@@ -259,12 +411,12 @@ class SlideshowToolbar(QtWidgets.QToolBar):
 
         chkShuffle = QtWidgets.QCheckBox()
         chkShuffle.setChecked(Config.slideshowShuffle)
-        chkShuffle.setFocusPolicy(Qt.NoFocus)
+        chkShuffle.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         chkShuffle.stateChanged.connect(self._slideshowTool.setShuffle)
 
         chkFade = QtWidgets.QCheckBox()
         chkFade.setChecked(Config.slideshowFade)
-        chkFade.setFocusPolicy(Qt.NoFocus)
+        chkFade.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         chkFade.stateChanged.connect(self._slideshowTool.setFade)
 
         layout = QtWidgets.QGridLayout()
