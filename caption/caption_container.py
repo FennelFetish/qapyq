@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import TYPE_CHECKING
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Signal, Slot, QTimer
 from lib import qtlib
@@ -15,6 +16,9 @@ from .caption_multi_edit import CaptionMultiEdit
 from .caption_tab import MultiEditSupport
 from .caption_list import AutoSizeTextEdit
 
+if TYPE_CHECKING:
+    from gallery.gallery import Gallery
+
 
 class CaptionContainer(QtWidgets.QWidget):
     def __init__(self, tab):
@@ -29,10 +33,14 @@ class CaptionContainer(QtWidgets.QWidget):
 
         self.ctx = CaptionContext(self, tab)
 
+        # Debounce with timer because changing the text emits both signals: textChanged, cursorPositionChanged
+        self._textCursorUpdateTimer = QTimer(self, singleShot=True, interval=0)
+        self._textCursorUpdateTimer.timeout.connect(self._updateTextCursorHighlight)
+
         self.txtCaption = self.ctx.text
         self.txtCaption.textChanged.connect(self._onCaptionEdited)
-        self.txtCaption.cursorPositionChanged.connect(self._updateTextCursorHighlight)
-        self.txtCaption.focusChanged.connect(self._updateTextCursorHighlight)
+        self.txtCaption.cursorPositionChanged.connect(self._textCursorUpdateTimer.start)
+        self.txtCaption.focusChanged.connect(self._textCursorUpdateTimer.start)
         self._setEditedOnChange = True
 
         self.highlightState = HighlightState()
@@ -324,7 +332,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.bubbles.setText(text)
         self.updateSelectionState(text)
         self._updatePreview(text)
-        self._updateTextCursorHighlight()
+        self._textCursorUpdateTimer.start()
 
         self.ctx.captionEdited.emit(text)
 
@@ -647,16 +655,20 @@ class CaptionContainer(QtWidgets.QWidget):
 
     @Slot()
     def _multiEditHighlightImages(self, index: int):
-        if not self.multiEdit.active:
+        gallery: Gallery | None = self.ctx.tab.getWindowContent("gallery")
+        if gallery is None:
             return
 
-        from gallery.gallery import Gallery
-        gallery: Gallery | None = self.ctx.tab.getWindowContent("gallery")
-        if gallery:
-            files = self.multiEdit.getTagFiles(index) # Empty list for index<0
+        if self.multiEdit.active and index >= 0:
+            files = self.multiEdit.getTagFiles(index)
             tag   = self.multiEdit.getTag(index)
             color = self.ctx.highlight.getCaptionColor(tag)
-            gallery.highlightFiles(files, tag, color)
+        else:
+            files = []
+            tag   = ""
+            color = None
+
+        gallery.highlightFiles(files, tag, color)
 
     @Slot()
     def _updateTextCursorHighlight(self):

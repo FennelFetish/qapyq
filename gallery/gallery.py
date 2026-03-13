@@ -353,11 +353,12 @@ class Gallery(QtWidgets.QWidget):
 
 
     def highlightFiles(self, files: list[str], tag: str, color: str | None):
-        delegate = self.galleryView.delegate
-        delegate.highlightState.update(tag, color, delegate.thumbnailWidth())
-
-        self.galleryModel.highlightFiles(files)
-        self.updateStatusBar()
+        # NOTE: Repaint of changed cells happens on next update cycle, so this works. But when implementing new state updates,
+        #       they might need to happen before calling 'galleryModel.highlightFiles()', because it emits 'dataChanged' signals synchronously.
+        if self.galleryModel.highlightFiles(files):
+            delegate = self.galleryView.delegate
+            delegate.highlightState.update(tag, color, delegate.thumbnailWidth())
+            self.updateStatusBar()
 
 
 

@@ -224,16 +224,17 @@ class GalleryDelegate(QtWidgets.QStyledItemDelegate):
         # painter.drawConvexPolygon((QPoint(x, b), QPoint(x, b-s), QPoint(x+s, b))) # Bottom left
         # painter.drawConvexPolygon((QPoint(l, b), QPoint(l-s, b), QPoint(l, b-s))) # Bottom right
 
-        textRect = QRect(x+self.BORDER_SIZE_HALF, b-hlState.BUBBLE_HEIGHT, w-self.BORDER_SIZE, hlState.BUBBLE_HEIGHT)
-        painter.setPen(hlState.penBubbleBorder)
-        painter.setBrush(hlState.brushBubble)
-        r = hlState.BUBBLE_OFFSET * 2
-        painter.drawRoundedRect(textRect, r, r)
+        if hlState.tag:
+            textRect = QRect(x+self.BORDER_SIZE_HALF, b-hlState.BUBBLE_HEIGHT, w-self.BORDER_SIZE, hlState.BUBBLE_HEIGHT)
+            painter.setPen(hlState.penBubbleBorder)
+            painter.setBrush(hlState.brushBubble)
+            r = hlState.BUBBLE_OFFSET * 2
+            painter.drawRoundedRect(textRect, r, r)
 
-        textRect.adjust(hlState.BUBBLE_OFFSET, 0, -hlState.BUBBLE_OFFSET, 0)
-        painter.setPen(hlState.penBubbleText)
-        painter.setFont(hlState.fontBubbleText)
-        painter.drawText(textRect, hlState.tag, hlState.textOpt)
+            textRect.adjust(hlState.BUBBLE_OFFSET, 0, -hlState.BUBBLE_OFFSET, 0)
+            painter.setPen(hlState.penBubbleText)
+            painter.setFont(hlState.fontBubbleText)
+            painter.drawText(textRect, hlState.tag, hlState.textOpt)
 
         painter.restore()
 

@@ -332,14 +332,19 @@ class GalleryModel(QAbstractTableModel):
             self.dataChanged.emit(index, index, roles)
 
 
-    def highlightFiles(self, files: list[str]):
+    def highlightFiles(self, files: list[str]) -> bool:
         updateFiles = self._highlightedFiles.union(files)
+        if not updateFiles:
+            return False
+
         self._highlightedFiles = set(files)
 
         for file in updateFiles:
             if item := self.fileItems.get(file):
                 index = self.index(*item.pos)
                 self.dataChanged.emit(index, index, [self.ROLE_HIGHLIGHT])
+
+        return True
 
     @property
     def numHighlighted(self) -> int:
