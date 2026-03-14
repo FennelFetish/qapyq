@@ -25,8 +25,9 @@ class ImgTab(QtWidgets.QMainWindow):
         super().__init__()
         from main import MainWindow
         self.mainWindow: MainWindow = mainWindow
-        self.tabWidget = self.mainWindow.tabWidget
-        self._index = -1 # Store index when fullscreen
+
+        self._active: bool = False
+        self._index: int = -1 # Store index when fullscreen
         self.setWindowTitle(f"{Config.windowTitle} Fullscreen Tab")
 
         self.setStatusBar(TabStatusBar(self))
@@ -55,6 +56,17 @@ class ImgTab(QtWidgets.QMainWindow):
         return super().statusBar()
 
 
+    @property
+    def active(self) -> bool:
+        return self._active
+
+    @active.setter
+    def active(self, active: bool):
+        if active != self._active:
+            self._active = active
+            self.imgview.onTabActive(active)
+
+
     def _updateJsonAutocomplete(self, currentFile: str):
         self._jsonAutoCompleteSource.reset()
 
@@ -72,8 +84,9 @@ class ImgTab(QtWidgets.QMainWindow):
             fileNr = max(self.filelist.getCurrentNr(), 0) + 1
             name += locale.format_string(f" (%d/%d{loading})", (fileNr, numFiles), grouping=True)
 
-        tabIndex = self.tabWidget.indexOf(self)
-        self.tabWidget.setTabText(tabIndex, name)
+        tabWidget = self.mainWindow.tabWidget
+        tabIndex = tabWidget.indexOf(self)
+        tabWidget.setTabText(tabIndex, name)
         self.tabTitleChanged.emit(name)
 
         self._updateJsonAutocomplete(currentFile)
@@ -156,23 +169,24 @@ class ImgTab(QtWidgets.QMainWindow):
 
 
     def toggleFullscreen(self):
+        tabWidget = self.mainWindow.tabWidget
         winState = self.windowState()
-        if winState & Qt.WindowFullScreen:
+        if winState & Qt.WindowState.WindowFullScreen:
             # Disable fullscreen
-            index = self.tabWidget.insertTab(self._index, self, "Fullscreen")
-            self.tabWidget.setCurrentIndex(index)
+            index = tabWidget.insertTab(self._index, self, "Fullscreen")
+            tabWidget.setCurrentIndex(index)
             self.onFileChanged(self.filelist.getCurrentFile())
             self._index = -1
             self.imgview.tool.onFullscreen(False)
         else:
             # Enable fullscreen
-            self._index = self.tabWidget.indexOf(self)
-            self.tabWidget.removeTab(self._index)
+            self._index = tabWidget.indexOf(self)
+            tabWidget.removeTab(self._index)
             self.setParent(None)
             self.imgview.tool.onFullscreen(True)
 
         self.imgview.setFocus()
-        self.setWindowState(winState ^ Qt.WindowFullScreen)
+        self.setWindowState(winState ^ Qt.WindowState.WindowFullScreen)
         self.setVisible(True)
 
         QTimer.singleShot(100, self.imgview.updateView)
@@ -186,6 +200,7 @@ class ImgTab(QtWidgets.QMainWindow):
 
     def onTabClosed(self):
         self.imgview.tool.onDisabled(self.imgview)
+        self.active = False
         self.filelist.reset()
 
         for winContent in self._windowContent.values():

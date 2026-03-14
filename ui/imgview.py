@@ -109,6 +109,13 @@ class ImgView(DropView):
         self._tool.onResetView()
 
 
+    def onTabActive(self, active: bool):
+        self.image.onTabActive(active)
+
+        if self._tool:
+            self._tool.onTabActive(active)
+
+
     @property
     def tool(self):
         return self._tool
@@ -120,8 +127,9 @@ class ImgView(DropView):
 
         if self._tool is not None:
             self._tool.onDisabled(self)
+
         self._tool = tool
-        tool.onEnabled(self)
+        self._tool.onEnabled(self)
         self.updateView()
 
 
@@ -231,6 +239,9 @@ class MediaItemMixin:
         pass
 
     def togglePlay(self):
+        pass
+
+    def onTabActive(self, active: bool):
         pass
 
     def onMouseMove(self, event: QMouseEvent) -> bool:

@@ -170,6 +170,14 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
             self._playing = True
 
     @override
+    def onTabActive(self, active: bool):
+        if not active:
+            self.player.pause()
+        elif self._playing:
+            self.player.play()
+
+
+    @override
     def onMouseMove(self, event: QMouseEvent) -> bool:
         sceneW, sceneH = self.playbackControls.scene().sceneRect().size().toTuple()
 

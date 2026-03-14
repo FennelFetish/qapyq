@@ -38,6 +38,9 @@ class Tool:
         for shortcut in self._shortcuts:
             shortcut.setEnabled(False)
 
+    def onTabActive(self, active: bool):
+        pass
+
 
     def onSceneUpdate(self):
         pass
