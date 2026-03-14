@@ -1,7 +1,7 @@
 from __future__ import annotations
 from enum import IntEnum
 from typing_extensions import override
-from PySide6.QtCore import Qt, QRect, QRectF
+from PySide6.QtCore import Qt, QRect, QRectF, QSize
 from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QTransform, QPalette, QShortcut, QKeySequence, QMouseEvent, QWheelEvent
 from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsView, QGraphicsItem, QGraphicsScene
 from lib import colorlib, imagerw, videorw
@@ -163,6 +163,7 @@ class ImgView(DropView):
 
     def wheelEvent(self, event: QWheelEvent):
         if not (self._tool.onMouseWheel(event) or self.image.onMouseWheel(event)):
+        #if not (self.image.onMouseWheel(event) or self._tool.onMouseWheel(event)):
             super().wheelEvent(event)
 
     def tabletEvent(self, event):
@@ -196,6 +197,12 @@ class MediaItemMixin:
             self.clearImage()
             return False
         return True
+
+    def mediaSize(self) -> QSize:
+        raise NotImplementedError()
+
+    def hasAlpha(self) -> bool:
+        return False
 
     def addToScene(self: QGraphicsItem, scene: QGraphicsScene, guiScene: QGraphicsScene):
         scene.addItem(self)
@@ -271,6 +278,17 @@ class ImgItem(QGraphicsPixmapItem, MediaItemMixin):
             print(f"Failed to load image: {path}")
             return False
         return True
+
+    @override
+    def mediaSize(self) -> QSize:
+        pixmap = self.pixmap()
+        if pixmap.isNull():
+            return QSize(-1, -1)
+        return pixmap.size()
+
+    @override
+    def hasAlpha(self) -> bool:
+        return self.pixmap().hasAlphaChannel()
 
     @override
     def setSmooth(self, enabled: bool):

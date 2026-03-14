@@ -95,7 +95,7 @@ class MeasureTool(ViewTool):
         dy = int(abs(dy))
         manhattan = dx+dy
 
-        imgSize = self._imgview.image.pixmap().size()
+        imgSize = self._imgview.image.mediaSize()
         imgPixels = imgSize.width() * imgSize.height()
         imgPixels = max(imgPixels, 1)
         area = (dx+1) * (dy+1)
@@ -126,7 +126,7 @@ class MeasureTool(ViewTool):
         imgpos = self.mapPosToImage(point)
 
         # Constrain to image
-        imgsize = self._imgview.image.pixmap().size()
+        imgsize = self._imgview.image.mediaSize()
         x = max(imgpos.x(), 0)
         y = max(imgpos.y(), 0)
         x = min(x, imgsize.width()-1)

@@ -1,4 +1,4 @@
-from PySide6.QtCore import QRectF, Qt, QPointF
+from PySide6.QtCore import Qt, QRectF, QPointF
 from math import floor
 from .tool import Tool
 
@@ -21,7 +21,16 @@ class ViewTool(Tool):
 
 
     def onSceneUpdate(self):
-        self.tab.statusBar().setImageInfo(self._imgview.image.pixmap())
+        size = self._imgview.image.mediaSize()
+        if size.isValid():
+            w, h = size.toTuple()
+            alpha = self._imgview.image.hasAlpha()
+        else:
+            w = h = -1
+            alpha = False
+
+        self.tab.statusBar().setImageInfo(w, h, alpha)
+
 
     def getDropRects(self):
         return [QRectF(0, 0, 1, 1)]

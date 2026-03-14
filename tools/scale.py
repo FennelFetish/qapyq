@@ -26,8 +26,9 @@ class ScaleTool(ViewTool):
         self.addShortcuts(save)
 
     def imgSize(self) -> Size | None:
-        if pixmap := self._imgview.image.pixmap():
-            return Size(pixmap.width(), pixmap.height())
+        size = self._imgview.image.mediaSize()
+        if size.isValid():
+            return Size(size.width(), size.height())
         return None
 
     @Slot()

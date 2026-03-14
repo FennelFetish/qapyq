@@ -536,7 +536,7 @@ class DrawRectangleMaskOperation(MaskOperation):
             y0, y1 = y1, y0
 
         # Map position to range [0..1]
-        imgSize = self.imgview.image.pixmap().size()
+        imgSize = self.imgview.image.mediaSize()
         x0 = max(np.floor(x0) / imgSize.width(),  0.0)
         x1 = min(np.ceil (x1) / imgSize.width(),  1.0)
         y0 = max(np.floor(y0) / imgSize.height(), 0.0)

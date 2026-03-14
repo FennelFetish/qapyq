@@ -224,18 +224,18 @@ class TabStatusBar(qtlib.ColoredMessageStatusBar):
     def setMouseCoords(self, x, y):
         self._lblMouseCoords.setText(f"X:{x}  Y:{y}")
 
-    def setImageInfo(self, pixmap: QPixmap):
-        size = pixmap.size()
-        w, h = size.width(), size.height()
-
-        aspectText = ""
+    def setImageInfo(self, w: int, h: int, alpha: bool):
         if min(w, h) > 0:
+            sizeText = f"{w}x{h}"
             aspect = w / h
             aspectText = f"{aspect:.3f}" if aspect >= 1 else f"{aspect:.3f} (1:{1/aspect:.3f})"
             aspectText = f"  AR:{aspectText}"
+        else:
+            sizeText = ""
+            aspectText = ""
 
-        alpha = "  (Alpha)" if pixmap.hasAlphaChannel() else ""
-        self._lblImgSize.setText(f"{w}x{h}{aspectText}{alpha}")
+        alphaText = "  (Alpha)" if alpha else ""
+        self._lblImgSize.setText(f"{sizeText}{aspectText}{alphaText}")
 
 
 
