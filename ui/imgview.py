@@ -2,11 +2,17 @@ from __future__ import annotations
 from enum import IntEnum
 from typing_extensions import override
 from PySide6.QtCore import Qt, QRect, QRectF, QSize
-from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QTransform, QPalette, QShortcut, QKeySequence, QMouseEvent, QWheelEvent
+from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QTransform, QPalette, QShortcut, QKeySequence, QMouseEvent, QWheelEvent, QSinglePointEvent
 from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsView, QGraphicsItem, QGraphicsScene
 from lib import colorlib, imagerw, videorw
 from lib.filelist import FileList
 from .dropview import DropView
+
+
+class MouseLocation(IntEnum):
+    Outside  = 0
+    Tool     = 1
+    Controls = 2
 
 
 class ImgView(DropView):
@@ -37,6 +43,8 @@ class ImgView(DropView):
         self._playShortcut = QShortcut(QKeySequence(" "), self, context=Qt.ShortcutContext.WindowShortcut)
         self._playShortcut.setEnabled(False)
         self._playShortcut.activated.connect(lambda: self.image.togglePlay())
+
+        self._mouseLoc: MouseLocation = MouseLocation.Outside
 
     def _setupBackground(self):
         palette = self.palette()
@@ -148,16 +156,41 @@ class ImgView(DropView):
 
     def enterEvent(self, event):
         super().enterEvent(event)
-        self.image.onMouseEnter()
-        self._tool.onMouseEnter(event)
+
+        if self.image.onMouseEnter(event):
+            self._mouseLoc = MouseLocation.Controls
+        else:
+            self._mouseLoc = MouseLocation.Tool
+            self._tool.onMouseEnter(event)
 
     def leaveEvent(self, event):
         super().leaveEvent(event)
-        self.image.onMouseLeave()
-        self._tool.onMouseLeave(event)
+
+        match self._mouseLoc:
+            case MouseLocation.Tool:
+                self._tool.onMouseLeave(event)
+            case MouseLocation.Controls:
+                self.image.onMouseLeave()
+
+        self._mouseLoc = MouseLocation.Outside
 
     def mouseMoveEvent(self, event: QMouseEvent):
-        if not self.image.onMouseMove(event):
+        mouseOverControls = self.image.onMouseMove(event)
+
+        match self._mouseLoc:
+            case MouseLocation.Tool:
+                if mouseOverControls:
+                    self._mouseLoc = MouseLocation.Controls
+                    self._tool.onMouseLeave(None) # TODO: Pass event?
+                    self.image.onMouseEnter(event)
+
+            case MouseLocation.Controls:
+                if not mouseOverControls:
+                    self._mouseLoc = MouseLocation.Tool
+                    self.image.onMouseLeave()
+                    self._tool.onMouseEnter(None) # TODO: Pass event?
+
+        if self._mouseLoc == MouseLocation.Tool:
             super().mouseMoveEvent(event)
             self._tool.onMouseMove(event)
 
@@ -170,9 +203,15 @@ class ImgView(DropView):
         self._tool.onMouseRelease(event)
 
     def wheelEvent(self, event: QWheelEvent):
-        if not (self._tool.onMouseWheel(event) or self.image.onMouseWheel(event)):
-        #if not (self.image.onMouseWheel(event) or self._tool.onMouseWheel(event)):
-            super().wheelEvent(event)
+        match self._mouseLoc:
+            case MouseLocation.Tool:
+                if self._tool.onMouseWheel(event):
+                    return
+            case MouseLocation.Controls:
+                if self.image.onMouseWheel(event):
+                    return
+
+        super().wheelEvent(event)
 
     def tabletEvent(self, event):
         if self._tool.onTablet(event):
@@ -253,11 +292,12 @@ class MediaItemMixin:
     def onMouseWheel(self, event: QWheelEvent) -> bool:
         return False
 
-    def onMouseEnter(self):
-        pass
+    def onMouseEnter(self, event: QSinglePointEvent) -> bool:
+        return False
 
     def onMouseLeave(self):
         pass
+
 
 
 class ImgItem(QGraphicsPixmapItem, MediaItemMixin):
@@ -294,7 +334,7 @@ class ImgItem(QGraphicsPixmapItem, MediaItemMixin):
     def mediaSize(self) -> QSize:
         pixmap = self.pixmap()
         if pixmap.isNull():
-            return QSize(-1, -1)
+            return QSize()
         return pixmap.size()
 
     @override
