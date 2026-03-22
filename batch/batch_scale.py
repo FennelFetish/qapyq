@@ -7,6 +7,7 @@ from config import Config
 from lib import colorlib, imagerw
 import tools.scale as scale
 import ui.export_settings as export
+from ui.tab import ImgTab
 from infer.inference import InferenceChain
 from infer.inference_proc import InferenceProcess
 from infer.model_settings import ScaleModelSettings
@@ -17,7 +18,7 @@ from .batch_log import BatchLog
 class BatchScale(QtWidgets.QWidget):
     EXPORT_PRESET_KEY = "batch-scale"
 
-    def __init__(self, tab, logWidget: BatchLog, bars):
+    def __init__(self, tab: ImgTab, logWidget: BatchLog, bars):
         super().__init__()
         self.tab = tab
         self.logWidget = logWidget
@@ -137,8 +138,9 @@ class BatchScale(QtWidgets.QWidget):
         self.selectedScaleMode.updateSize()
 
     def onFileChanged(self, file: str):
-        if pixmap := self.tab.imgview.image.pixmap():
-            self._imageSize = scale.Size(pixmap.width(), pixmap.height())
+        size = self.tab.imgview.image.mediaSize()
+        if size.isValid():
+            self._imageSize = scale.Size(size.width(), size.height())
         else:
             self._imageSize = None
 

@@ -270,7 +270,7 @@ class FileDestinationSettings(QtWidgets.QGroupBox):
         self.txtBasePath.setPlaceholderText(f"If empty, will use common root of current files: {commonRoot}")
 
         self.destPathParser.setup(currentFile, None)
-        self.destPathParser.setImageDimension(self.tab.imgview.image.pixmap())
+        self.destPathParser.setImageDimension(self.tab.imgview.image.mediaSize())
         self.destPathSettings.updatePreview()
 
     @Slot()
@@ -459,7 +459,7 @@ class FileMaskSettings(QtWidgets.QGroupBox):
 
     def onFileChanged(self, currentFile):
         self.maskPathParser.setup(currentFile, None)
-        self.maskPathParser.setImageDimension(self.tab.imgview.image.pixmap())
+        self.maskPathParser.setImageDimension(self.tab.imgview.image.mediaSize())
         self.maskPathSettings.updatePreview()
 
     @Slot()
