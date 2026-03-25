@@ -71,7 +71,7 @@ def setSingleLineTextEdit(textEdit: QtWidgets.QPlainTextEdit):
 def setShowWhitespace(textEdit):
     doc = textEdit.document()
     opt = doc.defaultTextOption()
-    opt.setFlags(QtGui.QTextOption.ShowTabsAndSpaces)
+    opt.setFlags(QtGui.QTextOption.Flag.ShowTabsAndSpaces)
     doc.setDefaultTextOption(opt)
 
 def setTextPreserveUndo(cursor: QtGui.QTextCursor, text: str):
