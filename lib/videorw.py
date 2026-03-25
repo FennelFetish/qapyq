@@ -10,6 +10,22 @@ def isVideoFile(path: str):
     return ext in READ_EXTENSIONS
 
 
+def readSize(path: str) -> tuple[int, int]:
+    cap = cv.VideoCapture(path)
+    try:
+        if cap.isOpened():
+            w = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
+        else:
+            w = h = -1
+    except:
+        w = h = -1
+    finally:
+        cap.release()
+
+    return (w, h)
+
+
 def thumbnailVideo(path: str, maxWidth: int, tiling: int) -> tuple[np.ndarray, tuple[int, int]]:
     cap = cv.VideoCapture(path)
     try:
