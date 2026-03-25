@@ -5,6 +5,8 @@ from typing import NamedTuple
 # PyTorch version affects availability of prebuilt flash_attn wheels
 TORCH = "torch<2.9"
 
+OLD_TRANSFORMERS_VERSION = "4.45.2"
+
 PIP_ARGS = [sys.executable, "-m", "pip", "install", "--upgrade", "--upgrade-strategy", "eager"]
 
 
@@ -25,13 +27,14 @@ class ComponentList(NamedTuple):
     components: list[Component]
 
 
-OLD_TRANSFORMERS_VERSION = "4.45.2"
+COMP_PIP       = Component("package installer", True,   ["pip"])
 COMP_INFERENCE = Component("inference backend", True,   ["-r", "requirements-infer.txt", TORCH])
 COMP_FLASHATTN = Component("FlashAttention",    False,  ["-r", "requirements-flashattn.txt", TORCH])
 #COMP_FLASHATTN = Component("FlashAttention",    False,  ["flash_attn", "--no-build-isolation", "--verbose"])
 
 COMPONENTS = {
     "1": ComponentList("all components", True, [
+        COMP_PIP,
         Component("base requirements",      True,   ["-r", "requirements.txt"]),
         Component("GUI requirements",       True,   ["-r", "requirements-gui.txt"]),
         Component("PyTorch",                True,   ["-r", "requirements-pytorch.txt", TORCH]),
@@ -39,10 +42,12 @@ COMPONENTS = {
         Component("llama.cpp",              False,  ["-r", "requirements-llamacpp.txt"]),
     ]),
     "2": ComponentList("only GUI", False, [
+        COMP_PIP,
         Component("base requirements",      True,   ["-r", "requirements.txt"]),
         Component("GUI requirements",       True,   ["-r", "requirements-gui.txt"]),
     ]),
     "3": ComponentList("only backend", True, [
+        COMP_PIP,
         Component("base requirements",      True,   ["-r", "requirements.txt"]),
         Component("PyTorch",                True,   ["-r", "requirements-pytorch.txt", TORCH]),
         COMP_INFERENCE,
