@@ -1,13 +1,18 @@
 from __future__ import annotations
 from typing import NamedTuple
 from typing_extensions import override
+import math
 import cv2 as cv
 from PySide6.QtCore import Qt, Signal, Slot, QRect, QRectF, QSize, QUrl, QThread, QTimer, QObject, QLoggingCategory
-from PySide6.QtWidgets import QGraphicsScene, QGraphicsItemGroup, QGraphicsRectItem, QGraphicsTextItem, QGraphicsPixmapItem, QApplication
-from PySide6.QtGui import QPixmap, QImage, QColor, QMouseEvent, QWheelEvent, QSinglePointEvent
+from PySide6.QtGui import QPixmap, QImage, QColor, QMouseEvent, QWheelEvent, QSinglePointEvent, QPainter, QPen, QFont, QTextOption, QFontMetricsF
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput, QMediaMetaData
 from PySide6.QtMultimediaWidgets import QGraphicsVideoItem
+from PySide6.QtWidgets import (
+    QGraphicsScene, QGraphicsItemGroup, QGraphicsRectItem, QGraphicsTextItem, QGraphicsPixmapItem, QGraphicsItem,
+    QApplication, QWidget, QStyleOptionGraphicsItem
+)
 from lib import qtlib, colorlib, threadlib
+from config import Config
 from .imgview import ImgView, MediaItemMixin
 
 QLoggingCategory.setFilterRules("qt.multimedia=false\nqt.multimedia.*=false")
@@ -30,7 +35,8 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
         self.player.setLoops(QMediaPlayer.Loops.Infinite)
 
         self.playbackControls = PlaybackControls(self)
-        self.info = MediaInfo(self.player, self.playbackControls)
+        self.volumeControl = VolumeControl(self)
+        self.info = MediaInfo(self.player, self.audioOutput, self.playbackControls, self.volumeControl)
 
         self._extractorThread = QThread()
         self._extractorThread.setObjectName("video-frame-extract")
@@ -62,6 +68,12 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
             self.playbackControls.seekThumbnail.setPixmap(pixmap)
             self._redrawMainViewport()
 
+    def _updateVolume(self):
+        vol = 0.0 if Config.mediaMute else Config.mediaVolume
+        self.audioOutput.setVolume(vol)
+        self.volumeControl.setVolume(vol)
+        self._redrawMainViewport()
+
 
     # ===== MediaItemMixin Interface =====
 
@@ -83,13 +95,14 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
             return False
 
         videoSize, thumbnailSize = self.frameExtractor.loadFile(path)
+        self.setSize(videoSize)
+
         if not videoSize.isValid():
-            print("Warning: Failed to load video")
+            print(f"Failed to load video: {path}")
             self.clearImage()
             return False
 
-        self.setSize(videoSize)
-
+        self._updateVolume()
         self.player.setSource(path)
         self.player.play()
         self._playing = True
@@ -108,16 +121,19 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
     def addToScene(self, scene: QGraphicsScene, guiScene: QGraphicsScene):
         super().addToScene(scene, guiScene)
         guiScene.addItem(self.playbackControls)
+        guiScene.addItem(self.volumeControl)
 
     @override
     def removeFromScene(self, scene: QGraphicsScene, guiScene: QGraphicsScene):
         super().removeFromScene(scene, guiScene)
         guiScene.removeItem(self.playbackControls)
+        guiScene.removeItem(self.volumeControl)
 
     @override
     def updateTransform(self, vpRect: QRect | QRectF, rotation: float):
         super().updateTransform(vpRect, rotation)
         self.playbackControls.updateSize(vpRect)
+        self.volumeControl.updatePosition(vpRect, -PlaybackControls.SEEK_BAR_HEIGHT_EXPANDED)
 
     @override
     def togglePlay(self):
@@ -134,6 +150,7 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
         if not active:
             self.player.pause()
         elif self._playing:
+            self._updateVolume()
             self.player.play()
 
 
@@ -141,16 +158,24 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
     def onMouseMove(self, event: QMouseEvent) -> bool:
         mouseX, mouseY = event.pos().toTuple()
 
-        expanded = self.playbackControls.isMouseOver(mouseY)
-        expandedChanged = self.playbackControls.setExpanded(expanded)
+        mouseOverControls = self.playbackControls.isMouseOver(mouseY)
+        redraw = self.playbackControls.setExpanded(mouseOverControls)
 
-        if expanded:
+        if mouseOverControls:
             self.playbackControls.requestThumbnail(mouseX)
-            self._redrawMainViewport()
-        elif expandedChanged:
+            redraw = True
+            mouseOverVolume = False
+        else:
+            mouseOverVolume = self.volumeControl.isMouseOver(mouseX, mouseY)
+            if not self.volumeControl.isVisible():
+                self.volumeControl.show()
+                redraw = True
+
+        self.volumeControl.setMouseOver(mouseOverVolume)
+        if redraw:
             self._redrawMainViewport()
 
-        return expanded
+        return mouseOverControls | mouseOverVolume
 
     @override
     def onMousePress(self, event: QMouseEvent) -> bool:
@@ -158,26 +183,46 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
             return False
 
         mouseX, mouseY = event.pos().toTuple()
+
         if self.playbackControls.isMouseOver(mouseY):
             pos = self.playbackControls.getVideoPosition(mouseX)
             self.player.setPosition(pos)
+            return True
+
+        if self.volumeControl.isMouseOver(mouseX, mouseY):
+            Config.mediaMute = (self.audioOutput.volume() > 0.0)
+            self._updateVolume()
             return True
 
         return False
 
     @override
     def onMouseWheel(self, event: QWheelEvent) -> bool:
-        if self.player.isPlaying():
-            skip = min(5000, self.player.duration()/5)
-        elif self.info.fps > 0.0:
-            skip = 1000.0 / self.info.fps
+        wheelSteps = event.angleDelta().y() / 120.0 # 8*15° standard
+        mouseX, mouseY = event.position().toPoint().toTuple()
+
+        # Volume
+        if self.volumeControl.isMouseOver(mouseX, mouseY):
+            vol = self.audioOutput.volume() + (wheelSteps * 0.05)
+            vol = max(0.0, min(vol, 1.0))
+            Config.mediaVolume = vol
+            if vol > 0.0:
+                Config.mediaMute = False
+
+            self._updateVolume()
+
+        # Video Seek
         else:
-            skip = 0
+            if self.player.isPlaying():
+                skip = min(5000, self.player.duration()/5)
+            elif self.info.fps > 0.0:
+                skip = 1000.0 / self.info.fps
+            else:
+                skip = 0
 
-        skipSteps = -event.angleDelta().y() / 120.0 # 8*15° standard
+            videoPos = self.player.position() - (wheelSteps * skip)
+            self.player.setPosition(round(videoPos))
 
-        videoPos = self.player.position() + (skipSteps * skip)
-        self.player.setPosition(round(videoPos))
         return True
 
     @override
@@ -193,10 +238,11 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
 
 
 class MediaInfo(QObject):
-    def __init__(self, player: QMediaPlayer, playbackControls: PlaybackControls):
+    def __init__(self, player: QMediaPlayer, audio: QAudioOutput, playbackControls: PlaybackControls, volumeControl: VolumeControl):
         super().__init__(player)
         self.player = player
         self.playbackControls = playbackControls
+        self.volumeControl = volumeControl
 
         self.fps: float = 0.0
         self.duration: int = 0
@@ -208,6 +254,8 @@ class MediaInfo(QObject):
         player.playingChanged.connect(self._onPlayingChanged, Qt.ConnectionType.QueuedConnection)
         player.seekableChanged.connect(self._onSeekableChanged, Qt.ConnectionType.QueuedConnection)
         player.errorOccurred.connect(self._onError, Qt.ConnectionType.QueuedConnection)
+
+        audio.volumeChanged.connect(self._onVolumeChanged, Qt.ConnectionType.QueuedConnection)
 
     @Slot(QMediaPlayer.MediaStatus)
     def _onMediaStatusChanged(self, status: QMediaPlayer.MediaStatus):
@@ -243,6 +291,10 @@ class MediaInfo(QObject):
     def _onError(self, error: QMediaPlayer.Error, errorMsg: str):
         print(f"Error while playing video: {errorMsg} ({error})")
 
+    @Slot(float)
+    def _onVolumeChanged(self, volume: float):
+        self.volumeControl.setVolume(volume)
+
 
 
 class PlaybackControls(QGraphicsItemGroup):
@@ -272,14 +324,11 @@ class PlaybackControls(QGraphicsItemGroup):
         self.addToGroup(self.seekThumbnail)
 
         # Text Labels
-        palette = QApplication.palette()
-        highlightColor = palette.color(palette.ColorRole.Highlight)
-
         textColor = QColor(colorlib.BUBBLE_TEXT)
-        textColor.setAlphaF(0.5)
+        textColor.setAlphaF(0.7)
         self.labelDuration = TimeLabel(textColor)
         self.labelPlayTime = TimeLabel(textColor)
-        self.labelSeekTime = TimeLabel(highlightColor)
+        self.labelSeekTime = TimeLabel(QColor(colorlib.BUBBLE_TEXT))
 
         self.addToGroup(self.labelDuration)
         self.addToGroup(self.labelPlayTime)
@@ -338,7 +387,7 @@ class PlaybackControls(QGraphicsItemGroup):
         self.labelSeekTime.setBoundedX(mouseX, sceneW)
         self.labelSeekTime.show()
 
-        if self.videoItem.info.seekable:
+        if self.videoItem.info.seekable and Config.mediaSeekThumbnailSize > 0:
             self.videoItem.frameExtractor.requestThumbnail(self.videoItem.filepath, videoPos)
             self.seekThumbnail.setBoundedX(mouseX, sceneW)
             self.seekThumbnail.show()
@@ -374,16 +423,24 @@ class PlaybackControls(QGraphicsItemGroup):
 
 
 class SeekBar(QGraphicsRectItem):
-    COLOR_BG          = QColor(80, 80, 80, 20)
-    COLOR_BG_EXPANDED = QColor(80, 80, 80, 50)  # TODO: Better readability
+    COLOR_BG: QColor = None
+    COLOR_BG_EXPANDED: QColor = None
 
     def __init__(self):
         super().__init__()
         self.setPen(Qt.PenStyle.NoPen)
-        self.setBrush(self.COLOR_BG)
 
-    def setExpanded(self, extended: bool):
-        self.setBrush(self.COLOR_BG_EXPANDED if extended else self.COLOR_BG)
+        if SeekBar.COLOR_BG is None:
+            SeekBar.COLOR_BG = QColor(colorlib.BUBBLE_BG)
+            SeekBar.COLOR_BG.setAlphaF(0.1)
+
+            SeekBar.COLOR_BG_EXPANDED = QColor(colorlib.BUBBLE_BG)
+            SeekBar.COLOR_BG_EXPANDED.setAlphaF(0.5)
+
+        self.setBrush(SeekBar.COLOR_BG)
+
+    def setExpanded(self, expanded: bool):
+        self.setBrush(self.COLOR_BG_EXPANDED if expanded else self.COLOR_BG)
 
 
 class SeekBarFull(QGraphicsRectItem):
@@ -402,7 +459,6 @@ class SeekKnob(QGraphicsRectItem):
         super().__init__(0, 0, width, height)
         palette = QApplication.palette()
         highlightColor = palette.color(palette.ColorRole.Highlight)
-        #highlightColor.setAlphaF(0.8)
 
         self.setPen(Qt.PenStyle.NoPen)
         self.setBrush(highlightColor)
@@ -457,6 +513,121 @@ class TimeLabel(QGraphicsTextItem):
         self.setX(x)
 
 
+class VolumeControl(QGraphicsItem):
+    def __init__(self, videoItem: VideoItem):
+        super().__init__()
+        self.videoItem = videoItem
+
+        self.radius = 20
+        self._symbol = "🕨"
+
+        self._chordStart: int = 0
+        self._chordSpan: int  = 0
+
+        color = QColor(colorlib.BUBBLE_TEXT)
+        color.setAlphaF(0.5)
+
+        self._penBorder = QPen(color)
+        self._penBorder.setWidthF(2.0)
+
+        self._penMute = QPen(color)
+        self._penMute.setWidthF(6.0)
+        self._penMute.setCapStyle(Qt.PenCapStyle.FlatCap)
+
+        self._penText = QPen(color)
+        self._font = QFont()
+        self._font.setPointSizeF(20.0)
+        self._textYOffset = ((self.radius*2) - QFontMetricsF(self._font).height()) * 2 + 2
+        self._textOpt = QTextOption()
+        self._textOpt.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self._brushBg = QColor(colorlib.BUBBLE_BG)
+        self._brushBg.setAlphaF(0.5)
+
+        self._brushFill = QColor(colorlib.BUBBLE_TEXT)
+        self._brushFill.setAlphaF(0.3)
+
+        self._hideTimer = QTimer(singleShot=True, interval=600)
+        self._hideTimer.timeout.connect(lambda: self._hide())
+        self.hide()
+
+    def _hide(self):
+        self.hide()
+        self.videoItem._redrawMainViewport()
+
+    def updatePosition(self, vpRect: QRect | QRectF, yOffset: int):
+        # Place volume control on the opposite side of toolbar, otherwise autohide interferes
+        toolbarRight = (qtlib.toolbarAreaFromString(Config.toolToolbarPosition) == Qt.ToolBarArea.RightToolBarArea)
+        size = self.radius * 2
+        padX = 6
+
+        x = padX if toolbarRight else (vpRect.width() - size - padX)
+        y = vpRect.height() - size + yOffset
+        self.setPos(x, y)
+
+    def setVolume(self, volume: float):
+        if volume >= 1.0:
+            self._symbol = "🕪"
+        elif volume > 0.0:
+            self._symbol = "🕩"
+        else:
+            self._symbol = "🕨"
+
+        cosVal = 1 - (2 * volume)
+        cosVal = max(-1.0, min(cosVal, 1.0))
+        angle = math.degrees(math.acos(cosVal))
+        angle = round(angle * 16) # drawChord takes 1/16 deg as unit
+
+        self._chordStart = (270*16) - angle
+        self._chordSpan  = 2 * angle
+
+    def isMouseOver(self, mouseX: int, mouseY: int) -> bool:
+        center = self.sceneBoundingRect().center()
+        dx = mouseX - center.x()
+        dy = mouseY - center.y()
+        return (dx*dx) + (dy*dy) < (self.radius * self.radius)
+
+    def setMouseOver(self, mouseOver: bool):
+        if mouseOver:
+            self._hideTimer.stop()
+        else:
+            self._hideTimer.start()
+
+    def show(self):
+        super().show()
+        self._hideTimer.start()
+
+    def boundingRect(self) -> QRectF:
+        size = self.radius * 2
+        return QRectF(0, 0, size, size)
+
+    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None):
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+
+        rect = self.boundingRect()
+
+        painter.setPen(self._penBorder)
+        painter.setBrush(self._brushBg)
+        painter.drawEllipse(rect)
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(self._brushFill)
+        painter.drawChord(rect, self._chordStart, self._chordSpan)
+
+        painter.setPen(self._penText)
+        painter.setFont(self._font)
+        textRect = rect.adjusted(0, self._textYOffset, 0, 0)
+        painter.drawText(textRect, self._symbol, self._textOpt)
+
+        if Config.mediaMute:
+            l = 13
+            center = rect.center().toPoint()
+            painter.setPen(self._penMute)
+            painter.drawLine(center.x()-l, center.y()-l, center.x()+l, center.y()+l)
+            #painter.drawLine(center.x()+l, center.y()-l, center.x()-l, center.y()+l)
+
+
 
 class VideoSizeFuture(threadlib.Future[tuple[QSize, QSize]]): pass
 class FrameExtractFuture(threadlib.Future[QImage]): pass
@@ -466,7 +637,6 @@ class ThumbnailRequest(NamedTuple):
     pos: int
 
 class FrameExtractWorker(QObject):
-    THUMBNAIL_SIZE = 250
     THUMBNAIL_INTERVAL = 100  # ms
 
     _loadFile = Signal(str, VideoSizeFuture)        # file, future
@@ -487,9 +657,9 @@ class FrameExtractWorker(QObject):
         self._thumbnailTimer = QTimer(self, singleShot=True, interval=self.THUMBNAIL_INTERVAL)
         self._thumbnailTimer.timeout.connect(self._doExtractThumbnail)
 
-        self._loadFile.connect(self._doLoadFile)
-        self._requestThumbnail.connect(self._onThumbnailRequested)
-        self._extractFrame.connect(self._doExtractFrame)
+        self._loadFile.connect(self._doLoadFile, Qt.ConnectionType.QueuedConnection)
+        self._requestThumbnail.connect(self._onThumbnailRequested, Qt.ConnectionType.QueuedConnection)
+        self._extractFrame.connect(self._doExtractFrame, Qt.ConnectionType.QueuedConnection)
 
 
     def loadFile(self, file: str) -> tuple[QSize, QSize]:
@@ -524,10 +694,10 @@ class FrameExtractWorker(QObject):
 
         ar = w / h
         if ar > 1:
-            w = cls.THUMBNAIL_SIZE
+            w = Config.mediaSeekThumbnailSize
             h = round(w / ar)
         else:
-            h = cls.THUMBNAIL_SIZE
+            h = Config.mediaSeekThumbnailSize
             w = round(h * ar)
 
         return QSize(w, h)
