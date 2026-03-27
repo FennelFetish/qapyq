@@ -58,10 +58,11 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
     def _redrawMainViewport(self):
         # The GUI scene is rendered separately as overlay. It's not automatically redrawn when geometries change.
         # The viewport is redrawn when the video is playing. If paused -> force redraw of main view.
+        # FIXME: RuntimeError: libshiboken: Internal C++ object (PySide6.QtMultimedia.QMediaPlayer) already deleted.
         if not self.player.isPlaying():
             self.imgview.viewport().update()
 
-    @Slot(QImage)
+    @Slot(str, QImage)
     def _onThumbnailDone(self, file: str, image: QImage | None):
         if image is not None and file == self.filepath:
             pixmap = QPixmap.fromImage(image)
@@ -91,6 +92,8 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
     @override
     def loadFile(self, path: str) -> bool:
         self._playing = False
+        self.info.thumbnailsEnabled = False
+
         if not super().loadFile(path):
             return False
 
@@ -257,6 +260,19 @@ class MediaInfo(QObject):
 
         audio.volumeChanged.connect(self._onVolumeChanged, Qt.ConnectionType.QueuedConnection)
 
+        self.thumbnailsEnabled: bool = False
+        self._thumbnailDelay = QTimer(self, singleShot=True, interval=200)
+        self._thumbnailDelay.timeout.connect(self._enableThumbnails)
+
+
+    def isThumbnailsEnabled(self) -> bool:
+        return self.thumbnailsEnabled & self.seekable
+
+    @Slot()
+    def _enableThumbnails(self):
+        self.thumbnailsEnabled = (Config.mediaSeekThumbnailSize > 0)
+
+
     @Slot(QMediaPlayer.MediaStatus)
     def _onMediaStatusChanged(self, status: QMediaPlayer.MediaStatus):
         match status:
@@ -264,6 +280,8 @@ class MediaInfo(QObject):
                 self.fps = 0.0
 
             case QMediaPlayer.MediaStatus.LoadedMedia:
+                self._thumbnailDelay.start()
+
                 try:
                     meta = self.player.metaData()
                     self.fps = float( meta.value(QMediaMetaData.Key.VideoFrameRate) )
@@ -387,7 +405,7 @@ class PlaybackControls(QGraphicsItemGroup):
         self.labelSeekTime.setBoundedX(mouseX, sceneW)
         self.labelSeekTime.show()
 
-        if self.videoItem.info.seekable and Config.mediaSeekThumbnailSize > 0:
+        if self.videoItem.info.isThumbnailsEnabled():
             self.videoItem.frameExtractor.requestThumbnail(self.videoItem.filepath, videoPos)
             self.seekThumbnail.setBoundedX(mouseX, sceneW)
             self.seekThumbnail.show()
@@ -739,7 +757,7 @@ class FrameExtractWorker(QObject):
         self._extractFrame.emit(pos, future)
         return future.result()
 
-    @Slot(str, int, FrameExtractFuture)
+    @Slot(int, FrameExtractFuture)
     def _doExtractFrame(self, pos: int, future: FrameExtractFuture):
         try:
             self.cap.set(cv.CAP_PROP_POS_MSEC, pos)
@@ -753,11 +771,6 @@ class FrameExtractWorker(QObject):
 
         except Exception as ex:
             future.setException(ex)
-
-
-        finally:
-            self.signals.done.emit(image, self.file, self.pos)
-
 
 
 

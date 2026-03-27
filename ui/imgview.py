@@ -80,10 +80,10 @@ class ImgView(DropView):
             self.image.addToScene(self.scene(), self._guiScene)
             self._playShortcut.setEnabled(isVideoFile)
 
-        if self.image.loadFile(currentFile):
-            self.resetView()
-            self.updateImageTransform()
-            self.updateView()
+        self.image.loadFile(currentFile)
+        self.resetView()
+        self.updateImageTransform()
+        self.updateView()
 
         if self.takeFocusOnFilechange:
             # TODO: On Windows, this delays the re-painting of selection borders
