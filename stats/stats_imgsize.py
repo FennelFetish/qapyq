@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
-from lib import colorlib, imagerw, qtlib
+from lib import colorlib, imagerw, videorw, qtlib
 from ui.tab import ImgTab
 from .stats_base import StatsLayout, StatsTableView, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
 
@@ -87,7 +87,12 @@ class SizeBucketStatsLoadTask(StatsLoadTask):
 
     @staticmethod
     def readSize(file: str) -> tuple[str, tuple[int, int]]:
-        return file, imagerw.readSize(file)
+        if videorw.isVideoFile(file):
+            size = videorw.readSize(file)
+        else:
+            size = imagerw.readSize(file)
+
+        return file, size
 
 
 

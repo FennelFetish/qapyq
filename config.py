@@ -45,6 +45,11 @@ class Config:
         }
     }
 
+    # Media
+    mediaVolume             = 1.0
+    mediaMute               = False
+    mediaSeekThumbnailSize  = 300
+
     # View
     viewZoomFactor          = 1.15
     viewZoomMinimum         = 0.5
@@ -188,6 +193,10 @@ class Config:
         cls.pathDebugLoad         = data.get("path_debug_load", cls.pathDebugLoad)
         cls.exportPresets         = data.get("export_presets", cls.exportPresets)
 
+        cls.mediaVolume           = float(data.get("media_volume", cls.mediaVolume))
+        cls.mediaMute             = bool(data.get("media_mute", cls.mediaMute))
+        cls.mediaSeekThumbnailSize = int(data.get("media_seek_thumbnail_size", cls.mediaSeekThumbnailSize))
+
         cls.viewZoomFactor        = float(data.get("view_zoom_factor", cls.viewZoomFactor))
         cls.viewZoomMinimum       = float(data.get("view_zoom_minimum", cls.viewZoomMinimum))
 
@@ -260,6 +269,10 @@ class Config:
         data["path_export"]                 = cls.pathExport
         data["path_debug_load"]             = cls.pathDebugLoad
         data["export_presets"]              = cls.exportPresets
+
+        data["media_volume"]                = cls.mediaVolume
+        data["media_mute"]                  = cls.mediaMute
+        data["media_seek_thumbnail_size"]   = cls.mediaSeekThumbnailSize
 
         data["view_zoom_factor"]            = cls.viewZoomFactor
         data["view_zoom_minimum"]           = cls.viewZoomMinimum

@@ -38,7 +38,7 @@ class CompareTool(ViewTool):
 
 
     def loadCompareImage(self, path: str):
-        self._image.loadImage(path)
+        self._image.loadFile(path)
         self._image.updateClip(self._imgview)
         self._toolbar.vae.autoProcess = False
 

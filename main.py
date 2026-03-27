@@ -89,8 +89,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self.toggleFullscreen()
 
     @Slot()
-    def onTabChanged(self, index):
+    def onTabChanged(self, index: int):
+        for i, tab in enumerate(self.tabs()):
+            if i != index: # Don't deactivate fullscreen tab
+                tab.active = False
+
         tab = self.currentTab
+        tab.active = True
         for win in self.auxWindows.values():
             win.setTab(tab)
 

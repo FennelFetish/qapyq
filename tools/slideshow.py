@@ -317,6 +317,10 @@ class SlideshowTool(ViewTool):
         super().onDisabled(imgview)
         self.resetHistory(addCurrent=False)
 
+    def onTabActive(self, active: bool):
+        if not active and self._playTimer.isActive():
+            self._toolbar.togglePlay()
+
 
     def onMouseMove(self, event: QtGui.QMouseEvent):
         super().onMouseMove(event)

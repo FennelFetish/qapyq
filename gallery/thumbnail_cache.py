@@ -2,7 +2,7 @@ import os, time
 from PySide6.QtCore import Slot, Signal, QThreadPool, QObject, QRunnable, Qt
 from PySide6.QtGui import QPixmap, QImage
 from lib.filelist import DataKeys
-import lib.imagerw as imagerw
+from lib import imagerw, videorw
 from config import Config
 from .gallery_model import GalleryModel
 
@@ -90,7 +90,10 @@ class ThumbnailTask(QRunnable):
     def run(self):
         # QPixmap is not threadsafe, loading as QImage instead
         try:
-            img, (w, h) = imagerw.thumbnailQImage(self.file, ThumbnailCache.THUMBNAIL_SIZE)
+            if videorw.isVideoFile(self.file):
+                img, (w, h) = videorw.thumbnailVideoQImage(self.file, ThumbnailCache.THUMBNAIL_SIZE, 2)
+            else:
+                img, (w, h) = imagerw.thumbnailQImage(self.file, ThumbnailCache.THUMBNAIL_SIZE)
         except Exception as ex:
             print(f"Couldn't load thumbnail: {ex} ({type(ex).__name__})")
             img = QImage()

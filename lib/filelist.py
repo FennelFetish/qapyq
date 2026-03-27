@@ -3,7 +3,10 @@ from typing import Iterable, Iterator, Any, Callable
 from bisect import bisect_left, bisect_right
 from PySide6.QtCore import Qt, Signal, Slot, QThreadPool, QRunnable, QObject, QMutex, QMutexLocker
 from config import Config
-from lib.imagerw import READ_EXTENSIONS
+from lib import imagerw, videorw
+
+
+ALL_READ_EXTENSIONS = frozenset(imagerw.READ_EXTENSIONS | videorw.READ_EXTENSIONS)
 
 
 try:
@@ -105,7 +108,7 @@ def fileFilter(path: str) -> bool:
     name, ext = os.path.splitext(path)
     if name.endswith(Config.maskSuffix):
         return False
-    return ext.lower() in READ_EXTENSIONS
+    return ext.lower() in ALL_READ_EXTENSIONS
 
 
 def getCommonRoot(files: list[str]) -> str:

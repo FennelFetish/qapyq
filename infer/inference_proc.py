@@ -2,11 +2,14 @@ from __future__ import annotations
 import sys, struct, msgpack, copy, traceback
 from typing import Any, Callable
 from collections import defaultdict
-from threading import Condition
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QThread, QProcess, QProcessEnvironment, QByteArray, QMutex, QMutexLocker
 from host.protocol import Protocol, Service
 from host.host_window import LOCAL_NAME
+from lib import threadlib
 from config import Config
+
+
+class ProcFuture(threadlib.Future[dict | None]): pass
 
 
 class InferenceException(Exception):
@@ -19,59 +22,6 @@ class InferenceException(Exception):
         errorType = f" ({errorType})" if errorType else ""
         msg = f"Error during inference{host}: {message}{errorType}"
         super().__init__(msg)
-
-
-
-class ProcFuture:
-    def __init__(self):
-        self._cond = Condition()
-        self._received = False
-        self._result: dict | None = None
-        self._exception: Exception | None = None
-        self._callback: Callable | None = None
-
-    def setCallback(self, callback: Callable[[ProcFuture], None]):
-        with self._cond:
-            self._callback = callback
-            if not self._received:
-                return
-
-        callback(self)
-
-    def setResult(self, result: dict | None):
-        with self._cond:
-            if self._received:
-                return
-
-            self._received = True
-            self._result = result
-            self._cond.notify_all()
-            cb = self._callback
-
-        if cb:
-            cb(self)
-
-    def setException(self, exception):
-        with self._cond:
-            if self._received:
-                return
-
-            self._received = True
-            self._exception = exception
-            self._cond.notify_all()
-            cb = self._callback
-
-        if cb:
-            cb(self)
-
-    def result(self) -> dict | None:
-        with self._cond:
-            while not self._received:
-                self._cond.wait()
-
-            if self._exception is not None:
-                raise self._exception
-            return self._result
 
 
 class AwaitableFunc:

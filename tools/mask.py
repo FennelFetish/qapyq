@@ -46,9 +46,8 @@ class MaskTool(ViewTool):
             name = "Layer 0"
 
         imgview = self._imgview
-        pixmap = imgview.image.pixmap()
 
-        mask = QImage(pixmap.size(), QImage.Format.Format_Grayscale8)
+        mask = QImage(imgview.image.mediaSize(), QImage.Format.Format_Grayscale8)
         mask.fill(Qt.GlobalColor.black)
 
         maskItem = MaskItem.new(name, mask)

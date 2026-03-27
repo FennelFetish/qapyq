@@ -89,7 +89,7 @@ class CropTool(ViewTool):
         pxScaleX = max(1.0, pxScale.width())
         pxScaleY = max(1.0, pxScale.height())
 
-        imgSize = self._imgview.image.pixmap().size()
+        imgSize = self._imgview.image.mediaSize()
 
         if heightChange != 0.0:
             newHeight = self._cropHeight + (heightChange * pxScaleY)
@@ -155,7 +155,7 @@ class CropTool(ViewTool):
 
     def updateSelectionRect(self, mouseCoords: QPointF):
         rot = QTransform().rotate(-self._imgview.rotation)
-        imgSize = self._imgview.image.pixmap().size()
+        imgSize = self._imgview.image.mediaSize()
 
         # Constrain selection size
         if not self._toolbar.allowUpscale:
@@ -369,7 +369,7 @@ class CropTool(ViewTool):
         if self._waitForConfirmation:
             return True
 
-        change = round(self._imgview.image.pixmap().height() * Config.cropWheelStep)
+        change = round(self._imgview.image.mediaSize().height() * Config.cropWheelStep)
         if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
             change = 1
 

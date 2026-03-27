@@ -2,7 +2,7 @@ import os, superqt, copy, traceback, math
 from difflib import SequenceMatcher
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QRunnable, QObject
+from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QRunnable, QObject, QSize
 import cv2 as cv
 import numpy as np
 from PIL import Image
@@ -481,12 +481,12 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
         self.region = 0
         self.rotation = 0.0
 
-    def setImageDimension(self, pixmap: QtGui.QPixmap | None):
-        if pixmap:
-            self.width = pixmap.width()
-            self.height = pixmap.height()
+    def setImageDimension(self, size: QSize):
+        if size.isValid():
+            self.width  = size.width()
+            self.height = size.height()
         else:
-            self.width, self.height = 0, 0
+            self.width = self.height = 0
 
 
     def parsePath(self, pathTemplate: str, overwriteFiles: bool) -> str:
