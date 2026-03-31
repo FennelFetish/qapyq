@@ -1,15 +1,20 @@
+from typing import TYPE_CHECKING
 from typing_extensions import override
 import cv2 as cv
 import numpy as np
-from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt, QTimer, QThreadPool, Slot
+from PySide6.QtCore import Qt, Slot, QPointF, QRect, QRectF, QSize, QTimer, QThreadPool
 from PySide6.QtGui import QBrush, QPen, QColor, QPainterPath, QPolygonF, QTransform, QCursor, QPixmap
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QMenu
-from .view import ViewTool
+from lib import videorw
 from lib.filelist import DataKeys
-from ui.imgview import ImgView
+from ui.imgview import ImgView, MediaItemMixin
 from ui.size_preset import SIZE_PRESET_SIGNALS
 import ui.export_settings as export
 from config import Config
+from .view import ViewTool
+
+if TYPE_CHECKING:
+    from ui.video_player import VideoItem
 
 
 # TODO: Crop Modes:
@@ -56,7 +61,7 @@ class CropTool(ViewTool):
 
         self._mask = MaskRect()
         self._mask.setBrush( QBrush(QColor(0, 0, 0, 100)) )
-        self._waitForConfirmation = False
+        self._selectionFixed = False
 
         self._lastExportedFile = ""
 
@@ -204,53 +209,118 @@ class CropTool(ViewTool):
             self._mask.setVisible(visible)
             self._imgview.scene().update()
 
+    def setSelectionFixed(self, fixed: bool):
+        self._selectionFixed = fixed
+        self.updateTimeSegment()
+
     def resetSelection(self, mousePos: QPointF | None = None):
-        self._waitForConfirmation = False
+        self.setSelectionFixed(False)
         if mousePos is None:
             self.setSelectionVisible(False)
         else:
             self.updateSelection(mousePos)
 
 
-    def exportImage(self, selectionRect: QRect) -> bool:
-        pixmap = self._imgview.image.pixmap()
-        if not pixmap:
-            return False
+    def updateTimeSegment(self, setStart: bool = True):
+        if not self._imgview:
+            return
 
+        item: VideoItem = self._imgview.image
+        if item.TYPE != MediaItemMixin.ItemType.Video:
+            return
+
+        if not self._selectionFixed:
+            item.clearSegment()
+            return
+
+        if self._toolbar.needTimeSegment():
+            length = self._toolbar.getDurationMs()
+            start  = item.player.position() if setStart else item.segmentStart
+            end    = start + length
+            item.setSegment(start, end)
+        else:
+            item.player.pause()
+            item.clearSegment()
+
+
+    def export(self, selectionRect: QRect) -> bool:
         poly = self._cropRect.cropPoly
         if not poly:
             return False
 
-        exportWidget = self._toolbar.exportWidget
-        currentFile = self._imgview.image.filepath
-        destFile = exportWidget.getExportPath(currentFile)
+        item = self._imgview.image
+        if not item.mediaSize().isValid():
+            return False
+
+        destFile = self._toolbar.exportWidget.getExportPath(item.filepath)
         if not destFile:
             return False
+
+        try:
+            if videorw.isVideoFile(destFile):
+                self.exportVideo(item.filepath, destFile, poly)
+            else:
+                self.exportImage(item.filepath, destFile, poly)
+
+            self._confirmRect.setRect(selectionRect)
+            self._confirmRect.startAnim()
+            return True
+
+        except Exception as ex:
+            self.tab.statusBar().showColoredMessage(f"Export failed: {ex} ({type(ex).__name__})", False, 0)
+            return False
+
+    def exportImage(self, currentFile: str, destFile: str, poly: QPolygonF):
+        pixmap = self._imgview.image.pixmap()
+        if not pixmap:
+            raise ValueError("No image")
 
         self.tab.statusBar().showMessage("Exporting image...")
 
         scaleFactor = self._targetHeight / self._cropHeight
-        scaleConfig = exportWidget.getScaleConfig(scaleFactor)
+        scaleConfig = self._toolbar.exportWidget.getScaleConfig(scaleFactor)
         border = cv.BORDER_REPLICATE if self._toolbar.constrainToImage else cv.BORDER_CONSTANT
 
-        try:
-            task = ExportTask(currentFile, destFile, pixmap, poly, self._targetWidth, self._targetHeight, scaleConfig, border)
-        except EmptyRegionException:
-            self.tab.statusBar().showColoredMessage("Empty region", False)
-            return False
-
+        task = ExportTask(currentFile, destFile, pixmap, poly, self._targetWidth, self._targetHeight, scaleConfig, border)
         task.signals.done.connect(self.onExportDone, Qt.ConnectionType.BlockingQueuedConnection)
         task.signals.progress.connect(self.onExportProgress, Qt.ConnectionType.BlockingQueuedConnection)
         task.signals.fail.connect(self.onExportFailed, Qt.ConnectionType.BlockingQueuedConnection)
         QThreadPool.globalInstance().start(task)
 
-        self._confirmRect.setRect(selectionRect)
-        self._confirmRect.startAnim()
-        return True
+    def exportVideo(self, currentFile: str, destFile: str, poly: QPolygonF):
+        item: VideoItem = self._imgview.image
+        if item.TYPE != MediaItemMixin.ItemType.Video:
+            raise ValueError("Current file is not a video")
+
+        numFrames = self._toolbar.spinLength.value()
+        if numFrames < 2:
+            raise ValueError("Video must have more than 1 frame")
+
+        srcPos = item.segmentStart
+        if srcPos < 0:
+            raise ValueError("No time range selected")
+
+        srcSize = item.mediaSize()
+        targetSize = QSize(self._targetWidth, self._targetHeight)
+        rot = self._imgview.rotation
+
+        fps = self._toolbar.exportWidget.getFps()
+        Config.exportVideoFps = fps
+
+        self.tab.statusBar().showMessage("Exporting video...")
+
+        proc = videorw.VideoExportProcess(self.tab, currentFile, srcSize, srcPos, destFile, poly, targetSize, rot, numFrames, fps)
+        proc.done.connect(self.onExportDone, Qt.ConnectionType.QueuedConnection)
+        proc.progress.connect(self.onExportProgress, Qt.ConnectionType.QueuedConnection)
+        proc.fail.connect(self.onExportFailed, Qt.ConnectionType.QueuedConnection)
+        proc.start()
+
 
     @Slot()
     def onExportDone(self, file, path):
-        message = f"Exported cropped image to: {path}"
+        fileType = "video" if videorw.isVideoFile(path) else "image"
+
+        message = f"Exported cropped {fileType} to: {path}"
         print(message)
         self.tab.statusBar().showColoredMessage(message, success=True)
 
@@ -300,10 +370,14 @@ class CropTool(ViewTool):
         imgview.rotation = 0.0
         imgview.updateImageTransform()
 
+        item: VideoItem = imgview.image
+        if item.TYPE == MediaItemMixin.ItemType.Video:
+            item.clearSegment()
+
 
     def onSceneUpdate(self):
         super().onSceneUpdate()
-        self._waitForConfirmation = False
+        self.setSelectionFixed(False)
         self.setSelectionVisible(False)
         self.updateSelection(self._cropRect.rect().center())
         self._toolbar.updateExport()
@@ -314,6 +388,10 @@ class CropTool(ViewTool):
     def onResize(self, event):
         self._mask.setRect(self._imgview.viewport().rect())
 
+    def onMediaSkip(self, insideSegment: bool):
+        if not insideSegment:
+            self.resetSelection()
+
 
     def onMouseEnter(self, event):
         self.setSelectionVisible(True)
@@ -322,11 +400,11 @@ class CropTool(ViewTool):
         super().onMouseMove(event)
         if not self._mask.isVisible():
             self.setSelectionVisible(True)
-        if not self._waitForConfirmation:
+        if not self._selectionFixed:
             self.updateSelection(event.position())
 
     def onMouseLeave(self, event):
-        if not self._waitForConfirmation:
+        if not self._selectionFixed:
             self.setSelectionVisible(False)
 
 
@@ -337,25 +415,26 @@ class CropTool(ViewTool):
 
         match event.button():
             case self.BUTTON_CROP:
-                if self._waitForConfirmation:
+                if self._selectionFixed:
                     # Start export if mouse click is inside selection rectangle
                     rect = self._cropRect.rect().toRect()
                     rect.setRect(rect.x(), rect.y(), max(1, rect.width()), max(1, rect.height()))
                     if rect.contains(event.position().toPoint()):
-                        self.exportImage(rect)
+                        self.export(rect)
                     self.resetSelection(event.position())
                 else:
-                    self._waitForConfirmation = True
+                    self.setSelectionFixed(True)
+
                 return True
 
             case self.BUTTON_SWAP:
-                self._waitForConfirmation = False
+                self.setSelectionFixed(False)
                 self._menu._onSwap()
                 return True
 
             case self.BUTTON_MENU:
                 self._menu.exec_(self._imgview.mapToGlobal(event.position()).toPoint())
-                self._waitForConfirmation = False
+                self.setSelectionFixed(False)
                 return True
 
         return super().onMousePress(event)
@@ -366,7 +445,7 @@ class CropTool(ViewTool):
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             return False
 
-        if self._waitForConfirmation:
+        if self._selectionFixed:
             return True
 
         change = round(self._imgview.image.mediaSize().height() * Config.cropWheelStep)
@@ -381,7 +460,7 @@ class CropTool(ViewTool):
 
 
     def onKeyPress(self, event):
-        if not self._waitForConfirmation:
+        if not self._selectionFixed:
             return super().onKeyPress(event)
 
         # SHIFT: Bigger steps for nudge and resize
@@ -392,7 +471,7 @@ class CropTool(ViewTool):
                 case Qt.Key.Key_E:
                     rect = self._cropRect.rect().toRect()
                     rect.setRect(rect.x(), rect.y(), max(1, rect.width()), max(1, rect.height()))
-                    self.exportImage(rect)
+                    self.export(rect)
                     return
 
             # Ctrl+Arrow: Grow selection size
@@ -436,37 +515,35 @@ class EmptyRegionException(Exception): pass
 class ExportTask(export.ImageExportTask):
     def __init__(self, srcFile: str, destFile: str, pixmap: QPixmap, poly: QPolygonF, targetWidth: int, targetHeight: int, scaleConfig: export.ScaleConfig, border: int):
         self.poly = poly
-        self.rect = self.calcCutRect(poly, pixmap)
+        self.rect = self.calcCutRect(poly, pixmap.size())
 
         super().__init__(srcFile, destFile, pixmap, targetWidth, targetHeight, scaleConfig)
         self.borderMode = border
 
     @staticmethod
-    def calcCutRect(poly: QPolygonF, pixmap: QPixmap) -> QRect:
+    def calcCutRect(poly: QPolygonF, imgSize: QSize, pad: int = 4) -> QRect:
         rect = poly.boundingRect().toRect()
-        if rect.right() < 0 or rect.left() >= pixmap.width() or rect.bottom() < 0 or rect.top() >= pixmap.height():
-            raise EmptyRegionException()
+        if rect.right() < 0 or rect.left() >= imgSize.width() or rect.bottom() < 0 or rect.top() >= imgSize.height():
+            raise EmptyRegionException("Empty region")
 
         # Try to pad so the resulting dimensions are even.
         # This avoids padding of the crop region when downscaling with reduce.
-        pad = 4
-
         x = max(0, rect.x()-pad)
-        w = min(pixmap.width()-1,  rect.right()+pad) - x + 1
+        w = min(imgSize.width()-1,  rect.right()+pad) - x + 1
         if w & 1:
             if x > 0:
                 x -= 1
                 w += 1
-            elif x+w < pixmap.width():
+            elif x+w < imgSize.width():
                 w += 1
 
         y = max(0, rect.y()-pad)
-        h = min(pixmap.height()-1, rect.bottom()+pad) - y + 1
+        h = min(imgSize.height()-1, rect.bottom()+pad) - y + 1
         if h & 1:
             if y > 0:
                 y -= 1
                 h += 1
-            elif y+h < pixmap.height():
+            elif y+h < imgSize.height():
                 h += 1
 
         rect.setRect(x, y, w, h)

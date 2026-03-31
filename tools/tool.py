@@ -90,3 +90,6 @@ class Tool:
 
     def onGalleryRightClick(self, file):
         pass
+
+    def onMediaSkip(self, insideSegment: bool):
+        pass

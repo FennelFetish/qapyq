@@ -81,12 +81,91 @@ def thumbnailVideo(path: str, maxWidth: int, tiling: int) -> tuple[np.ndarray, t
 
 
 try:
-    from PySide6.QtGui import QImage
+    from PySide6.QtCore import Signal, Slot, QRectF, QSize, QProcess
+    from PySide6.QtGui import QImage, QPolygonF, QTransform
+    import math
     from lib import qtlib
 
     def thumbnailVideoQImage(path: str, maxWidth: int, tiling: int) -> tuple[QImage, tuple[int, int]]:
         mat, size = thumbnailVideo(path, maxWidth, tiling)
         return qtlib.numpyToQImage(mat), size
+
+
+    class VideoExportProcess(QProcess):
+        done     = Signal(str, str) # srcFile, destFile
+        progress = Signal(str)      # msg
+        fail     = Signal(str)      # msg
+
+        def __init__(
+            self, parent,
+            srcFile: str, srcSize: QSize, srcPosMs: int,
+            destFile: str, poly: QPolygonF, targetSize: QSize, rotation: float,
+            numFrames: int, fps: float
+        ):
+            super().__init__(parent)
+            self.srcFile = srcFile
+            self.destFile = destFile
+
+            filters = [f'fps={fps}']
+            bbox, crop = self.calcRotatedCrop(srcSize, poly, rotation)
+
+            if rotation != 0.0:
+                rotRad = math.radians(rotation)
+                filters.append( f'rotate={rotRad}:ow={bbox.width()}:oh={bbox.height()}:fillcolor=black@0' )
+
+            if crop != bbox:
+                filters.append( f'crop={crop.width()}:{crop.height()}:{crop.x()}:{crop.y()}' )
+
+            if crop.size() != targetSize:
+                filters.append( f'scale={targetSize.width()}:{targetSize.height()}:flags=lanczos' )  # TODO: Use interpolation settings from preset?
+
+            overwriteFlag = '-y'  # '-n'
+            pos = srcPosMs / 1000
+            duration = numFrames / fps
+
+            args = [
+                '-nostdin', overwriteFlag, '-v', 'error',
+                '-ss', str(pos), '-i', srcFile, '-ss', '0', '-t', str(duration),
+                '-vf', ','.join(filters), '-frames:v', str(numFrames),
+                '-c:v', 'libx264', '-preset', 'veryslow', '-crf', '17', '-movflags', '+faststart',
+                '-c:a', 'aac', '-b:a', '192k',
+                '-pix_fmt', 'yuv420p', '-avoid_negative_ts', 'make_zero',
+                destFile
+            ]
+
+            #print(f"ffmpeg args: {args}")
+
+            self.setProgram("ffmpeg")
+            self.setArguments(args)
+
+            self.setProcessChannelMode(QProcess.ProcessChannelMode.ForwardedErrorChannel)
+            self.started.connect(self._onProcessStarted)
+            self.finished.connect(self._onProcessEnded)
+
+        @staticmethod
+        def calcRotatedCrop(srcSize: QSize, poly: QPolygonF, rotation: float) -> tuple[QRectF, QRectF]:
+            rotTrans = QTransform().rotate(rotation)                                 # Rotation around 0/0
+            bbox = rotTrans.mapRect(QRectF(0, 0, srcSize.width(), srcSize.height())) # Bounding box of rotated image
+            crop = rotTrans.map(poly).boundingRect()                                 # Rotate selection from image-space to view-space and align with axes
+            crop.translate(-bbox.topLeft())                                          # Make crop window relative to bbox
+            return bbox, crop
+
+        @Slot()
+        def _onProcessStarted(self):
+            self.progress.emit("Saving video...")
+
+        @Slot(int, QProcess.ExitStatus)
+        def _onProcessEnded(self, exitCode: int, exitStatus: QProcess.ExitStatus):
+            if exitCode == 0:
+                self.done.emit(self.srcFile, self.destFile)
+            else:
+                print(f"Video export failed: ffmpeg call failed with exit code {exitCode}, {exitStatus}")
+                self.fail.emit(f"ffmpeg call failed with exit code {exitCode}")
+
+            self.readAllStandardOutput()
+            self.readAllStandardError()
+            self.deleteLater()
+
 
 except ImportError:
     pass

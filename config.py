@@ -45,6 +45,8 @@ class Config:
         }
     }
 
+    exportVideoFps          = 24.0
+
     # Media
     mediaVolume             = 1.0
     mediaMute               = False
@@ -191,7 +193,9 @@ class Config:
 
         cls.pathExport            = data.get("path_export", cls.pathExport)
         cls.pathDebugLoad         = data.get("path_debug_load", cls.pathDebugLoad)
+
         cls.exportPresets         = data.get("export_presets", cls.exportPresets)
+        cls.exportVideoFps        = float(data.get("export_video_fps", cls.exportVideoFps))
 
         cls.mediaVolume           = float(data.get("media_volume", cls.mediaVolume))
         cls.mediaMute             = bool(data.get("media_mute", cls.mediaMute))
@@ -268,7 +272,9 @@ class Config:
 
         data["path_export"]                 = cls.pathExport
         data["path_debug_load"]             = cls.pathDebugLoad
+
         data["export_presets"]              = cls.exportPresets
+        data["export_video_fps"]            = cls.exportVideoFps
 
         data["media_volume"]                = cls.mediaVolume
         data["media_mute"]                  = cls.mediaMute

@@ -1,9 +1,9 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
-from ui.export_settings import ExportWidget
+from ui.export_settings import ExportWidget, ExportFileType
 from ui.size_preset import SizePresetComboBox
 from config import Config
-from lib.colorlib import RED, GREEN
+from lib import colorlib
 from .crop import CropTool
 
 
@@ -11,11 +11,17 @@ class CropToolBar(QtWidgets.QToolBar):
     def __init__(self, cropTool: CropTool):
         super().__init__("Crop")
         self._cropTool = cropTool
+
         self.exportWidget = ExportWidget("crop", cropTool.tab.filelist)
+        self.exportWidget.fpsChanged.connect(self.updateDuration)
+        self.exportWidget.fileTypeChanged.connect(self._onExportFileTypeChanged)
+
+        self._timeRange = self._buildTimeRange()
 
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(1, 1, 1, 1)
         layout.addWidget(self._buildTargetSize())
+        layout.addWidget(self._timeRange)
         layout.addWidget(self._buildSelectionSize())
         layout.addWidget(self._buildRotation())
         layout.addWidget(self.exportWidget)
@@ -33,57 +39,116 @@ class CropToolBar(QtWidgets.QToolBar):
 
 
     def _buildTargetSize(self):
-        self.spinW = QtWidgets.QSpinBox()
-        self.spinW.setRange(1, 16384)
-        self.spinW.setSingleStep(Config.cropSizeStep)
-        self.spinW.setValue(512)
-        self.spinW.valueChanged.connect(self.updateSize)
-
-        self.spinH = QtWidgets.QSpinBox()
-        self.spinH.setRange(1, 16384)
-        self.spinH.setSingleStep(Config.cropSizeStep)
-        self.spinH.setValue(512)
-        self.spinH.valueChanged.connect(self.updateSize)
-
-        self.lblTargetAspect = QtWidgets.QLabel()
-
-        btnSwap = QtWidgets.QPushButton("Swap")
-        btnSwap.clicked.connect(self.sizeSwap)
-
-        btnQuad = QtWidgets.QPushButton("Quad")
-        btnQuad.clicked.connect(self.sizeQuad)
-
-        self.cboSizePresets = SizePresetComboBox()
-        self.cboSizePresets.presetSelected.connect(self.selectSizePreset)
-
         layout = QtWidgets.QGridLayout()
         layout.setContentsMargins(1, 1, 1, 1)
         layout.setColumnStretch(0, 0)
 
+        row = 0
         lblW = QtWidgets.QLabel("W:")
+        lblW.setToolTip("Scale to this width")
         lblW.setFixedWidth(24)
-        layout.addWidget(lblW, 0, 0)
-        layout.addWidget(self.spinW, 0, 1, 1, 2)
+        layout.addWidget(lblW, row, 0)
 
+        self.spinW = QtWidgets.QSpinBox()
+        self.spinW.setToolTip("Scale to this width")
+        self.spinW.setRange(1, 16384)
+        self.spinW.setSingleStep(Config.cropSizeStep)
+        self.spinW.setValue(512)
+        self.spinW.valueChanged.connect(self.updateSize)
+        layout.addWidget(self.spinW, row, 1, 1, 2)
+
+        row += 1
         lblH = QtWidgets.QLabel("H:")
+        lblH.setToolTip("Scale to this height")
         lblH.setFixedWidth(24)
-        layout.addWidget(lblH, 1, 0)
-        layout.addWidget(self.spinH, 1, 1, 1, 2)
+        layout.addWidget(lblH, row, 0)
 
+        self.spinH = QtWidgets.QSpinBox()
+        self.spinH.setToolTip("Scale to this height")
+        self.spinH.setRange(1, 16384)
+        self.spinH.setSingleStep(Config.cropSizeStep)
+        self.spinH.setValue(512)
+        self.spinH.valueChanged.connect(self.updateSize)
+        layout.addWidget(self.spinH, row, 1, 1, 2)
+
+        row += 1
         lblTargetAspect = QtWidgets.QLabel("AR:")
+        lblTargetAspect.setToolTip("Resulting aspect ratio")
         lblTargetAspect.setFixedWidth(24)
-        layout.addWidget(lblTargetAspect, 2, 0)
-        layout.addWidget(self.lblTargetAspect, 2, 1, 1, 2)
+        layout.addWidget(lblTargetAspect, row, 0)
 
+        self.lblTargetAspect = QtWidgets.QLabel()
+        layout.addWidget(self.lblTargetAspect, row, 1, 1, 2)
+
+        row += 1
         lblPreset = QtWidgets.QLabel("Pre:")
+        lblPreset.setToolTip("Choose size preset")
         lblPreset.setFixedWidth(24)
-        layout.addWidget(lblPreset, 3, 0)
-        layout.addWidget(self.cboSizePresets, 3, 1, 1, 2)
+        layout.addWidget(lblPreset, row, 0)
 
-        layout.addWidget(btnSwap, 4, 1)
-        layout.addWidget(btnQuad, 4, 2)
+        self.cboSizePresets = SizePresetComboBox()
+        self.cboSizePresets.setToolTip("Choose size preset")
+        self.cboSizePresets.presetSelected.connect(self.selectSizePreset)
+        layout.addWidget(self.cboSizePresets, row, 1, 1, 2)
+
+        row += 1
+        btnSwap = QtWidgets.QPushButton("Swap")
+        btnSwap.setToolTip("Swap width/height with <b>Middle Mouse Button</b>")
+        btnSwap.clicked.connect(self.sizeSwap)
+        layout.addWidget(btnSwap, row, 1)
+
+        btnQuad = QtWidgets.QPushButton("Square")
+        btnQuad.setToolTip("Make square (height=width)")
+        btnQuad.clicked.connect(self.sizeQuad)
+        layout.addWidget(btnQuad, row, 2)
 
         group = QtWidgets.QGroupBox("Target Size")
+        group.setLayout(layout)
+        return group
+
+    def _buildTimeRange(self):
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(2, 1)
+
+        row = 0
+        self.spinLength = QtWidgets.QSpinBox()
+        self.spinLength.setToolTip("Length of the exported segment in frames")
+        self.spinLength.setRange(1, 999_992)
+        self.spinLength.setSingleStep(8)
+        self.spinLength.setValue(121)
+        self.spinLength.setMinimumWidth(60)
+        self.spinLength.valueChanged.connect(self.updateDuration)
+
+        row += 1
+        lblLength = QtWidgets.QLabel("Len:")
+        lblLength.setToolTip("Length of the exported segment")
+        lblLength.setFixedWidth(24)
+        layout.addWidget(lblLength, row, 0)
+        layout.addWidget(self.spinLength, row, 1)
+
+        self.lblDuration = QtWidgets.QLabel("0.000 s")
+        self.lblDuration.setToolTip("Length of the exported segment in seconds")
+        layout.addWidget(self.lblDuration, row, 2, Qt.AlignmentFlag.AlignHCenter)
+
+        row += 1
+        lblSet = QtWidgets.QLabel("Set:")
+        lblSet.setFixedWidth(24)
+        layout.addWidget(lblSet, row, 0)
+
+        btnSetEnd = QtWidgets.QPushButton("End")
+        btnSetEnd.setToolTip("Set current frame as last frame. Skip back by 'Len' frames.")
+        btnSetEnd.clicked.connect(self.setEndFrame)
+        layout.addWidget(btnSetEnd, row, 1)
+
+        btnSetKey = QtWidgets.QPushButton("Key")
+        btnSetKey.setToolTip("Skip back to last key frame")
+        btnSetKey.setEnabled(False)
+        layout.addWidget(btnSetKey, row, 2)
+
+        group = QtWidgets.QGroupBox("Time Range")
         group.setLayout(layout)
         return group
 
@@ -120,9 +185,9 @@ class CropToolBar(QtWidgets.QToolBar):
         return group
 
     def _buildRotation(self):
-        self.slideRot = QtWidgets.QSlider(Qt.Horizontal)
+        self.slideRot = QtWidgets.QSlider(Qt.Orientation.Horizontal)
         self.slideRot.setRange(-10, 3600)
-        self.slideRot.setTickPosition(QtWidgets.QSlider.TicksAbove)
+        self.slideRot.setTickPosition(QtWidgets.QSlider.TickPosition.TicksAbove)
         self.slideRot.setTickInterval(900)
         self.slideRot.setSingleStep(10)
         self.slideRot.setPageStep(50)
@@ -197,6 +262,31 @@ class CropToolBar(QtWidgets.QToolBar):
         self.cboSizePresets.setCurrentIndex(0)
 
 
+    def getDurationMs(self) -> int:
+        fps = self.exportWidget.getFps()
+        numFrames = self.spinLength.value()
+        return round(1000.0 * numFrames / fps)
+
+    @Slot()
+    def updateDuration(self):
+        seconds = self.getDurationMs() / 1000.0
+        self.lblDuration.setText(f"{seconds:.3f} s")
+        self._cropTool.updateTimeSegment(setStart=False)
+        self.updateExport()
+
+    @Slot()
+    def setEndFrame(self):
+        from ui.video_player import VideoItem
+        item: VideoItem = self._cropTool._imgview.image
+        if item.TYPE != VideoItem.TYPE:
+            return
+
+        pos = item.player.position() - self.getDurationMs()
+        pos = max(pos, 0)
+        item.player.setPosition(pos)
+        self._cropTool.updateTimeSegment()
+
+
     @Slot()
     def updateRotationFromSlider(self, rot: int):
         self.spinRot.setValue(rot / 10.0)
@@ -225,10 +315,10 @@ class CropToolBar(QtWidgets.QToolBar):
 
         scale = (self.spinH.value() / h) if h>0 else 0.0
         if scale > 1.0:
-            self.lblScale.setStyleSheet(f"QLabel{{color:{RED}}}")
+            self.lblScale.setStyleSheet(f"QLabel{{color:{colorlib.RED}}}")
             self.lblScale.setText(f"▲  {scale:.3f}")
         else:
-            self.lblScale.setStyleSheet(f"QLabel{{color:{GREEN}}}")
+            self.lblScale.setStyleSheet(f"QLabel{{color:{colorlib.GREEN}}}")
             self.lblScale.setText(f"▼  {scale:.3f}")
 
 
@@ -242,5 +332,17 @@ class CropToolBar(QtWidgets.QToolBar):
 
 
     def updateExport(self):
-        self.exportWidget.setExportSize(self.spinW.value(), self.spinH.value(), self.rotation)
+        self.exportWidget.setExportSize(self.spinW.value(), self.spinH.value(), self.rotation, self.spinLength.value())
         self.exportWidget.updateSample()
+        #self.updateDuration()
+
+    @Slot()
+    def _onExportFileTypeChanged(self, fileType: ExportFileType):
+        isVideo = (fileType == ExportFileType.Video)
+        self._timeRange.setVisible(isVideo)
+
+        if not isVideo:
+            self._cropTool.updateTimeSegment()
+
+    def needTimeSegment(self) -> bool:
+        return self._timeRange.isVisible()

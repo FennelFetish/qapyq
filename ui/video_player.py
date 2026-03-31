@@ -76,6 +76,66 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
         self._redrawMainViewport()
 
 
+    def skipSteps(self, steps: int) -> int:
+        segStart = self.info.segmentStart
+        segEnd   = self.info.segmentEnd
+
+        if self.player.isPlaying():
+            duration = self.player.duration() if segStart < 0 else segEnd - segStart
+            skip = min(5000, duration/5)
+        elif self.info.fps > 0.0:
+            skip = 1000.0 / self.info.fps
+        else:
+            skip = 0
+
+        skipLen = round(steps * skip)
+        videoPos = self.player.position() + skipLen
+
+        if segStart >= 0:
+            if steps > 0 and videoPos > segEnd:
+                diff = videoPos - segEnd
+                videoPos = segEnd if diff < 10 else segStart
+            elif steps < 0 and videoPos < segStart:
+                diff = segStart - videoPos
+                videoPos = segStart if diff < 10 else segEnd
+
+        self.player.setPosition(videoPos)
+        return skipLen
+
+
+    @property
+    def segmentStart(self) -> int:
+        return self.info.segmentStart
+
+    @property
+    def segmentEnd(self) -> int:
+        return self.info.segmentEnd
+
+    def setSegment(self, start: int, end: int, ensureLength: bool = True):
+        length = end - start
+        end = min(end, self.info.duration-1)
+
+        if ensureLength and start >= 0:
+            start = max(end - length, 0)
+
+        self.info.segmentStart = start
+        self.info.segmentEnd = end
+        self.playbackControls.setSegment(start, end, self.info.duration)
+        self._redrawMainViewport()
+
+    def moveSegment(self, offset: int):
+        if self.info.segmentStart < 0:
+            return
+
+        length = self.info.segmentEnd - self.info.segmentStart
+        start  = max(self.info.segmentStart + offset, 0)
+        end    = start + length
+        self.setSegment(start, end)
+
+    def clearSegment(self):
+        self.setSegment(-1, -1)
+
+
     # ===== MediaItemMixin Interface =====
 
     def pixmap(self) -> QPixmap:
@@ -93,6 +153,7 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
     def loadFile(self, path: str) -> bool:
         self._playing = False
         self.info.thumbnailsEnabled = False
+        self.clearSegment()
 
         if not super().loadFile(path):
             return False
@@ -168,11 +229,13 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
             self.playbackControls.requestThumbnail(mouseX)
             redraw = True
             mouseOverVolume = False
-        else:
+        elif self.info.audio:
             mouseOverVolume = self.volumeControl.isMouseOver(mouseX, mouseY)
             if not self.volumeControl.isVisible():
                 self.volumeControl.show()
                 redraw = True
+        else:
+            mouseOverVolume = False
 
         self.volumeControl.setMouseOver(mouseOverVolume)
         if redraw:
@@ -182,20 +245,33 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
 
     @override
     def onMousePress(self, event: QMouseEvent) -> bool:
-        if event.button() not in (Qt.MouseButton.LeftButton, Qt.MouseButton.RightButton):
-            return False
-
         mouseX, mouseY = event.pos().toTuple()
 
         if self.playbackControls.isMouseOver(mouseY):
-            pos = self.playbackControls.getVideoPosition(mouseX)
-            self.player.setPosition(pos)
-            return True
+            match event.button():
+                case Qt.MouseButton.LeftButton:
+                    pos = self.playbackControls.getVideoPosition(mouseX)
+                    self.player.setPosition(pos)
 
-        if self.volumeControl.isMouseOver(mouseX, mouseY):
-            Config.mediaMute = (self.audioOutput.volume() > 0.0)
-            self._updateVolume()
-            return True
+                    self.imgview.tool.onMediaSkip(self.info.insideSegment(pos))
+                    return True
+
+                case Qt.MouseButton.RightButton:
+                    return True
+
+                case Qt.MouseButton.MiddleButton:
+                    self.togglePlay()
+                    return True
+
+        if self.info.audio and self.volumeControl.isMouseOver(mouseX, mouseY):
+            match event.button():
+                case Qt.MouseButton.LeftButton | Qt.MouseButton.RightButton:
+                    Config.mediaMute = (self.audioOutput.volume() > 0.0)
+                    self._updateVolume()
+                    return True
+
+                case Qt.MouseButton.MiddleButton:
+                    return True
 
         return False
 
@@ -216,15 +292,9 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
 
         # Video Seek
         else:
-            if self.player.isPlaying():
-                skip = min(5000, self.player.duration()/5)
-            elif self.info.fps > 0.0:
-                skip = 1000.0 / self.info.fps
-            else:
-                skip = 0
-
-            videoPos = self.player.position() - (wheelSteps * skip)
-            self.player.setPosition(round(videoPos))
+            skipLen = self.skipSteps(-int(wheelSteps))
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                self.moveSegment(skipLen)
 
         return True
 
@@ -249,13 +319,18 @@ class MediaInfo(QObject):
 
         self.fps: float = 0.0
         self.duration: int = 0
+        self.audio: bool = False
         self.seekable: bool = False
+
+        self.segmentStart: int = -1
+        self.segmentEnd: int   = -1
 
         player.mediaStatusChanged.connect(self._onMediaStatusChanged, Qt.ConnectionType.QueuedConnection)
         player.positionChanged.connect(self._onPosChanged, Qt.ConnectionType.QueuedConnection)
         player.durationChanged.connect(self._onDurationChanged, Qt.ConnectionType.QueuedConnection)
         player.playingChanged.connect(self._onPlayingChanged, Qt.ConnectionType.QueuedConnection)
         player.seekableChanged.connect(self._onSeekableChanged, Qt.ConnectionType.QueuedConnection)
+        player.hasAudioChanged.connect(self._onHasAudioChanged, Qt.ConnectionType.QueuedConnection)
         player.errorOccurred.connect(self._onError, Qt.ConnectionType.QueuedConnection)
 
         audio.volumeChanged.connect(self._onVolumeChanged, Qt.ConnectionType.QueuedConnection)
@@ -264,6 +339,9 @@ class MediaInfo(QObject):
         self._thumbnailDelay = QTimer(self, singleShot=True, interval=200)
         self._thumbnailDelay.timeout.connect(self._enableThumbnails)
 
+
+    def insideSegment(self, pos: int):
+        return self.segmentStart <= pos <= self.segmentEnd
 
     def isThumbnailsEnabled(self) -> bool:
         return self.thumbnailsEnabled & self.seekable
@@ -297,13 +375,23 @@ class MediaInfo(QObject):
     def _onPosChanged(self, pos: int):
         self.playbackControls.setMediaPosition(pos, self.duration)
 
+        if self.segmentStart >= 0 and not self.insideSegment(pos):
+            self.player.setPosition(self.segmentStart)
+
     @Slot(bool)
     def _onPlayingChanged(self, playing: bool):
         self.playbackControls.setMediaPlaying(playing, self.player.position())
 
+        if not playing and self.segmentStart >= 0:
+            self.player.setPosition(self.segmentStart)
+
     @Slot(bool)
     def _onSeekableChanged(self, seekable: bool):
         self.seekable = seekable
+
+    @Slot(bool)
+    def _onHasAudioChanged(self, audio: bool):
+        self.audio = audio
 
     @Slot(QMediaPlayer.Error, str)
     def _onError(self, error: QMediaPlayer.Error, errorMsg: str):
@@ -331,10 +419,11 @@ class PlaybackControls(QGraphicsItemGroup):
         self._expanded: bool = False
 
         # UI Elements
-        self.seekBar = SeekBar()
-        self.seekBarFull = SeekBarFull()
-        self.seekKnob = SeekKnob(self.KNOB_WIDTH, self.SEEK_BAR_HEIGHT)
-        self.seekThumbnail = SeekThumbnail()
+        self.seekBar        = SeekBar()
+        self.seekBarFull    = SeekBarFull()
+        self.seekBarSeg     = SeekBarSegment()
+        self.seekKnob       = SeekKnob(self.KNOB_WIDTH, self.SEEK_BAR_HEIGHT)
+        self.seekThumbnail  = SeekThumbnail()
 
         self.addToGroup(self.seekBar)
         self.addToGroup(self.seekBarFull)
@@ -352,6 +441,8 @@ class PlaybackControls(QGraphicsItemGroup):
         self.addToGroup(self.labelPlayTime)
         self.addToGroup(self.labelSeekTime)
 
+        self.addToGroup(self.seekBarSeg)
+
 
     def updateSize(self, rect: QRect | QRectF):
         rectW, rectH = rect.size().toTuple()
@@ -368,9 +459,13 @@ class PlaybackControls(QGraphicsItemGroup):
 
         self.seekBar.setRect(0, y, rectW, h)
         self.seekBarFull.setRect(0, y, 0, h)
+        self.seekBarSeg.setRect(0, y, 0, h-5)
         self.seekKnob.setRect(0, y, self.KNOB_WIDTH, h)
         self.seekThumbnail.hide()
-        self.setMediaPosition(self.videoItem.player.position(), self.videoItem.info.duration)
+
+        info = self.videoItem.info
+        self.setMediaPosition(self.videoItem.player.position(), info.duration)
+        self.setSegment(info.segmentStart, info.segmentEnd, info.duration)
 
         self.labelDuration.setPos(rectW - self.labelDuration.boundingRect().width(), 16)
         self.labelPlayTime.setPos(0, 16)
@@ -420,6 +515,10 @@ class PlaybackControls(QGraphicsItemGroup):
         self.labelDuration.setTime(duration)
         self.labelDuration.setBoundedX(100_000_000, self.seekBar.rect().width())
 
+    def setMediaPlaying(self, playing: bool, pos: int):
+        self.labelPlayTime.suffix = " ▶" if playing else ""
+        self.labelPlayTime.setTime(pos)
+
     def setMediaPosition(self, pos: int, duration: int):
         if duration < 1:
             p = 0
@@ -427,16 +526,27 @@ class PlaybackControls(QGraphicsItemGroup):
             w = self.seekBar.rect().width()
             p = w * pos / duration
 
-        rectFull = self.seekBarFull.rect()
-        rectFull.setWidth(p)
-        self.seekBarFull.setRect(rectFull)
+        rect = self.seekBarFull.rect()
+        rect.setWidth(p)
+        self.seekBarFull.setRect(rect)
 
         self.seekKnob.setX(p + self.KNOB_X_OFFSET)
         self.labelPlayTime.setTime(pos)
 
-    def setMediaPlaying(self, playing: bool, pos: int):
-        self.labelPlayTime.suffix = " ▶" if playing else ""
-        self.labelPlayTime.setTime(pos)
+    def setSegment(self, start: int, end: int, duration: int):
+        if max(start, end) < 0 or duration < 1:
+            self.seekBarSeg.hide()
+            return
+
+        w = self.seekBar.rect().width()
+        pStart = w * start / duration
+        pEnd   = w * end / duration
+
+        rect = self.seekBarSeg.rect()
+        rect.setX(pStart)
+        rect.setWidth(pEnd - pStart)
+        self.seekBarSeg.setRect(rect)
+        self.seekBarSeg.show()
 
 
 
@@ -470,6 +580,14 @@ class SeekBarFull(QGraphicsRectItem):
 
         self.setPen(Qt.PenStyle.NoPen)
         self.setBrush(highlightColor)
+
+
+class SeekBarSegment(QGraphicsRectItem):
+    def __init__(self):
+        super().__init__()
+        pen = QPen(colorlib.GREEN)
+        self.setPen(pen)
+        self.setBrush(Qt.BrushStyle.NoBrush)
 
 
 class SeekKnob(QGraphicsRectItem):
@@ -565,7 +683,7 @@ class VolumeControl(QGraphicsItem):
         self._brushFill = QColor(colorlib.BUBBLE_TEXT)
         self._brushFill.setAlphaF(0.3)
 
-        self._hideTimer = QTimer(singleShot=True, interval=600)
+        self._hideTimer = QTimer(videoItem.player, singleShot=True, interval=600)
         self._hideTimer.timeout.connect(lambda: self._hide())
         self.hide()
 
