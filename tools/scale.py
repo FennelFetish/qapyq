@@ -56,8 +56,8 @@ class ScaleTool(ViewTool):
         task.signals.fail.connect(self.onExportFailed, Qt.ConnectionType.BlockingQueuedConnection)
         QThreadPool.globalInstance().start(task)
 
-    @Slot()
-    def onExportDone(self, file, path):
+    @Slot(str, str)
+    def onExportDone(self, file: str, path: str):
         message = f"Exported scaled image to: {path}"
         print(message)
         self.tab.statusBar().showColoredMessage(message, success=True)
@@ -66,11 +66,11 @@ class ScaleTool(ViewTool):
         self._toolbar.updateExport()
         self._lastExportedFile = path
 
-    @Slot()
+    @Slot(str)
     def onExportProgress(self, message: str):
         self.tab.statusBar().showMessage(message)
 
-    @Slot()
+    @Slot(str)
     def onExportFailed(self, msg: str):
         self.tab.statusBar().showColoredMessage(f"Export failed: {msg}", False, 0)
 
@@ -222,8 +222,8 @@ class ScaleToolBar(QtWidgets.QToolBar):
         return group
 
 
-    @Slot()
-    def onScaleModeChanged(self, index):
+    @Slot(int)
+    def onScaleModeChanged(self, index: int):
         if self.selectedScaleMode:
             self.scaleModeLayout.removeWidget(self.selectedScaleMode)
             self.selectedScaleMode.hide()
@@ -248,7 +248,7 @@ class ScaleToolBar(QtWidgets.QToolBar):
     def rotation(self, rot: float):
         self.spinRot.setValue(int(rot))
 
-    @Slot()
+    @Slot(int)
     def updateRotation(self, rot: int):
         rot = rot % 360
         self.scaleTool._imgview.rotation = rot
@@ -375,8 +375,8 @@ class ScaleMode(QtWidgets.QWidget):
     def applySizePreset(self, w: int, h: int):
         pass
 
-    @Slot()
-    def _onSizePresetChosen(self, w: int, h: int):
+    @Slot(int, int, int)
+    def _onSizePresetChosen(self, w: int, h: int, length: int):
         self.applySizePreset(w, h)
         self.updateSize()
 

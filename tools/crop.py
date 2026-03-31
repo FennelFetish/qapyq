@@ -705,8 +705,9 @@ class CropContextMenu(QMenu):
         self.cropTool.resetSelection(self.getMousePos())
 
     def _onSizeSelected(self, text: str):
-        w, h = text.split("x")
-        self.cropTool._toolbar.selectSizePreset(int(w), int(h))
+        w, h, *length = text.split("x")
+        l = int(length[0]) if length else -1
+        self.cropTool._toolbar.selectSizePreset(int(w), int(h), l)
         self.cropTool.updateSelection(self.getMousePos())
 
     @Slot()

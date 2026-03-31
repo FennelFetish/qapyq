@@ -247,8 +247,8 @@ class CropToolBar(QtWidgets.QToolBar):
     def sizeQuad(self):
         self.spinH.setValue( self.spinW.value() )
 
-    @Slot()
-    def selectSizePreset(self, w: int, h: int):
+    @Slot(int, int, int)
+    def selectSizePreset(self, w: int, h: int, length: int):
         # Calc orientation (-1, 0, 1) by subtracting booleans
         oldOrientation = (self.spinH.value() > self.spinW.value()) - (self.spinH.value() < self.spinW.value())
         newOrientation = (h > w) - (h < w)
@@ -259,6 +259,11 @@ class CropToolBar(QtWidgets.QToolBar):
         self.spinW.setValue(w)
         self.spinH.setValue(h)
         self.updateSize()
+
+        if length > 0:
+            self.spinLength.setValue(length)
+        self.updateDuration()
+
         self.cboSizePresets.setCurrentIndex(0)
 
 
@@ -287,11 +292,11 @@ class CropToolBar(QtWidgets.QToolBar):
         self._cropTool.updateTimeSegment()
 
 
-    @Slot()
+    @Slot(int)
     def updateRotationFromSlider(self, rot: int):
         self.spinRot.setValue(rot / 10.0)
 
-    @Slot()
+    @Slot(float)
     def updateRotationFromSpinner(self, rot: float):
         rot = rot % 360.0
         self.slideRot.setValue(int(rot*10))
@@ -336,7 +341,7 @@ class CropToolBar(QtWidgets.QToolBar):
         self.exportWidget.updateSample()
         #self.updateDuration()
 
-    @Slot()
+    @Slot(ExportFileType)
     def _onExportFileTypeChanged(self, fileType: ExportFileType):
         isVideo = (fileType == ExportFileType.Video)
         self._timeRange.setVisible(isVideo)
