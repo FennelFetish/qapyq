@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt, Slot, QPoint, QThreadPool
 from config import Config
 from ui import aux_window
 from ui.tab import ImgTab
-from lib import colorlib, qtlib
+from lib import colorlib, qtlib, filelist
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -339,6 +339,9 @@ class MainMenu(QtWidgets.QMenu):
 
         self.addSeparator()
 
+        self._fileTypes = self._buildFileTypesSubmenu()
+        self.addMenu(self._fileTypes)
+
         actModelConfig = QtGui.QAction("Model Settings...", self)
         actModelConfig.triggered.connect(self.showModelSettings)
         self.addAction(actModelConfig)
@@ -367,6 +370,7 @@ class MainMenu(QtWidgets.QMenu):
         actQuit.triggered.connect(self.quitWithConfirmation)
         self.addAction(actQuit)
 
+
     def _buildToolsSubmenu(self, mainWindow: MainWindow) -> QtWidgets.QMenu:
         menu = QtWidgets.QMenu("Select Tools")
 
@@ -390,6 +394,23 @@ class MainMenu(QtWidgets.QMenu):
             menu.addAction(act)
 
         return menu
+
+    def _buildFileTypesSubmenu(self) -> qtlib.CheckboxMenu:
+        menu = qtlib.CheckboxMenu("File Types")
+        menu.addCheckbox("image", "Load Images", "image" not in Config.mediaExcludeTypes)
+        menu.addCheckbox("video", "Load Videos", "video" not in Config.mediaExcludeTypes)
+        menu.selectionChanged.connect(self._onMediaTypesUpdated)
+        return menu
+
+    @Slot(list)
+    def _onMediaTypesUpdated(self, checkStates: dict[str, bool]):
+        excludeTypes = [key for key, state in checkStates.items() if not state]
+        if len(excludeTypes) < len(checkStates):
+            Config.mediaExcludeTypes = excludeTypes
+            filelist.resetReadExtensions()
+        else:
+            reactivate = next(iter(Config.mediaExcludeTypes), "image")
+            self._fileTypes.setChecked(reactivate, True)
 
 
     @Slot()
@@ -591,6 +612,8 @@ if __name__ == "__main__":
 
     if not Config.load():
         sys.exit(1)
+
+    filelist.resetReadExtensions()
 
     exitCode = main()
     Config.save()

@@ -48,6 +48,7 @@ class Config:
     exportVideoFps          = 24.0
 
     # Media
+    mediaExcludeTypes       = []
     mediaVolume             = 1.0
     mediaMute               = False
     mediaSeekThumbnailSize  = 300
@@ -197,6 +198,7 @@ class Config:
         cls.exportPresets         = data.get("export_presets", cls.exportPresets)
         cls.exportVideoFps        = float(data.get("export_video_fps", cls.exportVideoFps))
 
+        cls.mediaExcludeTypes     = data.get("media_exclude_types", cls.mediaExcludeTypes)
         cls.mediaVolume           = float(data.get("media_volume", cls.mediaVolume))
         cls.mediaMute             = bool(data.get("media_mute", cls.mediaMute))
         cls.mediaSeekThumbnailSize = int(data.get("media_seek_thumbnail_size", cls.mediaSeekThumbnailSize))
@@ -276,6 +278,7 @@ class Config:
         data["export_presets"]              = cls.exportPresets
         data["export_video_fps"]            = cls.exportVideoFps
 
+        data["media_exclude_types"]         = cls.mediaExcludeTypes
         data["media_volume"]                = cls.mediaVolume
         data["media_mute"]                  = cls.mediaMute
         data["media_seek_thumbnail_size"]   = cls.mediaSeekThumbnailSize

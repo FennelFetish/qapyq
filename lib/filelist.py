@@ -3,10 +3,23 @@ from typing import Iterable, Iterator, Any, Callable
 from bisect import bisect_left, bisect_right
 from PySide6.QtCore import Qt, Signal, Slot, QThreadPool, QRunnable, QObject, QMutex, QMutexLocker
 from config import Config
-from lib import imagerw, videorw
 
 
-ALL_READ_EXTENSIONS = frozenset(imagerw.READ_EXTENSIONS | videorw.READ_EXTENSIONS)
+ALL_READ_EXTENSIONS: frozenset[str] = ()
+
+def resetReadExtensions():
+    extensions = list[str]()
+
+    if "image" not in Config.mediaExcludeTypes:
+        from lib import imagerw
+        extensions += imagerw.READ_EXTENSIONS
+
+    if "video" not in Config.mediaExcludeTypes:
+        from lib import videorw
+        extensions += videorw.READ_EXTENSIONS
+
+    global ALL_READ_EXTENSIONS
+    ALL_READ_EXTENSIONS = frozenset(extensions)
 
 
 try:
@@ -795,7 +808,7 @@ class FileListLoadReceiver(QObject):
 
         self.task: FileListLoadTask | None = None
 
-    @Slot(list, str, bool)
+    @Slot(tuple, str, bool)
     def _onApply(self, wrappedFiles: tuple[list[str]], commonRoot: str, finished: bool):
         if self.filelist is None:
             return
