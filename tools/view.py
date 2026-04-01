@@ -1,4 +1,5 @@
 from PySide6.QtCore import Qt, QRectF, QPointF
+from PySide6.QtGui import QPolygon
 from math import floor
 from .tool import Tool
 
@@ -18,6 +19,11 @@ class ViewTool(Tool):
     def mapPosFromImage(self, posF: QPointF):
         scenePos = self._imgview.image.mapToParent(posF)
         return self._imgview.mapFromScene(scenePos)
+
+    def mapImageToViewport(self) -> QPolygon:
+        imgRect = self._imgview.image.boundingRect()
+        imgPoly = self._imgview.image.mapToParent(imgRect)
+        return self._imgview.mapFromScene(imgPoly)
 
 
     def onSceneUpdate(self):

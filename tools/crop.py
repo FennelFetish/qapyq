@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QMenu
 from lib import videorw
 from lib.filelist import DataKeys
 from ui.imgview import ImgView, MediaItemMixin
+from ui.effect import ConfirmRect
 from ui.size_preset import SIZE_PRESET_SIGNALS
 import ui.export_settings as export
 from config import Config
@@ -57,7 +58,6 @@ class CropTool(ViewTool):
         self._lastCenter = QPointF() # For nudging
 
         self._confirmRect = ConfirmRect(tab.imgview.scene())
-        self._confirmRect.setVisible(False)
 
         self._mask = MaskRect()
         self._mask.setBrush( QBrush(QColor(0, 0, 0, 100)) )
@@ -188,11 +188,7 @@ class CropTool(ViewTool):
         self._lastCenter.setY(mouseCoords.y())
 
         self.updateSelectionRect(mouseCoords)
-
-        imgRect = self._imgview.image.boundingRect()
-        imgPoly = self._imgview.image.mapToParent(imgRect)
-        imgPoly = self._imgview.mapFromScene(imgPoly)
-        self._mask.setHighlightRegion(imgPoly, self._cropRect.rect())
+        self._mask.setHighlightRegion(self.mapImageToViewport(), self._cropRect.rect())
 
         # Change selection color depending on crop size
         pen = self.PEN_UPSCALE if self._cropHeight < self._targetHeight else self.PEN_DOWNSCALE
@@ -256,14 +252,15 @@ class CropTool(ViewTool):
         if not destFile:
             return False
 
+        self.tab.statusBar().showMessage("Starting export...")
+
         try:
             if videorw.isVideoFile(destFile):
                 self.exportVideo(item.filepath, destFile, poly)
             else:
                 self.exportImage(item.filepath, destFile, poly)
 
-            self._confirmRect.setRect(selectionRect)
-            self._confirmRect.startAnim()
+            self._confirmRect.startFade(selectionRect)
             return True
 
         except Exception as ex:
@@ -274,8 +271,6 @@ class CropTool(ViewTool):
         pixmap = self._imgview.image.pixmap()
         if not pixmap:
             raise ValueError("No image")
-
-        self.tab.statusBar().showMessage("Exporting image...")
 
         scaleFactor = self._targetHeight / self._cropHeight
         scaleConfig = self._toolbar.exportWidget.getScaleConfig(scaleFactor)
@@ -306,8 +301,6 @@ class CropTool(ViewTool):
 
         fps = self._toolbar.exportWidget.getFps()
         Config.exportVideoFps = fps
-
-        self.tab.statusBar().showMessage("Exporting video...")
 
         proc = videorw.VideoExportProcess(self.tab, currentFile, srcSize, srcPos, destFile, poly, targetSize, rot, numFrames, fps)
         proc.done.connect(self.onExportDone, Qt.ConnectionType.QueuedConnection)
@@ -633,42 +626,6 @@ class MaskRect(QGraphicsRectItem):
 
     def shape(self) -> QPainterPath:
         return self._clipPath
-
-
-
-class ConfirmRect(QGraphicsRectItem):
-    ALPHA = 100
-
-    def __init__(self, scene):
-        super().__init__(None)
-        self._scene = scene
-        self.alpha = ConfirmRect.ALPHA
-
-        self._color = QColor(60, 255, 60, self.alpha)
-        self._brush = QBrush(self._color)
-        self.setBrush(self._brush)
-        self.setPen(QPen(QColor(0, 0, 0, 0)))
-
-        self.timer = QTimer(parent=scene, interval=40)
-        self.timer.timeout.connect(self.anim)
-
-    def startAnim(self):
-        self.alpha = ConfirmRect.ALPHA
-        self.setVisible(True)
-        self.timer.start()
-
-    def anim(self):
-        if self.alpha <= 0:
-            self.timer.stop()
-            self.setVisible(False)
-            return
-
-        self._color.setAlpha(self.alpha)
-        self._brush.setColor(self._color)
-        self.setBrush(self._brush)
-        self._scene.update()
-
-        self.alpha = max(0, self.alpha-7)
 
 
 

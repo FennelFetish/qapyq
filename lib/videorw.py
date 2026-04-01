@@ -99,7 +99,7 @@ try:
         def __init__(
             self, parent,
             srcFile: str, srcSize: QSize, srcPosMs: int,
-            destFile: str, poly: QPolygonF, targetSize: QSize, rotation: float,
+            destFile: str, poly: QPolygonF | None, targetSize: QSize, rotation: float,
             numFrames: int, fps: float
         ):
             super().__init__(parent)
@@ -116,17 +116,24 @@ try:
             if crop != bbox:
                 filters.append( f'crop={crop.width()}:{crop.height()}:{crop.x()}:{crop.y()}' )
 
-            if crop.size() != targetSize:
-                filters.append( f'scale={targetSize.width()}:{targetSize.height()}:flags=lanczos' )  # TODO: Use interpolation settings from preset?
+            w, h = self._makeSizeDiv2(targetSize)
+            if crop.width() != w or crop.height != h:
+                filters.append( f'scale={w}:{h}:flags=lanczos' )  # TODO: Use interpolation settings from preset?
 
             overwriteFlag = '-y'  # '-n'
             pos = srcPosMs / 1000
-            duration = numFrames / fps
 
             args = [
                 '-nostdin', overwriteFlag, '-v', 'error',
-                '-ss', str(pos), '-i', srcFile, '-ss', '0', '-t', str(duration),
-                '-vf', ','.join(filters), '-frames:v', str(numFrames),
+                '-ss', str(pos), '-i', srcFile, '-ss', '0',
+                '-vf', ','.join(filters)
+            ]
+
+            if numFrames > 0:
+                duration = numFrames / fps
+                args += ['-t', str(duration), '-frames:v', str(numFrames)]
+
+            args += [
                 '-c:v', 'libx264', '-preset', 'veryslow', '-crf', '17', '-movflags', '+faststart',
                 '-c:a', 'aac', '-b:a', '192k',
                 '-pix_fmt', 'yuv420p', '-avoid_negative_ts', 'make_zero',
@@ -143,11 +150,27 @@ try:
             self.finished.connect(self._onProcessEnded)
 
         @staticmethod
-        def calcRotatedCrop(srcSize: QSize, poly: QPolygonF, rotation: float) -> tuple[QRectF, QRectF]:
+        def _makeSizeDiv2(size: QSize) -> tuple[int, int]:
+            # ffmpeg needs target size divisible by 2
+            w, h = size.toTuple()
+            if (w & 1) or (h & 1):
+                w -= (w & 1)
+                h -= (h & 1)
+                print(f"Video size must be divisible by 2. Rounding down from {size.width()}x{size.height()} to {w}x{h}.")
+
+            return w, h
+
+        @staticmethod
+        def calcRotatedCrop(srcSize: QSize, poly: QPolygonF | None, rotation: float) -> tuple[QRectF, QRectF]:
             rotTrans = QTransform().rotate(rotation)                                 # Rotation around 0/0
             bbox = rotTrans.mapRect(QRectF(0, 0, srcSize.width(), srcSize.height())) # Bounding box of rotated image
-            crop = rotTrans.map(poly).boundingRect()                                 # Rotate selection from image-space to view-space and align with axes
-            crop.translate(-bbox.topLeft())                                          # Make crop window relative to bbox
+
+            if poly is None:
+                crop = bbox
+            else:
+                crop = rotTrans.map(poly).boundingRect() # Rotate selection from image-space to view-space and align with axes
+                crop.translate(-bbox.topLeft())          # Make crop window relative to bbox
+
             return bbox, crop
 
         @Slot()

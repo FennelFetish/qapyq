@@ -1,18 +1,24 @@
-from typing import Callable
-from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Slot, Signal, QThreadPool, QSignalBlocker
+from typing import Callable, TYPE_CHECKING
 import numpy as np
+from PySide6 import QtWidgets, QtGui
+from PySide6.QtCore import Qt, Slot, Signal, QSize, QThreadPool, QSignalBlocker
+from lib import colorlib, videorw
+from lib.filelist import DataKeys
+import ui.export_settings as export
+from ui.imgview import MediaItemMixin
+from ui.effect import ConfirmRect
+from ui.size_preset import SizePresetComboBox
 from config import Config
 from .view import ViewTool
-import ui.export_settings as export
-from ui.size_preset import SizePresetComboBox
-from lib.colorlib import RED, GREEN
-from lib.filelist import DataKeys
+
+if TYPE_CHECKING:
+    from ui.video_player import VideoItem
 
 
 class Size:
-    def __init__(self, w, h):
-        self.w, self.h = w, h
+    def __init__(self, w: int, h: int):
+        self.w = w
+        self.h = h
 
 
 class ScaleTool(ViewTool):
@@ -20,9 +26,12 @@ class ScaleTool(ViewTool):
         super().__init__(tab)
         self._lastExportedFile = ""
         self._toolbar = ScaleToolBar(self)
+        self._menu = ScaleContextMenu(self)
+
+        self._confirmRect = ConfirmRect(tab.imgview.scene())
 
         save = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+E"), tab, context=Qt.ShortcutContext.WindowShortcut)
-        save.activated.connect(self.exportImage)
+        save.activated.connect(self.export)
         self.addShortcuts(save)
 
     def imgSize(self) -> Size | None:
@@ -32,23 +41,39 @@ class ScaleTool(ViewTool):
         return None
 
     @Slot()
-    def exportImage(self):
-        pixmap = self._imgview.image.pixmap()
-        if not pixmap:
-            return
+    def export(self):
+        item = self._imgview.image
+        if not item.mediaSize().isValid():
+            return False
 
-        exportWidget = self._toolbar.exportWidget
-        currentFile = self._imgview.image.filepath
-        destFile = exportWidget.getExportPath(currentFile)
+        destFile = self._toolbar.exportWidget.getExportPath(item.filepath)
         if not destFile:
             return
 
-        self.tab.statusBar().showMessage("Exporting image...")
+        self.tab.statusBar().showMessage("Starting export...")
+
+        try:
+            if videorw.isVideoFile(destFile):
+                self.exportVideo(item.filepath, destFile)
+            else:
+                self.exportImage(item.filepath, destFile)
+
+            self._confirmRect.startFade(self.mapImageToViewport().boundingRect())
+            return True
+
+        except Exception as ex:
+            self.tab.statusBar().showColoredMessage(f"Export failed: {ex} ({type(ex).__name__})", False, 0)
+            return False
+
+    def exportImage(self, currentFile: str, destFile: str):
+        pixmap = self._imgview.image.pixmap()
+        if not pixmap:
+            raise ValueError("No image")
 
         rot = self._toolbar.rotation
         w, h = self._toolbar.targetSize
         scaleFactor = np.sqrt( (w * h) / (pixmap.width() * pixmap.height()) )
-        scaleConfig = exportWidget.getScaleConfig(scaleFactor)
+        scaleConfig = self._toolbar.exportWidget.getScaleConfig(scaleFactor)
 
         task = ScaledExportTask(currentFile, destFile, pixmap, rot, w, h, scaleConfig)
         task.signals.done.connect(self.onExportDone, Qt.ConnectionType.BlockingQueuedConnection)
@@ -56,9 +81,30 @@ class ScaleTool(ViewTool):
         task.signals.fail.connect(self.onExportFailed, Qt.ConnectionType.BlockingQueuedConnection)
         QThreadPool.globalInstance().start(task)
 
+    def exportVideo(self, currentFile: str, destFile: str):
+        item: VideoItem = self._imgview.image
+        if item.TYPE != MediaItemMixin.ItemType.Video:
+            raise ValueError("Current file is not a video")
+
+        srcSize = item.mediaSize()
+        targetSize = QSize(*self._toolbar.targetSize)
+        rot = self._toolbar.rotation
+
+        fps = self._toolbar.exportWidget.getFps()
+        Config.exportVideoFps = fps
+
+        proc = videorw.VideoExportProcess(self.tab, currentFile, srcSize, 0, destFile, None, targetSize, rot, -1, fps)
+        proc.done.connect(self.onExportDone, Qt.ConnectionType.QueuedConnection)
+        proc.progress.connect(self.onExportProgress, Qt.ConnectionType.QueuedConnection)
+        proc.fail.connect(self.onExportFailed, Qt.ConnectionType.QueuedConnection)
+        proc.start()
+
+
     @Slot(str, str)
     def onExportDone(self, file: str, path: str):
-        message = f"Exported scaled image to: {path}"
+        fileType = "video" if videorw.isVideoFile(path) else "image"
+
+        message = f"Exported scaled {fileType} to: {path}"
         print(message)
         self.tab.statusBar().showColoredMessage(message, success=True)
 
@@ -89,6 +135,8 @@ class ScaleTool(ViewTool):
 
     def onEnabled(self, imgview):
         super().onEnabled(imgview)
+        imgview._guiScene.addItem(self._confirmRect)
+
         imgview.rotation = self._toolbar.rotation
         imgview.updateImageTransform()
 
@@ -97,6 +145,8 @@ class ScaleTool(ViewTool):
 
     def onDisabled(self, imgview):
         super().onDisabled(imgview)
+        imgview._guiScene.removeItem(self._confirmRect)
+
         imgview.rotation = 0.0
         imgview.updateImageTransform()
 
@@ -108,10 +158,10 @@ class ScaleTool(ViewTool):
         self._toolbar.rotation = self._imgview.rotation
 
 
-    def onMousePress(self, event) -> bool:
-        button = event.button()
-        if button == Qt.MouseButton.RightButton:
-            self.exportImage()
+    def onMousePress(self, event: QtGui.QMouseEvent) -> bool:
+        if event.button() == Qt.MouseButton.RightButton:
+            pos = self._imgview.mapToGlobal(event.position()).toPoint()
+            self._menu.exec(pos)
             return True
 
         return super().onMousePress(event)
@@ -285,6 +335,13 @@ class ScaleToolBar(QtWidgets.QToolBar):
         self.exportWidget.updateSample()
 
 
+class ScaleContextMenu(QtWidgets.QMenu):
+    def __init__(self, scaleTool: ScaleTool):
+        super().__init__()
+        actExport = self.addAction("Export")
+        actExport.triggered.connect(scaleTool.export)
+
+
 
 class ScaledExportTask(export.ImageExportTask):
     def __init__(self, srcFile, destFile, pixmap, rotation: float, targetWidth: int, targetHeight: int, scaleConfig: export.ScaleConfig):
@@ -363,10 +420,10 @@ class ScaleMode(QtWidgets.QWidget):
             scale = np.sqrt(scale)
 
         if scale > 1.0:
-            self.lblScale.setStyleSheet(f"QLabel{{color:{RED}}}")
+            self.lblScale.setStyleSheet(f"QLabel{{color:{colorlib.RED}}}")
             self.lblScale.setText(f"▲  {scale:.3f}")
         else:
-            self.lblScale.setStyleSheet(f"QLabel{{color:{GREEN}}}")
+            self.lblScale.setStyleSheet(f"QLabel{{color:{colorlib.GREEN}}}")
             self.lblScale.setText(f"▼  {scale:.3f}")
 
         self.sizeChanged.emit(w, h)
