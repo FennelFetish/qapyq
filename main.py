@@ -2,9 +2,16 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 import sys, os
+os.environ["QT_LOGGING_RULES"] = (
+    "qt.multimedia=false;"
+    "qt.multimedia.*=false;"
+    "qt.multimedia.ffmpeg*=false;"
+    #"qt.pyside.libpyside.warning=true;"
+)
+
 from typing import Iterable
 from PySide6 import QtGui, QtWidgets
-from PySide6.QtCore import Qt, Slot, QPoint, QThreadPool
+from PySide6.QtCore import Qt, Slot, QPoint, QThreadPool, qInstallMessageHandler
 from config import Config
 from ui import aux_window
 from ui.tab import ImgTab
@@ -551,6 +558,17 @@ class MainToolBar(QtWidgets.QToolBar):
 
 
 
+class QtLogFilter:
+    def __init__(self):
+        self.lastLine = None
+
+    def __call__(self, msgType, context, message: str):
+        if message != self.lastLine:
+            self.lastLine = message
+            print(message)
+
+
+
 def applyStyle(app: QtWidgets.QApplication):
     match Config.colorScheme:
         case "dark":  colorSchemeOverride = Qt.ColorScheme.Dark
@@ -591,6 +609,12 @@ def restoreWindows(win: MainWindow):
 
 def main() -> int:
     os.environ["QT_SCALE_FACTOR"] = str(Config.guiScale)
+
+    # Disable HW acceleration for QMediaPlayer because render surfaces are limited and contesting with thumbnail extraction
+    os.environ["QT_FFMPEG_DECODING_HW_DEVICE_TYPES"] = ""
+
+    logFilter = QtLogFilter()
+    qInstallMessageHandler(logFilter)
 
     app = QtWidgets.QApplication([])
     QtGui.QPixmapCache.setCacheLimit(24)
