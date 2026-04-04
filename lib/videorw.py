@@ -1,4 +1,4 @@
-import os
+import os, subprocess
 import numpy as np
 import cv2 as cv
 
@@ -32,18 +32,20 @@ def thumbnailVideo(path: str, maxWidth: int, tiling: int) -> tuple[np.ndarray, t
         if not cap.isOpened():
             raise ValueError(f"Could not open video file: {path}")
 
-        origW = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
-        origH = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv.CAP_PROP_FPS)
         frameCount = int(cap.get(cv.CAP_PROP_FRAME_COUNT))
-        duration = (frameCount / fps) if fps > 0 and frameCount > 0 else 0
+
+        try:
+            duration = frameCount / fps
+        except ZeroDivisionError:
+            raise ValueError("Failed to retrieve video duration")
 
         # Extract evenly spaced frames
         numIntervals = tiling*tiling + 1
         frames = list[np.ndarray]()
         for i in range(1, numIntervals):
-            pos = round(i * duration/numIntervals)
-            cap.set(cv.CAP_PROP_POS_MSEC, pos * 1000)
+            pos = round(1000 * i * duration/numIntervals)
+            cap.set(cv.CAP_PROP_POS_MSEC, pos)
             ret, frame = cap.read()
             if ret:
                 frames.append(frame)
@@ -53,12 +55,12 @@ def thumbnailVideo(path: str, maxWidth: int, tiling: int) -> tuple[np.ndarray, t
     finally:
         cap.release()
 
-    if not frames:
-        raise ValueError("Failed to extract video frames")
-
     try:
-        channels = frames[0].shape[2]
+        origH, origW, channels = frames[0].shape
     except IndexError:
+        raise ValueError("Failed to extract video frames")
+    except ValueError:
+        origH, origW = frames[0].shape[:2]
         channels = 1
 
     # Downscale frames
@@ -79,11 +81,29 @@ def thumbnailVideo(path: str, maxWidth: int, tiling: int) -> tuple[np.ndarray, t
     return tiles, (origW, origH)
 
 
+def getKeyframes(path: str, start: int, end: int) -> list[int]:
+    startSec = start / 1000.0
+    endSec   = end / 1000.0
+    interval = f"{startSec}%{endSec}"
+
+    cmd = [
+        'ffprobe', '-v', 'error', '-skip_frame', 'nokey', '-select_streams', 'v:0', '-show_entries', 'frame=pkt_pts_time',
+        '-read_intervals', interval, '-of', 'csv=p=0', path
+    ]
+
+    try:
+        result = subprocess.check_output(cmd, text=True)
+        return [round(float(line) * 1000.0) for l in result.splitlines() if (line := l.strip())]
+    except Exception as ex:
+        print(f"Failed to extract keyframes: {ex} ({type(ex).__name__})")
+        return []
+
+
 
 try:
     from PySide6.QtCore import Signal, Slot, QRectF, QSize, QProcess
     from PySide6.QtGui import QImage, QPolygonF, QTransform
-    import math
+    import math, time
     from lib import qtlib
 
     def thumbnailVideoQImage(path: str, maxWidth: int, tiling: int) -> tuple[QImage, tuple[int, int]]:
@@ -92,46 +112,44 @@ try:
 
 
     class VideoExportProcess(QProcess):
+        OVERWRITE_FLAG = '-y'  # '-n'
+
         done     = Signal(str, str) # srcFile, destFile
         progress = Signal(str)      # msg
         fail     = Signal(str)      # msg
 
         def __init__(
             self, parent,
-            srcFile: str, srcSize: QSize, srcPosMs: int,
+            srcFile: str, srcSize: QSize, srcPosMs: int, srcFps: float,
             destFile: str, poly: QPolygonF | None, targetSize: QSize, rotation: float,
-            numFrames: int, fps: float
+            numFrames: int, targetFps: float, speed: float = 1.0
         ):
             super().__init__(parent)
-            self.srcFile = srcFile
+            self.srcFile  = srcFile
             self.destFile = destFile
+            self.tStart   = 0
 
-            filters = [f'fps={fps}']
-            bbox, crop = self.calcRotatedCrop(srcSize, poly, rotation)
+            videoFilters = self._getVideoFilters(srcSize, poly, targetSize, rotation, speed, srcFps, targetFps)
+            audioFilters = None
 
-            if rotation != 0.0:
-                rotRad = math.radians(rotation)
-                filters.append( f'rotate={rotRad}:ow={bbox.width()}:oh={bbox.height()}:fillcolor=black@0' )
+            durationWrite = durationRead = numFrames / targetFps
+            if abs(speed - 1.0) > 0.001:
+                durationRead = durationWrite * speed
+                videoFilters = [f'setpts=PTS/{speed}'] + videoFilters
+                audioFilters = self._getAudioFilters(speed)
 
-            if crop != bbox:
-                filters.append( f'crop={crop.width()}:{crop.height()}:{crop.x()}:{crop.y()}' )
-
-            w, h = self._makeSizeDiv2(targetSize)
-            if crop.width() != w or crop.height != h:
-                filters.append( f'scale={w}:{h}:flags=lanczos' )  # TODO: Use interpolation settings from preset?
-
-            overwriteFlag = '-y'  # '-n'
             pos = srcPosMs / 1000
-
-            args = [
-                '-nostdin', overwriteFlag, '-v', 'error',
-                '-ss', str(pos), '-i', srcFile, '-ss', '0',
-                '-vf', ','.join(filters)
-            ]
+            args = ['-nostdin', self.OVERWRITE_FLAG, '-v', 'error', '-ss', str(pos), '-i', srcFile]
 
             if numFrames > 0:
-                duration = numFrames / fps
-                args += ['-t', str(duration), '-frames:v', str(numFrames)]
+                args += ['-t', str(durationRead), '-ss', '0', '-t', str(durationWrite), '-frames:v', str(numFrames)]
+            else:
+                args += ['-ss', '0']
+
+            args += ['-vf', ','.join(videoFilters)]
+
+            if audioFilters:
+                args += ['-af', ','.join(audioFilters)]
 
             args += [
                 '-c:v', 'libx264', '-preset', 'veryslow', '-crf', '17', '-movflags', '+faststart',
@@ -150,36 +168,78 @@ try:
             self.finished.connect(self._onProcessEnded)
 
         @staticmethod
-        def _makeSizeDiv2(size: QSize) -> tuple[int, int]:
-            # ffmpeg needs target size divisible by 2
-            w, h = size.toTuple()
-            if (w & 1) or (h & 1):
-                w -= (w & 1)
-                h -= (h & 1)
-                print(f"Video size must be divisible by 2. Rounding down from {size.width()}x{size.height()} to {w}x{h}.")
+        def _getAudioFilters(speed: float) -> list[str]:
+            # atempo with speed>2 will skip samples instead of blending, so chain multiple filters (max 10)
+            atempoCount = math.ceil(speed/2.0) if speed <= 20.0 else 1
+            atempoVal = pow(speed, 1.0/atempoCount)
+            return [f'atempo={atempoVal}'] * atempoCount
 
-            return w, h
+        @classmethod
+        def _getVideoFilters(
+            cls, srcSize: QSize, poly: QPolygonF | None, targetSize: QSize, rotation: float, speed: float, srcFps: float, targetFps: float
+        ) -> list[str]:
+            bbox, crop = cls.calcRotatedCrop(srcSize, poly, rotation)
+            filters = list[str]()
+
+            if rotation != 0.0:
+                rotRad = math.radians(rotation)
+                filters.append( f'rotate={rotRad}:ow={bbox.width()}:oh={bbox.height()}:fillcolor=black@0' )
+
+            if crop != bbox:
+                filters.append( f'crop={crop.width()}:{crop.height()}:{crop.x()}:{crop.y()}' )
+
+            targetSize = cls._evenSize(targetSize)
+            if crop.size() != targetSize:
+                filters.append( f'scale={targetSize.width()}:{targetSize.height()}:flags=lanczos' )  # TODO: Use interpolation settings from preset?
+
+            scaledSrcFps = srcFps * speed
+            if targetFps > scaledSrcFps * 1.33:
+                filters.append( f"minterpolate=fps={targetFps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:me=epzs:vsbmc=1" )
+                print(f"Upsampling FPS from {round(srcFps, 4)} (speed: {speed:.2f}, effective FPS: {round(scaledSrcFps, 4)}) "
+                      f"to {round(targetFps, 4)} (x{targetFps/scaledSrcFps:.3f}) using minterpolate filter. This can take a minute.")
+            elif targetFps > scaledSrcFps:
+                filters.append( f'fps={targetFps}' )      # Duplicates frames: Do this last
+            else:
+                filters = [f'fps={targetFps}'] + filters  # Drops frames: Do this first
+
+            return filters
 
         @staticmethod
         def calcRotatedCrop(srcSize: QSize, poly: QPolygonF | None, rotation: float) -> tuple[QRectF, QRectF]:
             rotTrans = QTransform().rotate(rotation)                                 # Rotation around 0/0
             bbox = rotTrans.mapRect(QRectF(0, 0, srcSize.width(), srcSize.height())) # Bounding box of rotated image
 
-            if poly is None:
-                crop = bbox
-            else:
+            if poly is not None:
                 crop = rotTrans.map(poly).boundingRect() # Rotate selection from image-space to view-space and align with axes
                 crop.translate(-bbox.topLeft())          # Make crop window relative to bbox
+                return bbox, crop
+            else:
+                return bbox, bbox
 
-            return bbox, crop
+        @staticmethod
+        def _evenSize(size: QSize) -> QSize:
+            # ffmpeg needs target size divisible by 2
+            w, h = size.toTuple()
+            if (w & 1) or (h & 1):
+                w -= (w & 1)
+                h -= (h & 1)
+                print(f"Video size must be even. Reducing from {size.width()}x{size.height()} to {w}x{h}.")
+                return QSize(w, h)
+
+            return size
+
 
         @Slot()
         def _onProcessStarted(self):
+            self.tStart = time.monotonic_ns()
             self.progress.emit("Saving video...")
 
         @Slot(int, QProcess.ExitStatus)
         def _onProcessEnded(self, exitCode: int, exitStatus: QProcess.ExitStatus):
+            t = (time.monotonic_ns() - self.tStart) / 1_000_000_000
+
             if exitCode == 0:
+                print(f"Video export took {t:.3f} s")
                 self.done.emit(self.srcFile, self.destFile)
             else:
                 print(f"Video export failed: ffmpeg call failed with exit code {exitCode}, {exitStatus}")

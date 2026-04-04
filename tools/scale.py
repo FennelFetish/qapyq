@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt, Slot, Signal, QSize, QThreadPool, QSignalBlocker
 from lib import colorlib, videorw
 from lib.filelist import DataKeys
 import ui.export_settings as export
-from ui.imgview import MediaItemMixin
+from ui.imgview import MediaItemType
 from ui.effect import ConfirmRect
 from ui.size_preset import SizePresetComboBox
 from config import Config
@@ -66,6 +66,10 @@ class ScaleTool(ViewTool):
             return False
 
     def exportImage(self, currentFile: str, destFile: str):
+        item: VideoItem = self._imgview.image
+        if item.TYPE == MediaItemType.Video:
+            item.setPlaying(False)
+
         pixmap = self._imgview.image.pixmap()
         if not pixmap:
             raise ValueError("No image")
@@ -83,17 +87,18 @@ class ScaleTool(ViewTool):
 
     def exportVideo(self, currentFile: str, destFile: str):
         item: VideoItem = self._imgview.image
-        if item.TYPE != MediaItemMixin.ItemType.Video:
+        if item.TYPE != MediaItemType.Video:
             raise ValueError("Current file is not a video")
 
         srcSize = item.mediaSize()
         targetSize = QSize(*self._toolbar.targetSize)
         rot = self._toolbar.rotation
 
-        fps = self._toolbar.exportWidget.getFps()
-        Config.exportVideoFps = fps
+        srcFps = item.info.fps
+        targetFps = self._toolbar.exportWidget.getFps()
+        Config.exportVideoFps = targetFps
 
-        proc = videorw.VideoExportProcess(self.tab, currentFile, srcSize, 0, destFile, None, targetSize, rot, -1, fps)
+        proc = videorw.VideoExportProcess(self.tab, currentFile, srcSize, 0, srcFps, destFile, None, targetSize, rot, -1, targetFps)
         proc.done.connect(self.onExportDone, Qt.ConnectionType.QueuedConnection)
         proc.progress.connect(self.onExportProgress, Qt.ConnectionType.QueuedConnection)
         proc.fail.connect(self.onExportFailed, Qt.ConnectionType.QueuedConnection)

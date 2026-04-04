@@ -9,6 +9,11 @@ from lib.filelist import FileList
 from .dropview import DropView
 
 
+class MediaItemType(IntEnum):
+    Image = 0
+    Video = 1
+
+
 class MouseLocation(IntEnum):
     Outside  = 0
     Tool     = 1
@@ -67,7 +72,7 @@ class ImgView(DropView):
 
     def onFileChanged(self, currentFile: str):
         isVideoFile = videorw.isVideoFile(currentFile)
-        if isVideoFile != (self.image.TYPE == MediaItemMixin.ItemType.Video):
+        if isVideoFile != (self.image.TYPE == MediaItemType.Video):
             self.image.removeFromScene(self.scene(), self._guiScene)
             self.image.deleteLater()
 
@@ -227,11 +232,6 @@ class ImgView(DropView):
 
 
 class MediaItemMixin:
-    class ItemType(IntEnum):
-        Image = 0
-        Video = 1
-
-
     def __init__(self):
         self.filepath = ""
 
@@ -250,6 +250,9 @@ class MediaItemMixin:
 
     def hasAlpha(self) -> bool:
         return False
+
+    def fps(self) -> float:
+        return -1.0
 
     def addToScene(self: QGraphicsItem, scene: QGraphicsScene, guiScene: QGraphicsScene):
         scene.addItem(self)
@@ -301,7 +304,7 @@ class MediaItemMixin:
 
 
 class ImgItem(QGraphicsPixmapItem, MediaItemMixin):
-    TYPE = MediaItemMixin.ItemType.Image
+    TYPE = MediaItemType.Image
 
     def __init__(self):
         super().__init__()

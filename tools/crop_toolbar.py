@@ -1,16 +1,22 @@
+from typing import TYPE_CHECKING
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
 from ui.export_settings import ExportWidget, ExportFileType
 from ui.size_preset import SizePresetComboBox
+from ui.imgview import MediaItemType
 from config import Config
 from lib import colorlib
 from .crop import CropTool
+
+if TYPE_CHECKING:
+    from ui.video_player import VideoItem
 
 
 class CropToolBar(QtWidgets.QToolBar):
     def __init__(self, cropTool: CropTool):
         super().__init__("Crop")
         self._cropTool = cropTool
+        self._initialized = False
 
         self.exportWidget = ExportWidget("crop", cropTool.tab.filelist)
         self.exportWidget.fpsChanged.connect(self.updateDuration)
@@ -21,8 +27,8 @@ class CropToolBar(QtWidgets.QToolBar):
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(1, 1, 1, 1)
         layout.addWidget(self._buildTargetSize())
-        layout.addWidget(self._timeRange)
         layout.addWidget(self._buildSelectionSize())
+        layout.addWidget(self._timeRange)
         layout.addWidget(self._buildRotation())
         layout.addWidget(self.exportWidget)
 
@@ -35,8 +41,12 @@ class CropToolBar(QtWidgets.QToolBar):
         self.addWidget(widget)
 
         self.setMaximumWidth(180)
-        self.cboSizePresets.selectFirstPreset()
 
+    def initPreset(self):
+        # Initialize preset when tool is first enabled because some functions need ImgView
+        if not self._initialized:
+            self.cboSizePresets.selectFirstPreset()
+            self._initialized = True
 
     def _buildTargetSize(self):
         layout = QtWidgets.QGridLayout()
@@ -94,11 +104,13 @@ class CropToolBar(QtWidgets.QToolBar):
         row += 1
         btnSwap = QtWidgets.QPushButton("Swap")
         btnSwap.setToolTip("Swap width/height with <b>Middle Mouse Button</b>")
+        btnSwap.setMaximumHeight(22)
         btnSwap.clicked.connect(self.sizeSwap)
         layout.addWidget(btnSwap, row, 1)
 
         btnQuad = QtWidgets.QPushButton("Square")
         btnQuad.setToolTip("Make square (height=width)")
+        btnQuad.setMaximumHeight(22)
         btnQuad.clicked.connect(self.sizeQuad)
         layout.addWidget(btnQuad, row, 2)
 
@@ -116,7 +128,7 @@ class CropToolBar(QtWidgets.QToolBar):
         row = 0
         self.spinLength = QtWidgets.QSpinBox()
         self.spinLength.setToolTip("Length of the exported segment in frames")
-        self.spinLength.setRange(1, 999_992)
+        self.spinLength.setRange(9, 999_992)
         self.spinLength.setSingleStep(8)
         self.spinLength.setValue(121)
         self.spinLength.setMinimumWidth(60)
@@ -138,15 +150,25 @@ class CropToolBar(QtWidgets.QToolBar):
         lblSet.setFixedWidth(24)
         layout.addWidget(lblSet, row, 0)
 
-        btnSetEnd = QtWidgets.QPushButton("End")
-        btnSetEnd.setToolTip("Set current frame as last frame. Skip back by 'Len' frames.")
+        btnSetEnd = QtWidgets.QPushButton("End Frame")
+        btnSetEnd.setToolTip("Set current frame as last frame. Skip back by 'Len' frames")
+        btnSetEnd.setMaximumHeight(22)
+        #qtlib.setFontSize(btnSetEnd, 0.9)
         btnSetEnd.clicked.connect(self.setEndFrame)
-        layout.addWidget(btnSetEnd, row, 1)
+        layout.addWidget(btnSetEnd, row, 1, 1, 2)
 
-        btnSetKey = QtWidgets.QPushButton("Key")
-        btnSetKey.setToolTip("Skip back to last key frame")
-        btnSetKey.setEnabled(False)
-        layout.addWidget(btnSetKey, row, 2)
+        row += 1
+        self.lblDurationScaled = QtWidgets.QLabel("0.000 s")
+        self.lblDurationScaled.hide()
+
+        self.chkChangeExportSpeed = QtWidgets.QCheckBox("Change Speed")
+        self.chkChangeExportSpeed.setToolTip("Change the speed of the exported media to the current playback speed")
+        self.chkChangeExportSpeed.toggled.connect(self.lblDurationScaled.setVisible)
+        self.chkChangeExportSpeed.toggled.connect(self.updateDuration)
+        layout.addWidget(self.chkChangeExportSpeed, row, 0, 1, 3)
+
+        row += 1
+        layout.addWidget(self.lblDurationScaled, row, 0, 1, 3, Qt.AlignmentFlag.AlignHCenter)
 
         group = QtWidgets.QGroupBox("Time Range")
         group.setLayout(layout)
@@ -158,9 +180,11 @@ class CropToolBar(QtWidgets.QToolBar):
         self.lblScale = QtWidgets.QLabel("1.0")
 
         self.chkConstrainToImage = QtWidgets.QCheckBox("Constrain to Image")
+        self.chkConstrainToImage.setToolTip("Keep selection rectangle inside image")
         self.chkConstrainToImage.setChecked(True)
 
         self.chkAllowUpscale = QtWidgets.QCheckBox("Allow Upscale")
+        self.chkAllowUpscale.setToolTip("Keep selection rectangle larger than 'target size' to prevent upscaling")
         self.chkAllowUpscale.setChecked(False)
 
         layout = QtWidgets.QGridLayout()
@@ -266,6 +290,20 @@ class CropToolBar(QtWidgets.QToolBar):
 
         self.cboSizePresets.setCurrentIndex(0)
 
+    @Slot()
+    def setEndFrame(self):
+        item: VideoItem = self._cropTool._imgview.image
+        if item.TYPE != MediaItemType.Video:
+            return
+
+        speed = item.player.playbackRate() if self.changeSpeed else 1.0
+        duration = round(self.getDurationMs() * speed)
+
+        pos = item.player.position() - duration
+        pos = max(pos, 0)
+        item.player.setPosition(pos)
+        self._cropTool.updateTimeSegment()
+
 
     def getDurationMs(self) -> int:
         fps = self.exportWidget.getFps()
@@ -274,22 +312,24 @@ class CropToolBar(QtWidgets.QToolBar):
 
     @Slot()
     def updateDuration(self):
-        seconds = self.getDurationMs() / 1000.0
-        self.lblDuration.setText(f"{seconds:.3f} s")
+        duration = self.getDurationMs() / 1000.0
+        self.lblDuration.setText(f"{duration:.3f} s")
         self._cropTool.updateTimeSegment(setStart=False)
         self.updateExport()
 
-    @Slot()
-    def setEndFrame(self):
-        from ui.video_player import VideoItem
-        item: VideoItem = self._cropTool._imgview.image
-        if item.TYPE != VideoItem.TYPE:
-            return
+        changeSpeedText = "Change Speed"
+        durationScaledText = "0.000 s"
 
-        pos = item.player.position() - self.getDurationMs()
-        pos = max(pos, 0)
-        item.player.setPosition(pos)
-        self._cropTool.updateTimeSegment()
+        item: VideoItem = self._cropTool._imgview.image
+        if item.TYPE == MediaItemType.Video:
+            speed = item.player.playbackRate()
+            changeSpeedText = f"Change Speed (x{speed:.2f})"
+            if self.changeSpeed:
+                durationScaled = speed * duration
+                durationScaledText = f"{durationScaled:.3f} s  →  {duration:.3f} s"
+
+        self.chkChangeExportSpeed.setText(changeSpeedText)
+        self.lblDurationScaled.setText(durationScaledText)
 
 
     @Slot(int)
@@ -335,11 +375,23 @@ class CropToolBar(QtWidgets.QToolBar):
     def allowUpscale(self) -> bool:
         return self.chkAllowUpscale.isChecked()
 
+    @property
+    def changeSpeed(self) -> bool:
+        return self.chkChangeExportSpeed.isChecked()
+
+    @property
+    def needTimeSegment(self) -> bool:
+        return self._timeRange.isVisible()
+
 
     def updateExport(self):
-        self.exportWidget.setExportSize(self.spinW.value(), self.spinH.value(), self.rotation, self.spinLength.value())
+        speed = 1.0
+        item: VideoItem = self._cropTool._imgview.image
+        if item.TYPE == MediaItemType.Video and self.changeSpeed:
+            speed = item.player.playbackRate()
+
+        self.exportWidget.setExportSize(self.spinW.value(), self.spinH.value(), self.rotation, self.spinLength.value(), speed)
         self.exportWidget.updateSample()
-        #self.updateDuration()
 
     @Slot(ExportFileType)
     def _onExportFileTypeChanged(self, fileType: ExportFileType):
@@ -348,6 +400,3 @@ class CropToolBar(QtWidgets.QToolBar):
 
         if not isVideo:
             self._cropTool.updateTimeSegment()
-
-    def needTimeSegment(self) -> bool:
-        return self._timeRange.isVisible()

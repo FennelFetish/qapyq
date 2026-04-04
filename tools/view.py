@@ -27,15 +27,18 @@ class ViewTool(Tool):
 
 
     def onSceneUpdate(self):
-        size = self._imgview.image.mediaSize()
+        item = self._imgview.image
+        size = item.mediaSize()
         if size.isValid():
-            w, h = size.toTuple()
-            alpha = self._imgview.image.hasAlpha()
+            w, h  = size.toTuple()
+            alpha = item.hasAlpha()
+            fps   = item.fps()
         else:
             w = h = -1
             alpha = False
+            fps   = -1
 
-        self.tab.statusBar().setImageInfo(w, h, alpha)
+        self.tab.statusBar().setMediaInfo(w, h, alpha, fps)
 
 
     def getDropRects(self):

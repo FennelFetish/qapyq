@@ -2,12 +2,13 @@ from typing import TYPE_CHECKING
 from typing_extensions import override
 import cv2 as cv
 import numpy as np
-from PySide6.QtCore import Qt, Slot, QPointF, QRect, QRectF, QSize, QTimer, QThreadPool
+from PySide6.QtCore import Qt, Slot, QPointF, QRect, QRectF, QSize, QThreadPool
 from PySide6.QtGui import QBrush, QPen, QColor, QPainterPath, QPolygonF, QTransform, QCursor, QPixmap
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QMenu
 from lib import videorw
 from lib.filelist import DataKeys
-from ui.imgview import ImgView, MediaItemMixin
+from tools.tool import MediaEvent
+from ui.imgview import ImgView, MediaItemType
 from ui.effect import ConfirmRect
 from ui.size_preset import SIZE_PRESET_SIGNALS
 import ui.export_settings as export
@@ -218,25 +219,24 @@ class CropTool(ViewTool):
 
 
     def updateTimeSegment(self, setStart: bool = True):
-        if not self._imgview:
-            return
-
         item: VideoItem = self._imgview.image
-        if item.TYPE != MediaItemMixin.ItemType.Video:
+        if item.TYPE != MediaItemType.Video:
             return
 
         if not self._selectionFixed:
             item.clearSegment()
             return
 
-        if self._toolbar.needTimeSegment():
-            length = self._toolbar.getDurationMs()
-            start  = item.player.position() if setStart else item.segmentStart
-            end    = start + length
-            item.setSegment(start, end)
-        else:
-            item.player.pause()
+        if not self._toolbar.needTimeSegment:
+            item.setPlaying(False)
             item.clearSegment()
+            return
+
+        speed  = item.player.playbackRate() if self._toolbar.changeSpeed else 1.0
+        length = round(self._toolbar.getDurationMs() * speed)
+        start  = item.player.position() if setStart else item.segmentStart
+        end    = start + length
+        item.setSegment(start, end)
 
 
     def export(self, selectionRect: QRect) -> bool:
@@ -284,7 +284,7 @@ class CropTool(ViewTool):
 
     def exportVideo(self, currentFile: str, destFile: str, poly: QPolygonF):
         item: VideoItem = self._imgview.image
-        if item.TYPE != MediaItemMixin.ItemType.Video:
+        if item.TYPE != MediaItemType.Video:
             raise ValueError("Current file is not a video")
 
         numFrames = self._toolbar.spinLength.value()
@@ -299,10 +299,15 @@ class CropTool(ViewTool):
         targetSize = QSize(self._targetWidth, self._targetHeight)
         rot = self._imgview.rotation
 
-        fps = self._toolbar.exportWidget.getFps()
-        Config.exportVideoFps = fps
+        srcFps = item.info.fps
+        targetFps = self._toolbar.exportWidget.getFps()
+        Config.exportVideoFps = targetFps
 
-        proc = videorw.VideoExportProcess(self.tab, currentFile, srcSize, srcPos, destFile, poly, targetSize, rot, numFrames, fps)
+        speed = 1.0
+        if self._toolbar.changeSpeed:
+            speed = item.player.playbackRate()
+
+        proc = videorw.VideoExportProcess(self.tab, currentFile, srcSize, srcPos, srcFps, destFile, poly, targetSize, rot, numFrames, targetFps, speed)
         proc.done.connect(self.onExportDone, Qt.ConnectionType.QueuedConnection)
         proc.progress.connect(self.onExportProgress, Qt.ConnectionType.QueuedConnection)
         proc.fail.connect(self.onExportFailed, Qt.ConnectionType.QueuedConnection)
@@ -352,6 +357,7 @@ class CropTool(ViewTool):
         imgview.rotation = self._toolbar.rotation
         imgview.updateImageTransform()
 
+        self._toolbar.initPreset()
         self._toolbar.updateSize()
 
     def onDisabled(self, imgview):
@@ -364,7 +370,7 @@ class CropTool(ViewTool):
         imgview.updateImageTransform()
 
         item: VideoItem = imgview.image
-        if item.TYPE == MediaItemMixin.ItemType.Video:
+        if item.TYPE == MediaItemType.Video:
             item.clearSegment()
 
 
@@ -373,7 +379,7 @@ class CropTool(ViewTool):
         self.setSelectionFixed(False)
         self.setSelectionVisible(False)
         self.updateSelection(self._cropRect.rect().center())
-        self._toolbar.updateExport()
+        self._toolbar.updateDuration()
 
     def onResetView(self):
         self._toolbar.rotation = self._imgview.rotation
@@ -381,9 +387,12 @@ class CropTool(ViewTool):
     def onResize(self, event):
         self._mask.setRect(self._imgview.viewport().rect())
 
-    def onMediaSkip(self, insideSegment: bool):
-        if not insideSegment:
-            self.resetSelection()
+    def onMediaEvent(self, event: MediaEvent):
+        match event:
+            case MediaEvent.SkipOutsideSegment:
+                self.resetSelection()
+            case MediaEvent.PlaybackSpeedChanged:
+                self._toolbar.updateDuration()
 
 
     def onMouseEnter(self, event):

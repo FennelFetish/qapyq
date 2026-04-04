@@ -255,11 +255,12 @@ class ExportWidget(QtWidgets.QWidget):
         return self.cboScalePreset.getScaleConfig(scaleFactor)
 
 
-    def setExportSize(self, width: int, height: int, rotation: float = 0.0, length: int = 0):
+    def setExportSize(self, width: int, height: int, rotation: float = 0.0, length: int = 0, speed: float = 1.0):
         self.parser.width = width
         self.parser.height = height
         self.parser.rotation = rotation
         self.parser.length = length
+        self.parser.speed = speed
 
     def getExportPath(self, file: str) -> str:
         '''
@@ -308,6 +309,7 @@ class PathSettings(QtWidgets.QWidget):
     {{h}}         Height
     {{len}}       Length (frame count)
     {{fps}}       Frames per second
+    {{speed}}     Playback speed
     {{rotation}}  Rotation in degrees
     {{region}}    Crop region number
     {{date}}      Date yyyymmdd
@@ -536,6 +538,7 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
         self.exportFileType: ExportFileType = ExportFileType.Image
         self.length = 0
         self.fps    = 0.0
+        self.speed  = 1.0
 
     def setImageDimension(self, size: QSize):
         if size.isValid():
@@ -662,8 +665,9 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
             case "region": return str(self.region)
             case "rotation": return f"{self.rotation:03.0f}"
 
-            case "len": return str(self.length)     if self.exportFileType == ExportFileType.Video else "0"
-            case "fps": return str(round(self.fps)) if self.exportFileType == ExportFileType.Video else "0"
+            case "len": return str(self.length)      if self.exportFileType == ExportFileType.Video else "0"
+            case "fps": return f"{self.fps:.0f}"     if self.exportFileType == ExportFileType.Video else "0"
+            case "speed": return f"{self.speed:.2f}" if self.exportFileType == ExportFileType.Video else "0.00"
 
         return super()._getImgProperties(var)
 

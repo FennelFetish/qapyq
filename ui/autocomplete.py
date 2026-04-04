@@ -1078,7 +1078,7 @@ class TemplateAutoCompleteSource(NGramAutoCompleteSource):
         assert not self.jsonKeys
         self.reset()
 
-        for var in ("w", "h", "len", "fps", "region", "rotation"):
+        for var in ("w", "h", "len", "fps", "speed", "region", "rotation"):
             self.addVar(var)
 
     def updateJsonKeys(self, keys: Iterable[str]):

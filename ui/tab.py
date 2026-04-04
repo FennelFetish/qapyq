@@ -1,7 +1,6 @@
 import os, locale
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Signal, Slot, QTimer
-from PySide6.QtGui import QPixmap
 from config import Config
 from lib import qtlib
 from lib.filelist import FileList
@@ -239,18 +238,21 @@ class TabStatusBar(qtlib.ColoredMessageStatusBar):
     def setMouseCoords(self, x, y):
         self._lblMouseCoords.setText(f"X:{x}  Y:{y}")
 
-    def setImageInfo(self, w: int, h: int, alpha: bool):
+    def setMediaInfo(self, w: int, h: int, alpha: bool, fps: float):
         if min(w, h) > 0:
             sizeText = f"{w}x{h}"
+            fpsText  = f"  FPS:{round(fps, 4)}" if fps > 0 else ""
+
             aspect = w / h
             aspectText = f"{aspect:.3f}" if aspect >= 1 else f"{aspect:.3f} (1:{1/aspect:.3f})"
             aspectText = f"  AR:{aspectText}"
         else:
-            sizeText = ""
+            sizeText   = ""
+            fpsText    = ""
             aspectText = ""
 
         alphaText = "  (Alpha)" if alpha else ""
-        self._lblImgSize.setText(f"{sizeText}{aspectText}{alphaText}")
+        self._lblImgSize.setText(f"{sizeText}{aspectText}{fpsText}{alphaText}")
 
 
 
