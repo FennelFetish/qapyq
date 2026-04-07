@@ -171,6 +171,32 @@ def qimageToNumpy(image: QtGui.QImage, toRGB: bool = False, grayscaleChannelDim:
 
 
 
+def loadSvg(maxW: int, maxH: int, path: str, color: QtGui.QColor | None = None) -> QtGui.QPixmap:
+    from PySide6.QtSvg import QSvgRenderer
+    renderer = QSvgRenderer(path)
+
+    defaultSize = renderer.defaultSize()
+    if defaultSize.isEmpty():
+        w, h = maxW, maxH
+    else:
+        w, h = defaultSize.scaled(maxW, maxH, Qt.AspectRatioMode.KeepAspectRatio).toTuple()
+
+    pixmap = QtGui.QPixmap(w, h)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QtGui.QPainter(pixmap)
+    painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+    renderer.render(painter)
+
+    if color is not None:
+        painter.setCompositionMode(QtGui.QPainter.CompositionMode.CompositionMode_SourceIn)
+        painter.fillRect(0, 0, w, h, color)
+
+    painter.end()
+    return pixmap
+
+
+
 class DynamicLineEdit(QtWidgets.QLineEdit):
     def __init__(self):
         super().__init__()

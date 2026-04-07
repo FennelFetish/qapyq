@@ -5,7 +5,7 @@ import math
 import cv2 as cv
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Signal, Slot, QRect, QRectF, QSize, QUrl, QThread, QTimer, QObject, QSignalBlocker
-from PySide6.QtGui import QPixmap, QImage, QColor, QMouseEvent, QWheelEvent, QSinglePointEvent, QPainter, QPen, QFont, QTextOption, QFontMetricsF
+from PySide6.QtGui import QPixmap, QImage, QColor, QMouseEvent, QWheelEvent, QSinglePointEvent, QPainter, QPen
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtMultimediaWidgets import QGraphicsVideoItem
 from PySide6.QtWidgets import (
@@ -21,9 +21,6 @@ from .imgview import ImgView, MediaItemType, MediaItemMixin
 class VideoItem(QGraphicsVideoItem, MediaItemMixin):
     TYPE = MediaItemType.Video
 
-    # TODO: Make this per tab: Reset to 1.0 when opening new tab
-    PLAYBACK_SPEED: float = 1.0  # Persist value when switching between images/videos and recreating VideoItem instance
-
     def __init__(self, imgview: ImgView):
         super().__init__()
         self.imgview = imgview
@@ -36,7 +33,6 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
         self.audioOutput = QAudioOutput(parent=self)
         self.player = QMediaPlayer(parent=self, videoOutput=self, audioOutput=self.audioOutput)
         self.player.setLoops(QMediaPlayer.Loops.Infinite)
-        self.player.setPlaybackRate(self.PLAYBACK_SPEED)
 
         self.menu = SeekContextMenu(self)
         self.menu.playToggled.connect(self.setPlaying)
@@ -79,7 +75,6 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
 
     @Slot(float)
     def _onPlaybackSpeedChanged(self, speed: float):
-        VideoItem.PLAYBACK_SPEED = speed
         self.player.setPlaybackRate(speed)
         self.imgview.tool.onMediaEvent(MediaEvent.PlaybackSpeedChanged)
 
@@ -198,6 +193,7 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
 
         self._updateVolume()
         self.info.fps = fps
+        self.player.setPlaybackRate(1.0)
         self.player.setSource(path)
         self.setPlaying(True)
 
@@ -380,7 +376,7 @@ class MediaInfo(QObject):
         return self.segmentStart <= pos <= self.segmentEnd
 
     def isThumbnailsEnabled(self) -> bool:
-        return self.thumbnailsEnabled & self.seekable
+        return self.thumbnailsEnabled & self.seekable & (self.duration > 0)
 
     @Slot()
     def _enableThumbnails(self):
@@ -683,32 +679,27 @@ class TimeLabel(QGraphicsTextItem):
 
 
 class VolumeControl(QGraphicsItem):
+    RADIUS = 20
+
+    PIXMAPS = list[QPixmap]()
+    PIXMAP_RECT: QRect = None
+
     def __init__(self, videoItem: VideoItem):
         super().__init__()
         self.videoItem = videoItem
 
-        self.radius = 20
-        self._symbol = "🕨"
+        color = QColor(colorlib.BUBBLE_TEXT)
+        if not self.PIXMAPS:
+            self._initPixmaps(32, color)
+
+        self._pixmap = self.PIXMAPS[1]
 
         self._chordStart: int = 0
         self._chordSpan: int  = 0
 
-        color = QColor(colorlib.BUBBLE_TEXT)
         color.setAlphaF(0.5)
-
         self._penBorder = QPen(color)
         self._penBorder.setWidthF(2.0)
-
-        self._penMute = QPen(color)
-        self._penMute.setWidthF(6.0)
-        self._penMute.setCapStyle(Qt.PenCapStyle.FlatCap)
-
-        self._penText = QPen(color)
-        self._font = QFont()
-        self._font.setPointSizeF(20.0)
-        self._textYOffset = ((self.radius*2) - QFontMetricsF(self._font).height()) * 2 + 2
-        self._textOpt = QTextOption()
-        self._textOpt.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self._brushBg = QColor(colorlib.BUBBLE_BG)
         self._brushBg.setAlphaF(0.5)
@@ -720,6 +711,19 @@ class VolumeControl(QGraphicsItem):
         self._hideTimer.timeout.connect(lambda: self._hide())
         self.hide()
 
+    @classmethod
+    def _initPixmaps(cls, size: int, color: QColor):
+        cls.PIXMAPS = [
+            qtlib.loadSvg(size, size, "./res/volume-mute.svg", color),
+            qtlib.loadSvg(size, size, "./res/volume-low.svg", color),
+            qtlib.loadSvg(size, size, "./res/volume-medium.svg", color),
+            qtlib.loadSvg(size, size, "./res/volume-high.svg", color)
+        ]
+
+        offset = ((cls.RADIUS * 2) - size) // 2
+        cls.PIXMAP_RECT = QRect(offset, offset, size, size)
+
+
     def _hide(self):
         self.hide()
         self.videoItem._redrawMainViewport()
@@ -727,7 +731,7 @@ class VolumeControl(QGraphicsItem):
     def updatePosition(self, vpRect: QRect | QRectF, yOffset: int):
         # Place volume control on the opposite side of toolbar, otherwise autohide interferes
         toolbarRight = (qtlib.toolbarAreaFromString(Config.toolToolbarPosition) == Qt.ToolBarArea.RightToolBarArea)
-        size = self.radius * 2
+        size = self.RADIUS * 2
         padX = 6
 
         x = padX if toolbarRight else (vpRect.width() - size - padX)
@@ -735,12 +739,14 @@ class VolumeControl(QGraphicsItem):
         self.setPos(x, y)
 
     def setVolume(self, volume: float):
-        if volume >= 1.0:
-            self._symbol = "🕪"
+        if Config.mediaMute:
+            self._pixmap = self.PIXMAPS[0]
+        elif volume >= 1.0:
+            self._pixmap = self.PIXMAPS[3]
         elif volume > 0.0:
-            self._symbol = "🕩"
+            self._pixmap = self.PIXMAPS[2]
         else:
-            self._symbol = "🕨"
+            self._pixmap = self.PIXMAPS[1]
 
         cosVal = 1 - (2 * volume)
         cosVal = max(-1.0, min(cosVal, 1.0))
@@ -754,7 +760,7 @@ class VolumeControl(QGraphicsItem):
         center = self.sceneBoundingRect().center()
         dx = mouseX - center.x()
         dy = mouseY - center.y()
-        return (dx*dx) + (dy*dy) < (self.radius * self.radius)
+        return (dx*dx) + (dy*dy) < (self.RADIUS * self.RADIUS)
 
     def setMouseOver(self, mouseOver: bool):
         if mouseOver:
@@ -767,7 +773,7 @@ class VolumeControl(QGraphicsItem):
         self._hideTimer.start()
 
     def boundingRect(self) -> QRectF:
-        size = self.radius * 2
+        size = self.RADIUS * 2
         return QRectF(0, 0, size, size)
 
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None):
@@ -784,17 +790,7 @@ class VolumeControl(QGraphicsItem):
         painter.setBrush(self._brushFill)
         painter.drawChord(rect, self._chordStart, self._chordSpan)
 
-        painter.setPen(self._penText)
-        painter.setFont(self._font)
-        textRect = rect.adjusted(0, self._textYOffset, 0, 0)
-        painter.drawText(textRect, self._symbol, self._textOpt)
-
-        if Config.mediaMute:
-            l = 13
-            center = rect.center().toPoint()
-            painter.setPen(self._penMute)
-            painter.drawLine(center.x()-l, center.y()-l, center.x()+l, center.y()+l)
-            #painter.drawLine(center.x()+l, center.y()-l, center.x()-l, center.y()+l)
+        painter.drawPixmap(self.PIXMAP_RECT, self._pixmap)
 
 
 
@@ -810,6 +806,8 @@ class SeekContextMenu(QtWidgets.QMenu):
 
         self.addSeparator()
         self.addAction(self._buildPlayback(videoItem.player))
+
+        self.aboutToShow.connect(self.updateValues)
 
     def _buildPlayback(self, player: QMediaPlayer) -> QtWidgets.QWidgetAction:
         layout = QtWidgets.QHBoxLayout()
@@ -874,6 +872,13 @@ class SeekContextMenu(QtWidgets.QMenu):
         widgetAct.setDefaultWidget(widget)
         return widgetAct
 
+    @Slot()
+    def updateValues(self):
+        player = self.videoItem.player
+        with QSignalBlocker(self):
+            self.btnTogglePlay.setChecked(player.isPlaying())
+            self.spinSpeed.setValue(player.playbackRate())
+
     def setMediaPlaying(self, playing: bool):
         with QSignalBlocker(self):
             self.btnTogglePlay.setChecked(playing)
@@ -907,7 +912,7 @@ class SeekContextMenu(QtWidgets.QMenu):
         from lib import videorw
         keyframes = videorw.getKeyframes(self.videoItem.filepath, currentPos+startOffset, currentPos+endOffset)
         if not keyframes:
-            # TODO: self.videoItem.imgview.tab.statusBar().showColoredMessage("No keyframe found", False)
+            print("Failed to extract keyframes from video")
             return
 
         keyframePos = timeChooser(keyframes)
