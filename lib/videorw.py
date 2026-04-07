@@ -138,13 +138,15 @@ try:
                 videoFilters = [f'setpts=PTS/{speed}'] + videoFilters
                 audioFilters = self._getAudioFilters(speed)
 
-            pos = srcPosMs / 1000
-            args = ['-nostdin', self.OVERWRITE_FLAG, '-v', 'error', '-ss', str(pos), '-i', srcFile]
+            keyframeInterval = round(targetFps * 2)
+            refFrames = '4'  # Prevents exceeding decode surface limit when playing these videos (preset veryslow uses 16 refs)
+
+            args = ['-nostdin', self.OVERWRITE_FLAG, '-v', 'error', '-ss', f"{srcPosMs}ms"]
 
             if numFrames > 0:
-                args += ['-t', str(durationRead), '-ss', '0', '-t', str(durationWrite), '-frames:v', str(numFrames)]
+                args += ['-t', str(durationRead), '-i', srcFile, '-ss', '0', '-t', str(durationWrite), '-frames:v', str(numFrames)]
             else:
-                args += ['-ss', '0']
+                args += ['-i', srcFile, '-ss', '0']
 
             args += ['-vf', ','.join(videoFilters)]
 
@@ -154,6 +156,7 @@ try:
             args += [
                 '-c:v', 'libx264', '-preset', 'veryslow', '-crf', '17', '-movflags', '+faststart',
                 '-c:a', 'aac', '-b:a', '192k',
+                '-refs', refFrames, '-g', str(keyframeInterval),
                 '-pix_fmt', 'yuv420p', '-avoid_negative_ts', 'make_zero',
                 destFile
             ]
