@@ -610,9 +610,6 @@ def restoreWindows(win: MainWindow):
 def main() -> int:
     os.environ["QT_SCALE_FACTOR"] = str(Config.guiScale)
 
-    # Disable HW acceleration for QMediaPlayer because render surfaces are limited and contesting with thumbnail extraction
-    os.environ["QT_FFMPEG_DECODING_HW_DEVICE_TYPES"] = ""
-
     logFilter = QtLogFilter()
     qInstallMessageHandler(logFilter)
 
