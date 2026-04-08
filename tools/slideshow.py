@@ -6,7 +6,7 @@ from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QTimer, QRect
 from config import Config
 from lib.qtlib import GreenButton
-from ui.imgview import ImgItem
+from ui.imgview import ImgItem, MediaItemType
 from .view import ViewTool
 
 
@@ -107,9 +107,15 @@ class SlideshowTool(ViewTool):
     def setFade(self, fade: bool):
         self._fade = fade
         Config.slideshowFade = fade
+        self._setOldPixmap()
 
-        self._oldPixmap = self._imgview.image.pixmap() if fade else None
 
+    def _setOldPixmap(self):
+        item = self._imgview.image
+        if self._fade and item.TYPE == MediaItemType.Image:
+            self._oldPixmap = item.pixmap()
+        else:
+            self._oldPixmap = None
 
     def _printHistory(self):
         history = ", ".join(
@@ -261,9 +267,10 @@ class SlideshowTool(ViewTool):
             if self._oldPixmap:
                 self._oldImageItem.setPixmap(self._oldPixmap)
                 self._oldImageItem.updateTransform(self._imgview.viewport().rect(), 0)
+                self._oldImageItem.setZValue(1000)
                 self._oldImageItem.startAnim()
 
-            self._oldPixmap = self._imgview.image.pixmap()
+            self._setOldPixmap()
 
         if self._playTimer.isActive():
             self._playTimer.start()
@@ -298,7 +305,7 @@ class SlideshowTool(ViewTool):
 
         self._oldImageItem = FadeImgItem()
         imgview.scene().addItem(self._oldImageItem)
-        self._oldPixmap = imgview.image.pixmap() if self._fade else None
+        self._setOldPixmap()
 
     def onDisabled(self, imgview):
         if self._playTimer.isActive():
