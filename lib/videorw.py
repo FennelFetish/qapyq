@@ -1,9 +1,14 @@
-import os, subprocess
+import os
 import numpy as np
 import cv2 as cv
 
 
-READ_EXTENSIONS = frozenset((".mpg", ".mp4", ".m4v", ".mkv", ".avi", ".mov", ".wmv", ".3gp", ".ts", ".webm", ".flv"))
+READ_EXTENSIONS = frozenset((
+    '.3g2', '.3gp', '.amv', '.asf', '.avi', '.divx', '.dv', '.f4v', '.flv',
+    '.h264', '.h265', '.hevc', '.m2ts', '.mts',
+    '.m1v', '.m2v', '.m4p', '.m4v', '.mkv', '.mov', '.mp4', '.mpeg', '.mpg', '.mpv', '.mxf',
+    '.ogv', '.qt', '.rm', '.rmvb', '.ts', '.vob', '.webm', '.wtv', '.wmv',
+))
 
 def isVideoFile(path: str):
     ext = os.path.splitext(path)[1].lower()
@@ -92,6 +97,7 @@ def getKeyframes(path: str, start: int, end: int) -> list[int]:
     ]
 
     try:
+        import subprocess
         result = subprocess.check_output(cmd, text=True)
         return [round(float(line) * 1000.0) for l in result.splitlines() if (line := l.strip())]
     except Exception as ex:
@@ -138,7 +144,7 @@ try:
                 videoFilters = [f'setpts=PTS/{speed}'] + videoFilters
                 audioFilters = self._getAudioFilters(speed)
 
-            keyframeInterval = round(targetFps * 2)
+            keyframeInterval = round(targetFps)
             refFrames = '4'  # Prevents exceeding decode surface limit when playing these videos (preset veryslow uses 16 refs)
 
             args = ['-nostdin', self.OVERWRITE_FLAG, '-v', 'error', '-ss', f"{srcPosMs}ms"]
