@@ -301,8 +301,8 @@ class CropToolBar(QtWidgets.QToolBar):
 
         pos = item.player.position() - duration
         pos = max(pos, 0)
-        item.player.setPosition(pos)
-        self._cropTool.updateTimeSegment()
+        if item.setVideoPosition(pos):
+            self._cropTool.updateTimeSegment()
 
 
     def getDurationMs(self) -> int:

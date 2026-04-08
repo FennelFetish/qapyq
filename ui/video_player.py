@@ -93,6 +93,12 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
             self.player.pause()
             self._redrawMainViewport()
 
+    def setVideoPosition(self, position: int) -> bool:
+        if self.info.isVideoReady():
+            self.player.setPosition(position)
+            return True
+        return False
+
     def skipSteps(self, steps: int) -> int:
         segStart = self.info.segmentStart
         segEnd   = self.info.segmentEnd
@@ -116,7 +122,7 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
                 diff = segStart - videoPos
                 videoPos = segStart if diff < 10 else segEnd
 
-        self.player.setPosition(videoPos)
+        self.setVideoPosition(videoPos)
         return skipLen
 
 
@@ -176,8 +182,7 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
     @override
     def loadFile(self, path: str) -> bool:
         self._playing = False
-        self.info.fps = 0.0
-        self.info.thumbnailsEnabled = False
+        self.info.reset()
         self.clearSegment()
 
         if not super().loadFile(path):
@@ -275,9 +280,7 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
             match event.button():
                 case Qt.MouseButton.LeftButton:
                     pos = self.playbackControls.getVideoPosition(mouseX)
-                    self.player.setPosition(pos)
-
-                    if not self.info.insideSegment(pos):
+                    if self.setVideoPosition(pos) and not self.info.insideSegment(pos):
                         self.imgview.tool.onMediaEvent(MediaEvent.SkipOutsideSegment)
                     return True
 
@@ -371,9 +374,19 @@ class MediaInfo(QObject):
         self._thumbnailDelay = QTimer(self, singleShot=True, interval=self.THUMBNAIL_ENABLE_DELAY)
         self._thumbnailDelay.timeout.connect(self._enableThumbnails)
 
+        self._videoLoaded = False
+
+    def reset(self):
+        self.fps = 0.0
+        self.thumbnailsEnabled = False
+        self._videoLoaded = False
+        self._onDurationChanged(0)
 
     def insideSegment(self, pos: int):
         return self.segmentStart <= pos <= self.segmentEnd
+
+    def isVideoReady(self) -> bool:
+        return self._videoLoaded & self.seekable & (self.duration > 0)
 
     def isThumbnailsEnabled(self) -> bool:
         return self.thumbnailsEnabled & self.seekable & (self.duration > 0)
@@ -387,6 +400,7 @@ class MediaInfo(QObject):
     def _onMediaStatusChanged(self, status: QMediaPlayer.MediaStatus):
         match status:
             case QMediaPlayer.MediaStatus.LoadedMedia:
+                self._videoLoaded = True
                 self._thumbnailDelay.start()
 
     @Slot(int)
@@ -399,7 +413,7 @@ class MediaInfo(QObject):
         self.playbackControls.setMediaPosition(pos, self.duration)
 
         if self.segmentStart >= 0 and not self.insideSegment(pos):
-            self.player.setPosition(self.segmentStart)
+            self.videoItem.setVideoPosition(self.segmentStart)
 
     @Slot(bool)
     def _onPlayingChanged(self, playing: bool):
@@ -407,7 +421,7 @@ class MediaInfo(QObject):
         self.videoItem.menu.setMediaPlaying(playing)
 
         if not playing and self.segmentStart >= 0:
-            self.player.setPosition(self.segmentStart)
+            self.videoItem.setVideoPosition(self.segmentStart)
 
     @Slot(bool)
     def _onSeekableChanged(self, seekable: bool):
@@ -919,7 +933,7 @@ class SeekContextMenu(QtWidgets.QMenu):
         if keyframePos != currentPos:
             diffPos = keyframePos - currentPos
             self.videoItem.moveSegment(diffPos)
-            self.videoItem.player.setPosition(keyframePos)
+            self.videoItem.setVideoPosition(keyframePos)
 
 
     def mouseMoveEvent(self, event: QMouseEvent):
