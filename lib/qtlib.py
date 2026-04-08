@@ -67,6 +67,7 @@ def setSingleLineTextEdit(textEdit: QtWidgets.QPlainTextEdit):
     setTextEditHeight(textEdit, 1)
     textEdit.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.NoWrap)
     textEdit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    textEdit.setTabChangesFocus(True)
 
 def setShowWhitespace(textEdit):
     doc = textEdit.document()

@@ -2,7 +2,7 @@ import os, superqt, copy, traceback, math, enum
 from difflib import SequenceMatcher
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QRunnable, QObject, QSize
+from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QSize, QRunnable, QObject, QEvent
 import cv2 as cv
 import numpy as np
 from PIL import Image
@@ -349,6 +349,7 @@ Examples:
         if showInfo:
             txtInfo = QtWidgets.QPlainTextEdit(self.INFO)
             txtInfo.setReadOnly(True)
+            txtInfo.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             qtlib.setMonospace(txtInfo)
             layout.addWidget(txtInfo, row, 0, 1, 4)
             row += 1
@@ -373,6 +374,7 @@ Examples:
         row += 1
         self.txtPreview = QtWidgets.QPlainTextEdit()
         self.txtPreview.setReadOnly(True)
+        self.txtPreview.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.txtPreview.viewport().setCursor(Qt.CursorShape.ArrowCursor)
         qtlib.setMonospace(self.txtPreview)
         qtlib.setShowWhitespace(self.txtPreview)
@@ -508,6 +510,8 @@ class PathSettingsWindow(QtWidgets.QDialog):
         self.setWindowTitle("Setup Export Path")
         self.resize(800, 600)
 
+        self.pathSettings.txtPathTemplate.installEventFilter(self)
+
     def _build(self, exportSettings):
         layout = QtWidgets.QGridLayout(self)
         layout.addWidget(exportSettings, 0, 0, 1, 2)
@@ -523,6 +527,21 @@ class PathSettingsWindow(QtWidgets.QDialog):
 
         self.setLayout(layout)
 
+    @override
+    def showEvent(self, event):
+        super().showEvent(event)
+
+        txtPathTemplate = self.pathSettings.txtPathTemplate
+        txtPathTemplate.moveCursor(QtGui.QTextCursor.MoveOperation.EndOfLine)
+        txtPathTemplate.setFocus()
+
+    @override
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Return:
+            self.accept()
+            return True
+
+        return super().eventFilter(watched, event)
 
 
 class ExportVariableParser(template_parser.TemplateVariableParser):
