@@ -194,7 +194,7 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
         self._updateVolume()
         self.info.fps = fps
         self.player.setPlaybackRate(1.0)
-        self.player.setSource(path)
+        self.player.setSource(QUrl.fromLocalFile(path))
         self.setPlaying(True)
 
         self.playbackControls.seekThumbnail.onFileLoaded(thumbnailSize)
