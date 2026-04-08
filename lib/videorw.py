@@ -169,6 +169,7 @@ try:
             self.setProcessChannelMode(QProcess.ProcessChannelMode.ForwardedErrorChannel)
             self.started.connect(self._onProcessStarted)
             self.finished.connect(self._onProcessEnded)
+            self.errorOccurred.connect(self._onProcessError)
 
         @staticmethod
         def _getAudioFilters(speed: float) -> list[str]:
@@ -245,8 +246,19 @@ try:
                 print(f"Video export took {t:.3f} s")
                 self.done.emit(self.srcFile, self.destFile)
             else:
-                print(f"Video export failed: ffmpeg call failed with exit code {exitCode}, {exitStatus}")
-                self.fail.emit(f"ffmpeg call failed with exit code {exitCode}")
+                msg = f"ffmpeg call failed with exit code {exitCode}, {exitStatus}"
+                print(f"Video export failed: {msg}")
+                self.fail.emit(msg)
+
+            self.readAllStandardOutput()
+            self.readAllStandardError()
+            self.deleteLater()
+
+        @Slot()
+        def _onProcessError(self, error: QProcess.ProcessError):
+            msg = f"ffmpeg error ({error.name})"
+            print(f"Video export failed: {msg}")
+            self.fail.emit(msg)
 
             self.readAllStandardOutput()
             self.readAllStandardError()
