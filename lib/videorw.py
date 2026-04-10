@@ -105,6 +105,51 @@ def getKeyframes(path: str, start: int, end: int) -> list[int]:
         return []
 
 
+def extractFramesPIL(source, sampleFps: float, maxFrames: int = 64) -> tuple[list, dict]:
+    import av
+    from PIL import Image
+
+    with av.open(source, 'r') as container:
+        stream = container.streams.video[0]
+
+        duration = float(stream.duration * stream.time_base)
+        frameCount = stream.frames
+
+        numSampleFrames = min(int(duration * sampleFps), frameCount)
+        numSampleFrames &= ~1  # Force even frame count by rounding down
+        numSampleFrames = min(max(numSampleFrames, 2), maxFrames)
+        sampleFps = numSampleFrames / duration
+
+        posFeed = duration / (numSampleFrames-1)
+        seek = (posFeed > 10.0)
+        tb = float(stream.time_base)
+
+        pilFrames = []
+        for i in range(numSampleFrames):
+            pos = i * posFeed
+            if seek:
+                container.seek(int(pos / tb), stream=stream)
+
+            for frame in container.decode(stream):
+                if float((frame.pts + frame.duration) * frame.time_base) >= pos:
+                    pilFrames.append( Image.fromarray(frame.to_ndarray(format="rgb24")) )  # Faster via numpy than frame.to_image()
+                    break
+            else:
+                break
+
+    if not pilFrames:
+        raise RuntimeError("Failed to extract video frames")
+
+    metadata = {
+        "fps": sampleFps,
+        "frames_indices": [i for i in range(len(pilFrames))],
+        "total_num_frames": len(pilFrames),
+        "duration": duration
+    }
+
+    return pilFrames, metadata
+
+
 
 try:
     from PySide6.QtCore import Signal, Slot, QRectF, QSize, QProcess

@@ -28,10 +28,11 @@ DefaultPathModes = {
 
 
 class BackendDef:
-    def __init__(self, name: str, type: BackendTypes, pathMode: BackendPathModes | None = None):
+    def __init__(self, name: str, type: BackendTypes, pathMode: BackendPathModes | None = None, features: set[str] = set()):
         self.name = name
         self.type = type
         self.pathMode = pathMode if pathMode is not None else DefaultPathModes[type]
+        self.features = features
 
 class MaskBackendDef(BackendDef):
     def __init__(self, name: str, type: BackendTypes, supportsClasses: bool, pathMode: BackendPathModes | None = None):
@@ -54,7 +55,7 @@ BackendsCaption = {
     "Ovis-2.0":         BackendDef("ovis2",         BackendTypes.TRANSFORMERS),
     "Ovis-2.5":         BackendDef("ovis25",        BackendTypes.TRANSFORMERS),
     "Qwen-VL 2":        BackendDef("qwen2vl",       BackendTypes.TRANSFORMERS),
-    "Qwen-VL 2.5/3":    BackendDef("qwen25vl",      BackendTypes.TRANSFORMERS),
+    "Qwen-VL 2.5/3":    BackendDef("qwen25vl",      BackendTypes.TRANSFORMERS, features={"video"}),
     #"Qwen2.5-VL VLLM":  BackendDef("qwen25vl-vllm", BackendTypes.VLLM)
 }
 
@@ -88,6 +89,11 @@ BackendsEmbedding = {
     "SigLIP":           BackendDef("siglip", BackendTypes.TRANSFORMERS),
     "SigLIP ONNX":      BackendDef("siglip-onnx", BackendTypes.ONNX, BackendPathModes.FOLDER),
 }
+
+
+
+def backendDefForName(backends: dict[str, BackendDef], name: str) -> BackendDef | None:
+    return next((backend for backend in backends.values() if backend.name == name), None)
 
 
 

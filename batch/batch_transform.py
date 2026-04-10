@@ -2,6 +2,7 @@ from typing import Callable
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot
 from config import Config
+from infer.backend_config import BackendsLLM
 from infer.inference_proc import InferenceProcess
 from infer.inference_settings import InferencePresetWidget, RemoteInferenceConfig
 from infer.prompt import PromptWidget
@@ -24,7 +25,7 @@ class BatchTransform(QtWidgets.QWidget):
         self.logWidget = logWidget
         self.taskHandler = BatchTaskHandler("Transform", bars, tab.filelist, self.getConfirmOps, self.createTask)
 
-        self.inferSettings = InferencePresetWidget("inferLLMPresets")
+        self.inferSettings = InferencePresetWidget("inferLLMPresets", BackendsLLM)
 
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self._buildLLMSettings())
