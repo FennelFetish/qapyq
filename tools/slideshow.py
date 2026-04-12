@@ -3,7 +3,7 @@ from typing import NamedTuple
 from collections import deque
 from itertools import islice
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Slot, QTimer, QRect
+from PySide6.QtCore import Qt, Slot, QTimer
 from config import Config
 from lib.qtlib import GreenButton
 from ui.imgview import ImgItem, MediaItemType
@@ -41,8 +41,6 @@ class LCG:
         # Randomizing c changes the order of the cycle. Must be odd.
         minC = (self.count // 8) | 1 if self.count >= 16 else 1
         self.c = random.randrange(minC, max(self.count, 2), 2)
-
-        #print(f"m={self.m}, c={self.c}, a={self.a}, aInv={self.aInv}, q={self.q}, bound={self.bound}")
 
     def next(self, state: int) -> HistoryEntry:
         while True:
@@ -334,19 +332,27 @@ class SlideshowTool(ViewTool):
     def onMouseMove(self, event: QtGui.QMouseEvent):
         super().onMouseMove(event)
 
-        rect = self._toolbar.rect()
-        match self.tab.toolBarArea(self._toolbar):
-            case Qt.ToolBarArea.RightToolBarArea:  rect.adjust(80, 0, 0, 0)
-            case Qt.ToolBarArea.LeftToolBarArea:   rect.adjust(0, 0, -80, 0)
-            case Qt.ToolBarArea.BottomToolBarArea: rect.adjust(0, 80, 0, 0)
-            case Qt.ToolBarArea.TopToolBarArea:    rect.adjust(0, 0, 0, -80)
-
-        rect = QRect(self._toolbar.mapToGlobal(rect.topLeft()), rect.size())
-        if rect.contains(event.globalPos()):
-            self._toolbar.show()
-
         self._cursorTimer.start()
-        self.tab.imgview.setCursor(self._cursor)
+        self._imgview.setCursor(self._cursor)
+
+        # Show toolbar when mouse approaches edge. Use tab's rect because:
+        # - Hidden toolbar's rect isn't updated properly when resizing
+        # - ImgView shrinks when toolbar is shown
+        rect = self.tab.rect()
+        edge = 80
+        match self.tab.toolBarArea(self._toolbar):
+            case Qt.ToolBarArea.RightToolBarArea:
+                rect.setLeft(rect.width() - edge)
+            case Qt.ToolBarArea.LeftToolBarArea:
+                rect.setRight(edge)
+            case Qt.ToolBarArea.BottomToolBarArea:
+                rect.setTop(rect.height() - edge)
+            case Qt.ToolBarArea.TopToolBarArea:
+                rect.setBottom(edge)
+
+        mousePos = self._imgview.mapTo(self.tab, event.pos())
+        if rect.contains(mousePos):
+            self._toolbar.show()
 
     def onMouseWheel(self, event: QtGui.QWheelEvent) -> bool:
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
@@ -395,8 +401,7 @@ class SlideshowToolbar(QtWidgets.QToolBar):
         super().__init__()
         self._slideshowTool = slideshowTool
 
-        self._hideTimer = QTimer()
-        self._hideTimer.setSingleShot(True)
+        self._hideTimer = QTimer(self, singleShot=True, interval=SlideshowTool.HIDE_TIMEOUT)
         self._hideTimer.timeout.connect(self._hideToolBar)
 
         layout = QtWidgets.QVBoxLayout()
@@ -481,7 +486,7 @@ class SlideshowToolbar(QtWidgets.QToolBar):
             self.hide()
 
     def startHideTimeout(self):
-        self._hideTimer.start(SlideshowTool.HIDE_TIMEOUT)
+        self._hideTimer.start()
 
     def enterEvent(self, event):
         self._hideTimer.stop()

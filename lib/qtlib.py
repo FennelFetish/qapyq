@@ -2,7 +2,7 @@ import weakref
 from typing import Any, Callable, Iterable, cast
 from contextlib import contextmanager
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QRect
+from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QRect, QEvent
 import numpy as np
 from lib import colorlib
 from config import Config
@@ -72,7 +72,7 @@ def setSingleLineTextEdit(textEdit: QtWidgets.QPlainTextEdit):
 def setShowWhitespace(textEdit):
     doc = textEdit.document()
     opt = doc.defaultTextOption()
-    opt.setFlags(QtGui.QTextOption.ShowTabsAndSpaces)
+    opt.setFlags(QtGui.QTextOption.Flag.ShowTabsAndSpaces)
     doc.setDefaultTextOption(opt)
 
 def setTextPreserveUndo(cursor: QtGui.QTextCursor, text: str):
@@ -558,6 +558,11 @@ class MenuComboBox(QtWidgets.QComboBox):
         self.menuClass = menuClass
         self.menu = self.menuClass(title, self)
 
+        self.menu.aboutToHide.connect(self.hidePopup)
+        self.menu.installEventFilter(self)
+        self._clickPos = None
+        self._ignoreRelease = True
+
         self._activeActions: list[QtGui.QAction] = list()
         self._actions: dict[int, tuple[str, QtGui.QAction]] = dict()
         self._nextIndex = 0
@@ -577,6 +582,7 @@ class MenuComboBox(QtWidgets.QComboBox):
                 self.menu.setActiveAction(action)
             except Exception as ex:
                 # Why does this happen? RuntimeError: Internal C++ object (PySide6.QtGui.QAction) already deleted.
+                # FIXME: Folder with images loaded, but entry for that folder was missing.
                 print(f"Failed to set active action in MenuComboBox: {ex} ({type(ex).__name__})")
                 return
 
@@ -593,11 +599,33 @@ class MenuComboBox(QtWidgets.QComboBox):
 
 
     def showPopup(self):
+        self._clickPos = QtGui.QCursor.pos()
+        self._ignoreRelease = True
+
         self._updateActiveActions()
         self.menu.setMinimumWidth(self.width())
-        point = self.mapToGlobal(self.rect().topLeft())
-        self.menu.exec_(point)
-        self.hidePopup()
+        pos = self.mapToGlobal(self.rect().topLeft())
+        self.menu.setFocus()
+        self.menu.exec(pos)
+
+    def hidePopup(self):
+        self.menu.close()
+        self._clickPos = None
+        super().hidePopup()
+
+    def eventFilter(self, watched, event: QEvent) -> bool:
+        # Prevent menu from closing immediately after opening
+        if self._ignoreRelease and self._clickPos:
+            match event.type():
+                case QEvent.Type.MouseMove:
+                    dx, dy = (QtGui.QCursor.pos() - self._clickPos).toTuple()
+                    if (dx*dx)+(dy*dy) > 9:
+                        self._ignoreRelease = False
+
+                case QEvent.Type.MouseButtonRelease:
+                    return True
+
+        return super().eventFilter(watched, event)
 
 
     def addItem(self, text: str, userData=None):
@@ -637,9 +665,9 @@ class MenuComboBox(QtWidgets.QComboBox):
         self.menu.addSeparator()
 
     def clear(self):
-        super().clear()
         self._activeActions.clear()
         self._actions.clear()
+        super().clear()
         self.menu.clear()
         self._nextIndex = 0
 

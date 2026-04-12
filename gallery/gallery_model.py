@@ -285,25 +285,29 @@ class GalleryModel(QAbstractTableModel):
 
 
     def onFileChanged(self, currentFile: str):
+        roles = [self.ROLE_SELECTION]
+
         if self._selectedItem:
             index = self.index(*self._selectedItem.pos)
-            self.dataChanged.emit(index, index, [self.ROLE_SELECTION])
+            self.dataChanged.emit(index, index, roles)
 
         self._selectedItem = self.fileItems.get(currentFile)
         if self._selectedItem:
             index = self.index(*self._selectedItem.pos)
-            self.dataChanged.emit(index, index, [self.ROLE_SELECTION])
+            self.dataChanged.emit(index, index, roles)
 
     def onFileListChanged(self, currentFile: str):
         self.reloadImages()
 
 
     def onFileSelectionChanged(self, selectedFiles: set[str]):
+        roles = [self.ROLE_SELECTION]
+
         toggleFiles = self._selectedFiles.symmetric_difference(selectedFiles)
         for file in toggleFiles:
             if item := self.fileItems.get(file):
                 index = self.index(*item.pos)
-                self.dataChanged.emit(index, index, [self.ROLE_SELECTION])
+                self.dataChanged.emit(index, index, roles)
 
         self._selectedFiles = selectedFiles.copy()
         self.highlightFiles([])
@@ -339,10 +343,11 @@ class GalleryModel(QAbstractTableModel):
 
         self._highlightedFiles = set(files)
 
+        roles = [self.ROLE_HIGHLIGHT]
         for file in updateFiles:
             if item := self.fileItems.get(file):
                 index = self.index(*item.pos)
-                self.dataChanged.emit(index, index, [self.ROLE_HIGHLIGHT])
+                self.dataChanged.emit(index, index, roles)
 
         return True
 
