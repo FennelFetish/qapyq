@@ -44,7 +44,7 @@ class MaskBackendDef(BackendDef):
 BackendsCaption = {
     "Florence-2":       BackendDef("florence2",     BackendTypes.TRANSFORMERS),
     "Gemma-3":          BackendDef("gemma3",        BackendTypes.LLAMA_CPP),
-    "InternVL":         BackendDef("internvl2",     BackendTypes.TRANSFORMERS),
+    "InternVL":         BackendDef("internvl2",     BackendTypes.TRANSFORMERS, features={"video"}),
     #"InternVL2/2.5 VLLM":BackendDef("internvl2-vllm",BackendTypes.VLLM),
     "JoyCaption":       BackendDef("joycaption",    BackendTypes.TRANSFORMERS),
     "MiniCPM-V":        BackendDef("minicpm",       BackendTypes.LLAMA_CPP),

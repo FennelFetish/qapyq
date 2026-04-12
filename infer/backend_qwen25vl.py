@@ -21,7 +21,7 @@ class QwenVLBackend(CaptionBackend):
     def __init__(self, config: dict[str, Any], modelClass: type):
         modelPath: str = config["model_path"]
         self.generationConfig = GenerationConfig.from_pretrained(modelPath)
-        self.sampleFps = 6.0
+        self.sampleFps = 2.0
 
         super().__init__(config)
 
@@ -44,7 +44,7 @@ class QwenVLBackend(CaptionBackend):
 
     def setConfig(self, config: dict):
         super().setConfig(config)
-        self.sampleFps = self.config.get("fps", 6.0)
+        self.sampleFps = self.config.get("fps", 2.0)
 
         # No sampling in detection mode
         if "classes" in config:
@@ -118,7 +118,7 @@ class QwenVLBackend(CaptionBackend):
 
     def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
         if imgFile.isVideo():
-            frames, metadata = imgFile.getVideoFrames(self.sampleFps)
+            frames, metadata = imgFile.getVideoFrames(self.sampleFps, 64)
             runTask = lambda messages: self._runTaskVideo(frames, metadata, messages)
             userContent = lambda prompt, i: self._getUserContentVideo(prompt, i, frames, metadata)
         else:

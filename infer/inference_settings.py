@@ -160,7 +160,7 @@ class InferenceSettingsWidget(superqt.QCollapsible):
 
     def fromDict(self, settings: dict):
         self.tokensMax.setValue(settings.get("max_tokens", 1000))
-        self.fps.setValue(settings.get("fps", 6.0))
+        self.fps.setValue(settings.get("fps", 2.0))
         self.temperature.setValue(settings.get("temperature", 0.1))
         self.topP.setValue(settings.get("top_p", 0.95))
         self.topK.setValue(settings.get("top_k", 40))

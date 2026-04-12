@@ -85,9 +85,9 @@ class ImageFile:
     def isVideo(self) -> bool:
         return videorw.isVideoFile(self.file)
 
-    def getVideoFrames(self, sampleFps: float):
+    def getVideoFrames(self, sampleFps: float, maxFrames: int = 32):
         source = BytesIO(self.data) if self.data else self.file
-        return videorw.extractFramesPIL(source, sampleFps)
+        return videorw.extractFramesPIL(source, sampleFps, maxFrames)
 
 
 
