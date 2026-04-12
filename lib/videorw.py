@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import cv2 as cv
+from PIL import Image
 
 
 READ_EXTENSIONS = frozenset((
@@ -15,142 +16,324 @@ def isVideoFile(path: str):
     return ext in READ_EXTENSIONS
 
 
-def readSize(path: str) -> tuple[int, int]:
-    cap = cv.VideoCapture(path)
-    try:
-        if cap.isOpened():
-            w = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
-            h = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
-        else:
-            w = h = -1
-    except:
-        w = h = -1
-    finally:
-        cap.release()
 
-    return (w, h)
+# ========== AV ==========
+try:
+    import av
+
+    def readSize(path: str) -> tuple[int, int]:
+        try:
+            with av.open(path, 'r') as container:
+                stream = container.streams.video[0]
+                return stream.width, stream.height
+        except:
+            return -1, -1
+
+    def readMetadata(path: str) -> tuple[int, int, float]:
+        try:
+            with av.open(path, 'r') as container:
+                stream = container.streams.video[0]
+                return stream.width, stream.height, float(stream.average_rate or 0)
+        except:
+            return -1, -1, 0
 
 
-def thumbnailVideo(path: str, maxWidth: int, tiling: int) -> tuple[np.ndarray, tuple[int, int]]:
-    cap = cv.VideoCapture(path)
-    try:
-        if not cap.isOpened():
-            raise ValueError(f"Could not open video file: {path}")
-
-        fps = cap.get(cv.CAP_PROP_FPS)
-        frameCount = int(cap.get(cv.CAP_PROP_FRAME_COUNT))
+    def getKeyframes(path: str, start: int, end: int) -> list[int]:
+        keyframes = list[int]()
 
         try:
-            duration = frameCount / fps
-        except ZeroDivisionError:
-            raise ValueError("Failed to retrieve video duration")
+            with av.open(path, 'r') as container:
+                stream = container.streams.video[0]
+                tb = stream.time_base
 
-        # Extract evenly spaced frames
-        numIntervals = tiling*tiling + 1
-        frames = list[np.ndarray]()
-        for i in range(1, numIntervals):
-            pos = round(1000 * i * duration/numIntervals)
-            cap.set(cv.CAP_PROP_POS_MSEC, pos)
-            ret, frame = cap.read()
-            if ret:
-                frames.append(frame)
-            else:
-                break
+                startPts = int((start / 1000) / tb)
+                endPts   = int((end / 1000) / tb)
 
-    finally:
-        cap.release()
+                container.seek(startPts, stream=stream)
+                for packet in container.demux(stream):
+                    pts = packet.pts or -1
+                    if pts > endPts:
+                        break
 
-    try:
-        origH, origW, channels = frames[0].shape
-    except IndexError:
-        raise ValueError("Failed to extract video frames")
-    except ValueError:
-        origH, origW = frames[0].shape[:2]
-        channels = 1
+                    if packet.is_keyframe and pts >= startPts:
+                        keyframes.append(round(float(pts * tb) * 1000))
 
-    # Downscale frames
-    maxWidth = round(maxWidth / tiling)
-    w, h = origW, origH
-    if w > maxWidth:
-        h = round(h * maxWidth/w)
-        w = maxWidth
-        frames = [cv.resize(frame, (w, h), interpolation=cv.INTER_AREA) for frame in frames]
+        except Exception as ex:
+            print(f"Failed to extract keyframes: {ex} ({type(ex).__name__})")
 
-    # Tile
-    tiles = np.zeros((h*tiling, w*tiling, channels), dtype=np.uint8)
-    for i, frame in enumerate(frames):
-        x = (i % tiling) * w
-        y = (i // tiling) * h
-        tiles[y:y+h, x:x+w, :] = frame
-
-    return tiles, (origW, origH)
+        return keyframes
 
 
-def getKeyframes(path: str, start: int, end: int) -> list[int]:
-    startSec = start / 1000.0
-    endSec   = end / 1000.0
-    interval = f"{startSec}%{endSec}"
+    class NotSeekableException(Exception): pass
 
-    cmd = [
-        'ffprobe', '-v', 'error', '-skip_frame', 'nokey', '-select_streams', 'v:0', '-show_entries', 'frame=pkt_pts_time',
-        '-read_intervals', interval, '-of', 'csv=p=0', path
-    ]
+    def thumbnailVideo(path: str, maxWidth: int, tiling: int) -> tuple[np.ndarray, tuple[int, int]]:
+        with av.open(path, 'r') as container:
+            duration = float(container.duration / av.time_base)
+            stream = container.streams.video[0]
+            tb = stream.time_base
 
-    try:
-        import subprocess
-        result = subprocess.check_output(cmd, text=True)
-        return [round(float(line) * 1000.0) for l in result.splitlines() if (line := l.strip())]
-    except Exception as ex:
-        print(f"Failed to extract keyframes: {ex} ({type(ex).__name__})")
-        return []
+            w = origW = stream.width
+            h = origH = stream.height
+            maxWidth = round(maxWidth / tiling)
+            if w > maxWidth:
+                h = round(h * maxWidth/w)
+                w = maxWidth
+
+            tiles = np.zeros((h*tiling, w*tiling, 3), dtype=np.uint8)
+
+            def addFrame(i: int, frame):
+                y, x = divmod(i-1, tiling)
+                x *= w
+                y *= h
+
+                mat = frame.to_ndarray(format="rgb24")
+                cv.resize(mat, (w, h), dst=tiles[y:y+h, x:x+w, :], interpolation=cv.INTER_AREA)
+
+            # Extract evenly spaced frames
+            numIntervals = tiling*tiling + 1
+
+            i = 1
+            try:
+                lastPts = -1
+                for i in range(1, numIntervals):
+                    pos = i * duration/numIntervals
+                    container.seek(int(pos / tb), stream=stream)
+
+                    frame = next(container.decode(stream))
+                    pts = frame.pts or 0
+                    if pts > lastPts:
+                        lastPts = pts
+                        addFrame(i, frame)
+                    else:
+                        raise NotSeekableException()
+
+            except NotSeekableException:
+                duration = min(duration, 60.0)
+
+                for i in range(i, numIntervals):
+                    pos = i * duration/numIntervals
+                    for frame in container.decode(stream):
+                        if frame.time >= pos:
+                            addFrame(i, frame)
+                            break
+                    else:
+                        break
+
+        return tiles, (origW, origH)
 
 
-def extractFramesPIL(source, sampleFps: float, maxFrames: int = 64) -> tuple[list, dict]:
-    import av
-    from PIL import Image
+    def extractFramesPIL(source, sampleFps: float, maxFrames: int = 64) -> tuple[list, dict]:
+        with av.open(source, 'r') as container:
+            stream = container.streams.video[0]
 
-    with av.open(source, 'r') as container:
-        stream = container.streams.video[0]
+            duration = float(container.duration / av.time_base)
+            fps = float(stream.average_rate or 0)
+            frameCount = stream.frames or int(duration * fps)
 
-        duration = float(stream.duration * stream.time_base)
-        frameCount = stream.frames
+            numSampleFrames = min(int(duration * sampleFps), frameCount)
+            numSampleFrames &= ~1  # Force even frame count by rounding down
+            numSampleFrames = min(max(numSampleFrames, 2), maxFrames)
+            sampleFps = numSampleFrames / duration
 
-        numSampleFrames = min(int(duration * sampleFps), frameCount)
-        numSampleFrames &= ~1  # Force even frame count by rounding down
-        numSampleFrames = min(max(numSampleFrames, 2), maxFrames)
-        sampleFps = numSampleFrames / duration
+            posFeed = duration / (numSampleFrames-1)
+            tb = stream.time_base
 
-        posFeed = duration / (numSampleFrames-1)
-        seek = (posFeed > 10.0)
-        tb = float(stream.time_base)
+            seek = (posFeed * fps > 24)
+            lastSeekPts = -1
 
-        pilFrames = []
-        for i in range(numSampleFrames):
-            pos = i * posFeed
-            if seek:
-                container.seek(int(pos / tb), stream=stream)
+            frames = list[Image.Image]()
+            for i in range(numSampleFrames):
+                targetPts = int((i * posFeed) / tb)
+                if seek:
+                    container.seek(targetPts, stream=stream)
 
-            for frame in container.decode(stream):
-                if float((frame.pts + frame.duration) * frame.time_base) >= pos:
-                    pilFrames.append( Image.fromarray(frame.to_ndarray(format="rgb24")) )  # Faster via numpy than frame.to_image()
+                for i, frame in enumerate(container.decode(stream)):
+                    pts = frame.pts or 0
+                    if i == 0 and seek:
+                        # Disable seeking if it didn't move forward
+                        if pts > lastSeekPts:
+                            lastSeekPts = pts
+                        else:
+                            seek = False
+
+                    if pts + frame.duration > targetPts:
+                        frames.append( Image.fromarray(frame.to_ndarray(format="rgb24")) )  # Faster via numpy than frame.to_image()
+                        break
+                else:
                     break
-            else:
-                break
 
-    if not pilFrames:
-        raise RuntimeError("Failed to extract video frames")
+        if not frames:
+            raise RuntimeError("Failed to extract video frames")
 
-    metadata = {
-        "fps": sampleFps,
-        "frames_indices": [i for i in range(len(pilFrames))],
-        "total_num_frames": len(pilFrames),
-        "duration": duration
-    }
+        metadata = {
+            "fps": sampleFps,
+            "frames_indices": [i for i in range(len(frames))],
+            "total_num_frames": len(frames),
+            "duration": duration
+        }
 
-    return pilFrames, metadata
+        return frames, metadata
 
 
 
+# ========== OpenCV ==========
+except ImportError:
+
+    def readSize(path: str) -> tuple[int, int]:
+        cap = cv.VideoCapture(path)
+        try:
+            if cap.isOpened():
+                w = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
+                h = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
+                return w, h
+        except:
+            pass
+        finally:
+            cap.release()
+
+        return -1, -1
+
+    def readMetadata(path: str) -> tuple[int, int, float]:
+        cap = cv.VideoCapture(path)
+        try:
+            if cap.isOpened():
+                w = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
+                h = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
+                fps = cap.get(cv.CAP_PROP_FPS)
+                return w, h, fps
+        except:
+            pass
+        finally:
+            cap.release()
+
+        return -1, -1, 0
+
+
+    def getKeyframes(path: str, start: int, end: int) -> list[int]:
+        startSec = start / 1000.0
+        endSec   = end / 1000.0
+        interval = f"{startSec}%{endSec}"
+
+        cmd = [
+            'ffprobe', '-v', 'error', '-skip_frame', 'nokey', '-select_streams', 'v:0', '-show_entries', 'frame=pkt_pts_time',
+            '-read_intervals', interval, '-of', 'csv=p=0', path
+        ]
+
+        try:
+            import subprocess
+            result = subprocess.check_output(cmd, text=True)
+            return [round(float(line) * 1000.0) for l in result.splitlines() if (line := l.strip())]
+        except Exception as ex:
+            print(f"Failed to extract keyframes: {ex} ({type(ex).__name__})")
+            return []
+
+
+    def thumbnailVideo(path: str, maxWidth: int, tiling: int) -> tuple[np.ndarray, tuple[int, int]]:
+        cap = cv.VideoCapture(path)
+        try:
+            if not cap.isOpened():
+                raise ValueError(f"Could not open video file: {path}")
+
+            fps = cap.get(cv.CAP_PROP_FPS)
+            frameCount = int(cap.get(cv.CAP_PROP_FRAME_COUNT))
+
+            try:
+                duration = frameCount / fps
+            except ZeroDivisionError:
+                raise ValueError("Failed to retrieve video duration")
+
+            # Extract evenly spaced frames
+            numIntervals = tiling*tiling + 1
+            frames = list[np.ndarray]()
+            for i in range(1, numIntervals):
+                pos = round(1000 * i * duration/numIntervals)
+                cap.set(cv.CAP_PROP_POS_MSEC, pos)
+                ret, frame = cap.read()
+                if ret:
+                    frames.append(frame)
+                else:
+                    break
+
+        finally:
+            cap.release()
+
+        try:
+            origH, origW, channels = frames[0].shape
+        except IndexError:
+            raise ValueError("Failed to extract video frames")
+        except ValueError:
+            origH, origW = frames[0].shape[:2]
+            channels = 1
+
+        # Downscale frames
+        maxWidth = round(maxWidth / tiling)
+        w, h = origW, origH
+        if w > maxWidth:
+            h = round(h * maxWidth/w)
+            w = maxWidth
+            frames = [cv.resize(frame, (w, h), interpolation=cv.INTER_AREA) for frame in frames]
+
+        # Tile
+        tiles = np.zeros((h*tiling, w*tiling, channels), dtype=np.uint8)
+        for i, frame in enumerate(frames):
+            x = (i % tiling) * w
+            y = (i // tiling) * h
+            tiles[y:y+h, x:x+w, :] = frame
+
+        tiles[..., :3] = tiles[..., 2::-1] # Convert BGR(A) -> RGB(A)
+        return tiles, (origW, origH)
+
+
+    def extractFramesPIL(path: str, sampleFps: float, maxFrames: int = 64) -> tuple[list, dict]:
+        cap = cv.VideoCapture(path)
+        try:
+            if not cap.isOpened():
+                raise ValueError(f"Could not open video file: {path}")
+
+            fps = cap.get(cv.CAP_PROP_FPS)
+            frameCount = int(cap.get(cv.CAP_PROP_FRAME_COUNT))
+
+            try:
+                duration = frameCount / fps
+            except ZeroDivisionError:
+                raise ValueError("Failed to retrieve video duration")
+
+            numSampleFrames = min(int(duration * sampleFps), frameCount)
+            numSampleFrames &= ~1  # Force even frame count by rounding down
+            numSampleFrames = min(max(numSampleFrames, 2), maxFrames)
+            sampleFps = numSampleFrames / duration
+
+            frames = list[np.ndarray]()
+            posFeed = duration / (numSampleFrames-1)
+            for i in range(numSampleFrames):
+                pos = int(1000 * i * posFeed)
+                cap.set(cv.CAP_PROP_POS_MSEC, pos)
+                ret, frame = cap.read()
+                if ret:
+                    frame[..., :3] = frame[..., 2::-1] # Convert BGR(A) -> RGB(A)
+                    frames.append(frame)
+                else:
+                    break
+
+        finally:
+            cap.release()
+
+        if not frames:
+            raise RuntimeError("Failed to extract video frames")
+
+        metadata = {
+            "fps": sampleFps,
+            "frames_indices": [i for i in range(len(frames))],
+            "total_num_frames": len(frames),
+            "duration": duration
+        }
+
+        images = [Image.fromarray(mat) for mat in frames]
+        return images, metadata
+
+
+
+# ========== Qt ==========
 try:
     from PySide6.QtCore import Signal, Slot, QRectF, QSize, QProcess
     from PySide6.QtGui import QImage, QPolygonF, QTransform
@@ -159,7 +342,7 @@ try:
 
     def thumbnailVideoQImage(path: str, maxWidth: int, tiling: int) -> tuple[QImage, tuple[int, int]]:
         mat, size = thumbnailVideo(path, maxWidth, tiling)
-        return qtlib.numpyToQImage(mat), size
+        return qtlib.numpyToQImage(mat, fromRGB=True), size
 
 
     class VideoExportProcess(QProcess):

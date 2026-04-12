@@ -1,7 +1,7 @@
 from __future__ import annotations
-from typing import NamedTuple, Callable
+from typing import NamedTuple, Callable, TYPE_CHECKING
 from typing_extensions import override
-import math
+import av, math, traceback
 import cv2 as cv
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Signal, Slot, QRect, QRectF, QSize, QUrl, QThread, QTimer, QObject, QSignalBlocker
@@ -9,13 +9,17 @@ from PySide6.QtGui import QPixmap, QImage, QColor, QMouseEvent, QWheelEvent, QSi
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtMultimediaWidgets import QGraphicsVideoItem
 from PySide6.QtWidgets import (
-    QGraphicsScene, QGraphicsItemGroup, QGraphicsRectItem, QGraphicsTextItem, QGraphicsPixmapItem, QGraphicsItem,
+    QGraphicsScene, QGraphicsItemGroup, QGraphicsRectItem, QGraphicsTextItem, QGraphicsPixmapItem, QGraphicsObject,
     QApplication, QWidget, QStyleOptionGraphicsItem
 )
-from lib import qtlib, colorlib, threadlib
+from lib import qtlib, colorlib, videorw
 from tools.tool import MediaEvent
 from config import Config
 from .imgview import ImgView, MediaItemType, MediaItemMixin
+
+if TYPE_CHECKING:
+    from av.container import InputContainer
+
 
 
 class VideoItem(QGraphicsVideoItem, MediaItemMixin):
@@ -52,8 +56,11 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
 
         self.playbackControls.updateSize(imgview.viewport().rect())
 
-    # TODO: Don't wait for GC
-    def __del__(self):
+    @override
+    def deleteLater(self):
+        self.frameExtractor.unload()
+        super().deleteLater()
+
         self._extractorThread.quit()
         self._extractorThread.wait()
         self._extractorThread.deleteLater()
@@ -178,17 +185,20 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
         super().clearImage()
         self.player.setSource(QUrl())
         self.setSize(QSize())
+        self.frameExtractor.unload()
 
     @override
     def loadFile(self, path: str) -> bool:
         self._playing = False
+        self.frameExtractor.unload()
         self.info.reset()
         self.clearSegment()
 
         if not super().loadFile(path):
             return False
 
-        videoSize, thumbnailSize, fps = self.frameExtractor.loadFile(path)
+        w, h, fps = videorw.readMetadata(path)
+        videoSize = QSize(w, h)
         self.setSize(videoSize)
 
         if not videoSize.isValid():
@@ -202,7 +212,7 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
         self.player.setSource(QUrl.fromLocalFile(path))
         self.setPlaying(True)
 
-        self.playbackControls.seekThumbnail.onFileLoaded(thumbnailSize)
+        self.playbackControls.seekThumbnail.setPixmap(QPixmap())
         self.playbackControls.seekThumbnail.hide()
         self.playbackControls.labelSeekTime.hide()
         return True
@@ -299,7 +309,7 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
         if self.info.audio and self.volumeControl.isMouseOver(mouseX, mouseY):
             match event.button():
                 case Qt.MouseButton.LeftButton | Qt.MouseButton.RightButton:
-                    Config.mediaMute = (self.audioOutput.volume() > 0.0)
+                    Config.mediaMute ^= True
                     self._updateVolume()
                     return True
 
@@ -315,13 +325,11 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
 
         # Volume
         if self.volumeControl.isMouseOver(mouseX, mouseY):
-            vol = self.audioOutput.volume() + (wheelSteps * 0.05)
-            vol = max(0.0, min(vol, 1.0))
-            Config.mediaVolume = vol
-            if vol > 0.0:
-                Config.mediaMute = False
-
-            self._updateVolume()
+            if not Config.mediaMute:
+                vol = self.audioOutput.volume() + (wheelSteps * 0.05)
+                vol = max(0.0, min(vol, 1.0))
+                Config.mediaVolume = vol
+                self._updateVolume()
 
         # Video Seek
         else:
@@ -344,7 +352,7 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
 
 
 class MediaInfo(QObject):
-    THUMBNAIL_ENABLE_DELAY = 400
+    THUMBNAIL_ENABLE_DELAY = 150
 
     def __init__(self, videoItem: VideoItem):
         super().__init__(videoItem.player)
@@ -557,6 +565,8 @@ class PlaybackControls(QGraphicsItemGroup):
         self.labelDuration.setBoundedX(100_000_000, self.seekBar.rect().width())
 
     def setMediaPlaying(self, playing: bool, pos: int):
+        self.labelSeekTime.milliseconds = not playing
+
         self.labelPlayTime.suffix = " ▶" if playing else ""
         self.labelPlayTime.milliseconds = not playing
         self.labelPlayTime.setTime(pos)
@@ -648,11 +658,10 @@ class SeekThumbnail(QGraphicsPixmapItem):
         self.setShapeMode(QGraphicsPixmapItem.ShapeMode.BoundingRectShape)
         self.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
 
-    def onFileLoaded(self, thumbnailSize: QSize):
-        if not self.pixmap().isNull():
-            self.setPixmap(QPixmap())
-
-        self.setY(-thumbnailSize.height())
+    @override
+    def setPixmap(self, pixmap: QPixmap | QImage):
+        super().setPixmap(pixmap)
+        self.setY(-pixmap.height())
 
     def setBoundedX(self, x: float, sceneWidth: float):
         w = self.boundingRect().width()
@@ -692,7 +701,7 @@ class TimeLabel(QGraphicsTextItem):
         self.setX(x)
 
 
-class VolumeControl(QGraphicsItem):
+class VolumeControl(QGraphicsObject):
     RADIUS = 20
 
     PIXMAPS = list[QPixmap]()
@@ -722,7 +731,7 @@ class VolumeControl(QGraphicsItem):
         self._brushFill.setAlphaF(0.3)
 
         self._hideTimer = QTimer(videoItem.player, singleShot=True, interval=600)
-        self._hideTimer.timeout.connect(lambda: self._hide())
+        self._hideTimer.timeout.connect(self._autohide)
         self.hide()
 
     @classmethod
@@ -738,7 +747,8 @@ class VolumeControl(QGraphicsItem):
         cls.PIXMAP_RECT = QRect(offset, offset, size, size)
 
 
-    def _hide(self):
+    @Slot()
+    def _autohide(self):
         self.hide()
         self.videoItem._redrawMainViewport()
 
@@ -782,14 +792,17 @@ class VolumeControl(QGraphicsItem):
         else:
             self._hideTimer.start()
 
+    @override
     def show(self):
         super().show()
         self._hideTimer.start()
 
+    @override
     def boundingRect(self) -> QRectF:
         size = self.RADIUS * 2
         return QRectF(0, 0, size, size)
 
+    @override
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
@@ -923,7 +936,6 @@ class SeekContextMenu(QtWidgets.QMenu):
         self._setKeyframe(currentPos, -8000, 8000, timeChooser)
 
     def _setKeyframe(self, currentPos: int, startOffset: int, endOffset: int, timeChooser: Callable[[list[int]], int]):
-        from lib import videorw
         keyframes = videorw.getKeyframes(self.videoItem.filepath, currentPos+startOffset, currentPos+endOffset)
         if not keyframes:
             print("Failed to extract keyframes from video")
@@ -936,6 +948,7 @@ class SeekContextMenu(QtWidgets.QMenu):
             self.videoItem.setVideoPosition(keyframePos)
 
 
+    @override
     def mouseMoveEvent(self, event: QMouseEvent):
         rect = self.rect()
         rect.adjust(-40, -40, 40, 40)
@@ -946,9 +959,6 @@ class SeekContextMenu(QtWidgets.QMenu):
 
 
 
-class VideoSizeFuture(threadlib.Future[tuple[QSize, QSize, float]]): pass
-class FrameExtractFuture(threadlib.Future[QImage]): pass
-
 class ThumbnailRequest(NamedTuple):
     file: str
     pos: int
@@ -956,59 +966,54 @@ class ThumbnailRequest(NamedTuple):
 class FrameExtractWorker(QObject):
     THUMBNAIL_INTERVAL = 100  # ms
 
-    _loadFile = Signal(str, VideoSizeFuture)        # file, future
-    _extractFrame = Signal(int, FrameExtractFuture) # pos, future
-    _requestThumbnail = Signal(str, int)            # file, pos
+    _unload = Signal()
+    _requestThumbnail = Signal(str, int) # file, pos
 
-    thumbnailDone = Signal(str, QImage)             # file, img|None
+    thumbnailDone = Signal(str, QImage)  # file, img|None
 
 
     def __init__(self):
         super().__init__()
-        self.cap = cv.VideoCapture()
+        self.container: InputContainer | None = None
+        self.file = ""
 
-        self.videoSize: QSize = QSize()
         self.thumbnailSize: QSize = QSize()
 
         self._thumbnailRequest: ThumbnailRequest | None = None
         self._thumbnailTimer = QTimer(self, singleShot=True, interval=self.THUMBNAIL_INTERVAL)
         self._thumbnailTimer.timeout.connect(self._doExtractThumbnail)
 
-        self._loadFile.connect(self._doLoadFile, Qt.ConnectionType.QueuedConnection)
+        self._unload.connect(self._onUnload, Qt.ConnectionType.QueuedConnection)
         self._requestThumbnail.connect(self._onThumbnailRequested, Qt.ConnectionType.QueuedConnection)
-        #self._extractFrame.connect(self._doExtractFrame, Qt.ConnectionType.QueuedConnection)
 
-    # def __del__(self):
-    #     # TODO: Do this in worker thread
-    #     self.cap.release()
+    def unload(self):
+        self._unload.emit()
 
+    @Slot()
+    def _onUnload(self):
+        if self.container is not None:
+            self.container.close()
 
-    def loadFile(self, file: str) -> tuple[QSize, QSize, float]:
-        future = VideoSizeFuture()
-        self._loadFile.emit(file, future)
-        return future.result()
+        self.container = None
+        self.file = ""
+        self.thumbnailSize = QSize()
 
-    @Slot(str, VideoSizeFuture)
-    def _doLoadFile(self, file: str, future: VideoSizeFuture):
-        try:
-            self._thumbnailTimer.stop()
-            self._thumbnailRequest = None
+    def _getContainer(self, file: str) -> InputContainer:
+        if file != self.file and self.file:
+            self._onUnload()
 
-            self.cap.open(file)
-            if self.cap.isOpened():
-                w = int(self.cap.get(cv.CAP_PROP_FRAME_WIDTH))
-                h = int(self.cap.get(cv.CAP_PROP_FRAME_HEIGHT))
-                fps = self.cap.get(cv.CAP_PROP_FPS)
-            else:
-                w = h = -1
-                fps = 0.0
+        if self.container is None:
+            try:
+                self.container = av.open(file, 'r')
+                self.file = file
 
-            self.videoSize = QSize(w, h)
-            self.thumbnailSize = self._calcThumbnailSize(w, h)
-            future.setResult((self.videoSize, self.thumbnailSize, fps))
+                stream = self.container.streams.video[0]
+                self.thumbnailSize = self._calcThumbnailSize(stream.width, stream.height)
+            except:
+                traceback.print_exc()
+                self._onUnload()
 
-        except Exception as ex:
-            future.setException(ex)
+        return self.container
 
     @classmethod
     def _calcThumbnailSize(cls, w: int, h: int) -> QSize:
@@ -1042,19 +1047,29 @@ class FrameExtractWorker(QObject):
             return
 
         try:
-            self.cap.set(cv.CAP_PROP_POS_MSEC, req.pos)
-            ret, frame = self.cap.read()
-
-            if ret:
-                frame = cv.resize(frame, self.thumbnailSize.toTuple(), interpolation=cv.INTER_AREA)
-                image = qtlib.numpyToQImage(frame)
-                self.thumbnailDone.emit(req.file, image)
-            else:
-                self.thumbnailDone.emit(req.file, None)
+            frame = self._extractFrame(req.file, req.pos)
+            mat = frame.to_ndarray(format="rgb24")
+            mat = cv.resize(mat, self.thumbnailSize.toTuple(), interpolation=cv.INTER_AREA)
+            image = qtlib.numpyToQImage(mat, fromRGB=True)
+            self.thumbnailDone.emit(req.file, image)
 
         except Exception as ex:
             print(f"Failed to extract thumbnail: {ex} ({type(ex).__name__})")
             self.thumbnailDone.emit(req.file, None)
+
+    def _extractFrame(self, file: str, posMs: int):
+        container = self._getContainer(file)
+        stream = container.streams.video[0]
+
+        targetPts = int((posMs/1000) / stream.time_base)
+        container.seek(targetPts, stream=stream)
+
+        for frame in container.decode(stream):
+            if frame.pts + frame.duration > targetPts:
+                return frame
+
+        raise ValueError(f"No frame at position {posMs/1000:.3f}")
+
 
 
     # def extractFrame(self, pos: int) -> QImage:
