@@ -30,15 +30,15 @@ class ViewTool(Tool):
         item = self._imgview.image
         size = item.mediaSize()
         if size.isValid():
-            w, h  = size.toTuple()
-            alpha = item.hasAlpha()
-            fps   = item.fps()
+            w, h = size.toTuple()
+            alpha, fps, frames = item.mediaMetadata()
         else:
-            w = h = -1
-            alpha = False
-            fps   = -1
+            w = h   = -1
+            alpha   = False
+            fps     = -1
+            frames  = -1
 
-        self.tab.statusBar().setMediaInfo(w, h, alpha, fps)
+        self.tab.statusBar().setMediaInfo(w, h, alpha, fps, frames)
 
 
     def getDropRects(self):

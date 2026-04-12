@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 from lib import qtlib, colorlib, videorw
 from tools.tool import MediaEvent
 from config import Config
-from .imgview import ImgView, MediaItemType, MediaItemMixin
+from .imgview import ImgView, MediaItemType, MediaMetadata, MediaItemMixin
 
 if TYPE_CHECKING:
     from av.container import InputContainer
@@ -197,7 +197,7 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
         if not super().loadFile(path):
             return False
 
-        w, h, fps = videorw.readMetadata(path)
+        w, h, fps, frameCount = videorw.readMetadata(path)
         videoSize = QSize(w, h)
         self.setSize(videoSize)
 
@@ -208,6 +208,7 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
 
         self._updateVolume()
         self.info.fps = fps
+        self.info.frameCount = frameCount
         self.player.setPlaybackRate(1.0)
         self.player.setSource(QUrl.fromLocalFile(path))
         self.setPlaying(True)
@@ -223,8 +224,8 @@ class VideoItem(QGraphicsVideoItem, MediaItemMixin):
         return size if (size.width() > 0 and size.height() > 0) else QSize()
 
     @override
-    def fps(self) -> float:
-        return self.info.fps
+    def mediaMetadata(self) -> MediaMetadata:
+        return MediaMetadata(False, self.info.fps, self.info.frameCount)
 
     @override
     def addToScene(self, scene: QGraphicsScene, guiScene: QGraphicsScene):
@@ -361,6 +362,7 @@ class MediaInfo(QObject):
         self.playbackControls = videoItem.playbackControls
 
         self.fps: float = 0.0
+        self.frameCount: int = 0
         self.duration: int = 0
         self.audio: bool = False
         self.seekable: bool = False
@@ -386,6 +388,7 @@ class MediaInfo(QObject):
 
     def reset(self):
         self.fps = 0.0
+        self.frameCount = 0
         self.thumbnailsEnabled = False
         self._videoLoaded = False
         self._onDurationChanged(0)

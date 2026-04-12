@@ -238,9 +238,9 @@ class TabStatusBar(qtlib.ColoredMessageStatusBar):
     def setMouseCoords(self, x, y):
         self._lblMouseCoords.setText(f"X:{x}  Y:{y}")
 
-    def setMediaInfo(self, w: int, h: int, alpha: bool, fps: float):
+    def setMediaInfo(self, w: int, h: int, alpha: bool, fps: float, frameCount: int):
         if min(w, h) > 0:
-            sizeText = f"{w}x{h}"
+            sizeText = f"{w}x{h}x{frameCount}" if frameCount > 0 else f"{w}x{h}"
             fpsText  = f"  FPS:{round(fps, 4)}" if fps > 0 else ""
 
             aspect = w / h

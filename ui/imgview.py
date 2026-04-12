@@ -1,5 +1,6 @@
 from __future__ import annotations
 from enum import IntEnum
+from typing import NamedTuple
 from typing_extensions import override
 from PySide6.QtCore import Qt, QRect, QRectF, QSize
 from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QTransform, QPalette, QShortcut, QKeySequence, QMouseEvent, QWheelEvent, QSinglePointEvent
@@ -231,6 +232,12 @@ class ImgView(DropView):
 
 
 
+class MediaMetadata(NamedTuple):
+    alpha: bool = False
+    fps: float = -1.0
+    frameCount: int = -1
+
+
 class MediaItemMixin:
     def __init__(self):
         self.filepath = ""
@@ -248,11 +255,8 @@ class MediaItemMixin:
     def mediaSize(self) -> QSize:
         raise NotImplementedError()
 
-    def hasAlpha(self) -> bool:
-        return False
-
-    def fps(self) -> float:
-        return -1.0
+    def mediaMetadata(self) -> MediaMetadata:
+        raise NotImplementedError()
 
     def addToScene(self: QGraphicsItem, scene: QGraphicsScene, guiScene: QGraphicsScene):
         scene.addItem(self)
@@ -341,8 +345,8 @@ class ImgItem(QGraphicsPixmapItem, MediaItemMixin):
         return pixmap.size()
 
     @override
-    def hasAlpha(self) -> bool:
-        return self.pixmap().hasAlphaChannel()
+    def mediaMetadata(self) -> MediaMetadata:
+        return MediaMetadata(self.pixmap().hasAlphaChannel())
 
     @override
     def setSmooth(self, enabled: bool):

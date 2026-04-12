@@ -29,13 +29,13 @@ try:
         except:
             return -1, -1
 
-    def readMetadata(path: str) -> tuple[int, int, float]:
+    def readMetadata(path: str) -> tuple[int, int, float, int]:
         try:
             with av.open(path, 'r') as container:
                 stream = container.streams.video[0]
-                return stream.width, stream.height, float(stream.average_rate or 0)
+                return stream.width, stream.height, float(stream.average_rate or 0), stream.frames
         except:
-            return -1, -1, 0
+            return -1, -1, 0.0, 0
 
 
     def getKeyframes(path: str, start: int, end: int) -> list[int]:
@@ -193,20 +193,21 @@ except ImportError:
 
         return -1, -1
 
-    def readMetadata(path: str) -> tuple[int, int, float]:
+    def readMetadata(path: str) -> tuple[int, int, float, int]:
         cap = cv.VideoCapture(path)
         try:
             if cap.isOpened():
                 w = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
                 h = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
+                frameCount = int(cap.get(cv.CAP_PROP_FRAME_COUNT))
                 fps = cap.get(cv.CAP_PROP_FPS)
-                return w, h, fps
+                return w, h, fps, frameCount
         except:
             pass
         finally:
             cap.release()
 
-        return -1, -1, 0
+        return -1, -1, 0.0, 0
 
 
     def getKeyframes(path: str, start: int, end: int) -> list[int]:
