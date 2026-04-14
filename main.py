@@ -349,6 +349,14 @@ class MainMenu(QtWidgets.QMenu):
         self._fileTypes = self._buildFileTypesSubmenu()
         self.addMenu(self._fileTypes)
 
+        actPlaybackEnabled = QtGui.QAction("Enable Video Playback", self)
+        actPlaybackEnabled.setCheckable(True)
+        actPlaybackEnabled.setChecked(Config.mediaPlaybackEnabled)
+        actPlaybackEnabled.toggled.connect(self._onMediaPlaybackToggled)
+        self.addAction(actPlaybackEnabled)
+
+        self.addSeparator()
+
         actModelConfig = QtGui.QAction("Model Settings...", self)
         actModelConfig.triggered.connect(self.showModelSettings)
         self.addAction(actModelConfig)
@@ -419,15 +427,28 @@ class MainMenu(QtWidgets.QMenu):
             reactivate = next(iter(Config.mediaExcludeTypes), "image")
             self._fileTypes.setChecked(reactivate, True)
 
+    @Slot(bool)
+    def _onMediaPlaybackToggled(self, checked: bool):
+        Config.mediaPlaybackEnabled = checked
+
+        if not checked and Config.mediaPlaybackStarted:
+            dialog = QtWidgets.QMessageBox(self.mainWindow)
+            dialog.setIcon(QtWidgets.QMessageBox.Icon.Information)
+            dialog.setWindowTitle("Restart to apply settings")
+            dialog.setText("To free VRAM for model loading, please restart the application.")
+            dialog.setInformativeText("Video playback has already allocated resources in memory.")
+            dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok)
+            dialog.exec()
+
 
     @Slot()
     def openFile(self):
-        path, filter = QtWidgets.QFileDialog.getOpenFileName(self, "Open File")
+        path, filter = QtWidgets.QFileDialog.getOpenFileName(self.mainWindow, "Open File")
         self.open(path)
 
     @Slot()
     def openDir(self):
-        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Open Folder")
+        path = QtWidgets.QFileDialog.getExistingDirectory(self.mainWindow, "Open Folder")
         self.open(path)
 
     def open(self, path: str | None):

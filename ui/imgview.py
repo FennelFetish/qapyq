@@ -7,6 +7,7 @@ from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QTransform, QPalett
 from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsView, QGraphicsItem, QGraphicsScene
 from lib import colorlib, imagerw, videorw
 from lib.filelist import FileList
+from config import Config
 from .dropview import DropView
 
 
@@ -73,13 +74,15 @@ class ImgView(DropView):
 
     def onFileChanged(self, currentFile: str):
         isVideoFile = videorw.isVideoFile(currentFile)
-        if isVideoFile != (self.image.TYPE == MediaItemType.Video):
+        requiresPlayback = isVideoFile & (Config.mediaPlaybackEnabled | Config.mediaPlaybackStarted)
+
+        if (isVideoFile, requiresPlayback) != (self.image.TYPE == MediaItemType.Video, self.image.PLAYBACK):
             self.image.removeFromScene(self.scene(), self._guiScene)
             self.image.deleteLater()
 
             if isVideoFile:
-                from .video_player import VideoItem
-                self.image = VideoItem(self)
+                from .video_player import VideoItem, FrozenVideoItem
+                self.image = VideoItem(self) if requiresPlayback else FrozenVideoItem(self)
             else:
                 self.image = ImgItem()
 
@@ -239,7 +242,8 @@ class MediaMetadata(NamedTuple):
 
 
 class MediaItemMixin:
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.filepath = ""
 
     def clearImage(self):
@@ -307,8 +311,9 @@ class MediaItemMixin:
 
 
 
-class ImgItem(QGraphicsPixmapItem, MediaItemMixin):
+class ImgItem(MediaItemMixin, QGraphicsPixmapItem):
     TYPE = MediaItemType.Image
+    PLAYBACK = False
 
     def __init__(self):
         super().__init__()

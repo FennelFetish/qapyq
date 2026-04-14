@@ -29,13 +29,15 @@ try:
         except:
             return -1, -1
 
-    def readMetadata(path: str) -> tuple[int, int, float, int]:
+    def readMetadata(path: str) -> tuple[int, int, float, int, int]:
+        'w, h, fps, frame count, duration (ms)'
         try:
             with av.open(path, 'r') as container:
+                duration = float(container.duration / av.time_base)
                 stream = container.streams.video[0]
-                return stream.width, stream.height, float(stream.average_rate or 0), stream.frames
+                return stream.width, stream.height, float(stream.average_rate or 0), stream.frames, int(duration * 1000)
         except:
-            return -1, -1, 0.0, 0
+            return -1, -1, 0.0, 0, 0
 
 
     def getKeyframes(path: str, start: int, end: int) -> list[int]:
@@ -122,7 +124,7 @@ try:
         return tiles, (origW, origH)
 
 
-    def extractFramesPIL(source, sampleFps: float, maxFrames: int = 64) -> tuple[list, dict]:
+    def extractFramesPIL(source, sampleFps: float, maxFrames: int = 32) -> tuple[list[Image.Image], dict]:
         with av.open(source, 'r') as container:
             stream = container.streams.video[0]
 
@@ -135,32 +137,35 @@ try:
             numSampleFrames = min(max(numSampleFrames, 2), maxFrames)
             sampleFps = numSampleFrames / duration
 
-            posFeed = duration / (numSampleFrames-1)
+            posFeed = duration / (numSampleFrames-1) if numSampleFrames < frameCount-1 else 0
             tb = stream.time_base
 
             seek = (posFeed * fps > 24)
             lastSeekPts = -1
 
             frames = list[Image.Image]()
-            for i in range(numSampleFrames):
-                targetPts = int((i * posFeed) / tb)
-                if seek:
-                    container.seek(targetPts, stream=stream)
+            try:
+                for i in range(numSampleFrames):
+                    targetPts = int((i * posFeed) / tb)
+                    if seek:
+                        container.seek(targetPts, stream=stream)
 
-                for i, frame in enumerate(container.decode(stream)):
-                    pts = frame.pts or 0
-                    if i == 0 and seek:
-                        # Disable seeking if it didn't move forward
-                        if pts > lastSeekPts:
-                            lastSeekPts = pts
-                        else:
-                            seek = False
+                    for f, frame in enumerate(container.decode(stream)):
+                        pts = frame.pts or 0
+                        if f == 0 and seek:
+                            # Disable seeking if it didn't move forward
+                            if pts > lastSeekPts:
+                                lastSeekPts = pts
+                            else:
+                                seek = False
 
-                    if pts + frame.duration > targetPts:
-                        frames.append( Image.fromarray(frame.to_ndarray(format="rgb24")) )  # Faster via numpy than frame.to_image()
+                        if pts + frame.duration > targetPts:
+                            frames.append( Image.fromarray(frame.to_ndarray(format="rgb24")) )  # Faster via numpy than frame.to_image()
+                            break
+                    else:
                         break
-                else:
-                    break
+            except av.EOFError:
+                pass
 
         if not frames:
             raise RuntimeError("Failed to extract video frames")
@@ -193,7 +198,8 @@ except ImportError:
 
         return -1, -1
 
-    def readMetadata(path: str) -> tuple[int, int, float, int]:
+    def readMetadata(path: str) -> tuple[int, int, float, int, int]:
+        'w, h, fps, frame count, duration (ms)'
         cap = cv.VideoCapture(path)
         try:
             if cap.isOpened():
@@ -201,13 +207,14 @@ except ImportError:
                 h = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
                 frameCount = int(cap.get(cv.CAP_PROP_FRAME_COUNT))
                 fps = cap.get(cv.CAP_PROP_FPS)
-                return w, h, fps, frameCount
+                duration = int(1000 * frameCount / fps)
+                return w, h, fps, frameCount, duration
         except:
             pass
         finally:
             cap.release()
 
-        return -1, -1, 0.0, 0
+        return -1, -1, 0.0, 0, 0
 
 
     def getKeyframes(path: str, start: int, end: int) -> list[int]:
@@ -285,7 +292,7 @@ except ImportError:
         return tiles, (origW, origH)
 
 
-    def extractFramesPIL(path: str, sampleFps: float, maxFrames: int = 64) -> tuple[list, dict]:
+    def extractFramesPIL(path: str, sampleFps: float, maxFrames: int = 32) -> tuple[list[Image.Image], dict]:
         cap = cv.VideoCapture(path)
         try:
             if not cap.isOpened():
