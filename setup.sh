@@ -49,4 +49,4 @@ activate_venv
 echo ""
 
 python_exec="${venv_path}/bin/python"
-exec ${python_exec} "./main_setup.py"
+exec "${python_exec}" "./main_setup.py"

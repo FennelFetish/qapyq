@@ -20,4 +20,4 @@ export NO_ALBUMENTATIONS_UPDATE=1
 export YOLO_OFFLINE="True"
 
 cd "$script_dir"
-exec ${python_exec} "./main_host.py" "$@"
+exec "${python_exec}" "./main_host.py" "$@"
