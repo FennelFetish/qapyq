@@ -58,6 +58,8 @@ class VideoItemMixin(MediaItemMixin, Generic[S]):
         self.imgview = imgview
         self._slots: S = slotsClass(self, imgview.scene())
 
+        self._size = QSize()
+
         self.player: QMediaPlayer = None
         self.audioOutput: QAudioOutput = None
 
@@ -94,7 +96,6 @@ class VideoItemMixin(MediaItemMixin, Generic[S]):
     def _redrawMainViewport(self):
         # The GUI scene is rendered separately as overlay. It's not automatically redrawn when geometries change.
         # The viewport is redrawn when the video is playing. If paused -> force redraw of main view.
-        # FIXME: RuntimeError: libshiboken: Internal C++ object (PySide6.QtMultimedia.QMediaPlayer) already deleted.
         self.imgview.viewport().update()
 
     def _updateVolume(self) -> float:
@@ -135,7 +136,7 @@ class VideoItemMixin(MediaItemMixin, Generic[S]):
                 diff = segStart - videoPos
                 videoPos = segStart if diff < 10 else segEnd
 
-        videoPos = min(max(videoPos, 0), self.info.duration-1)
+        videoPos = max(min(videoPos, self.info.duration-1), 0)
         self.setVideoPosition(videoPos)
         return skipLen
 
@@ -182,6 +183,9 @@ class VideoItemMixin(MediaItemMixin, Generic[S]):
 
     @override
     def loadFile(self, path: str) -> bool:
+        if path == self.filepath:
+            return True
+
         self.frameExtractor.unload()
         self.info.reset()
         self._slots.reset()
@@ -192,7 +196,8 @@ class VideoItemMixin(MediaItemMixin, Generic[S]):
 
         w, h, fps, frameCount, duration = videorw.readMetadata(path)
 
-        if not self._checkLoadVideo(QSize(w, h)):
+        self._size = QSize(w, h)
+        if not self._checkLoadVideo(self._size):
             print(f"Failed to load video: {path}")
             self.clearImage()
             return False
@@ -208,6 +213,10 @@ class VideoItemMixin(MediaItemMixin, Generic[S]):
         self.playbackControls.seekThumbnail.hide()
         self.playbackControls.labelSeekTime.hide()
         return True
+
+    @override
+    def mediaSize(self) -> QSize:
+        return self._size
 
     @override
     def mediaMetadata(self) -> MediaMetadata:
@@ -396,7 +405,7 @@ class VideoItem(VideoItemMixin[VideoItemSlots], QGraphicsVideoItem):
     def _checkLoadVideo(self, size: QSize) -> bool:
         self.hide()
         self.setSize(size)
-        return size.isValid()
+        return super()._checkLoadVideo(size)
 
     @override
     def _loadVideo(self, path: str, duration: int):
@@ -427,11 +436,6 @@ class VideoItem(VideoItemMixin[VideoItemSlots], QGraphicsVideoItem):
         super().clearImage()
         self.player.setSource(QUrl())
         self.setSize(QSize())
-
-    @override
-    def mediaSize(self) -> QSize:
-        size = self.size().toSize()
-        return size if (size.width() > 0 and size.height() > 0) else QSize()
 
     @override
     def togglePlay(self):
@@ -547,13 +551,6 @@ class FrozenVideoItem(VideoItemMixin[FrozenVideoItemSlots], QGraphicsPixmapItem)
         super().clearImage()
         if not self.pixmap().isNull():
             self.setPixmap(QPixmap())
-
-    @override
-    def mediaSize(self) -> QSize:
-        pixmap = self.pixmap()
-        if pixmap.isNull():
-            return QSize()
-        return pixmap.size()
 
     @override
     def setSmooth(self, enabled: bool):
@@ -1278,6 +1275,10 @@ class FrameExtractWorker(QObject):
             frame = self._extractFrame(req.file, req.pos)
             mat = frame.to_ndarray(format="rgb24")
             mat = cv.resize(mat, self.thumbnailSize.toTuple(), interpolation=cv.INTER_AREA)
+
+            if rotSwap := videorw.CV_ROT_SWAP.get(frame.rotation):
+                mat = cv.rotate(mat, rotSwap[0])
+
             image = qtlib.numpyToQImage(mat, fromRGB=True)
             self.thumbnailDone.emit(req.file, image)
 
@@ -1293,6 +1294,10 @@ class FrameExtractWorker(QObject):
         try:
             frame = self._extractFrame(file, pos)
             mat = frame.to_ndarray(format="rgb24")
+
+            if rotSwap := videorw.CV_ROT_SWAP.get(frame.rotation):
+                mat = cv.rotate(mat, rotSwap[0])
+
             image = qtlib.numpyToQImage(mat, fromRGB=True)
             self.frameDone.emit(file, image)
 
@@ -1312,33 +1317,3 @@ class FrameExtractWorker(QObject):
                 return frame
 
         raise ValueError(f"No frame at position {posMs/1000:.3f}")
-
-
-
-# Thread name: MainThread, ident: 139877960665984
-# Stack for thread 139877960665984
-#   File "qapyq/./main.py", line 598, in <module>
-#     exitCode = main()
-#   File "qapyq/./main.py", line 590, in main
-#     return app.exec()
-#   File "qapyq/ui/imgview.py", line 173, in wheelEvent
-#     if not (self._tool.onMouseWheel(event) or self.image.onMouseWheel(event)):
-#   File "qapyq/tools/slideshow.py", line 355, in onMouseWheel
-#     self.prev()
-#   File "qapyq/tools/slideshow.py", line 157, in prev
-#     self._setIndexNoHistory(self._history[self._historyIndex].idx)
-#   File "qapyq/tools/slideshow.py", line 249, in _setIndexNoHistory
-#     self.tab.filelist.setCurrentIndex(index)
-#   File "qapyq/lib/filelist.py", line 497, in setCurrentIndex
-#     self.notifyFileChanged()
-#   File "qapyq/lib/filelist.py", line 621, in notifyFileChanged
-#     l.onFileChanged(self.currentFile)
-#   File "qapyq/ui/imgview.py", line 75, in onFileChanged
-#     if self.image.loadFile(currentFile):
-#   File "qapyq/ui/video_player.py", line 110, in loadFile
-#     self.player.setSource(path)
-#   File "qapyq/ui/video_player.py", line 363, in _onPlayingChanged
-#     self.labelPlayTime.setTime(self.player.position())
-#   File "qapyq/ui/video_player.py", line 412, in setTime
-#     self.setPlainText(text + self.suffix)
-#   File "<string>", line 3, in <module>

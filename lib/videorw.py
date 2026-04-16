@@ -16,28 +16,62 @@ def isVideoFile(path: str):
     return ext in READ_EXTENSIONS
 
 
+# Read metadata with OpenCV because AV doesn't account for rotation (would need to decode frames)
+def readSize(path: str) -> tuple[int, int]:
+    cap = cv.VideoCapture(path)
+    try:
+        if cap.isOpened():
+            w = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
+            return w, h
+    except:
+        pass
+    finally:
+        cap.release()
+
+    return -1, -1
+
+def readMetadata(path: str) -> tuple[int, int, float, int, int]:
+    'w, h, fps, frame count, duration (ms)'
+    cap = cv.VideoCapture(path)
+    try:
+        if cap.isOpened():
+            w = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
+            frameCount = int(cap.get(cv.CAP_PROP_FRAME_COUNT))
+            fps = cap.get(cv.CAP_PROP_FPS)
+            duration = int(1000 * frameCount / fps)
+            return w, h, fps, frameCount, duration
+    except:
+        pass
+    finally:
+        cap.release()
+
+    return -1, -1, 0.0, 0, 0
+
+
 
 # ========== AV ==========
 try:
     import av
 
-    def readSize(path: str) -> tuple[int, int]:
-        try:
-            with av.open(path, 'r') as container:
-                stream = container.streams.video[0]
-                return stream.width, stream.height
-        except:
-            return -1, -1
+    # def readSize(path: str) -> tuple[int, int]:
+    #     try:
+    #         with av.open(path, 'r') as container:
+    #             stream = container.streams.video[0]
+    #             return stream.width, stream.height
+    #     except:
+    #         return -1, -1
 
-    def readMetadata(path: str) -> tuple[int, int, float, int, int]:
-        'w, h, fps, frame count, duration (ms)'
-        try:
-            with av.open(path, 'r') as container:
-                duration = float(container.duration / av.time_base)
-                stream = container.streams.video[0]
-                return stream.width, stream.height, float(stream.average_rate or 0), stream.frames, int(duration * 1000)
-        except:
-            return -1, -1, 0.0, 0, 0
+    # def readMetadata(path: str) -> tuple[int, int, float, int, int]:
+    #     'w, h, fps, frame count, duration (ms)'
+    #     try:
+    #         with av.open(path, 'r') as container:
+    #             duration = float(container.duration / av.time_base)
+    #             stream = container.streams.video[0]
+    #             return stream.width, stream.height, float(stream.average_rate or 0), stream.frames, int(duration * 1000)
+    #     except:
+    #         return -1, -1, 0.0, 0, 0
 
 
     def getKeyframes(path: str, start: int, end: int) -> list[int]:
@@ -66,6 +100,13 @@ try:
         return keyframes
 
 
+    CV_ROT_SWAP = {
+        -90:  (cv.ROTATE_90_CLOCKWISE, True),
+        90:   (cv.ROTATE_90_COUNTERCLOCKWISE, True),
+        -180: (cv.ROTATE_180, False),
+        180:  (cv.ROTATE_180, False)
+    }
+
     class NotSeekableException(Exception): pass
 
     def thumbnailVideo(path: str, maxWidth: int, tiling: int) -> tuple[np.ndarray, tuple[int, int]]:
@@ -74,16 +115,32 @@ try:
             stream = container.streams.video[0]
             tb = stream.time_base
 
+            maxWidth = round(maxWidth / tiling)
             w = origW = stream.width
             h = origH = stream.height
-            maxWidth = round(maxWidth / tiling)
-            if w > maxWidth:
-                h = round(h * maxWidth/w)
-                w = maxWidth
+            tiles: np.ndarray = None
 
-            tiles = np.zeros((h*tiling, w*tiling, 3), dtype=np.uint8)
+            rotation: int | None = None
+            swap: bool = False
 
-            def addFrame(i: int, frame):
+            def prepareTiles(frame):
+                nonlocal w, h, rotation, swap, tiles
+                rotation, swap = CV_ROT_SWAP.get(frame.rotation, (None, False))
+                if swap:
+                    if h > maxWidth:
+                        w = round(w * maxWidth/h)
+                        h = maxWidth
+                else:
+                    if w > maxWidth:
+                        h = round(h * maxWidth/w)
+                        w = maxWidth
+
+                tiles = np.zeros((h*tiling, w*tiling, 3), dtype=np.uint8)
+
+            def addTile(i: int, frame):
+                if i == 1:
+                    prepareTiles(frame)
+
                 y, x = divmod(i-1, tiling)
                 x *= w
                 y *= h
@@ -98,14 +155,14 @@ try:
             try:
                 lastPts = -1
                 for i in range(1, numIntervals):
-                    pos = i * duration/numIntervals
-                    container.seek(int(pos / tb), stream=stream)
+                    targetPts = int((i * duration/numIntervals) / tb)
+                    container.seek(targetPts, stream=stream)
 
                     frame = next(container.decode(stream))
                     pts = frame.pts or 0
                     if pts > lastPts:
                         lastPts = pts
-                        addFrame(i, frame)
+                        addTile(i, frame)
                     else:
                         raise NotSeekableException()
 
@@ -113,13 +170,19 @@ try:
                 duration = min(duration, 60.0)
 
                 for i in range(i, numIntervals):
-                    pos = i * duration/numIntervals
+                    targetPts = int((i * duration/numIntervals) / tb)
                     for frame in container.decode(stream):
-                        if frame.time >= pos:
-                            addFrame(i, frame)
+                        pts = frame.pts or 0
+                        if pts + frame.duration > targetPts:
+                            addTile(i, frame)
                             break
                     else:
                         break
+
+        if rotation is not None:
+            tiles = cv.rotate(tiles, rotation)
+            if swap:
+                origW, origH = origH, origW
 
         return tiles, (origW, origH)
 
@@ -160,7 +223,11 @@ try:
                                 seek = False
 
                         if pts + frame.duration > targetPts:
-                            frames.append( Image.fromarray(frame.to_ndarray(format="rgb24")) )  # Faster via numpy than frame.to_image()
+                            mat = frame.to_ndarray(format="rgb24") # Faster via numpy than frame.to_image()
+                            if rotSwap := CV_ROT_SWAP.get(frame.rotation):
+                                mat = cv.rotate(mat, rotSwap[0])
+
+                            frames.append(Image.fromarray(mat))
                             break
                     else:
                         break
@@ -183,39 +250,6 @@ try:
 
 # ========== OpenCV ==========
 except ImportError:
-
-    def readSize(path: str) -> tuple[int, int]:
-        cap = cv.VideoCapture(path)
-        try:
-            if cap.isOpened():
-                w = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
-                h = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
-                return w, h
-        except:
-            pass
-        finally:
-            cap.release()
-
-        return -1, -1
-
-    def readMetadata(path: str) -> tuple[int, int, float, int, int]:
-        'w, h, fps, frame count, duration (ms)'
-        cap = cv.VideoCapture(path)
-        try:
-            if cap.isOpened():
-                w = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
-                h = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
-                frameCount = int(cap.get(cv.CAP_PROP_FRAME_COUNT))
-                fps = cap.get(cv.CAP_PROP_FPS)
-                duration = int(1000 * frameCount / fps)
-                return w, h, fps, frameCount, duration
-        except:
-            pass
-        finally:
-            cap.release()
-
-        return -1, -1, 0.0, 0, 0
-
 
     def getKeyframes(path: str, start: int, end: int) -> list[int]:
         startSec = start / 1000.0
@@ -509,103 +543,3 @@ try:
 
 except ImportError:
     pass
-
-
-
-
-# import subprocess, json
-
-# def thumbnailVideo(path: str) -> tuple[int, int, np.ndarray]:
-#     tiling = 2
-#     numIntervals = tiling*tiling + 1
-
-#     # Initial keyframe skipping is much faster than seeking to multiple frames, so call ffmpeg multiple times
-#     origW, origH, duration = _getVideoInfo(path)
-#     frames = list[np.ndarray]()
-#     for i in range(1, numIntervals):
-#         pos = round(i * duration/numIntervals)
-#         frames.append(_extractVideoFrame(path, pos, thumbnail=True))
-
-#     h, w = frames[0].shape[:2]
-#     tiles = np.zeros((h*tiling, w*tiling, 3), dtype=np.uint8)
-#     for i, frame in enumerate(frames):
-#         x = (i % tiling) * w
-#         y = (i // tiling) * h
-#         tiles[y:y+h, x:x+w, :] = frame[:, :, :3]
-
-#     return origW, origH, tiles
-
-# def _getVideoInfo(path: str) -> tuple[int, int, float]:
-#     cmd = ['ffprobe', '-v', 'error', '-show_entries', 'stream=width,height,duration', '-of', 'default=nw=1:nk=1', path]
-
-#     result = subprocess.run(cmd, stdout=subprocess.PIPE, text=True)
-#     if result.returncode != 0:
-#         raise subprocess.SubprocessError(f"Video info unavailable (ffprobe exit code {result.returncode}): {path}")
-
-#     lines = result.stdout.splitlines()
-#     return int(lines[0]), int(lines[1]), float(lines[2])
-
-# def _extractVideoFrame(path: str, pos: float, thumbnail=False) -> np.ndarray:
-#     cmd = ['ffmpeg', '-skip_frame', 'nokey', '-ss', str(pos), '-an', '-i', path]
-#     if thumbnail:
-#         cmd += ['-vf', "scale='min(300,iw)':-1", '-sws_flags', 'area']
-#     cmd += ['-vframes', '1', '-f', 'image2pipe', '-q:v', '3', '-vcodec', 'mjpeg', '-v', 'error', '-'] # '-' is output file for pipe
-
-#     result = subprocess.run(cmd, capture_output=True, text=False, timeout=4.0)
-#     jpegFrame = result.stdout
-#     if result.returncode != 0 or not jpegFrame:
-#         raise subprocess.SubprocessError(f"Failed to extract video frame (ffmpeg exit code {result.returncode}): {path}")
-
-#     return cv.imdecode(np.frombuffer(jpegFrame, np.uint8), cv.IMREAD_COLOR)
-
-
-# def get_keyframe_times(video_path, start_sec=10) -> list[float]:
-#     """
-#     Use ffprobe to get keyframe timestamps (in seconds) after start_sec.
-#     Returns list of float pts_times.
-#     """
-#     command = [
-#         'ffprobe', '-loglevel', 'error', '-skip_frame', 'nokey',
-#         '-select_streams', 'v:0', '-show_entries', 'frame=pkt_pts_time',
-#         '-of', 'csv=p=0', video_path
-#     ]
-#     result = subprocess.run(command, capture_output=True, text=True)
-#     if result.returncode != 0:
-#         raise ValueError(f"ffprobe failed: {result.stderr}")
-
-#     print(result.stdout)
-#     times = list[float]()
-#     for line in result.stdout.splitlines():
-#         try:
-#             t = float(line)
-#             if t >= start_sec:
-#                 times.append(t)
-#         except ValueError:
-#             pass
-#     return times
-
-# def get_local_keyframe_time(path: str, start_sec: float, end_sec: float) -> float:
-#     target = (start_sec + end_sec) / 2
-
-#     interval = f"{start_sec:.0f}%{end_sec:.0f}"  # e.g., "50%60" for 50-60s
-#     # cmd = [
-#     #     'ffprobe', '-v', 'error', '-show_frames', '-select_streams', 'v:0',
-#     #     '-read_intervals', interval, '-print_format', 'json', path
-#     # ]
-#     cmd = [
-#         'ffprobe', '-v', 'error', '-skip_frame', 'nokey', '-show_entries', 'frame=pkt_pts_time', '-select_streams', 'v:0',
-#         '-read_intervals', interval, '-print_format', 'json', path
-#     ]
-#     result = subprocess.run(cmd, capture_output=True, text=True)
-#     if result.returncode != 0:
-#         return target
-
-#     data = json.loads(result.stdout)
-#     print(data)
-#     keyframes = [float(f['pkt_pts_time']) for f in data.get('frames', []) if f.get('key_frame') == 1]
-
-#     if not keyframes:
-#         return target
-
-#     # Pick closest to midpoint of interval
-#     return min(keyframes, key=lambda t: abs(t - target))
