@@ -1,7 +1,6 @@
 import os, locale
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Signal, Slot, QTimer
-from PySide6.QtGui import QPixmap
 from config import Config
 from lib import qtlib
 from lib.filelist import FileList
@@ -25,8 +24,9 @@ class ImgTab(QtWidgets.QMainWindow):
         super().__init__()
         from main import MainWindow
         self.mainWindow: MainWindow = mainWindow
-        self.tabWidget = self.mainWindow.tabWidget
-        self._index = -1 # Store index when fullscreen
+
+        self._active: bool = False
+        self._index: int = -1 # Store index when fullscreen
         self.setWindowTitle(f"{Config.windowTitle} Fullscreen Tab")
 
         self.setStatusBar(TabStatusBar(self))
@@ -55,6 +55,17 @@ class ImgTab(QtWidgets.QMainWindow):
         return super().statusBar()
 
 
+    @property
+    def active(self) -> bool:
+        return self._active
+
+    @active.setter
+    def active(self, active: bool):
+        if active != self._active:
+            self._active = active
+            self.imgview.onTabActive(active)
+
+
     def _updateJsonAutocomplete(self, currentFile: str):
         self._jsonAutoCompleteSource.reset()
 
@@ -72,8 +83,9 @@ class ImgTab(QtWidgets.QMainWindow):
             fileNr = max(self.filelist.getCurrentNr(), 0) + 1
             name += locale.format_string(f" (%d/%d{loading})", (fileNr, numFiles), grouping=True)
 
-        tabIndex = self.tabWidget.indexOf(self)
-        self.tabWidget.setTabText(tabIndex, name)
+        tabWidget = self.mainWindow.tabWidget
+        tabIndex = tabWidget.indexOf(self)
+        tabWidget.setTabText(tabIndex, name)
         self.tabTitleChanged.emit(name)
 
         self._updateJsonAutocomplete(currentFile)
@@ -156,23 +168,24 @@ class ImgTab(QtWidgets.QMainWindow):
 
 
     def toggleFullscreen(self):
+        tabWidget = self.mainWindow.tabWidget
         winState = self.windowState()
-        if winState & Qt.WindowFullScreen:
+        if winState & Qt.WindowState.WindowFullScreen:
             # Disable fullscreen
-            index = self.tabWidget.insertTab(self._index, self, "Fullscreen")
-            self.tabWidget.setCurrentIndex(index)
+            index = tabWidget.insertTab(self._index, self, "Fullscreen")
+            tabWidget.setCurrentIndex(index)
             self.onFileChanged(self.filelist.getCurrentFile())
             self._index = -1
             self.imgview.tool.onFullscreen(False)
         else:
             # Enable fullscreen
-            self._index = self.tabWidget.indexOf(self)
-            self.tabWidget.removeTab(self._index)
+            self._index = tabWidget.indexOf(self)
+            tabWidget.removeTab(self._index)
             self.setParent(None)
             self.imgview.tool.onFullscreen(True)
 
         self.imgview.setFocus()
-        self.setWindowState(winState ^ Qt.WindowFullScreen)
+        self.setWindowState(winState ^ Qt.WindowState.WindowFullScreen)
         self.setVisible(True)
 
         QTimer.singleShot(100, self.imgview.updateView)
@@ -186,6 +199,7 @@ class ImgTab(QtWidgets.QMainWindow):
 
     def onTabClosed(self):
         self.imgview.tool.onDisabled(self.imgview)
+        self.active = False
         self.filelist.reset()
 
         for winContent in self._windowContent.values():
@@ -224,18 +238,21 @@ class TabStatusBar(qtlib.ColoredMessageStatusBar):
     def setMouseCoords(self, x, y):
         self._lblMouseCoords.setText(f"X:{x}  Y:{y}")
 
-    def setImageInfo(self, pixmap: QPixmap):
-        size = pixmap.size()
-        w, h = size.width(), size.height()
-
-        aspectText = ""
+    def setMediaInfo(self, w: int, h: int, alpha: bool, fps: float, frameCount: int):
         if min(w, h) > 0:
+            sizeText = f"{w}x{h}x{frameCount}" if frameCount > 0 else f"{w}x{h}"
+            fpsText  = f"  FPS:{round(fps, 4)}" if fps > 0 else ""
+
             aspect = w / h
             aspectText = f"{aspect:.3f}" if aspect >= 1 else f"{aspect:.3f} (1:{1/aspect:.3f})"
             aspectText = f"  AR:{aspectText}"
+        else:
+            sizeText   = ""
+            fpsText    = ""
+            aspectText = ""
 
-        alpha = "  (Alpha)" if pixmap.hasAlphaChannel() else ""
-        self._lblImgSize.setText(f"{w}x{h}{aspectText}{alpha}")
+        alphaText = "  (Alpha)" if alpha else ""
+        self._lblImgSize.setText(f"{sizeText}{aspectText}{fpsText}{alphaText}")
 
 
 

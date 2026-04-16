@@ -2,7 +2,7 @@
 
 # qapyq
 <sup>(CapPic)</sup><br />
-**An image viewer and AI-assisted editing tool that helps with curating datasets for generative AI models, finetunes and LoRA.**
+**AI-assisted media curator for large image/video datasets. Streamlined captioning, cropping, masking for LoRA/diffusion training workflows.**
 
 <br clear="left"/>
 <br /><br />
@@ -24,31 +24,32 @@
 
 ## Features
 
-- **Image Viewer**: Display and navigate images
+- **Media Viewer**: Display and navigate images and videos
   - Quick-starting desktop application built with Qt
-  - Runs smoothly with a million images
+  - Runs smoothly with a million files
   - Modular interface that lets you place windows on different monitors
   - Open multiple tabs
   - Zoom/pan and fullscreen mode
-  - Gallery with thumbnails and optionally captions <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#gallery)</sup>
+  - Gallery with thumbnails and captions <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#gallery)</sup>
   - Semantic image sorting with text prompts <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#semantic-sort)</sup>
   - Compare two images <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#compare-tool)</sup>
   - Measure size, area and pixel distances <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#measure-tool)</sup>
   - Slideshow <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#slideshow-tool)</sup>
 
-- **Image/Mask Editor**: Prepare images for training
+- **Image/Mask Editor**: Prepare media for training
   - Crop and save parts of images <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#crop-tool)</sup>
   - Scale images, optionally using AI upscale models <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#scale-tool)</sup>
+  - Crop and scale videos, trimmed to exact frame count
   - Dynamic save paths with template variables <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#path-settings)</sup>
   - Manually edit masks with multiple layers <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#mask-tool)</sup>
   - Generate masks with AI models <sup>[?](https://github.com/FennelFetish/qapyq/wiki/Setup#mask)</sup>
   - Record masking operations into macros <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#macro-recording)</sup>
   - VAE-encode images and check their latent representation <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#vae-reconstruction)</sup>
 
-- **Captioning**: Describe images with text
+- **Captioning**: Describe media with text
   - Edit captions manually with drag-and-drop support <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#caption-window)</sup>
-  - Save multiple captions in a JSON file per image <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#captions-in-text-files-vs-json-files)</sup>
-  - *Multi-Edit Mode*: Edit captions of multiple images simultaneously <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#multi-edit-mode)</sup>
+  - Save multiple captions in per-media JSON files <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#captions-in-text-files-vs-json-files)</sup>
+  - *Multi-Edit Mode*: Edit captions across multiple files simultaneously <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#multi-edit-mode)</sup>
   - *Focus Mode*: Add the same tags to many files quickly <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#focus-mode)</sup>
   - Tag grouping, merging, sorting, filtering and replacement rules <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#rules)</sup>
   - Colored text highlighting
@@ -60,8 +61,8 @@
   - Further refinement with LLMs
 
 - **Stats/Filters**: Summarize your data and get an overview
-  - List all tags, image resolutions, masked regions, or size of concept folders <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#stats)</sup>
-  - Filter images and create subsets <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Tips-and-Workflows#training-on-subsets)</sup>
+  - List all tags, media resolutions, masked regions, or size of concept folders <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#stats)</sup>
+  - Filter media and create subsets <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Tips-and-Workflows#training-on-subsets)</sup>
   - Combine and chain filters
   - Export the summaries as CSV
 
@@ -91,16 +92,18 @@ Find more specialized finetuned models on [huggingface.co](https://huggingface.c
   - [WD (onnx)](https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3) (eva02 recommended)
 
 - **Captioning**<br>
-  Models for generating complete-sentence captions for images.
+  Models for generating complete-sentence captions for images.<br>
+  Those with 🎦 support video captioning.
+
   - [Florence-2](https://huggingface.co/collections/microsoft/florence-6669f44df0d87d9c3bfb76de)
   - [Gemma3 (GGUF)](https://huggingface.co/collections/unsloth/gemma-3-67d12b7e8816ec6efa7e4e5b)
-  - [InternVL2](https://huggingface.co/collections/OpenGVLab/internvl-20-667d3961ab5eb12c7ed1463e), [InternVL2.5](https://huggingface.co/collections/OpenGVLab/internvl25-673e1019b66e2218f68d7c1c), [InternVL2.5-MPO](https://huggingface.co/collections/OpenGVLab/internvl25-mpo-6753fed98cd828219b12f849), [InternVL3](https://huggingface.co/collections/OpenGVLab/internvl3-67f7f690be79c2fe9d74fe9d), [InternVL3.5](https://huggingface.co/collections/OpenGVLab/internvl35-core-68b08a936ded8dc59597179c) (Github Format)
+  - [InternVL2](https://huggingface.co/collections/OpenGVLab/internvl-20-667d3961ab5eb12c7ed1463e), [InternVL2.5](https://huggingface.co/collections/OpenGVLab/internvl25-673e1019b66e2218f68d7c1c), [InternVL2.5-MPO](https://huggingface.co/collections/OpenGVLab/internvl25-mpo-6753fed98cd828219b12f849), [InternVL3](https://huggingface.co/collections/OpenGVLab/internvl3-67f7f690be79c2fe9d74fe9d), [InternVL3.5](https://huggingface.co/collections/OpenGVLab/internvl35-core-68b08a936ded8dc59597179c) 🎦 (Github Format)
   - [JoyCaption](https://huggingface.co/fancyfeast/llama-joycaption-beta-one-hf-llava)
   - [MiniCPM-V-2.6 (GGUF)](https://huggingface.co/openbmb/MiniCPM-V-2_6-gguf), [MiniCPM-o-2.6 (GGUF)](https://huggingface.co/openbmb/MiniCPM-o-2_6-gguf), [MiniCPM-V-4 (GGUF)](https://huggingface.co/openbmb/MiniCPM-V-4-gguf)
   - [Molmo](https://huggingface.co/collections/allenai/molmo-66f379e6fe3b8ef090a8ca19)
   - [Moondream2 (GGUF)](https://huggingface.co/vikhyatk/moondream2)
   - [Ovis1.6](https://huggingface.co/AIDC-AI/Ovis1.6-Gemma2-9B), [Ovis2](https://huggingface.co/collections/AIDC-AI/ovis2-67ab36c7e497429034874464), [Ovis2.5](https://huggingface.co/collections/AIDC-AI/ovis25-689ec1474633b2aab8809335)
-  - [Qwen2-VL](https://huggingface.co/collections/Qwen/qwen2-vl-66cee7455501d7126940800d), [Qwen2.5-VL](https://huggingface.co/collections/Qwen/qwen25-vl-6795ffac22b334a837c0f9a5), [Qwen3-VL](https://huggingface.co/collections/Qwen/qwen3-vl) (Instruct/Thinking)
+  - [Qwen2-VL](https://huggingface.co/collections/Qwen/qwen2-vl-66cee7455501d7126940800d), [Qwen2.5-VL](https://huggingface.co/collections/Qwen/qwen25-vl-6795ffac22b334a837c0f9a5), [Qwen3-VL](https://huggingface.co/collections/Qwen/qwen3-vl) 🎦 (Instruct/Thinking)
 
 - **LLM**<br>
   Models for transforming existing captions/tags.
@@ -135,16 +138,18 @@ Find more specialized finetuned models on [huggingface.co](https://huggingface.c
 
 
 ## Setup
-Requires Python 3.10 or later.
+Requires [Python](https://www.python.org/downloads/) 3.10 or later.<br>
+And for video processing you'll need [ffmpeg](https://ffmpeg.org/download.html) added to your `PATH` environment variable.
 
 By default, prebuilt packages for CUDA 12.8 are installed. If you need a different CUDA version, change the URLs in `requirements-pytorch.txt` and `requirements-flashattn.txt` before running the setup script.
 
 1. Git clone or [download](https://github.com/FennelFetish/qapyq/archive/refs/heads/main.zip) this repository.
 2. Run `setup.sh` on Linux, `setup.bat` on Windows.
    - Packages are installed into a virtual environment.
-
-The setup script will ask you a couple of questions.<br>
-You can choose to install only the GUI and image processing packages without AI assistance. Or when installing on a headless server for remote inference, you can choose to install only the backend.
+   - The setup script will ask you which components to install.
+     - FlashAttention is optional for most models but recommended for speed.
+     - You can choose to install only the GUI and media processing packages without AI assistance.
+     - When installing on a headless server for remote inference, you can choose to install only the backend.
 
 If the setup scripts didn't work for you, but you manually got it running, please share your solution and raise an issue.
 

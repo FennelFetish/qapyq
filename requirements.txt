@@ -4,6 +4,9 @@ pillow
 pillow-jxl-plugin
 numpy
 
+# Video
+av
+
 # Inter-process communication
 msgpack
 

@@ -11,6 +11,7 @@ from lib import colorlib, imagerw
 from lib.mask_macro import MaskingMacro, ChainedMacroRunner
 from lib.mask_macro_vis import MacroVisualization
 import ui.export_settings as export
+from ui.tab import ImgTab
 from .batch_task import BatchTaskHandler, BatchTask, BatchInferenceTask
 from .batch_log import BatchLog
 
@@ -38,7 +39,7 @@ class BatchMask(QtWidgets.QWidget):
     EXPORT_PRESET_KEY_SRC  = "batch-mask-input"
     EXPORT_PRESET_KEY_DEST = "batch-mask"
 
-    def __init__(self, tab, logWidget: BatchLog, bars):
+    def __init__(self, tab: ImgTab, logWidget: BatchLog, bars):
         super().__init__()
         self.tab = tab
         self.logWidget = logWidget
@@ -157,7 +158,7 @@ class BatchMask(QtWidgets.QWidget):
 
     def onFileChanged(self, file: str):
         self.parser.setup(file)
-        self.parser.setImageDimension(self.tab.imgview.image.pixmap())
+        self.parser.setImageDimension(self.tab.imgview.image.mediaSize())
         self.srcPathSettings.updatePreview()
         self.destPathSettings.updatePreview()
 

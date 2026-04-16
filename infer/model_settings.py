@@ -1,5 +1,4 @@
 import os.path
-from typing import Mapping
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QSignalBlocker
 from config import Config
@@ -65,7 +64,7 @@ class ModelSettingsWindow(qtlib.SingletonWindow):
 
 
 class BaseSettingsWidget(QtWidgets.QWidget):
-    def __init__(self, configAttr: str, backends: Mapping[str, BackendDef]):
+    def __init__(self, configAttr: str, backends: dict[str, BackendDef]):
         super().__init__()
         self.configAttr = configAttr
         self.backends = backends
@@ -194,14 +193,14 @@ class BaseSettingsWidget(QtWidgets.QWidget):
             self.reloadPresetList()
             ModelSettingsWindow.signals.presetListUpdated.emit(self.configAttr)
 
-    @Slot()
+    @Slot(int)
     def loadPreset(self, index: int) -> None:
         presets: dict = getattr(Config, self.configAttr)
         name = self.cboPreset.itemText(index)
         settings = presets.get(name, {})
         self.fromDict(settings)
 
-    @Slot()
+    @Slot(str)
     def _onPresetNameEdited(self, text: str) -> None:
         presets: dict = getattr(Config, self.configAttr, None)
         if presets and text in presets:
@@ -213,8 +212,8 @@ class BaseSettingsWidget(QtWidgets.QWidget):
 
         self.btnSave.setEnabled(bool(text))
 
-    @Slot()
-    def _onBackendChanged(self, index) -> None:
+    @Slot(int)
+    def _onBackendChanged(self, index: int) -> None:
         pass
 
     def _choosePath(self, target: QtWidgets.QLineEdit, altTarget: QtWidgets.QLineEdit | None = None, pathModeOverride=None) -> None:
@@ -251,7 +250,10 @@ class BaseSettingsWidget(QtWidgets.QWidget):
 
 
 class LLMModelSettings(BaseSettingsWidget):
-    def __init__(self, configAttr: str, backends: Mapping[str, BackendDef]):
+    def __init__(self, configAttr: str, backends: dict[str, BackendDef]):
+        from .inference_settings import InferenceSettingsWidget
+        self.inferSettings = InferenceSettingsWidget(backends)
+
         super().__init__(configAttr, backends)
 
     def build(self, layout: QtWidgets.QGridLayout, row: int):
@@ -292,12 +294,10 @@ class LLMModelSettings(BaseSettingsWidget):
         layout.addWidget(self.spinBatchSize, row, 4, 1, 2)
 
         row += 1
-        from .inference_settings import InferenceSettingsWidget
-        self.inferSettings = InferenceSettingsWidget()
         layout.addWidget(self.inferSettings, row, 0, 1, 7)
 
-    @Slot()
-    def _onBackendChanged(self, index):
+    @Slot(int)
+    def _onBackendChanged(self, index: int):
         widgets = (
             self.lblCtxLen, self.spinCtxLen,
             self.lblBatchSize, self.spinBatchSize,
@@ -305,12 +305,13 @@ class LLMModelSettings(BaseSettingsWidget):
         )
 
         enabled = (self.backendType == BackendTypes.LLAMA_CPP)
-        self.inferSettings.setSupportsPenalty(enabled)
         for w in widgets:
             w.setEnabled(enabled)
 
         for w in (self.lblQuant, self.cboQuant):
             w.setEnabled(not enabled)
+
+        self.inferSettings.updateFields(self.cboBackend.currentData())
 
     def fromDict(self, settings: dict) -> None:
         super().fromDict(settings)
@@ -329,8 +330,7 @@ class LLMModelSettings(BaseSettingsWidget):
 
         sampleSettings = settings.get(Config.INFER_PRESET_SAMPLECFG_KEY, {})
         self.inferSettings.fromDict(sampleSettings)
-        self.inferSettings.setSupportsPenalty(self.backendType == BackendTypes.LLAMA_CPP)
-
+        self.inferSettings.updateFields(self.cboBackend.currentData())
 
     def toDict(self) -> dict:
         settings = super().toDict()
@@ -373,8 +373,8 @@ class CaptionModelSettings(LLMModelSettings):
 
         self.lblGpuLayers.setText("LLM GPU Layers:")
 
-    @Slot()
-    def _onBackendChanged(self, index):
+    @Slot(int)
+    def _onBackendChanged(self, index: int):
         super()._onBackendChanged(index)
 
         enabled = (self.backendType == BackendTypes.LLAMA_CPP)
@@ -409,7 +409,7 @@ class CaptionModelSettings(LLMModelSettings):
 
 
 class TagModelSettings(BaseSettingsWidget):
-    def __init__(self, configAttr: str, backends: Mapping[str, BackendDef]):
+    def __init__(self, configAttr: str, backends: dict[str, BackendDef]):
         super().__init__(configAttr, backends)
 
     def build(self, layout: QtWidgets.QGridLayout, row: int):
@@ -428,8 +428,8 @@ class TagModelSettings(BaseSettingsWidget):
         self.tagSettings.expand(animate=False)
         layout.addWidget(self.tagSettings, row, 0, 1, 7)
 
-    @Slot()
-    def _onBackendChanged(self, index):
+    @Slot(int)
+    def _onBackendChanged(self, index: int):
         super()._onBackendChanged(index)
 
         enabled = (self.backendType == BackendTypes.ONNX)
@@ -462,7 +462,7 @@ class TagModelSettings(BaseSettingsWidget):
 
 
 class MaskModelSettings(BaseSettingsWidget):
-    def __init__(self, configAttr: str, backends: Mapping[str, BackendDef]):
+    def __init__(self, configAttr: str, backends: dict[str, BackendDef]):
         super().__init__(configAttr, backends)
 
     def build(self, layout: QtWidgets.QGridLayout, row: int):
@@ -479,8 +479,8 @@ class MaskModelSettings(BaseSettingsWidget):
         return self.cboBackend.currentData().supportsClasses
 
 
-    @Slot()
-    def _onBackendChanged(self, index):
+    @Slot(int)
+    def _onBackendChanged(self, index: int):
         super()._onBackendChanged(index)
         enabled = self.backendNeedsClasses
         for widget in (self.lblClasses, self.txtClasses):
@@ -542,7 +542,7 @@ class ScaleModelSettings(BaseSettingsWidget):
         return val
 
 
-    def __init__(self, configAttr: str, backends: Mapping[str, BackendDef]):
+    def __init__(self, configAttr: str, backends: dict[str, BackendDef]):
         super().__init__(configAttr, backends)
 
     def _buildBase(self, layout: QtWidgets.QGridLayout, row: int) -> int:
@@ -678,7 +678,7 @@ class ScaleModelSettings(BaseSettingsWidget):
 
 
 class EmbeddingModelSettings(BaseSettingsWidget):
-    def __init__(self, configAttr: str, backends: Mapping[str, BackendDef]):
+    def __init__(self, configAttr: str, backends: dict[str, BackendDef]):
         super().__init__(configAttr, backends)
         self._loadedProcessing: str = ""
 
@@ -749,8 +749,8 @@ class EmbeddingModelSettings(BaseSettingsWidget):
     def backendNeedsSeparateModels(self):
         return self.backendType == BackendTypes.ONNX
 
-    @Slot()
-    def _onBackendChanged(self, index):
+    @Slot(int)
+    def _onBackendChanged(self, index: int):
         super()._onBackendChanged(index)
         enabled = self.backendNeedsSeparateModels
         self.lblPath.setText("Config Folder:" if enabled else "Model Path:")

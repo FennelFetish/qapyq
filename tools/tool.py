@@ -1,9 +1,15 @@
+from enum import IntEnum
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QShortcut
 from PySide6.QtWidgets import QToolBar
 from ui.dropview import DropZone
 from ui.imgview import ImgView
 from ui.tab import ImgTab
+
+
+class MediaEvent(IntEnum):
+    SkipOutsideSegment      = 0
+    PlaybackSpeedChanged    = 1
 
 
 class Tool:
@@ -37,6 +43,9 @@ class Tool:
 
         for shortcut in self._shortcuts:
             shortcut.setEnabled(False)
+
+    def onTabActive(self, active: bool):
+        pass
 
 
     def onSceneUpdate(self):
@@ -86,4 +95,7 @@ class Tool:
 
 
     def onGalleryRightClick(self, file):
+        pass
+
+    def onMediaEvent(self, event: MediaEvent):
         pass

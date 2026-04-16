@@ -2,7 +2,7 @@ import weakref
 from typing import Any, Callable, Iterable, cast
 from contextlib import contextmanager
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Slot, Signal, QRect, QEvent
+from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QRect, QEvent
 import numpy as np
 from lib import colorlib
 from config import Config
@@ -67,6 +67,7 @@ def setSingleLineTextEdit(textEdit: QtWidgets.QPlainTextEdit):
     setTextEditHeight(textEdit, 1)
     textEdit.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.NoWrap)
     textEdit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    textEdit.setTabChangesFocus(True)
 
 def setShowWhitespace(textEdit):
     doc = textEdit.document()
@@ -168,6 +169,32 @@ def qimageToNumpy(image: QtGui.QImage, toRGB: bool = False, grayscaleChannelDim:
         mat[:, :, [0, 2]] = mat[:, :, [2, 0]]  # RGB(A) -> BGR(A) or vice versa
 
     return mat
+
+
+
+def loadSvg(maxW: int, maxH: int, path: str, color: QtGui.QColor | None = None) -> QtGui.QPixmap:
+    from PySide6.QtSvg import QSvgRenderer
+    renderer = QSvgRenderer(path)
+
+    defaultSize = renderer.defaultSize()
+    if defaultSize.isEmpty():
+        w, h = maxW, maxH
+    else:
+        w, h = defaultSize.scaled(maxW, maxH, Qt.AspectRatioMode.KeepAspectRatio).toTuple()
+
+    pixmap = QtGui.QPixmap(w, h)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QtGui.QPainter(pixmap)
+    painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+    renderer.render(painter)
+
+    if color is not None:
+        painter.setCompositionMode(QtGui.QPainter.CompositionMode.CompositionMode_SourceIn)
+        painter.fillRect(0, 0, w, h, color)
+
+    painter.end()
+    return pixmap
 
 
 
@@ -802,6 +829,68 @@ class CheckableListWidget(QtWidgets.QListWidget):
 
     def getCheckboxItem(self, item: QtWidgets.QListWidgetItem) -> CheckboxItemWidget:
         return self.itemWidget(item)
+
+
+
+class CheckboxMenu(QtWidgets.QMenu):
+    selectionChanged = Signal(dict)
+
+    def __init__(self, title: str):
+        super().__init__(title)
+        self._checkboxes: dict[str, weakref.ref[QtWidgets.QCheckBox]] = dict()
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.setContentsMargins(6, 2, 6, 2)
+        layout.setSpacing(0)
+
+        self.widget = QtWidgets.QWidget()
+        self.widget.setLayout(layout)
+
+        widgetAct = QtWidgets.QWidgetAction(self)
+        widgetAct.setDefaultWidget(self.widget)
+        self.addAction(widgetAct)
+
+    def widgetLayout(self) -> QtWidgets.QVBoxLayout:
+        return self.widget.layout()
+
+    def addCheckbox(self, key: str, title: str, checked: bool = False) -> QtWidgets.QCheckBox:
+        checkbox = QtWidgets.QCheckBox(title)
+        checkbox.setChecked(checked)
+        checkbox.toggled.connect(self._onToggled)
+
+        self.widget.layout().addWidget(checkbox)
+        self._checkboxes[key] = weakref.ref(checkbox)
+        return checkbox
+
+    def checkboxes(self) -> Iterable[tuple[str, QtWidgets.QCheckBox]]:
+        for key, weakChk in self._checkboxes.items():
+            if chk := weakChk():
+                yield key, chk
+
+    def checkedStates(self) -> dict[str, bool]:
+        return {key: chk.isChecked() for key, chk in self.checkboxes()}
+
+    def setAllChecked(self, checked: bool):
+        with QSignalBlocker(self):
+            for key, chk in self.checkboxes():
+                chk.setChecked(checked)
+        self._onToggled()
+
+    def setChecked(self, key: str, checked: bool):
+        if chk := self._checkboxes[key]():
+            chk.setChecked(checked)
+        else:
+            raise IndexError(f"Checkbox with key '{key}' was already deleted")
+
+    def isChecked(self, key: str) -> bool:
+        if chk := self._checkboxes[key]():
+            return chk.isChecked()
+        else:
+            raise IndexError(f"Checkbox with key '{key}' was already deleted")
+
+    @Slot()
+    def _onToggled(self):
+        self.selectionChanged.emit(self.checkedStates())
 
 
 

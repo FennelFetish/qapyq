@@ -84,6 +84,21 @@ def load_image(imgFile: ImageFile, input_size=448, max_num=12):
     pixel_values = torch.stack(pixel_values)
     return pixel_values
 
+def load_video(imgFile: ImageFile, sampleFps: float, input_size=448, max_num=1, max_frames=32):
+    frames, metadata = imgFile.getVideoFrames(sampleFps, max_frames)
+
+    pixel_values_list, num_patches_list = [], []
+    transform = build_transform(input_size=input_size)
+    for frame in frames:
+        img = dynamic_preprocess(frame, image_size=input_size, use_thumbnail=False, max_num=max_num)
+        pixel_values = [transform(tile) for tile in img]
+        pixel_values = torch.stack(pixel_values)
+        num_patches_list.append(pixel_values.shape[0])
+        pixel_values_list.append(pixel_values)
+
+    pixel_values = torch.cat(pixel_values_list)
+    return pixel_values, num_patches_list
+
 
 
 # V2.5 with quantization fails with:
@@ -93,6 +108,8 @@ def load_image(imgFile: ImageFile, input_size=448, max_num=12):
 
 class InternVL2Backend(CaptionBackend):
     def __init__(self, config: dict):
+        self.sampleFps = 2.0
+
         modelPath: str = config["model_path"]
         self.tokenizer = AutoTokenizer.from_pretrained(modelPath, trust_remote_code=True, use_fast=True)
 
@@ -116,10 +133,12 @@ class InternVL2Backend(CaptionBackend):
         # https://huggingface.co/docs/transformers/main/perf_torch_compile
         # https://pytorch.org/get-started/pytorch-2.0/#user-experience
         #self.model = torch.compile(self.model, mode="max-autotune") # modes: max-autotune, reduce-overhead
+        #self.chat = torch.compile(self.model.chat, mode="reduce-overhead")
 
 
     def setConfig(self, config: dict):
         super().setConfig(config)
+        self.sampleFps = self.config.get("fps", 2.0)
 
         self.configDict = {
             "max_new_tokens": self.config.get("max_tokens"),
@@ -138,7 +157,15 @@ class InternVL2Backend(CaptionBackend):
 
 
     def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
-        pixel_values = load_image(imgFile, max_num=12).to(self.device, dtype=self.dtype)
+        if imgFile.isVideo():
+            pixel_values, num_patches_list = load_video(imgFile, self.sampleFps, max_num=1, max_frames=32)
+            pixel_values = pixel_values.to(self.device, dtype=self.dtype)
+            video_prefix = ''.join(f'Frame{i+1}: <image>\n' for i in range(len(num_patches_list)))
+        else:
+            pixel_values = load_image(imgFile).to(self.device, dtype=self.dtype)
+            video_prefix = ''
+            num_patches_list = None
+
         answers = dict()
 
         self.model.system_message = systemPrompt.strip() if systemPrompt else ""
@@ -147,8 +174,19 @@ class InternVL2Backend(CaptionBackend):
         with torch.inference_mode():
             for conversation in prompts:
                 history = None
-                for name, prompt in conversation.items():
-                    answer, history = self.model.chat(self.tokenizer, pixel_values, prompt, generation_config=self.configDict, history=history, return_history=True)
+                for i, (name, prompt) in enumerate(conversation.items()):
+                    if i == 0:
+                        prompt = video_prefix + prompt
+
+                    answer, history = self.model.chat(
+                        self.tokenizer,
+                        pixel_values,
+                        prompt,
+                        generation_config=self.configDict,
+                        num_patches_list=num_patches_list,
+                        history=history,
+                        return_history=True
+                    )
                     answers[name] = answer
 
         return answers

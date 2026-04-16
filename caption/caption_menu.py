@@ -1,6 +1,7 @@
 from enum import Enum
 from PySide6 import QtWidgets
-from PySide6.QtCore import Signal, Slot, QSignalBlocker
+from PySide6.QtCore import Signal, Slot
+from lib import qtlib
 from config import Config
 from .caption_context import CaptionContext
 from .caption_filter import CaptionRulesSettings
@@ -93,83 +94,45 @@ class CaptionMenu(QtWidgets.QMenu):
 
 
     def _buildApplyRulesSubmenu(self):
-        self.chkRulesReplace = QtWidgets.QCheckBox("Search and replace")
-        self.chkRulesBan = QtWidgets.QCheckBox("Remove banned tags")
-        self.chkRulesRemoveDuplicates = QtWidgets.QCheckBox("Remove duplicates and subsets")
-        self.chkRulesMutuallyExclusive = QtWidgets.QCheckBox("Remove mutually exclusive tags")
-        self.chkRulesSort = QtWidgets.QCheckBox("Sort tags")
-        self.chkRulesCombine = QtWidgets.QCheckBox("Combine tags")
-        self.chkRulesConditionals = QtWidgets.QCheckBox("Conditional rules")
-        self.chkRulesPrefixSuffix = QtWidgets.QCheckBox("Add prefix and suffix")
+        self.menuApplyRules = qtlib.CheckboxMenu("Apply Rules")
+        self.menuApplyRules.addCheckbox("replace",          "Search and replace")
+        self.menuApplyRules.addCheckbox("banned",           "Remove banned tags")
+        self.menuApplyRules.addCheckbox("remove_dup",       "Remove duplicates and subsets")
+        self.menuApplyRules.addCheckbox("mutual_exclusive", "Remove mutually exclusive tags")
+        self.menuApplyRules.addCheckbox("sort",             "Sort tags")
+        self.menuApplyRules.addCheckbox("combine",          "Combine tags")
+        self.menuApplyRules.addCheckbox("conditionals",     "Conditional rules")
+        self.menuApplyRules.addCheckbox("prefix_suffix",    "Add prefix and suffix")
 
-        self.allRulesCheckboxes = [
-            self.chkRulesReplace,
-            self.chkRulesBan,
-            self.chkRulesRemoveDuplicates,
-            self.chkRulesMutuallyExclusive,
-            self.chkRulesSort,
-            self.chkRulesCombine,
-            self.chkRulesConditionals,
-            self.chkRulesPrefixSuffix
-        ]
-
-        menuApplyRules = self.addMenu("Apply Rules")
+        self.menuApplyRules.setAllChecked(True)
+        self.menuApplyRules.selectionChanged.connect(lambda: self.rulesSettingsUpdated.emit())
 
         # Two buttons for selecting All/None
         selectLayout = QtWidgets.QHBoxLayout()
-        selectLayout.setContentsMargins(4, 4, 4, 4)
+        selectLayout.setContentsMargins(0, 4, 0, 4)
         selectLayout.setSpacing(4)
 
         lblSelectAll = QtWidgets.QPushButton("Select All")
-        lblSelectAll.clicked.connect(lambda: self._setRulesChecked(True))
+        lblSelectAll.clicked.connect(lambda: self.menuApplyRules.setAllChecked(True))
         selectLayout.addWidget(lblSelectAll)
 
         lblSelectNone = QtWidgets.QPushButton("Unselect All")
-        lblSelectNone.clicked.connect(lambda: self._setRulesChecked(False))
+        lblSelectNone.clicked.connect(lambda: self.menuApplyRules.setAllChecked(False))
         selectLayout.addWidget(lblSelectNone)
 
-        selectWidget = QtWidgets.QWidget()
-        selectWidget.setLayout(selectLayout)
-
-        actSelectWidget = QtWidgets.QWidgetAction(menuApplyRules)
-        actSelectWidget.setDefaultWidget(selectWidget)
-        menuApplyRules.addAction(actSelectWidget)
-
-        # Checkboxes for rules
-        rulesLayout = QtWidgets.QVBoxLayout()
-        rulesLayout.setContentsMargins(6, 2, 2, 2)
-        rulesLayout.setSpacing(0)
-
-        toggleFunc = lambda: self.rulesSettingsUpdated.emit()
-        for chk in self.allRulesCheckboxes:
-            chk.toggled.connect(toggleFunc)
-            rulesLayout.addWidget(chk)
-
-        rulesWidget = QtWidgets.QWidget()
-        rulesWidget.setLayout(rulesLayout)
-
-        actRulesWidget = QtWidgets.QWidgetAction(menuApplyRules)
-        actRulesWidget.setDefaultWidget(rulesWidget)
-        menuApplyRules.addAction(actRulesWidget)
-
-        self._setRulesChecked(True)
-
-    def _setRulesChecked(self, checked: bool):
-        with QSignalBlocker(self):
-            for chk in self.allRulesCheckboxes:
-                chk.setChecked(checked)
-        self.rulesSettingsUpdated.emit()
+        self.menuApplyRules.widgetLayout().insertLayout(0, selectLayout)
+        self.addMenu(self.menuApplyRules)
 
     def getCaptionRulesSettings(self):
         settings = CaptionRulesSettings()
-        settings.searchReplace              = self.chkRulesReplace.isChecked()
-        settings.ban                        = self.chkRulesBan.isChecked()
-        settings.removeDuplicates           = self.chkRulesRemoveDuplicates.isChecked()
-        settings.removeMutuallyExclusive    = self.chkRulesMutuallyExclusive.isChecked()
-        settings.sort                       = self.chkRulesSort.isChecked()
-        settings.combineTags                = self.chkRulesCombine.isChecked()
-        settings.conditionals               = self.chkRulesConditionals.isChecked()
-        settings.prefixSuffix               = self.chkRulesPrefixSuffix.isChecked()
+        settings.searchReplace              = self.menuApplyRules.isChecked("replace")
+        settings.ban                        = self.menuApplyRules.isChecked("banned")
+        settings.removeDuplicates           = self.menuApplyRules.isChecked("remove_dup")
+        settings.removeMutuallyExclusive    = self.menuApplyRules.isChecked("mutual_exclusive")
+        settings.sort                       = self.menuApplyRules.isChecked("sort")
+        settings.combineTags                = self.menuApplyRules.isChecked("combine")
+        settings.conditionals               = self.menuApplyRules.isChecked("conditionals")
+        settings.prefixSuffix               = self.menuApplyRules.isChecked("prefix_suffix")
         return settings
 
 

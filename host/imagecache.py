@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Callable
 from io import BytesIO
-import lib.imagerw as imagerw
+from lib import imagerw, videorw
 
 
 class ImageFile:
@@ -80,6 +80,14 @@ class ImageFile:
 
         base64Data = base64.b64encode(buffer.getvalue()).decode('utf-8')
         return "".join(("data:", mimetype, ";base64,", base64Data))
+
+
+    def isVideo(self) -> bool:
+        return videorw.isVideoFile(self.file)
+
+    def getVideoFrames(self, sampleFps: float, maxFrames: int = 32):
+        source = BytesIO(self.data) if self.data else self.file
+        return videorw.extractFramesPIL(source, sampleFps, maxFrames)
 
 
 

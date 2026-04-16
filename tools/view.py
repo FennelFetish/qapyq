@@ -1,4 +1,5 @@
-from PySide6.QtCore import QRectF, Qt, QPointF
+from PySide6.QtCore import Qt, QRectF, QPointF
+from PySide6.QtGui import QPolygon
 from math import floor
 from .tool import Tool
 
@@ -19,9 +20,26 @@ class ViewTool(Tool):
         scenePos = self._imgview.image.mapToParent(posF)
         return self._imgview.mapFromScene(scenePos)
 
+    def mapImageToViewport(self) -> QPolygon:
+        imgRect = self._imgview.image.boundingRect()
+        imgPoly = self._imgview.image.mapToParent(imgRect)
+        return self._imgview.mapFromScene(imgPoly)
+
 
     def onSceneUpdate(self):
-        self.tab.statusBar().setImageInfo(self._imgview.image.pixmap())
+        item = self._imgview.image
+        size = item.mediaSize()
+        if size.isValid():
+            w, h = size.toTuple()
+            alpha, fps, frames = item.mediaMetadata()
+        else:
+            w = h   = -1
+            alpha   = False
+            fps     = -1
+            frames  = -1
+
+        self.tab.statusBar().setMediaInfo(w, h, alpha, fps, frames)
+
 
     def getDropRects(self):
         return [QRectF(0, 0, 1, 1)]

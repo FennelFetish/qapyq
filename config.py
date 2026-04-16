@@ -45,6 +45,16 @@ class Config:
         }
     }
 
+    exportVideoFps          = 24.0
+
+    # Media
+    mediaPlaybackEnabled    = True
+    mediaPlaybackStarted    = False  # Not persisted
+    mediaExcludeTypes       = []
+    mediaVolume             = 1.0
+    mediaMute               = False
+    mediaSeekThumbnailSize  = 300
+
     # View
     viewZoomFactor          = 1.15
     viewZoomMinimum         = 0.5
@@ -186,7 +196,15 @@ class Config:
 
         cls.pathExport            = data.get("path_export", cls.pathExport)
         cls.pathDebugLoad         = data.get("path_debug_load", cls.pathDebugLoad)
+
         cls.exportPresets         = data.get("export_presets", cls.exportPresets)
+        cls.exportVideoFps        = float(data.get("export_video_fps", cls.exportVideoFps))
+
+        cls.mediaPlaybackEnabled  = bool(data.get("media_playback_enabled", cls.mediaPlaybackEnabled))
+        cls.mediaExcludeTypes     = data.get("media_exclude_types", cls.mediaExcludeTypes)
+        cls.mediaVolume           = float(data.get("media_volume", cls.mediaVolume))
+        cls.mediaMute             = bool(data.get("media_mute", cls.mediaMute))
+        cls.mediaSeekThumbnailSize = int(data.get("media_seek_thumbnail_size", cls.mediaSeekThumbnailSize))
 
         cls.viewZoomFactor        = float(data.get("view_zoom_factor", cls.viewZoomFactor))
         cls.viewZoomMinimum       = float(data.get("view_zoom_minimum", cls.viewZoomMinimum))
@@ -259,7 +277,15 @@ class Config:
 
         data["path_export"]                 = cls.pathExport
         data["path_debug_load"]             = cls.pathDebugLoad
+
         data["export_presets"]              = cls.exportPresets
+        data["export_video_fps"]            = cls.exportVideoFps
+
+        data["media_playback_enabled"]      = cls.mediaPlaybackEnabled
+        data["media_exclude_types"]         = cls.mediaExcludeTypes
+        data["media_volume"]                = cls.mediaVolume
+        data["media_mute"]                  = cls.mediaMute
+        data["media_seek_thumbnail_size"]   = cls.mediaSeekThumbnailSize
 
         data["view_zoom_factor"]            = cls.viewZoomFactor
         data["view_zoom_minimum"]           = cls.viewZoomMinimum

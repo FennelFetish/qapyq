@@ -11,6 +11,7 @@ from lib.mask_macro import MaskingMacro, ChainedMacroRunner
 from infer.inference import InferenceChain
 import ui.export_settings as export
 from ui.size_preset import SizeBucket, SizePresetWidget
+from ui.tab import ImgTab
 from .batch_task import BatchTask, BatchInferenceTask, BatchTaskHandler
 from .batch_log import BatchLog
 
@@ -40,7 +41,7 @@ class BatchCrop(QtWidgets.QWidget):
 
     BUCKET_SPLIT = re.compile(r'[ ,x]')
 
-    def __init__(self, tab, logWidget: BatchLog, bars):
+    def __init__(self, tab: ImgTab, logWidget: BatchLog, bars):
         super().__init__()
         self.tab = tab
         self.logWidget = logWidget
@@ -253,7 +254,7 @@ class BatchCrop(QtWidgets.QWidget):
     def onFileChanged(self, file: str):
         self.outputPathParser.setup(file)
         self.inputPathParser.setup(file)
-        self.inputPathParser.setImageDimension(self.tab.imgview.image.pixmap())
+        self.inputPathParser.setImageDimension(self.tab.imgview.image.mediaSize())
 
         self.inputMaskPathSettings.updatePreview()
         self.outputMaskPathSettings.updatePreview()

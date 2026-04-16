@@ -1,12 +1,13 @@
-import os, superqt, copy, traceback, math
+import os, superqt, copy, traceback, math, enum
 from difflib import SequenceMatcher
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QRunnable, QObject
+from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QSize, QRunnable, QObject, QEvent
 import cv2 as cv
 import numpy as np
 from PIL import Image
-from lib import colorlib, qtlib, template_parser
+from lib import colorlib, qtlib, template_parser, videorw
+from lib.filelist import FileList
 from ui.autocomplete import TemplateTextEdit, AutoCompleteSource, getAutoCompleteSource
 from infer.model_settings import ModelSettingsWindow, ScaleModelSettings
 from config import Config
@@ -97,14 +98,24 @@ def createFolders(filename, logger=print) -> None:
 INVALID_CHARS = str.maketrans('', '', '\n\r\t')
 
 
+class ExportFileType(enum.IntEnum):
+    Unknown = 0
+    Image   = 1
+    Video   = 2
+
+
 class ExportWidget(QtWidgets.QWidget):
     MODE_AUTO = "auto"
     MODE_MANUAL = "manual"
 
-    FILE_FILTER = "Images (*.jpg *.jpeg *.jxl *.png *.tiff *.webp);;All Files (*)"
+    FILE_FILTER = "Images (*.jpg *.jpeg *.jxl *.png *.tiff *.webp);;" \
+                  "Videos (*.mkv *.mov *.mp4);;" \
+                  "All Files (*)"
 
+    fpsChanged = Signal(float)
+    fileTypeChanged = Signal(ExportFileType)
 
-    def __init__(self, configKey: str, filelist, showInterpolation=True):
+    def __init__(self, configKey: str, filelist: FileList, showInterpolation=True):
         super().__init__()
         self.configKey = configKey
         self.filelist = filelist
@@ -116,6 +127,7 @@ class ExportWidget(QtWidgets.QWidget):
         self.overwriteFiles = config.get("overwrite", False)
 
         self.parser = ExportVariableParser()
+        self.fileType: ExportFileType = ExportFileType.Unknown
 
         self._build()
         self._onSaveModeChanged(self.cboSaveMode.currentIndex())
@@ -145,14 +157,28 @@ class ExportWidget(QtWidgets.QWidget):
         layout.setColumnStretch(1, 1)
 
         row = 0
-        self.cboScalePreset = ScalePresetComboBox()
-        if self.showInterpolation:
-            lblScaling = QtWidgets.QLabel("<a href='model_settings'>Scaling</a>:")
-            lblScaling.linkActivated.connect(self.cboScalePreset.showModelSettings)
-            layout.addWidget(lblScaling, row, 0)
-            layout.addWidget(self.cboScalePreset, row, 1)
-            row += 1
+        self.lblFps = QtWidgets.QLabel("FPS:")
+        self.spinFps = QtWidgets.QDoubleSpinBox()
+        self.spinFps.setToolTip("Resample videos to this FPS")
+        self.spinFps.setRange(1.0, 1000.0)
+        self.spinFps.setSingleStep(1.0)
+        self.spinFps.setValue(Config.exportVideoFps)
+        self.spinFps.valueChanged.connect(self.fpsChanged.emit)
+        layout.addWidget(self.lblFps, row, 0)
+        layout.addWidget(self.spinFps, row, 1)
 
+        row += 1
+        self.cboScalePreset = ScalePresetComboBox()
+        lblScaling = QtWidgets.QLabel("<a href='model_settings'>Scaling</a>:")
+        lblScaling.linkActivated.connect(self.cboScalePreset.showModelSettings)
+        layout.addWidget(lblScaling, row, 0)
+        layout.addWidget(self.cboScalePreset, row, 1)
+
+        if not self.showInterpolation:
+            lblScaling.hide()
+            self.cboScalePreset.hide()
+
+        row += 1
         lblPath = QtWidgets.QLabel("<a href='export_settings'>Path:</a>")
         lblPath.linkActivated.connect(self.openExportSettings)
         self.cboSaveMode = QtWidgets.QComboBox()
@@ -168,7 +194,7 @@ class ExportWidget(QtWidgets.QWidget):
 
 
     @Slot()
-    def _onSaveModeChanged(self, index):
+    def _onSaveModeChanged(self, index: int):
         enabled = (self.cboSaveMode.itemData(index) == self.MODE_AUTO)
         self.txtPathSample.setEnabled(enabled)
 
@@ -189,7 +215,11 @@ class ExportWidget(QtWidgets.QWidget):
 
     @Slot()
     def updateSample(self):
-        examplePath = self.getAutoExportPath(self.filelist.getCurrentFile())
+        currentFile = self.filelist.getCurrentFile()
+        examplePath = self.getAutoExportPath(currentFile)
+        if self._checkFileType(examplePath):
+            examplePath = self.getAutoExportPath(currentFile)
+
         stylesheet = ""
         if os.path.exists(examplePath):
             stylesheet = f"color: {colorlib.RED}"
@@ -198,19 +228,39 @@ class ExportWidget(QtWidgets.QWidget):
         examplePath = f"{os.sep}\n\n".join(os.path.split(examplePath))
         self.txtPathSample.setPlainText(examplePath)
 
+    def _checkFileType(self, examplePath: str) -> bool:
+        isVideo = videorw.isVideoFile(examplePath)
+        fileType = ExportFileType.Video if isVideo else ExportFileType.Image
 
-    def getInterpolationMode(self, upscale):
+        if fileType == self.fileType:
+            return False
+
+        self.fileType = fileType
+        self.parser.exportFileType = fileType
+
+        for widget in (self.lblFps, self.spinFps):
+            widget.setVisible(isVideo)
+
+        self.fileTypeChanged.emit(fileType)
+        return True
+
+
+    def getFps(self) -> float:
+        return self.spinFps.value()
+
+    def getInterpolationMode(self, upscale: bool):
         return self.cboScalePreset.getInterpolationMode(upscale)
 
     def getScaleConfig(self, scaleFactor: float):
         return self.cboScalePreset.getScaleConfig(scaleFactor)
 
 
-    def setExportSize(self, width: int, height: int, rotation: float = 0.0):
+    def setExportSize(self, width: int, height: int, rotation: float = 0.0, length: int = 0, speed: float = 1.0):
         self.parser.width = width
         self.parser.height = height
         self.parser.rotation = rotation
-
+        self.parser.length = length
+        self.parser.speed = speed
 
     def getExportPath(self, file: str) -> str:
         '''
@@ -237,8 +287,9 @@ class ExportWidget(QtWidgets.QWidget):
         self._defaultPath = os.path.dirname(path)
         return path
 
-    def getAutoExportPath(self, imgFile, forReading=False) -> str:
+    def getAutoExportPath(self, imgFile: str, forReading=False) -> str:
         self.parser.setup(imgFile)
+        self.parser.fps = self.spinFps.value()
         overwriteFiles = self.overwriteFiles or forReading
         return self.parser.parsePath(self.pathTemplate, overwriteFiles)
 
@@ -256,6 +307,9 @@ class PathSettings(QtWidgets.QWidget):
     {{folder:/}}  Folder hierarchy from given path to image
     {{w}}         Width
     {{h}}         Height
+    {{len}}       Length (frame count)
+    {{fps}}       Frames per second
+    {{speed}}     Playback speed
     {{rotation}}  Rotation in degrees
     {{region}}    Crop region number
     {{date}}      Date yyyymmdd
@@ -295,6 +349,7 @@ Examples:
         if showInfo:
             txtInfo = QtWidgets.QPlainTextEdit(self.INFO)
             txtInfo.setReadOnly(True)
+            txtInfo.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             qtlib.setMonospace(txtInfo)
             layout.addWidget(txtInfo, row, 0, 1, 4)
             row += 1
@@ -319,6 +374,7 @@ Examples:
         row += 1
         self.txtPreview = QtWidgets.QPlainTextEdit()
         self.txtPreview.setReadOnly(True)
+        self.txtPreview.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.txtPreview.viewport().setCursor(Qt.CursorShape.ArrowCursor)
         qtlib.setMonospace(self.txtPreview)
         qtlib.setShowWhitespace(self.txtPreview)
@@ -454,6 +510,8 @@ class PathSettingsWindow(QtWidgets.QDialog):
         self.setWindowTitle("Setup Export Path")
         self.resize(800, 600)
 
+        self.pathSettings.txtPathTemplate.installEventFilter(self)
+
     def _build(self, exportSettings):
         layout = QtWidgets.QGridLayout(self)
         layout.addWidget(exportSettings, 0, 0, 1, 2)
@@ -469,6 +527,21 @@ class PathSettingsWindow(QtWidgets.QDialog):
 
         self.setLayout(layout)
 
+    @override
+    def showEvent(self, event):
+        super().showEvent(event)
+
+        txtPathTemplate = self.pathSettings.txtPathTemplate
+        txtPathTemplate.moveCursor(QtGui.QTextCursor.MoveOperation.EndOfLine)
+        txtPathTemplate.setFocus()
+
+    @override
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Return:
+            self.accept()
+            return True
+
+        return super().eventFilter(watched, event)
 
 
 class ExportVariableParser(template_parser.TemplateVariableParser):
@@ -481,12 +554,17 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
         self.region = 0
         self.rotation = 0.0
 
-    def setImageDimension(self, pixmap: QtGui.QPixmap | None):
-        if pixmap:
-            self.width = pixmap.width()
-            self.height = pixmap.height()
+        self.exportFileType: ExportFileType = ExportFileType.Image
+        self.length = 0
+        self.fps    = 0.0
+        self.speed  = 1.0
+
+    def setImageDimension(self, size: QSize):
+        if size.isValid():
+            self.width  = size.width()
+            self.height = size.height()
         else:
-            self.width, self.height = 0, 0
+            self.width = self.height = 0
 
 
     def parsePath(self, pathTemplate: str, overwriteFiles: bool) -> str:
@@ -605,6 +683,10 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
             case "h": return str(self.height)
             case "region": return str(self.region)
             case "rotation": return f"{self.rotation:03.0f}"
+
+            case "len": return str(self.length)      if self.exportFileType == ExportFileType.Video else "0"
+            case "fps": return f"{self.fps:.0f}"     if self.exportFileType == ExportFileType.Video else "0"
+            case "speed": return f"{self.speed:.2f}" if self.exportFileType == ExportFileType.Video else "0.00"
 
         return super()._getImgProperties(var)
 

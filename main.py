@@ -2,13 +2,20 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 import sys, os
+os.environ["QT_LOGGING_RULES"] = (
+    "qt.multimedia=false;"
+    "qt.multimedia.*=false;"
+    "qt.multimedia.ffmpeg*=false;"
+    #"qt.pyside.libpyside.warning=true;"
+)
+
 from typing import Iterable
 from PySide6 import QtGui, QtWidgets
-from PySide6.QtCore import Qt, Slot, QPoint, QThreadPool
+from PySide6.QtCore import Qt, Slot, QPoint, QThreadPool, qInstallMessageHandler
 from config import Config
 from ui import aux_window
 from ui.tab import ImgTab
-from lib import colorlib, qtlib
+from lib import colorlib, qtlib, filelist
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -89,8 +96,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self.toggleFullscreen()
 
     @Slot()
-    def onTabChanged(self, index):
+    def onTabChanged(self, index: int):
+        for i, tab in enumerate(self.tabs()):
+            if i != index: # Don't deactivate fullscreen tab
+                tab.active = False
+
         tab = self.currentTab
+        tab.active = True
         for win in self.auxWindows.values():
             win.setTab(tab)
 
@@ -334,6 +346,17 @@ class MainMenu(QtWidgets.QMenu):
 
         self.addSeparator()
 
+        self._fileTypes = self._buildFileTypesSubmenu()
+        self.addMenu(self._fileTypes)
+
+        actPlaybackEnabled = QtGui.QAction("Enable Video Playback", self)
+        actPlaybackEnabled.setCheckable(True)
+        actPlaybackEnabled.setChecked(Config.mediaPlaybackEnabled)
+        actPlaybackEnabled.toggled.connect(self._onMediaPlaybackToggled)
+        self.addAction(actPlaybackEnabled)
+
+        self.addSeparator()
+
         actModelConfig = QtGui.QAction("Model Settings...", self)
         actModelConfig.triggered.connect(self.showModelSettings)
         self.addAction(actModelConfig)
@@ -362,6 +385,7 @@ class MainMenu(QtWidgets.QMenu):
         actQuit.triggered.connect(self.quitWithConfirmation)
         self.addAction(actQuit)
 
+
     def _buildToolsSubmenu(self, mainWindow: MainWindow) -> QtWidgets.QMenu:
         menu = QtWidgets.QMenu("Select Tools")
 
@@ -386,15 +410,45 @@ class MainMenu(QtWidgets.QMenu):
 
         return menu
 
+    def _buildFileTypesSubmenu(self) -> qtlib.CheckboxMenu:
+        menu = qtlib.CheckboxMenu("File Types")
+        menu.addCheckbox("image", "Load Images", "image" not in Config.mediaExcludeTypes)
+        menu.addCheckbox("video", "Load Videos", "video" not in Config.mediaExcludeTypes)
+        menu.selectionChanged.connect(self._onMediaTypesUpdated)
+        return menu
+
+    @Slot(list)
+    def _onMediaTypesUpdated(self, checkStates: dict[str, bool]):
+        excludeTypes = [key for key, state in checkStates.items() if not state]
+        if len(excludeTypes) < len(checkStates):
+            Config.mediaExcludeTypes = excludeTypes
+            filelist.resetReadExtensions()
+        else:
+            reactivate = next(iter(Config.mediaExcludeTypes), "image")
+            self._fileTypes.setChecked(reactivate, True)
+
+    @Slot(bool)
+    def _onMediaPlaybackToggled(self, checked: bool):
+        Config.mediaPlaybackEnabled = checked
+
+        if not checked and Config.mediaPlaybackStarted:
+            dialog = QtWidgets.QMessageBox(self.mainWindow)
+            dialog.setIcon(QtWidgets.QMessageBox.Icon.Information)
+            dialog.setWindowTitle("Restart to apply settings")
+            dialog.setText("To free VRAM for model loading, please restart the application.")
+            dialog.setInformativeText("Video playback has already allocated resources in memory.")
+            dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok)
+            dialog.exec()
+
 
     @Slot()
     def openFile(self):
-        path, filter = QtWidgets.QFileDialog.getOpenFileName(self, "Open File")
+        path, filter = QtWidgets.QFileDialog.getOpenFileName(self.mainWindow, "Open File")
         self.open(path)
 
     @Slot()
     def openDir(self):
-        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Open Folder")
+        path = QtWidgets.QFileDialog.getExistingDirectory(self.mainWindow, "Open Folder")
         self.open(path)
 
     def open(self, path: str | None):
@@ -525,6 +579,17 @@ class MainToolBar(QtWidgets.QToolBar):
 
 
 
+class QtLogFilter:
+    def __init__(self):
+        self.lastLine = None
+
+    def __call__(self, msgType, context, message: str):
+        if message != self.lastLine:
+            self.lastLine = message
+            print(message)
+
+
+
 def applyStyle(app: QtWidgets.QApplication):
     match Config.colorScheme:
         case "dark":  colorSchemeOverride = Qt.ColorScheme.Dark
@@ -566,6 +631,9 @@ def restoreWindows(win: MainWindow):
 def main() -> int:
     os.environ["QT_SCALE_FACTOR"] = str(Config.guiScale)
 
+    logFilter = QtLogFilter()
+    qInstallMessageHandler(logFilter)
+
     app = QtWidgets.QApplication([])
     QtGui.QPixmapCache.setCacheLimit(24)
     applyStyle(app)
@@ -586,6 +654,8 @@ if __name__ == "__main__":
 
     if not Config.load():
         sys.exit(1)
+
+    filelist.resetReadExtensions()
 
     exitCode = main()
     Config.save()

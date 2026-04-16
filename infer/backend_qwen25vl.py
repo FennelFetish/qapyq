@@ -9,6 +9,10 @@ from .devmap import DevMap
 from .quant import Quantization
 
 
+# https://deepwiki.com/QwenLM/Qwen3-VL/5.4-video-understanding
+# https://huggingface.co/docs/transformers/en/main_classes/video_processor
+
+
 class QwenVLBackend(CaptionBackend):
     DETECT_SYSPROMPT = "You are a helpful assistant"
     DETECT_PROMPT    = "Outline the position of the requested elements and output coordinates in JSON format.\nRequested elements: "
@@ -17,6 +21,7 @@ class QwenVLBackend(CaptionBackend):
     def __init__(self, config: dict[str, Any], modelClass: type):
         modelPath: str = config["model_path"]
         self.generationConfig = GenerationConfig.from_pretrained(modelPath)
+        self.sampleFps = 2.0
 
         super().__init__(config)
 
@@ -39,6 +44,7 @@ class QwenVLBackend(CaptionBackend):
 
     def setConfig(self, config: dict):
         super().setConfig(config)
+        self.sampleFps = self.config.get("fps", 2.0)
 
         # No sampling in detection mode
         if "classes" in config:
@@ -87,10 +93,39 @@ class QwenVLBackend(CaptionBackend):
 
         return outputText[0].strip()
 
+    @torch.inference_mode()
+    def _runTaskVideo(self, frames: list[Image.Image], metadata: dict, messages: list) -> str:
+        inputText = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+
+        inputs = self.processor(
+            text=[inputText],
+            images=None,
+            videos=frames,
+            video_metadata=metadata,
+            padding=True,
+            return_tensors="pt",
+            do_resize=True,
+            do_sample_frames=False
+        )
+        inputs = inputs.to(self.device)
+
+        generatedIDs = self.model.generate(**inputs, generation_config=self.generationConfig)
+        generatedIDsTrimmed = [ out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generatedIDs) ]
+        outputText = self.processor.batch_decode(generatedIDsTrimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+
+        return outputText[0].strip()
+
 
     def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
-        image = imgFile.openPIL()
-        image = self.downscaleImage(image)
+        if imgFile.isVideo():
+            frames, metadata = imgFile.getVideoFrames(self.sampleFps, 64)
+            runTask = lambda messages: self._runTaskVideo(frames, metadata, messages)
+            userContent = lambda prompt, i: self._getUserContentVideo(prompt, i, frames, metadata)
+        else:
+            image = imgFile.openPIL()
+            image = self.downscaleImage(image)
+            runTask = lambda messages: self._runTask(image, messages)
+            userContent = lambda prompt, i: self._getUserContentImage(prompt, i, image)
 
         answers = dict()
         set_seed(self.randomSeed())
@@ -101,8 +136,8 @@ class QwenVLBackend(CaptionBackend):
                 messages.append( {"role": "system", "content": systemPrompt.strip()} )
 
             for i, (name, prompt) in enumerate(conversation.items()):
-                messages.append( {"role": "user", "content": self._getUserContent(prompt, i, imgFile)} )
-                answer = self._runTask(image, messages)
+                messages.append( {"role": "user", "content": userContent(prompt, i)} )
+                answer = runTask(messages)
                 messages.append( {"role": "assistant", "content": answer} )
                 answers[name] = answer
 
@@ -117,7 +152,7 @@ class QwenVLBackend(CaptionBackend):
         prompt = self.DETECT_PROMPT + ", ".join(classes)
         messages = [
             {"role": "system", "content": self.DETECT_SYSPROMPT},
-            {"role": "user", "content": self._getUserContent(prompt, 0, imgFile)}
+            {"role": "user", "content": self._getUserContentImage(prompt, 0, image)}
         ]
 
         results = []
@@ -148,12 +183,29 @@ class QwenVLBackend(CaptionBackend):
         return (x/imgW, y/imgH)
 
 
-    def _getUserContent(self, prompt: str, index: int, imgFile: ImageFile):
+    def _getUserContentImage(self, prompt: str, index: int, image: Image.Image):
         if index == 0:
             return [
                 {
                     "type": "image",
-                    "image": imgFile.getURI()
+                    "image": image
+                },
+                {
+                    "type": "text",
+                    "text": prompt.strip()
+                }
+            ]
+        else:
+            return prompt.strip()
+
+    def _getUserContentVideo(self, prompt: str, index: int, videoFrames: list[Image.Image], metadata: dict):
+        if index == 0:
+            return [
+                {
+                    "type": "video",
+                    "video": videoFrames,
+                    "sample_fps": metadata["fps"],
+                    "max_pixels": 589824,  # 768^2
                 },
                 {
                     "type": "text",

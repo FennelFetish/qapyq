@@ -6,11 +6,16 @@ from config import Config
 
 
 class SizeBucket:
-    def __init__(self, w: int, h: int):
+    def __init__(self, w: int, h: int, length: int = -1):
         self.w = w
         self.h = h
+        self.length = length
         self.area = w*h
         self.aspect = w/h
+
+    def __str__(self) -> str:
+        return f"{self.w}x{self.h}" if (self.length < 0) else f"{self.w}x{self.h}x{self.length}"
+
 
 
 
@@ -35,7 +40,7 @@ class SizePresetWidget(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
 
-        layout.addWidget(QtWidgets.QLabel("Width x Height, one per line:"))
+        layout.addWidget(QtWidgets.QLabel("Width x Height (x Length), one per line:"))
 
         self.txtBuckets = QtWidgets.QPlainTextEdit()
         layout.addWidget(self.txtBuckets)
@@ -51,17 +56,18 @@ class SizePresetWidget(QtWidgets.QWidget):
                 continue
 
             elements = self.BUCKET_SPLIT.split(line)
-            if len(elements) != 2:
+            if len(elements) not in (2, 3):
                 print(f"Invalid format for bucket size: {line}")
                 continue
 
             try:
                 w = int(elements[0].strip())
                 h = int(elements[1].strip())
-                buckets.append(SizeBucket(w, h))
+                length = int(elements[2].strip()) if len(elements) == 3 else -1
+                buckets.append(SizeBucket(w, h, length))
 
                 if includeSwapped and w != h:
-                    buckets.append(SizeBucket(h, w))
+                    buckets.append(SizeBucket(h, w, length))
             except ValueError:
                 print(f"Invalid format for bucket size: {line}")
 
@@ -77,11 +83,7 @@ class SizePresetWidget(QtWidgets.QWidget):
 
     @Slot()
     def saveSizeBuckets(self):
-        buckets = [
-            f"{bucket.w}x{bucket.h}"
-            for bucket in self.parseSizeBuckets()
-        ]
-
+        buckets = [str(bucket) for bucket in self.parseSizeBuckets()]
         Config.cropSizePresets = buckets
         SIZE_PRESET_SIGNALS.sizePresetsUpdated.emit(buckets)
 
@@ -118,13 +120,12 @@ class SizePresetWindow(QtWidgets.QDialog):
         btnCancel.clicked.connect(self.reject)
         layout.addWidget(btnCancel, row, 2)
 
-
         self.setLayout(layout)
 
 
 
 class SizePresetComboBox(qtlib.MenuComboBox):
-    presetSelected = Signal(int, int)
+    presetSelected = Signal(int, int, int)  # w, h, length
 
     def __init__(self):
         super().__init__("Size Presets")
@@ -153,11 +154,12 @@ class SizePresetComboBox(qtlib.MenuComboBox):
         if not text:
             return
 
-        w, h = text.split("x")
+        w, h, *length = text.split("x")
         try:
-            self.presetSelected.emit(int(w), int(h))
+            l = int(length[0]) if length else -1
+            self.presetSelected.emit(int(w), int(h), l)
         except ValueError:
-            print(f"WARNING: Invalid size preset: '{text}'")
+            print(f"Warning: Invalid size preset: '{text}'")
 
         with QSignalBlocker(self):
             self.setCurrentIndex(0)

@@ -1,19 +1,22 @@
 from __future__ import annotations
+import superqt, copy
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QSignalBlocker
-import superqt, copy
 from .model_settings import ModelSettingsWindow
+from .backend_config import BackendTypes, BackendDef, BackendsCaption, backendDefForName
 from config import Config
 
 
 class InferenceSettingsWidget(superqt.QCollapsible):
     TITLE = "Sample Settings"
 
-    def __init__(self):
+    def __init__(self, backends: dict[str, BackendDef]):
         super().__init__(InferenceSettingsWidget.TITLE)
+        self.backends = backends
+
         self.layout().setContentsMargins(6, 4, 6, 0)
 
-        winColor = QtWidgets.QApplication.palette().color(QtGui.QPalette.Base)
+        winColor = QtWidgets.QApplication.palette().color(QtGui.QPalette.ColorRole.Base)
         self.setStyleSheet("QCollapsible{border: 2px groove " + winColor.name() + "; border-radius: 3px}")
 
         layout = self._build()
@@ -26,7 +29,7 @@ class InferenceSettingsWidget(superqt.QCollapsible):
 
     def _build(self):
         layout = QtWidgets.QGridLayout()
-        layout.setAlignment(Qt.AlignTop)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
         layout.setColumnMinimumWidth(2, 16)
         layout.setColumnMinimumWidth(3, Config.batchWinLegendWidth)
@@ -43,17 +46,28 @@ class InferenceSettingsWidget(superqt.QCollapsible):
         layout.setColumnStretch(6, 0)
         layout.setColumnStretch(7, 1)
 
+        row = 0
+        col = self._buildFirstRow(layout)
+
         self.tokensMax = QtWidgets.QSpinBox()
         self.tokensMax.setRange(10, 100000)
         self.tokensMax.setSingleStep(10)
+        layout.addWidget(QtWidgets.QLabel("Max Tokens:"), row, col)
+        layout.addWidget(self.tokensMax, row, col+1)
 
-        self._buildFirstRow(layout, QtWidgets.QLabel("Max Tokens:"), self.tokensMax)
+        self.lblFps = QtWidgets.QLabel("Video FPS:")
+        self.fps = QtWidgets.QDoubleSpinBox()
+        self.fps.setRange(1.0, 999.0)
+        self.fps.setSingleStep(1.0)
 
-        # row = 1
-        # spacerHeight = 8
-        # layout.setRowMinimumHeight(row, spacerHeight)
+        if self.backends is not BackendsCaption:
+            self.lblFps.setVisible(False)
+            self.fps.setVisible(False)
 
-        row = 1
+        layout.addWidget(self.lblFps, row, col+3)
+        layout.addWidget(self.fps, row, col+4)
+
+        row += 1
         self.temperature = QtWidgets.QDoubleSpinBox()
         self.temperature.setRange(0.0, 5.0)
         self.temperature.setSingleStep(0.05)
@@ -109,34 +123,6 @@ class InferenceSettingsWidget(superqt.QCollapsible):
         self.presencePenalty.setSingleStep(0.05)
         layout.addWidget(self.presencePenalty, row, 7)
 
-        #row += 1
-        # self.microstatMode = QtWidgets.QSpinBox()
-        # self.microstatMode.setRange(0, 2)
-        # layout.addWidget(QtWidgets.QLabel("Microstat Mode:"), row, 0)
-        # layout.addWidget(self.microstatMode, row, 1)
-
-        # self.microstatTau = QtWidgets.QDoubleSpinBox()
-        # self.microstatTau.setRange(0.0, 20.0)
-        # self.microstatTau.setSingleStep(0.05)
-        # layout.addWidget(QtWidgets.QLabel("Microstat Tau:"), row, 3)
-        # layout.addWidget(self.microstatTau, row, 4)
-
-        # self.microstatEta = QtWidgets.QDoubleSpinBox()
-        # self.microstatEta.setRange(0.0, 1.0)
-        # self.microstatEta.setSingleStep(0.05)
-        # layout.addWidget(QtWidgets.QLabel("Microstat Eta:"), row, 6)
-        # layout.addWidget(self.microstatEta, row, 7)
-
-        #row += 1
-        # self.tfsZ = QtWidgets.QDoubleSpinBox()
-        # self.tfsZ.setRange(0.0, 1.0)
-        # self.tfsZ.setSingleStep(0.05)
-        # layout.addWidget(QtWidgets.QLabel("TFS Z:"), row, 0)
-        # layout.addWidget(self.tfsZ, row, 1)
-
-        # row += 1
-        # layout.setRowMinimumHeight(row, spacerHeight)
-
         row += 1
         self._buildButtons(layout, row)
 
@@ -146,29 +132,35 @@ class InferenceSettingsWidget(superqt.QCollapsible):
 
         return layout
 
-    def _buildFirstRow(self, layout, lblTokensMax, tokensMax):
-        layout.addWidget(lblTokensMax, 0, 0)
-        layout.addWidget(tokensMax, 0, 1)
+    def _buildFirstRow(self, layout: QtWidgets.QGridLayout) -> int:
+        return 0
 
-    def _buildButtons(self, layout, row: int):
+    def _buildButtons(self, layout: QtWidgets.QGridLayout, row: int):
         pass
 
 
-    def setSupportsPenalty(self, supportsPenalty: bool):
+    def updateFields(self, backendDef: BackendDef | None):
+        if backendDef is not None:
+            supportsPenalty = (backendDef.type == BackendTypes.LLAMA_CPP)
+            supportsVideo   = ("video" in backendDef.features)
+        else:
+            supportsPenalty = False
+            supportsVideo   = False
+
         for widget in (self.lblFreqPenalty, self.freqPenalty, self.lblPresencePenalty, self.presencePenalty):
             widget.setEnabled(supportsPenalty)
+
+        for widget in (self.lblFps, self.fps):
+            widget.setEnabled(supportsVideo)
 
 
     @Slot()
     def setDefaultValues(self):
-        if self.freqPenalty.isEnabled() and self.presencePenalty.isEnabled():
-            self.fromDict({"frequency_penalty": 0.0, "presence_penalty": 0.0})
-        else:
-            self.fromDict({})
-
+        self.fromDict({})
 
     def fromDict(self, settings: dict):
         self.tokensMax.setValue(settings.get("max_tokens", 1000))
+        self.fps.setValue(settings.get("fps", 2.0))
         self.temperature.setValue(settings.get("temperature", 0.1))
         self.topP.setValue(settings.get("top_p", 0.95))
         self.topK.setValue(settings.get("top_k", 40))
@@ -178,16 +170,6 @@ class InferenceSettingsWidget(superqt.QCollapsible):
         self.repeatPenalty.setValue(settings.get("repeat_penalty", 1.05))
         self.freqPenalty.setValue(settings.get("frequency_penalty", 0.0))
         self.presencePenalty.setValue(settings.get("presence_penalty", 0.0))
-
-        supportsPenalty = ("frequency_penalty" in settings) and ("presence_penalty" in settings)
-        self.setSupportsPenalty(supportsPenalty)
-
-        # self.microstatMode.setValue(settings.get("mirostat_mode", 0))
-        # self.microstatTau.setValue(settings.get("mirostat_tau", 5.0))
-        # self.microstatEta.setValue(settings.get("mirostat_eta", 0.1))
-
-        # self.tfsZ.setValue(settings.get("tfs_z", 1.0))
-
 
     def toDict(self):
         settings = {
@@ -199,25 +181,22 @@ class InferenceSettingsWidget(superqt.QCollapsible):
             "typical_p": self.typicalP.value(),
 
             "repeat_penalty": self.repeatPenalty.value(),
-
-            # "mirostat_mode": self.microstatMode.value(),
-            # "mirostat_tau": self.microstatTau.value(),
-            # "mirostat_eta": self.microstatEta.value(),
-
-            # "tfs_z": self.tfsZ.value()
         }
 
         if self.freqPenalty.isEnabled() and self.presencePenalty.isEnabled():
             settings["frequency_penalty"] = self.freqPenalty.value()
             settings["presence_penalty"] = self.presencePenalty.value()
 
+        if self.fps.isEnabled():
+            settings["fps"] = self.fps.value()
+
         return settings
 
 
 
 class InferencePresetWidget(InferenceSettingsWidget):
-    def __init__(self, configAttr="inferCaptionPresets"):
-        super().__init__()
+    def __init__(self, configAttr="inferCaptionPresets", backends: dict[str, BackendDef] = BackendsCaption):
+        super().__init__(backends)
         self.configAttr = configAttr
 
         selectedPreset = Config.inferSelectedPresets.get(configAttr)
@@ -226,7 +205,7 @@ class InferencePresetWidget(InferenceSettingsWidget):
         ModelSettingsWindow.signals.presetListUpdated.connect(self._onPresetListChanged)
 
 
-    def _buildFirstRow(self, layout, lblTokensMax, tokensMax):
+    def _buildFirstRow(self, layout: QtWidgets.QGridLayout) -> int:
         lblPreset = QtWidgets.QLabel("<a href='model_settings'>Preset</a>:")
         lblPreset.linkActivated.connect(self.showModelSettings)
         layout.addWidget(lblPreset, 0, 0)
@@ -234,11 +213,9 @@ class InferencePresetWidget(InferenceSettingsWidget):
         self.preset = QtWidgets.QComboBox()
         self.preset.currentTextChanged.connect(self._onPresetChanged)
         layout.addWidget(self.preset, 0, 1)
+        return 3
 
-        layout.addWidget(lblTokensMax, 0, 3)
-        layout.addWidget(tokensMax, 0, 4)
-
-    def _buildButtons(self, layout, row: int):
+    def _buildButtons(self, layout: QtWidgets.QGridLayout, row: int):
         self.btnSave = QtWidgets.QPushButton("Save to Preset")
         self.btnSave.clicked.connect(self.saveToConfig)
         layout.addWidget(self.btnSave, row, 0, 1, 2)
@@ -251,8 +228,8 @@ class InferencePresetWidget(InferenceSettingsWidget):
     def getSelectedPresetName(self) -> str:
         return self.preset.currentText()
 
-    @Slot()
-    def showModelSettings(self, link):
+    @Slot(str)
+    def showModelSettings(self, link: str):
         ModelSettingsWindow.openInstance(self, self.configAttr, self.preset.currentText())
 
     def updateTitle(self, name):
@@ -279,14 +256,14 @@ class InferencePresetWidget(InferenceSettingsWidget):
         self.preset.setCurrentIndex(index)
 
 
-    @Slot()
-    def _onPresetChanged(self, name):
+    @Slot(str)
+    def _onPresetChanged(self, name: str):
         self.updateTitle(name)
         self.loadFromConfig()
         Config.inferSelectedPresets[self.configAttr] = name
 
-    @Slot()
-    def _onPresetListChanged(self, attr):
+    @Slot(str)
+    def _onPresetListChanged(self, attr: str):
         if attr == self.configAttr:
             currentName = self.preset.currentText()
             with QSignalBlocker(self.preset):
@@ -296,10 +273,12 @@ class InferencePresetWidget(InferenceSettingsWidget):
 
     @Slot()
     def loadFromConfig(self):
-        empty    = {}
+        empty = {}
         presets: dict  = getattr(Config, self.configAttr, empty)
         preset: dict   = presets.get(self.preset.currentText(), empty)
         settings: dict = preset.get(Config.INFER_PRESET_SAMPLECFG_KEY, empty)
+
+        self.updateFields(backendDefForName(self.backends, preset["backend"]))
         self.fromDict(settings)
 
     @Slot()
