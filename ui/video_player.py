@@ -5,8 +5,8 @@ import av, math, traceback
 from av.video.reformatter import Interpolation
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Signal, Slot, QRect, QRectF, QSize, QUrl, QThread, QTimer, QObject, QSignalBlocker
-from PySide6.QtGui import QPixmap, QImage, QColor, QMouseEvent, QWheelEvent, QSinglePointEvent, QPainter, QPen
-from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
+from PySide6.QtGui import QPixmap, QImage, QColor, QMouseEvent, QWheelEvent, QSinglePointEvent, QPainter, QPen, QBrush
+from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput, QAudio
 from PySide6.QtMultimediaWidgets import QGraphicsVideoItem
 from PySide6.QtWidgets import (
     QGraphicsScene, QGraphicsItemGroup, QGraphicsRectItem, QGraphicsTextItem, QGraphicsPixmapItem, QGraphicsObject,
@@ -19,6 +19,9 @@ from .imgview import ImgView, MediaItemType, MediaMetadata, MediaItemMixin
 
 if TYPE_CHECKING:
     from av.container import InputContainer
+
+
+VOLUME_SCALE = QAudio.VolumeScale.CubicVolumeScale
 
 
 # ========== Base class and slots ==========
@@ -98,11 +101,9 @@ class VideoItemMixin(MediaItemMixin, Generic[S]):
         # The viewport is redrawn when the video is playing. If paused -> force redraw of main view.
         self.imgview.viewport().update()
 
-    def _updateVolume(self) -> float:
-        vol = 0.0 if Config.mediaMute else Config.mediaVolume
-        self.volumeControl.setVolume(vol)
+    def _updateVolume(self):
+        self.volumeControl.setVolume(Config.mediaVolume, Config.mediaMute)
         self._redrawMainViewport()
-        return vol
 
 
     def setPlaying(self, playing: bool):
@@ -309,11 +310,10 @@ class VideoItemMixin(MediaItemMixin, Generic[S]):
 
         # Volume
         if self.volumeControl.isMouseOver(mouseX, mouseY):
-            if not Config.mediaMute:
-                vol = Config.mediaVolume + (wheelSteps * 0.05)
-                vol = max(0.0, min(vol, 1.0))
-                Config.mediaVolume = vol
-                self._updateVolume()
+            vol = Config.mediaVolume + (wheelSteps * 0.05)
+            vol = min(max(vol, 0.0), 1.0)
+            Config.mediaVolume = vol
+            self._updateVolume()
 
         # Video Seek
         else:
@@ -390,10 +390,11 @@ class VideoItem(VideoItemMixin[VideoItemSlots], QGraphicsVideoItem):
             super()._redrawMainViewport()
 
     @override
-    def _updateVolume(self) -> float:
-        vol = super()._updateVolume()
-        self.audioOutput.setVolume(vol)
-        return vol
+    def _updateVolume(self):
+        super()._updateVolume()
+        linVol = QAudio.convertVolume(Config.mediaVolume, VOLUME_SCALE, QAudio.VolumeScale.LinearVolumeScale)
+        self.audioOutput.setVolume(linVol)
+        self.audioOutput.setMuted(Config.mediaMute)
 
     @override
     def setVideoPosition(self, position: int) -> bool:
@@ -591,6 +592,7 @@ class MediaInfo(QObject):
             self.player.errorOccurred.connect(self._onError, Qt.ConnectionType.QueuedConnection)
 
             videoItem.audioOutput.volumeChanged.connect(self._onVolumeChanged, Qt.ConnectionType.QueuedConnection)
+            videoItem.audioOutput.mutedChanged.connect(self._onMutedChanged, Qt.ConnectionType.QueuedConnection)
 
         self.videoLoaded: bool = False
         self.thumbnailsEnabled: bool = False
@@ -667,8 +669,14 @@ class MediaInfo(QObject):
 
     @Slot("float")
     def _onVolumeChanged(self, volume: float):
-        self.videoItem.volumeControl.setVolume(volume)
+        displayVol = QAudio.convertVolume(volume, QAudio.VolumeScale.LinearVolumeScale, VOLUME_SCALE)
+        self.videoItem.volumeControl.setVolume(displayVol, self.videoItem.audioOutput.isMuted())
 
+    @Slot(bool)
+    def _onMutedChanged(self, muted: bool):
+        volume = self.videoItem.audioOutput.volume()
+        displayVol = QAudio.convertVolume(volume, QAudio.VolumeScale.LinearVolumeScale, VOLUME_SCALE)
+        self.videoItem.volumeControl.setVolume(displayVol, muted)
 
 
 class PlaybackControls(QGraphicsItemGroup):
@@ -939,18 +947,23 @@ class VolumeControl(QGraphicsObject):
 
         self._pixmap = self.PIXMAPS[1]
 
-        self._chordStart: int = 0
-        self._chordSpan: int  = 0
-
         color.setAlphaF(0.5)
         self._penBorder = QPen(color)
         self._penBorder.setWidthF(2.0)
 
-        self._brushBg = QColor(colorlib.BUBBLE_BG)
-        self._brushBg.setAlphaF(0.5)
+        colorBg = QColor(colorlib.BUBBLE_BG)
+        colorBg.setAlphaF(0.5)
+        self._brushBg = QBrush(colorBg)
 
-        self._brushFill = QColor(colorlib.BUBBLE_TEXT)
-        self._brushFill.setAlphaF(0.3)
+        colorFill = QColor(colorlib.BUBBLE_TEXT)
+        colorFill.setAlphaF(0.35)
+        self._brushFill = QBrush(colorFill)
+        colorFill.setAlphaF(0.2)
+        self._brushFillMute = QBrush(colorFill)
+
+        self._chordStart: int = 0
+        self._chordSpan: int  = 0
+        self._chordBrush = self._brushFill
 
         self._hideTimer = QTimer(videoItem.qtParent(), singleShot=True, interval=600)
         self._hideTimer.timeout.connect(self._autohide)
@@ -984,8 +997,8 @@ class VolumeControl(QGraphicsObject):
         y = vpRect.height() - size + yOffset
         self.setPos(x, y)
 
-    def setVolume(self, volume: float):
-        if Config.mediaMute:
+    def setVolume(self, volume: float, mute: bool):
+        if mute:
             self._pixmap = self.PIXMAPS[0]
         elif volume >= 1.0:
             self._pixmap = self.PIXMAPS[3]
@@ -993,6 +1006,8 @@ class VolumeControl(QGraphicsObject):
             self._pixmap = self.PIXMAPS[2]
         else:
             self._pixmap = self.PIXMAPS[1]
+
+        self._chordBrush = self._brushFillMute if mute else self._brushFill
 
         cosVal = 1 - (2 * volume)
         cosVal = max(-1.0, min(cosVal, 1.0))
@@ -1036,7 +1051,7 @@ class VolumeControl(QGraphicsObject):
         painter.drawEllipse(rect)
 
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(self._brushFill)
+        painter.setBrush(self._chordBrush)
         painter.drawChord(rect, self._chordStart, self._chordSpan)
 
         painter.drawPixmap(self.PIXMAP_RECT, self._pixmap)
