@@ -894,6 +894,22 @@ class CheckboxMenu(QtWidgets.QMenu):
 
 
 
+class AutoCloseMenu(QtWidgets.QMenu):
+    def __init__(self, parent=None, rectExpand: int = 40):
+        super().__init__(parent)
+        self._expand = rectExpand
+
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent):
+        exp = self._expand
+        rect = self.rect()
+        rect.adjust(-exp, -exp, exp, exp)
+        if not rect.contains(event.pos()):
+            self.close()
+
+        super().mouseMoveEvent(event)
+
+
+
 class LayoutFilter(QtWidgets.QHBoxLayout):
     class FilterTextEdit(QtWidgets.QLineEdit):
         def __init__(self, filter: 'LayoutFilter'):

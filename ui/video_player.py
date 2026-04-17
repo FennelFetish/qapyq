@@ -1058,7 +1058,7 @@ class VolumeControl(QGraphicsObject):
 
 
 
-class SeekContextMenu(QtWidgets.QMenu):
+class SeekContextMenu(qtlib.AutoCloseMenu):
     playToggled = Signal(bool)
     speedChanged = Signal(float)
 
@@ -1183,16 +1183,6 @@ class SeekContextMenu(QtWidgets.QMenu):
             diffPos = keyframePos - currentPos
             self.videoItem.moveSegment(diffPos)
             self.videoItem.setVideoPosition(keyframePos)
-
-
-    @override
-    def mouseMoveEvent(self, event: QMouseEvent):
-        rect = self.rect()
-        rect.adjust(-40, -40, 40, 40)
-        if not rect.contains(event.pos()):
-            self.close()
-
-        super().mouseMoveEvent(event)
 
 
 

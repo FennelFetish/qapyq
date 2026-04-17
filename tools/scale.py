@@ -2,7 +2,7 @@ from typing import Callable, TYPE_CHECKING
 import numpy as np
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QSize, QThreadPool, QSignalBlocker
-from lib import colorlib, videorw
+from lib import colorlib, qtlib, videorw
 from lib.filelist import DataKeys
 import ui.export_settings as export
 from ui.imgview import MediaItemType
@@ -340,7 +340,7 @@ class ScaleToolBar(QtWidgets.QToolBar):
         self.exportWidget.updateSample()
 
 
-class ScaleContextMenu(QtWidgets.QMenu):
+class ScaleContextMenu(qtlib.AutoCloseMenu):
     def __init__(self, scaleTool: ScaleTool):
         super().__init__()
         actExport = self.addAction("Export")

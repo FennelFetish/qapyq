@@ -5,7 +5,7 @@ import numpy as np
 from PySide6.QtCore import Qt, Slot, QPointF, QRect, QRectF, QSize, QThreadPool
 from PySide6.QtGui import QBrush, QPen, QColor, QPainterPath, QPolygonF, QTransform, QCursor, QPixmap
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QMenu
-from lib import videorw
+from lib import qtlib, videorw
 from lib.filelist import DataKeys
 from tools.tool import MediaEvent
 from ui.imgview import ImgView, MediaItemType
@@ -638,7 +638,7 @@ class MaskRect(QGraphicsRectItem):
 
 
 
-class CropContextMenu(QMenu):
+class CropContextMenu(qtlib.AutoCloseMenu):
     def __init__(self, cropTool: CropTool):
         super().__init__()
         self.cropTool = cropTool
