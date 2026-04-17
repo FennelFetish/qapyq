@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import NamedTuple, Callable, Type, TypeVar, Generic, TYPE_CHECKING
 from typing_extensions import override
 import av, math, traceback
-import cv2 as cv
+from av.video.reformatter import Interpolation
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Signal, Slot, QRect, QRectF, QSize, QUrl, QThread, QTimer, QObject, QSignalBlocker
 from PySide6.QtGui import QPixmap, QImage, QColor, QMouseEvent, QWheelEvent, QSinglePointEvent, QPainter, QPen
@@ -1201,7 +1201,9 @@ class FrameExtractWorker(QObject):
         self.container: InputContainer | None = None
         self.file = ""
 
-        self.thumbnailSize: QSize = QSize()
+        self.frameSize: QSize = QSize()
+        self.thumbnailConvert: videorw.FrameConvertFunc | None = None
+        self.frameConvert: videorw.FrameConvertFunc | None = None
 
         self._thumbnailRequest: ThumbnailRequest | None = None
         self._thumbnailTimer = QTimer(self, singleShot=True, interval=self.THUMBNAIL_INTERVAL)
@@ -1221,9 +1223,12 @@ class FrameExtractWorker(QObject):
 
         self.container = None
         self.file = ""
-        self.thumbnailSize = QSize()
+        self.frameSize = QSize()
+        self.thumbnailConvert = None
+        self.frameConvert = None
 
-    def _getContainer(self, file: str) -> InputContainer:
+
+    def _prepareContainer(self, file: str) -> InputContainer:
         if file != self.file and self.file:
             self._onUnload()
 
@@ -1233,18 +1238,21 @@ class FrameExtractWorker(QObject):
                 self.file = file
 
                 stream = self.container.streams.video[0]
-                self.thumbnailSize = self._calcThumbnailSize(stream.width, stream.height)
-            except:
+                w, h = videorw.avGetFrameSize(stream)
+                if min(w, h) <= 0:
+                    raise ValueError(f"Invalid video size of width={w}, height={h}")
+
+                self.frameSize = QSize(w, h)
+
+            except Exception as ex:
                 traceback.print_exc()
                 self._onUnload()
+                raise ex
 
         return self.container
 
     @classmethod
-    def _calcThumbnailSize(cls, w: int, h: int) -> QSize:
-        if min(w, h) <= 0:
-            return QSize()
-
+    def _calcThumbnailSize(cls, w: int, h: int) -> tuple[int, int]:
         ar = w / h
         if ar > 1:
             w = Config.mediaSeekThumbnailSize
@@ -1253,7 +1261,7 @@ class FrameExtractWorker(QObject):
             h = Config.mediaSeekThumbnailSize
             w = round(h * ar)
 
-        return QSize(w, h)
+        return w, h
 
 
     def requestThumbnail(self, file: str, pos: int):
@@ -1272,16 +1280,14 @@ class FrameExtractWorker(QObject):
             return
 
         try:
-            frame = self._extractFrame(req.file, req.pos)
-            mat = frame.to_ndarray(format="rgb24")
-            mat = cv.resize(mat, self.thumbnailSize.toTuple(), interpolation=cv.INTER_AREA)
+            container = self._prepareContainer(req.file)
+            if self.thumbnailConvert is None:
+                w, h = self.frameSize.toTuple()
+                w, h = self._calcThumbnailSize(w, h)
+                self.thumbnailConvert = videorw.createFrameConverter(w, h, True, Interpolation.AREA)
 
-            if rotSwap := videorw.CV_ROT_SWAP.get(frame.rotation):
-                mat = cv.rotate(mat, rotSwap[0])
-
-            image = qtlib.numpyToQImage(mat, fromRGB=True)
+            image = self._extractFrame(container, req.pos, self.thumbnailConvert)
             self.thumbnailDone.emit(req.file, image)
-
         except Exception as ex:
             print(f"Failed to extract thumbnail: {ex} ({type(ex).__name__})")
 
@@ -1292,28 +1298,26 @@ class FrameExtractWorker(QObject):
     @Slot(str, int)
     def _doExtractFrame(self, file: str, pos: int):
         try:
-            frame = self._extractFrame(file, pos)
-            mat = frame.to_ndarray(format="rgb24")
+            container = self._prepareContainer(file)
+            if self.frameConvert is None:
+                w, h = self.frameSize.toTuple()
+                self.frameConvert = videorw.createFrameConverter(w, h, True, Interpolation.LANCZOS)
 
-            if rotSwap := videorw.CV_ROT_SWAP.get(frame.rotation):
-                mat = cv.rotate(mat, rotSwap[0])
-
-            image = qtlib.numpyToQImage(mat, fromRGB=True)
+            image = self._extractFrame(container, pos, self.frameConvert)
             self.frameDone.emit(file, image)
-
         except Exception as ex:
             print(f"Failed to extract video frame: {ex} ({type(ex).__name__})")
 
 
-    def _extractFrame(self, file: str, posMs: int):
-        container = self._getContainer(file)
+    def _extractFrame(self, container: InputContainer, posMs: int, convertFunc: videorw.FrameConvertFunc) -> QImage:
         stream = container.streams.video[0]
 
         targetPts = int((posMs/1000) / stream.time_base)
         container.seek(targetPts, stream=stream)
 
         for frame in container.decode(stream):
-            if frame.pts + frame.duration > targetPts:
-                return frame
+            if frame.pts + frame.duration >= targetPts:
+                mat = convertFunc(frame)
+                return qtlib.numpyToQImage(mat, fromRGB=True)
 
         raise ValueError(f"No frame at position {posMs/1000:.3f}")

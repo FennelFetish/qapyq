@@ -21,9 +21,7 @@ def readSize(path: str) -> tuple[int, int]:
     cap = cv.VideoCapture(path)
     try:
         if cap.isOpened():
-            w = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
-            h = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
-            return w, h
+            return cvGetFrameSize(cap)
     except:
         pass
     finally:
@@ -36,8 +34,7 @@ def readMetadata(path: str) -> tuple[int, int, float, int, int]:
     cap = cv.VideoCapture(path)
     try:
         if cap.isOpened():
-            w = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
-            h = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
+            w, h = cvGetFrameSize(cap)
             frameCount = int(cap.get(cv.CAP_PROP_FRAME_COUNT))
             fps = cap.get(cv.CAP_PROP_FPS)
             duration = int(1000 * frameCount / fps)
@@ -49,30 +46,77 @@ def readMetadata(path: str) -> tuple[int, int, float, int, int]:
 
     return -1, -1, 0.0, 0, 0
 
+def cvGetFrameSize(cap: cv.VideoCapture) -> tuple[int, int]:
+    w = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
+
+    sarNum = cap.get(cv.CAP_PROP_SAR_NUM)
+    sarDen = cap.get(cv.CAP_PROP_SAR_DEN)
+    try:
+        sar = sarNum / sarDen
+        if sar >= 1.0:
+            w = round(w * sar)
+        else:
+            h = round(h / sar)
+    except ZeroDivisionError:
+        pass
+
+    return w, h
+
 
 
 # ========== AV ==========
 try:
     import av
+    from av.video.reformatter import VideoReformatter, Interpolation
+    from typing import Callable
 
-    # def readSize(path: str) -> tuple[int, int]:
-    #     try:
-    #         with av.open(path, 'r') as container:
-    #             stream = container.streams.video[0]
-    #             return stream.width, stream.height
-    #     except:
-    #         return -1, -1
+    FrameConvertFunc = Callable[[av.VideoFrame], np.ndarray]
 
-    # def readMetadata(path: str) -> tuple[int, int, float, int, int]:
-    #     'w, h, fps, frame count, duration (ms)'
-    #     try:
-    #         with av.open(path, 'r') as container:
-    #             duration = float(container.duration / av.time_base)
-    #             stream = container.streams.video[0]
-    #             return stream.width, stream.height, float(stream.average_rate or 0), stream.frames, int(duration * 1000)
-    #     except:
-    #         return -1, -1, 0.0, 0, 0
+    CV_ROT_SWAP = {
+        -90:  (cv.ROTATE_90_CLOCKWISE, True),
+        90:   (cv.ROTATE_90_COUNTERCLOCKWISE, True),
+        -180: (cv.ROTATE_180, False),
+        180:  (cv.ROTATE_180, False),
+        -270: (cv.ROTATE_90_COUNTERCLOCKWISE, True),
+        270:  (cv.ROTATE_90_CLOCKWISE, True)
+    }
 
+    def createFrameConverter(
+        w: int|None = None, h: int|None = None, rotate: bool = True, interpolation: Interpolation = None, threads: int = 0
+    ) -> FrameConvertFunc:
+        reformatter = VideoReformatter()
+        rotSwapMap = CV_ROT_SWAP if rotate else {}
+
+        def convert(frame: av.VideoFrame) -> np.ndarray:
+            rotation = frame.rotation
+            frame = reformatter.reformat(frame, w, h, "rgb24", interpolation=interpolation, threads=threads)
+            mat = frame.to_ndarray()
+
+            if rotSwap := rotSwapMap.get(rotation):
+                mat = cv.rotate(mat, rotSwap[0])
+
+            return mat
+
+        return convert
+
+
+    def avGetFrameSize(stream: av.VideoStream) -> tuple[int, int]:
+        w = stream.width
+        h = stream.height
+
+        try:
+            sar = stream.sample_aspect_ratio
+            if sar is not None:
+                sar = float(sar)
+                if sar >= 1.0:
+                    w = round(w * sar)
+                else:
+                    h = round(h / sar)
+        except:
+            pass
+
+        return w, h
 
     def getKeyframes(path: str, start: int, end: int) -> list[int]:
         keyframes = list[int]()
@@ -100,13 +144,6 @@ try:
         return keyframes
 
 
-    CV_ROT_SWAP = {
-        -90:  (cv.ROTATE_90_CLOCKWISE, True),
-        90:   (cv.ROTATE_90_COUNTERCLOCKWISE, True),
-        -180: (cv.ROTATE_180, False),
-        180:  (cv.ROTATE_180, False)
-    }
-
     class NotSeekableException(Exception): pass
 
     def thumbnailVideo(path: str, maxWidth: int, tiling: int) -> tuple[np.ndarray, tuple[int, int]]:
@@ -115,16 +152,19 @@ try:
             stream = container.streams.video[0]
             tb = stream.time_base
 
+            origW, origH = avGetFrameSize(stream)
+            w = origW
+            h = origH
+
             maxWidth = round(maxWidth / tiling)
-            w = origW = stream.width
-            h = origH = stream.height
             tiles: np.ndarray = None
+            convert: FrameConvertFunc = None
 
             rotation: int | None = None
             swap: bool = False
 
-            def prepareTiles(frame):
-                nonlocal w, h, rotation, swap, tiles
+            def prepareTiles(frame: av.VideoFrame):
+                nonlocal w, h, rotation, swap, tiles, convert
                 rotation, swap = CV_ROT_SWAP.get(frame.rotation, (None, False))
                 if swap:
                     if h > maxWidth:
@@ -135,9 +175,10 @@ try:
                         h = round(h * maxWidth/w)
                         w = maxWidth
 
+                convert = createFrameConverter(w, h, False, Interpolation.AREA, 2)
                 tiles = np.zeros((h*tiling, w*tiling, 3), dtype=np.uint8)
 
-            def addTile(i: int, frame):
+            def addTile(i: int, frame: av.VideoFrame):
                 if i == 1:
                     prepareTiles(frame)
 
@@ -145,8 +186,7 @@ try:
                 x *= w
                 y *= h
 
-                mat = frame.to_ndarray(format="rgb24")
-                cv.resize(mat, (w, h), dst=tiles[y:y+h, x:x+w, :], interpolation=cv.INTER_AREA)
+                tiles[y:y+h, x:x+w, :] = convert(frame)
 
             # Extract evenly spaced frames
             numIntervals = tiling*tiling + 1
@@ -168,15 +208,18 @@ try:
 
             except NotSeekableException:
                 duration = min(duration, 60.0)
+                frame = None
 
                 for i in range(i, numIntervals):
                     targetPts = int((i * duration/numIntervals) / tb)
                     for frame in container.decode(stream):
                         pts = frame.pts or 0
-                        if pts + frame.duration > targetPts:
+                        if pts + frame.duration >= targetPts:
                             addTile(i, frame)
                             break
                     else:
+                        if frame:
+                            addTile(i, frame)
                         break
 
         if rotation is not None:
@@ -190,6 +233,9 @@ try:
     def extractFramesPIL(source, sampleFps: float, maxFrames: int = 32) -> tuple[list[Image.Image], dict]:
         with av.open(source, 'r') as container:
             stream = container.streams.video[0]
+
+            w, h = avGetFrameSize(stream)
+            convert = createFrameConverter(w, h)
 
             duration = float(container.duration / av.time_base)
             fps = float(stream.average_rate or 0)
@@ -207,6 +253,7 @@ try:
             lastSeekPts = -1
 
             frames = list[Image.Image]()
+            frame = None
             try:
                 for i in range(numSampleFrames):
                     targetPts = int((i * posFeed) / tb)
@@ -222,20 +269,21 @@ try:
                             else:
                                 seek = False
 
-                        if pts + frame.duration > targetPts:
-                            mat = frame.to_ndarray(format="rgb24") # Faster via numpy than frame.to_image()
-                            if rotSwap := CV_ROT_SWAP.get(frame.rotation):
-                                mat = cv.rotate(mat, rotSwap[0])
-
-                            frames.append(Image.fromarray(mat))
+                        if pts + frame.duration >= targetPts:
+                            frames.append(Image.fromarray(convert(frame)))
                             break
                     else:
+                        if frame:
+                            frames.append(Image.fromarray(convert(frame)))
                         break
+
             except av.EOFError:
                 pass
 
         if not frames:
             raise RuntimeError("Failed to extract video frames")
+        elif len(frames) < numSampleFrames:
+            print(f"Warning: Could not extract all frames from video ({len(frames)}/{numSampleFrames})")
 
         metadata = {
             "fps": sampleFps,
