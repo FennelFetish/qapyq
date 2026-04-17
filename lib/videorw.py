@@ -498,7 +498,12 @@ try:
         @staticmethod
         def _getAudioFilters(speed: float) -> list[str]:
             # atempo with speed>2 will skip samples instead of blending, so chain multiple filters (max 10)
-            atempoCount = math.ceil(speed/2.0) if speed <= 20.0 else 1
+            # minimum tempo argument is 0.5
+            if speed >= 0.5:
+                atempoCount = math.ceil(speed/2.0) if speed <= 20.0 else 1
+            else:
+                atempoCount = math.ceil(0.5/speed)
+
             atempoVal = pow(speed, 1.0/atempoCount)
             return [f'atempo={atempoVal}'] * atempoCount
 
