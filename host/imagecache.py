@@ -89,6 +89,10 @@ class ImageFile:
         source = BytesIO(self.data) if self.data else self.file
         return videorw.extractFramesPIL(source, sampleFps, maxFrames)
 
+    def getVideoFramesCvMat(self, sampleFps: float, maxFrames: int, converterFactory: videorw.ConverterFactory):
+        source = BytesIO(self.data) if self.data else self.file
+        return videorw.extractFramesMat(source, sampleFps, maxFrames, converterFactory)
+
 
 
 class ImageCache:

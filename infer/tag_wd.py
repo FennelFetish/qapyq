@@ -2,9 +2,10 @@ import csv
 import numpy as np
 import onnxruntime as ort
 import torch # Not used directly, but required for GPU inference
+from host.imagecache import ImageFile
+from config import Config
 from .tag import TagBackend, ThresholdMode
 from .devmap import DevMap
-from config import Config
 
 
 class CategoryIndexes:
@@ -74,21 +75,35 @@ class WDTag(TagBackend):
         self.characterThresholdMode = ThresholdMode.fromConfig(config, "character_threshold", "character_threshold_mode", self.DEFAULT_CHAR_THRESH)
 
 
-    def _loadImage(self, imgFile) -> np.ndarray:
+    def _loadImage(self, imgFile: ImageFile) -> np.ndarray:
         img = self.loadImageSquare(imgFile, self.modelTargetSize)
         img = np.expand_dims(img, axis=0)
         return img
 
-    def tag(self, imgFile) -> str:
-        img = self._loadImage(imgFile)
-        results = self.predict(img)
-        tags = self.SEP.join(filter(None, results))
+    def _loadVideo(self, imgFile: ImageFile) -> list[np.ndarray]:
+        return self.loadVideoSquare(imgFile, self.modelTargetSize)
+
+
+    def tag(self, imgFile: ImageFile) -> str:
+        preds: np.ndarray = None
+
+        if imgFile.isVideo():
+            for batch in self._loadVideo(imgFile):
+                predsBatch: np.ndarray = self.model.run(self.outputNames, {self.inputName: batch})[0]
+                predsBatch = predsBatch.mean(axis=0)
+                preds = predsBatch if preds is None else np.maximum(preds, predsBatch, out=preds)
+
+        else:
+            img = self._loadImage(imgFile)
+            preds = self.model.run(self.outputNames, {self.inputName: img})[0][0]
+
+        tagGroups = self.predsToTags(preds)
+        tags = self.SEP.join(filter(None, tagGroups))
         return tags
 
 
-    def predict(self, image: np.ndarray) -> tuple[str, ...]:
-        preds = self.model.run(self.outputNames, {self.inputName: image})[0]
-        labels: list[tuple[str, float]] = list(zip(self.tagNames, preds[0].tolist()))
+    def predsToTags(self, preds: np.ndarray) -> tuple[str, ...]:
+        labels: list[tuple[str, float]] = list(zip(self.tagNames, preds.tolist()))
 
         # First 4 labels are actually ratings: pick one with argmax
         if self.includeRatings:

@@ -68,10 +68,12 @@ def cvGetFrameSize(cap: cv.VideoCapture) -> tuple[int, int]:
 # ========== AV ==========
 try:
     import av
+    from av.container import InputContainer
     from av.video.reformatter import VideoReformatter, Interpolation
     from typing import Callable
 
     FrameConvertFunc = Callable[[av.VideoFrame], np.ndarray]
+    ConverterFactory = Callable[[int, int], FrameConvertFunc]
 
     CV_ROT_SWAP = {
         -90:  (cv.ROTATE_90_CLOCKWISE, True),
@@ -83,14 +85,15 @@ try:
     }
 
     def createFrameConverter(
-        w: int|None = None, h: int|None = None, rotate: bool = True, interpolation: Interpolation = None, threads: int = 0
+        w: int|None = None, h: int|None = None, rotate: bool = True,
+        interpolation: Interpolation = None, format: str = "rgb24", threads: int = 0
     ) -> FrameConvertFunc:
         reformatter = VideoReformatter()
         rotSwapMap = CV_ROT_SWAP if rotate else {}
 
         def convert(frame: av.VideoFrame) -> np.ndarray:
             rotation = frame.rotation
-            frame = reformatter.reformat(frame, w, h, "rgb24", interpolation=interpolation, threads=threads)
+            frame = reformatter.reformat(frame, w, h, format, interpolation=interpolation, threads=threads)
             mat = frame.to_ndarray()
 
             if rotSwap := rotSwapMap.get(rotation):
@@ -146,11 +149,78 @@ try:
 
     class NotSeekableException(Exception): pass
 
+    def iterKeyframes(container: InputContainer, numFrames: int, posFunc: Callable[[int], float]):
+        'posFunc: Must return position as [0.0, 1.0]'
+
+        duration = float(container.duration / av.time_base)
+        stream = container.streams.video[0]
+        tb = stream.time_base
+
+        i = 0
+        try:
+            lastPts = -1
+            for i in range(numFrames):
+                targetPts = int((posFunc(i) * duration) / tb)
+                container.seek(targetPts, stream=stream)
+
+                frame = next(container.decode(stream))
+                pts = frame.pts #or 0
+                if pts > lastPts:
+                    lastPts = pts
+                    yield frame
+                else:
+                    raise NotSeekableException()
+
+        except NotSeekableException:
+            duration = min(duration, 60.0)
+
+            for i in range(i, numFrames):
+                targetPts = int((posFunc(i) * duration) / tb)
+
+                frame = None
+                for frame in container.decode(stream):
+                    if frame.pts >= targetPts:
+                        yield frame
+                        break
+                else:
+                    if frame:
+                        yield frame
+                    break
+
+    def iterFrames(container: InputContainer, numFrames: int, posFunc: Callable[[int], float], seek: bool = True):
+        'posFunc: Must return position as seconds'
+
+        stream = container.streams.video[0]
+        tb = stream.time_base
+        lastSeekPts = -1
+
+        for i in range(numFrames):
+            targetPts = int(posFunc(i) / tb)
+            if seek:
+                container.seek(targetPts, stream=stream)
+
+            frame = None
+            for f, frame in enumerate(container.decode(stream)):
+                pts = frame.pts #or 0
+                if f == 0 and seek:
+                    # Disable seeking if it didn't move forward
+                    if pts > lastSeekPts:
+                        lastSeekPts = pts
+                    else:
+                        seek = False
+
+                if pts >= targetPts:
+                    yield frame
+                    break
+            else:
+                if frame:
+                    yield frame
+                break
+
+
     def thumbnailVideo(path: str, maxWidth: int, tiling: int) -> tuple[np.ndarray, tuple[int, int]]:
         with av.open(path, 'r') as container:
-            duration = float(container.duration / av.time_base)
             stream = container.streams.video[0]
-            tb = stream.time_base
 
             origW, origH = avGetFrameSize(stream)
             w = origW
@@ -175,7 +245,7 @@ try:
                         h = round(h * maxWidth/w)
                         w = maxWidth
 
-                convert = createFrameConverter(w, h, False, Interpolation.AREA, 2)
+                convert = createFrameConverter(w, h, False, Interpolation.AREA, threads=2)
                 tiles = np.zeros((h*tiling, w*tiling, 3), dtype=np.uint8)
 
             def addTile(i: int, frame: av.VideoFrame):
@@ -190,37 +260,13 @@ try:
 
             # Extract evenly spaced frames
             numIntervals = tiling*tiling + 1
+            posFunc = lambda i: (i+1) / numIntervals
 
-            i = 1
             try:
-                lastPts = -1
-                for i in range(1, numIntervals):
-                    targetPts = int((i * duration/numIntervals) / tb)
-                    container.seek(targetPts, stream=stream)
-
-                    frame = next(container.decode(stream))
-                    pts = frame.pts or 0
-                    if pts > lastPts:
-                        lastPts = pts
-                        addTile(i, frame)
-                    else:
-                        raise NotSeekableException()
-
-            except NotSeekableException:
-                duration = min(duration, 60.0)
-                frame = None
-
-                for i in range(i, numIntervals):
-                    targetPts = int((i * duration/numIntervals) / tb)
-                    for frame in container.decode(stream):
-                        pts = frame.pts or 0
-                        if pts + frame.duration >= targetPts:
-                            addTile(i, frame)
-                            break
-                    else:
-                        if frame:
-                            addTile(i, frame)
-                        break
+                for i, frame in enumerate(iterKeyframes(container, numIntervals-1, posFunc), 1):
+                    addTile(i, frame)
+            except Exception as ex:
+                print(f"Video thumbnail incomplete: {ex} ({type(ex).__name__})")
 
         if rotation is not None:
             tiles = cv.rotate(tiles, rotation)
@@ -230,6 +276,7 @@ try:
         return tiles, (origW, origH)
 
 
+    # For captioning models
     def extractFramesPIL(source, sampleFps: float, maxFrames: int = 32) -> tuple[list[Image.Image], dict]:
         with av.open(source, 'r') as container:
             stream = container.streams.video[0]
@@ -247,38 +294,15 @@ try:
             sampleFps = numSampleFrames / duration
 
             posFeed = duration / (numSampleFrames-1) if numSampleFrames < frameCount-1 else 0
-            tb = stream.time_base
-
             seek = (posFeed * fps > 24)
-            lastSeekPts = -1
+            posFunc = lambda i: i * posFeed
 
             frames = list[Image.Image]()
-            frame = None
             try:
-                for i in range(numSampleFrames):
-                    targetPts = int((i * posFeed) / tb)
-                    if seek:
-                        container.seek(targetPts, stream=stream)
-
-                    for f, frame in enumerate(container.decode(stream)):
-                        pts = frame.pts or 0
-                        if f == 0 and seek:
-                            # Disable seeking if it didn't move forward
-                            if pts > lastSeekPts:
-                                lastSeekPts = pts
-                            else:
-                                seek = False
-
-                        if pts + frame.duration >= targetPts:
-                            frames.append(Image.fromarray(convert(frame)))
-                            break
-                    else:
-                        if frame:
-                            frames.append(Image.fromarray(convert(frame)))
-                        break
-
-            except av.EOFError:
-                pass
+                for frame in iterFrames(container, numSampleFrames, posFunc, seek):
+                    frames.append(Image.fromarray(convert(frame)))
+            except Exception as ex:
+                print(f"Warning: {ex} ({type(ex).__name__})")
 
         if not frames:
             raise RuntimeError("Failed to extract video frames")
@@ -293,6 +317,47 @@ try:
         }
 
         return frames, metadata
+
+
+    # For tagging models
+    def extractFramesMat(source, sampleFps: float, maxFrames: int, converterFactory: ConverterFactory) -> list[np.ndarray]:
+        with av.open(source, 'r') as container:
+            stream = container.streams.video[0]
+
+            w, h = avGetFrameSize(stream)
+            convert = converterFactory(w, h)
+
+            duration = float(container.duration / av.time_base)
+            fps = float(stream.average_rate or 0)
+            frameCount = stream.frames or int(duration * fps)
+
+            numSampleFrames = min(round(duration * sampleFps), frameCount)
+            numSampleFrames = min(max(numSampleFrames, 3), maxFrames)
+
+            frames = list[np.ndarray]()
+            try:
+                # Short videos: Exact seeking, include first and last frame
+                if duration <= 10.0:
+                    posFunc = lambda i: duration * i / (numSampleFrames-1)
+                    for frame in iterFrames(container, numSampleFrames, posFunc):
+                        frames.append(convert(frame))
+
+                # Long videos: Seek to keyframes only, exclude first and last interval
+                else:
+                    numIntervals = numSampleFrames + 1
+                    posFunc = lambda i: (i+1) / numIntervals
+                    for frame in iterKeyframes(container, numSampleFrames, posFunc):
+                        frames.append(convert(frame))
+
+            except Exception as ex:
+                print(f"Warning: {ex} ({type(ex).__name__})")
+
+        if not frames:
+            raise RuntimeError("Failed to extract video frames")
+        elif len(frames) < numSampleFrames:
+            print(f"Warning: Could not extract all frames from video ({len(frames)}/{numSampleFrames})")
+
+        return frames
 
 
 

@@ -86,7 +86,7 @@ These are the supported architectures with links to the original models.<br>
 Find more specialized finetuned models on [huggingface.co](https://huggingface.co/models).
 
 - **Tagging**<br>
-  Models for generating keyword captions for images.
+  Models for generating keyword captions for images and videos.
   - [JoyTag](https://github.com/fpgaminer/joytag)
   - [PixAI Tagger (onnx)](https://huggingface.co/deepghs/pixai-tagger-v0.9-onnx)
   - [WD (onnx)](https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3) (eva02 recommended)

@@ -3,6 +3,8 @@ from typing import NamedTuple
 import cv2 as cv
 import numpy as np
 from host.imagecache import ImageFile
+from lib import videorw
+
 
 # TODO: Mode in which tags below a threshold are only added if they are a superset of tags above the threshold,
 # for refining tags with colors for example.
@@ -37,6 +39,10 @@ class ThresholdMode(NamedTuple):
 class TagBackend:
     MIN_THRESH = 0.01
 
+    VIDEO_SAMPLE_FPS = 0.5
+    VIDEO_MAX_FRAMES = 48
+    VIDEO_BATCH_SIZE = 8
+
     def __init__(self):
         pass
 
@@ -47,10 +53,9 @@ class TagBackend:
         raise NotImplementedError()
 
 
-    # TODO: Instead of padding, infer each half of image and combine tags. ("out of frame" problem?)
     @staticmethod
-    def loadImageSquare(imgFile: ImageFile, targetSize: int):
-        imgSrc = imgFile.openCvMat(allowGreyscale=False) # BGR(A) uint8
+    def loadImageSquare(imgFile: ImageFile, targetSize: int, rgb: bool = False) -> np.ndarray:
+        imgSrc = imgFile.openCvMat(rgb=rgb, allowGreyscale=False)
         srcHeight, srcWidth, srcChannels = imgSrc.shape
 
         if srcHeight < srcWidth:
@@ -81,6 +86,46 @@ class TagBackend:
             targetSlice[:] = imgScaled
 
         return imgTarget
+
+
+    @classmethod
+    def loadVideoSquare(cls, imgFile: ImageFile, targetSize: int, rgb: bool = False) -> list[np.ndarray]:
+        def converterFactory(w: int, h: int):
+            scale = min(targetSize/w, targetSize/h)
+            w = round(w * scale)
+            h = round(h * scale)
+            interp = videorw.Interpolation.AREA if scale < 1.0 else videorw.Interpolation.BILINEAR
+            format = "rgb24" if rgb else "bgr24"
+            return videorw.createFrameConverter(w, h, interpolation=interp, format=format)
+
+        frames = imgFile.getVideoFramesCvMat(cls.VIDEO_SAMPLE_FPS, cls.VIDEO_MAX_FRAMES, converterFactory)
+        h, w = frames[0].shape[:2]
+
+        if h < w:
+            padLeft = 0
+            padTop  = int(targetSize - h) // 2
+        else:
+            padLeft = int(targetSize - w) // 2
+            padTop = 0
+
+        batches = []
+        for batchFrames in cls.getVideoBatches(frames):
+            imgTarget = np.full((len(batchFrames), targetSize, targetSize, 3), 255, dtype=np.float32)
+            batches.append(imgTarget)
+
+            for i, frame in enumerate(batchFrames):
+                imgTarget[i, padTop:padTop+h, padLeft:padLeft+w, :] = frame
+
+        return batches
+
+    @classmethod
+    def getVideoBatches(cls, frames: list):
+        numFrames  = len(frames)
+        numBatches = np.ceil(numFrames / cls.VIDEO_BATCH_SIZE)
+        batchSize  = int(np.ceil(numFrames / numBatches))
+
+        for i in range(0, numFrames, batchSize):
+            yield frames[i:i+batchSize]
 
 
     @staticmethod
