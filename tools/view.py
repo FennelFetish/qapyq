@@ -1,6 +1,8 @@
-from PySide6.QtCore import Qt, QRectF, QPointF
+from typing_extensions import override
+from PySide6.QtCore import Qt, QPointF, QTimer
 from PySide6.QtGui import QPolygon
 from math import floor
+from ui.dropview import DropRect
 from .tool import Tool
 
 
@@ -26,6 +28,7 @@ class ViewTool(Tool):
         return self._imgview.mapFromScene(imgPoly)
 
 
+    @override
     def onSceneUpdate(self):
         item = self._imgview.image
         size = item.mediaSize()
@@ -41,18 +44,40 @@ class ViewTool(Tool):
         self.tab.statusBar().setMediaInfo(w, h, alpha, fps, frames)
 
 
-    def getDropRects(self):
-        return [QRectF(0, 0, 1, 1)]
+    @override
+    def getDropRects(self) -> list[DropRect]:
+        return [
+            DropRect("Open Files",          0.00, 0.00, 1.00, 0.85),
+            DropRect("Append Files",        0.00, 0.85, 0.50, 0.15),
+            DropRect("Open in New Tab",     0.50, 0.85, 0.50, 0.15),
+        ]
 
+    @override
     def onDrop(self, event, zoneIndex):
-        paths = (url.toLocalFile() for url in event.mimeData().urls())
+        match zoneIndex:
+            case 0:
+                append = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+                newTab = False
+            case 1:
+                append = True
+                newTab = False
+            case 2 | _:
+                append = False
+                newTab = True
 
-        # SHIFT pressed -> Append
-        if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
-            self.tab.filelist.loadAppend(paths)
+        # Move this out of the event handler
+        paths = [url.toLocalFile() for url in event.mimeData().urls()]
+        QTimer.singleShot(0, lambda: self._loadFiles(paths, append, newTab))
+
+    def _loadFiles(self, paths: list[str], append: bool, newTab: bool):
+        tab = self.tab.mainWindow.addTab() if newTab else self.tab
+        if append:
+            tab.filelist.loadAppend(paths)
         else:
-            self.tab.filelist.loadAll(paths)
+            tab.filelist.loadAll(paths)
 
+
+    @override
     def onMousePress(self, event) -> bool:
         filelist = self.tab.filelist
         match event.button():
@@ -64,6 +89,7 @@ class ViewTool(Tool):
                 return True
         return False
 
+    @override
     def onKeyPress(self, event):
         filelist = self.tab.filelist
         match event.key():
@@ -79,6 +105,7 @@ class ViewTool(Tool):
                 self._imgview.resetView()
                 self._imgview.updateView()
 
+    @override
     def onMouseMove(self, event):
         x, y = self.mapPosToImageInt(event.position())
         self.tab.statusBar().setMouseCoords(x, y)

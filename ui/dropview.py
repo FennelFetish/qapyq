@@ -1,17 +1,77 @@
-from PySide6.QtWidgets import QGraphicsScene, QGraphicsRectItem
-from PySide6.QtGui import QPen, QBrush, QColor, QDropEvent, QDragEnterEvent
-from PySide6.QtCore import Qt, QRectF
+from typing import NamedTuple
+from typing_extensions import override
+from PySide6.QtWidgets import QGraphicsScene, QGraphicsItemGroup, QGraphicsRectItem, QGraphicsTextItem
+from PySide6.QtGui import QPen, QBrush, QColor, QFont, QDropEvent, QDragEnterEvent, QDragMoveEvent, QDragLeaveEvent
+from PySide6.QtCore import Qt
+from lib import colorlib
 from .zoompan_view import ZoomPanView
 
 
-class DropZone(QGraphicsRectItem):
-    def __init__(self, rectRelative: QRectF):
-        super().__init__(None)
-        self.rectRelative = QRectF(rectRelative)
-        self.setPen( QPen(QColor(180, 180, 180, 140)) )
-        self.setBrush( QBrush(QColor(180, 180, 180, 80)) )
+class DropRect(NamedTuple):
+    name: str
+    x: float
+    y: float
+    w: float
+    h: float
+
+    def toAbsolute(self, w: float, h: float) -> tuple[float, float, float, float]:
+        return (self.x * w), (self.y * h), (self.w * w), (self.h * h)
+
+
+class DropZone(QGraphicsItemGroup):
+    RECT_BRUSH: QBrush = None
+    RECT_PEN: QPen     = None
+    FONT: QFont        = None
+
+    def __init__(self, rect: DropRect):
+        super().__init__()
+        self.rectRelative = rect
+
+        if DropZone.FONT is None:
+            self._initStyle()
+
+        self.rectItem = QGraphicsRectItem(self)
+        self.rectItem.setPen(self.RECT_PEN)
+        self.rectItem.setBrush(self.RECT_BRUSH)
+
+        self.textItem = QGraphicsTextItem(rect.name, self)
+        self.textItem.setFont(self.FONT)
+        self.textItem.setDefaultTextColor(colorlib.BUBBLE_TEXT)
+        self.textItem.adjustSize()
+
+        self.addToGroup(self.rectItem)
+        self.addToGroup(self.textItem)
+
         self.setZValue(900)
-        self.setVisible(False)
+        self.hide()
+
+    @classmethod
+    def _initStyle(cls):
+        font = QFont()
+        font.setPointSizeF(font.pointSizeF() * 2.0)
+        font.setBold(True)
+        cls.FONT = font
+
+        bgAlpha = 0.63 if colorlib.DARK_THEME else 0.43
+        colorBg = QColor(colorlib.BUBBLE_BG)
+        colorBg.setAlphaF(bgAlpha)
+        cls.RECT_BRUSH = QBrush(colorBg)
+
+        colorBorder = QColor(colorBg)
+        colorBorder.setAlphaF(0.9)
+        cls.RECT_PEN = QPen(colorBorder)
+
+    def updateZoneSize(self, vpWidth: float, vpHeight: float):
+        x, y, w, h = self.rectRelative.toAbsolute(vpWidth, vpHeight)
+        self.rectItem.setRect(x, y, w, h)
+
+        textX = (w - self.textItem.textWidth()) / 2
+        textY = h/2 - 20
+        self.textItem.setPos(x+textX, y+textY)
+
+    @override
+    def contains(self, point) -> bool:
+        return self.rectItem.contains(point)
 
 
 
@@ -22,7 +82,8 @@ class DropView(ZoomPanView):
         self.setAcceptDrops(True)
         self._dropZones: list[DropZone] = []
 
-    def addDropZone(self, dropZone: DropZone):
+    def addDropZone(self, dropRect: DropRect):
+        dropZone = DropZone(dropRect)
         self._dropZones.append(dropZone)
         self._guiScene.addItem(dropZone)
 
@@ -31,47 +92,51 @@ class DropView(ZoomPanView):
             self._guiScene.removeItem(dz)
         self._dropZones.clear()
 
+    @override
     def updateView(self):
         super().updateView()
-        vpRect = self.viewport().rect()
-        w = vpRect.width()
-        h = vpRect.height()
-
+        vpW, vpH = self.viewport().rect().size().toTuple()
         for zone in self._dropZones:
-            rel = zone.rectRelative
-            zone.setRect(rel.x()*w, rel.y()*h, rel.width()*w, rel.height()*h)
+            zone.updateZoneSize(vpW, vpH)
 
 
     def checkDrop(self, event: QDropEvent) -> bool:
         return event.mimeData().hasUrls()
 
-    def onDrop(self, event: QDropEvent, zoneIndex: int) -> None:
+    def onDrop(self, event: QDropEvent, zoneIndex: int):
         pass
 
 
+    @override
     def dragEnterEvent(self, event: QDragEnterEvent):
         if self.checkDrop(event):
             event.acceptProposedAction()
 
-    def dragMoveEvent(self, event):
+    @override
+    def dragMoveEvent(self, event: QDragMoveEvent):
         cursor = event.position()
         hit = False
         for zone in self._dropZones:
+            zone.show()
+
             if (not hit) and zone.contains(cursor):
-                zone.setVisible(True)
+                zone.setOpacity(1.0)
                 hit = True
             else:
-                zone.setVisible(False)
+                zone.setOpacity(0.35)
+
         self.scene().update()
 
-    def dragLeaveEvent(self, event):
+    @override
+    def dragLeaveEvent(self, event: QDragLeaveEvent):
         for zone in self._dropZones:
-            zone.setVisible(False)
+            zone.hide()
         self.scene().update()
 
+    @override
     def dropEvent(self, event: QDropEvent):
         for zone in self._dropZones:
-            zone.setVisible(False)
+            zone.hide()
         self.scene().update()
 
         if self.checkDrop(event):

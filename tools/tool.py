@@ -1,8 +1,8 @@
 from enum import IntEnum
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QShortcut
+from PySide6 import QtGui
+from PySide6.QtCore import Qt, QEvent
 from PySide6.QtWidgets import QToolBar
-from ui.dropview import DropZone
+from ui.dropview import DropRect
 from ui.imgview import ImgView
 from ui.tab import ImgTab
 
@@ -16,9 +16,9 @@ class Tool:
     def __init__(self, tab: ImgTab):
         self.tab: ImgTab = tab
         self._imgview: ImgView = None
-        self._shortcuts: list[QShortcut] = []
+        self._shortcuts: list[QtGui.QShortcut] = []
 
-    def addShortcuts(self, *shortcuts: QShortcut):
+    def addShortcuts(self, *shortcuts: QtGui.QShortcut):
         for shortcut in shortcuts:
             shortcut.setEnabled(False)
         self._shortcuts.extend(shortcuts)
@@ -31,7 +31,7 @@ class Tool:
         self._imgview = imgview
         imgview.clearDropZones()
         for rect in self.getDropRects():
-            imgview.addDropZone(DropZone(rect))
+            imgview.addDropZone(rect)
 
         for shortcut in self._shortcuts:
             shortcut.setEnabled(True)
@@ -54,47 +54,47 @@ class Tool:
     def onResetView(self):
         pass
 
-    def onResize(self, event):
+    def onResize(self, event: QtGui.QResizeEvent):
         pass
 
-    def onFullscreen(self, active):
+    def onFullscreen(self, active: bool):
         pass
 
 
-    def getDropRects(self):
+    def getDropRects(self) -> list[DropRect]:
         return []
 
-    def onDrop(self, event, zoneIndex):
+    def onDrop(self, event: QtGui.QDropEvent, zoneIndex: int):
         pass
 
 
-    def onMouseEnter(self, event):
+    def onMouseEnter(self, event: QtGui.QSinglePointEvent):
         pass
 
-    def onMouseMove(self, event):
+    def onMouseMove(self, event: QtGui.QMouseEvent):
         pass
 
-    def onMouseLeave(self, event):
+    def onMouseLeave(self, event: QEvent):
         pass
 
-    def onMousePress(self, event) -> bool:
+    def onMousePress(self, event: QtGui.QMouseEvent) -> bool:
         return False
 
-    def onMouseRelease(self, event):
+    def onMouseRelease(self, event: QtGui.QMouseEvent):
         pass
 
-    def onMouseWheel(self, event) -> bool:
+    def onMouseWheel(self, event: QtGui.QWheelEvent) -> bool:
         return False
 
-    def onTablet(self, event) -> bool:
+    def onTablet(self, event: QtGui.QTabletEvent) -> bool:
         return False
 
 
-    def onKeyPress(self, event):
+    def onKeyPress(self, event: QtGui.QKeyEvent):
         pass
 
 
-    def onGalleryRightClick(self, file):
+    def onGalleryRightClick(self, file: str):
         pass
 
     def onMediaEvent(self, event: MediaEvent):

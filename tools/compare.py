@@ -4,8 +4,9 @@ import numpy as np
 import cv2 as cv
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Signal, Slot, QRect, QRectF, QPoint, QTimer, QThreadPool, QRunnable, QObject, QMutex, QMutexLocker
-from PySide6.QtGui import QColor, QPen, QPainterPath, QImage, QPixmap, QMouseEvent, QCursor, QTransform
+from PySide6.QtGui import QColor, QPen, QPainterPath, QImage, QPixmap, QMouseEvent, QDropEvent, QCursor, QTransform
 from ui.imgview import ImgView, ImgItem
+from ui.dropview import DropRect
 from lib import qtlib
 from lib.filelist import CachedPathSort
 import ui.export_settings as export
@@ -106,16 +107,19 @@ class CompareTool(ViewTool):
         self.updateDividerLine( self._imgview.mapFromGlobal(QCursor.pos()) )
 
     @override
-    def getDropRects(self):
-        return [QRectF(0, 0, 0.5, 1), QRectF(0.5, 0, 1, 1)]
+    def getDropRects(self) -> list[DropRect]:
+        rects = super().getDropRects()
+        rects[0] =   DropRect("Open Files", 0.00, 0.00, 0.50, 0.85)
+        rects.append(DropRect("Compare To", 0.50, 0.00, 0.50, 0.85))
+        return rects
 
     @override
-    def onDrop(self, event, zoneIndex):
-        if zoneIndex == 0:
-            super().onDrop(event, zoneIndex)
-        else:
+    def onDrop(self, event: QDropEvent, zoneIndex: int):
+        if zoneIndex == 3:
             path = event.mimeData().urls()[0].toLocalFile()
             self.loadCompareImage(path)
+        else:
+            super().onDrop(event, zoneIndex)
 
     @override
     def onGalleryRightClick(self, file: str):
@@ -500,7 +504,7 @@ class VaeGroupBox(QtWidgets.QGroupBox):
         entries.sort(key=CachedPathSort())
         return entries
 
-    @Slot()
+    @Slot(str)
     def _onVaeTypeChanged(self, vaeType: str):
         Config.compareVaeType = vaeType
 
@@ -523,7 +527,7 @@ class VaeGroupBox(QtWidgets.QGroupBox):
     def autoProcess(self, value: bool):
         self.chkAutoProcess.setChecked(value)
 
-    @Slot()
+    @Slot(bool)
     def _onAutoProcessToggled(self, state: bool):
         if state:
             self.vaeProcess()
@@ -568,7 +572,7 @@ class VaeGroupBox(QtWidgets.QGroupBox):
     def _onVaeLoaded(self):
         self.compareTool.tab.statusBar().showMessage("VAE processing...", 0)
 
-    @Slot(QImage)
+    @Slot(str, QImage, float)
     def _onVaeDone(self, file: str, image: QImage, duration: float):
         self.fileDone = file
         self._tasks.pop(file, None)
@@ -576,7 +580,7 @@ class VaeGroupBox(QtWidgets.QGroupBox):
         self.compareTool.setCompareImage(image)
         self.compareTool.tab.statusBar().showColoredMessage(f"VAE processing finished in {duration:.0f} ms", True)
 
-    @Slot(str)
+    @Slot(str, str)
     def _onVaeFail(self, file: str, msg: str):
         self._tasks.pop(file, None)
 

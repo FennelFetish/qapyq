@@ -1,14 +1,18 @@
 from __future__ import annotations
 from enum import IntEnum
-from typing import NamedTuple
+from typing import NamedTuple, TYPE_CHECKING
 from typing_extensions import override
-from PySide6.QtCore import Qt, QRect, QRectF, QSize
-from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QTransform, QPalette, QShortcut, QKeySequence, QMouseEvent, QWheelEvent, QSinglePointEvent
+from PySide6 import QtGui
+from PySide6.QtCore import Qt, QRect, QRectF, QSize, QEvent
+from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QTransform, QPalette, QShortcut, QKeySequence
 from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsView, QGraphicsItem, QGraphicsScene
 from lib import colorlib, imagerw, videorw
 from lib.filelist import FileList
 from config import Config
 from .dropview import DropView
+
+if TYPE_CHECKING:
+    from tools.tool import Tool
 
 
 class MediaItemType(IntEnum):
@@ -38,7 +42,6 @@ class ImgView(DropView):
         self.rotation = 0.0
         self.takeFocusOnFilechange = False
 
-        from tools.tool import Tool
         self._tool: Tool = None
 
         self.filelist = filelist
@@ -120,6 +123,7 @@ class ImgView(DropView):
         pixelSizeSquared = dx*dx + dy*dy
         imgItem.setSmooth(pixelSizeSquared < self.SHOW_PIXEL_SIZE_SQUARED)
 
+    @override
     def resetView(self):
         super().resetView()
         self.rotation = 0.0
@@ -134,11 +138,11 @@ class ImgView(DropView):
 
 
     @property
-    def tool(self):
+    def tool(self) -> Tool:
         return self._tool
 
     @tool.setter
-    def tool(self, tool):
+    def tool(self, tool: Tool):
         if tool is self._tool:
             return
 
@@ -150,20 +154,24 @@ class ImgView(DropView):
         self.updateView()
 
 
+    @override
     def updateView(self):
         super().updateView()
         self.updateImageSmoothness(self.image)
         self._tool.onSceneUpdate()
 
+    @override
     def onDrop(self, event, zoneIndex) -> None:
         self._tool.onDrop(event, zoneIndex)
 
-    def resizeEvent(self, event):
+    @override
+    def resizeEvent(self, event: QtGui.QResizeEvent):
         super().resizeEvent(event)
         self.updateImageTransform()
         self._tool.onResize(event)
 
-    def enterEvent(self, event):
+    @override
+    def enterEvent(self, event: QtGui.QEnterEvent):
         super().enterEvent(event)
 
         if self.image.onMouseEnter(event):
@@ -172,7 +180,8 @@ class ImgView(DropView):
             self._mouseLoc = MouseLocation.Tool
             self._tool.onMouseEnter(event)
 
-    def leaveEvent(self, event):
+    @override
+    def leaveEvent(self, event: QEvent):
         super().leaveEvent(event)
 
         match self._mouseLoc:
@@ -183,35 +192,39 @@ class ImgView(DropView):
 
         self._mouseLoc = MouseLocation.Outside
 
-    def mouseMoveEvent(self, event: QMouseEvent):
+    @override
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent):
         mouseOverControls = self.image.onMouseMove(event)
 
         match self._mouseLoc:
             case MouseLocation.Tool:
                 if mouseOverControls:
                     self._mouseLoc = MouseLocation.Controls
-                    self._tool.onMouseLeave(None) # TODO: Pass event?
+                    self._tool.onMouseLeave(event)
                     self.image.onMouseEnter(event)
 
             case MouseLocation.Controls:
                 if not mouseOverControls:
                     self._mouseLoc = MouseLocation.Tool
                     self.image.onMouseLeave()
-                    self._tool.onMouseEnter(None) # TODO: Pass event?
+                    self._tool.onMouseEnter(event)
 
         if self._mouseLoc == MouseLocation.Tool:
             super().mouseMoveEvent(event)
             self._tool.onMouseMove(event)
 
-    def mousePressEvent(self, event: QMouseEvent):
+    @override
+    def mousePressEvent(self, event: QtGui.QMouseEvent):
         if not (self.image.onMousePress(event) or self._tool.onMousePress(event)):
             super().mousePressEvent(event)
 
-    def mouseReleaseEvent(self, event: QMouseEvent):
+    @override
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
         super().mouseReleaseEvent(event)
         self._tool.onMouseRelease(event)
 
-    def wheelEvent(self, event: QWheelEvent):
+    @override
+    def wheelEvent(self, event: QtGui.QWheelEvent):
         match self._mouseLoc:
             case MouseLocation.Tool:
                 if self._tool.onMouseWheel(event):
@@ -222,14 +235,15 @@ class ImgView(DropView):
 
         super().wheelEvent(event)
 
-    def tabletEvent(self, event):
+    @override
+    def tabletEvent(self, event: QtGui.QTabletEvent):
         if self._tool.onTablet(event):
             event.accept()
         else:
             super().tabletEvent(event)
 
-
-    def keyPressEvent(self, event):
+    @override
+    def keyPressEvent(self, event: QtGui.QKeyEvent):
         super().keyPressEvent(event)
         self._tool.onKeyPress(event)
 
@@ -294,16 +308,16 @@ class MediaItemMixin:
     def onTabActive(self, active: bool):
         pass
 
-    def onMouseMove(self, event: QMouseEvent) -> bool:
+    def onMouseMove(self, event: QtGui.QMouseEvent) -> bool:
         return False
 
-    def onMousePress(self, event: QMouseEvent) -> bool:
+    def onMousePress(self, event: QtGui.QMouseEvent) -> bool:
         return False
 
-    def onMouseWheel(self, event: QWheelEvent) -> bool:
+    def onMouseWheel(self, event: QtGui.QWheelEvent) -> bool:
         return False
 
-    def onMouseEnter(self, event: QSinglePointEvent) -> bool:
+    def onMouseEnter(self, event: QtGui.QSinglePointEvent) -> bool:
         return False
 
     def onMouseLeave(self):

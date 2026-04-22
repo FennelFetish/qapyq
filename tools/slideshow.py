@@ -373,7 +373,7 @@ class SlideshowTool(ViewTool):
         self._cursorTimer.start()
 
     def onMouseLeave(self, event):
-        super().onMouseEnter(event)
+        super().onMouseLeave(event)
         self._cursorTimer.stop()
 
 
