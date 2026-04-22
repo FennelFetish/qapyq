@@ -95,7 +95,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if fullscreen:
             self.toggleFullscreen()
 
-    @Slot()
+    @Slot(int)
     def onTabChanged(self, index: int):
         for i, tab in enumerate(self.tabs()):
             if i != index: # Don't deactivate fullscreen tab
@@ -126,8 +126,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.toggleFullscreen()
         self.askCloseTab(self.tabWidget.currentIndex(), confirm)
 
-    @Slot()
-    def askCloseTab(self, index: int, confirm=False):
+    @Slot(int)
+    def askCloseTab(self, index: int, confirm: bool = False):
         tab: ImgTab = self.tabWidget.widget(index)
         questions = tab.checkClose()
         if questions:
@@ -151,7 +151,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self._closeTab(index)
 
 
-    @Slot()
     def setTool(self, toolName: str):
         if self._fullscreenTab:
             self._fullscreenTab.setTool(toolName)
@@ -159,7 +158,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.currentTab.setTool(toolName)
         self.toolbar.setTool(toolName)
 
-    @Slot()
+    @Slot(str)
     def updateTitle(self, filename: str | None):
         title = Config.windowTitle
         if filename and filename != ImgTab.EMPTY_TAB_TITLE:
@@ -217,7 +216,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return tab.getWindowContent(winName)
         return self.currentTab.getWindowContent(winName)
 
-    @Slot()
+    @Slot(object)
     def onAuxWindowClosed(self, win: aux_window.AuxiliaryWindow) -> None:
         winName = win.configKey
         self.toolbar.setWindowToggleChecked(winName, False)
@@ -258,6 +257,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         for tab in self.tabs():
             tab.filelist.abortLoading()
+            tab.active = False
+            tab.imgview.image.deleteLater()  # Stop video thread
 
         QThreadPool.globalInstance().clear()
 
@@ -417,7 +418,7 @@ class MainMenu(QtWidgets.QMenu):
         menu.selectionChanged.connect(self._onMediaTypesUpdated)
         return menu
 
-    @Slot(list)
+    @Slot(dict)
     def _onMediaTypesUpdated(self, checkStates: dict[str, bool]):
         excludeTypes = [key for key, state in checkStates.items() if not state]
         if len(excludeTypes) < len(checkStates):
