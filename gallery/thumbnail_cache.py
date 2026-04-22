@@ -1,5 +1,5 @@
-import os, time
-from PySide6.QtCore import Slot, Signal, QThreadPool, QObject, QRunnable, Qt
+import os, time, weakref
+from PySide6.QtCore import Qt, Slot, Signal, SignalInstance, QThreadPool, QObject, QRunnable
 from PySide6.QtGui import QPixmap, QImage
 from lib.filelist import DataKeys
 from lib import imagerw, videorw
@@ -7,12 +7,18 @@ from config import Config
 from .gallery_model import GalleryModel
 
 
+class ThumbnailRequest:
+    def __init__(self):
+        self.time = 0
+
 
 class ThumbnailCache(QObject):
     THUMBNAIL_SIZE = 300
-    REQUEST_TIMEOUT = 1000 * 1000000
+    REQUEST_TIMEOUT = 1_000_000_000
 
     _instance = None
+
+    done = Signal(object, str, object, object, object)
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -31,8 +37,11 @@ class ThumbnailCache(QObject):
         self.threadpool = QThreadPool()
         self.threadpool.setMaxThreadCount(Config.galleryThumbnailThreads)
 
+        self.done.connect(self._onThumbnailLoaded, Qt.ConnectionType.QueuedConnection)
+
     def shutdown(self):
         self._active = False
+        self.done.disconnect()
         self.threadpool.clear()
 
 
@@ -41,18 +50,21 @@ class ThumbnailCache(QObject):
             return
 
         # Throttle requests to prevent unnecessary I/O and congestion of thread pool.
-        requestTime = model.filelist.getData(file, DataKeys.ThumbnailRequestTime)
+        request: ThumbnailRequest | None = model.filelist.getData(file, DataKeys.ThumbnailRequestTime)
         now = time.monotonic_ns()
-        if requestTime and requestTime+self.REQUEST_TIMEOUT > now:
+        if request is None:
+            request = ThumbnailRequest()
+        elif request.time + self.REQUEST_TIMEOUT > now:
             return
-        model.filelist.setData(file, DataKeys.ThumbnailRequestTime, now, False)
 
-        task = ThumbnailTask(model, file)
-        task.signals.done.connect(self._onThumbnailLoaded, Qt.ConnectionType.QueuedConnection)
+        request.time = now
+        model.filelist.setData(file, DataKeys.ThumbnailRequestTime, request, False)
+
+        task = ThumbnailTask(self.done, model, file, request)
         self.threadpool.start(task)
 
 
-    @Slot(object, str, object, object, dict)
+    @Slot(object, str, object, object, object)
     def _onThumbnailLoaded(self, model: GalleryModel, file: str, img: QImage, imgSize: tuple[int, int], icons: dict):
         pixmap = QPixmap.fromImage(img)
 
@@ -70,24 +82,28 @@ class ThumbnailCache(QObject):
 
 
 class ThumbnailTask(QRunnable):
-    class Signals(QObject):
-        done = Signal(object, str, object, tuple, dict)
-
     ICON_KEYS = (DataKeys.CaptionState, DataKeys.MaskState)
 
-    def __init__(self, model: GalleryModel, file: str):
+    def __init__(self, doneSignal: SignalInstance, model: GalleryModel, file: str, request: ThumbnailRequest):
         super().__init__()
         self.setAutoDelete(True)
+        self.done = doneSignal
 
-        self.model = model
+        self.model = weakref.ref(model)
+        self.request = weakref.ref(request)
         self.file = file
-        self.signals = self.Signals()
 
         self.icons = { k: model.filelist.getData(file, k) for k in self.ICON_KEYS }
 
-
     @Slot()
     def run(self):
+        if self.request() is None:
+            return
+
+        model = self.model()
+        if model is None:
+            return
+
         # QPixmap is not threadsafe, loading as QImage instead
         try:
             if videorw.isVideoFile(self.file):
@@ -100,7 +116,7 @@ class ThumbnailTask(QRunnable):
             w = h = -1
 
         self.checkIcons()
-        self.signals.done.emit(self.model, self.file, img, (w, h), self.icons)
+        self.done.emit(model, self.file, img, (w, h), self.icons)
 
     def checkIcons(self):
         filenameNoExt = os.path.splitext(self.file)[0]

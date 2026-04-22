@@ -9,6 +9,7 @@ from PySide6.QtGui import QTextCursor, QTextDocument
 from PySide6.QtWidgets import QPlainTextDocumentLayout
 from lib import qtlib
 from lib.filelist import FileList, DataKeys
+from lib.util import returnOnException
 from config import Config
 from .gallery_caption import GalleryCaption
 from .gallery_header import GalleryHeader
@@ -57,7 +58,7 @@ class ThumbnailUpdateQueue(QObject):
 
     def __init__(self, model: 'GalleryModel'):
         super().__init__(model)
-        self.model = model
+        self.model: GalleryModel = model
         self.reset()
 
         self.timer = QTimer(singleShot=True, interval=20)
@@ -85,6 +86,10 @@ class ThumbnailUpdateQueue(QObject):
         self.reset()
 
         self.model.dataChanged.emit(startIndex, endIndex, self.ROLES)
+
+    def shutdown(self):
+        self.timer.timeout.disconnect()
+        self.model = None
 
 
 
@@ -146,6 +151,11 @@ class GalleryModel(QAbstractTableModel):
         self._docFont = qtlib.getMonospaceFont()
 
         self._thumbnailUpdateQueue = ThumbnailUpdateQueue(self)
+
+    @override
+    def deleteLater(self):
+        self._thumbnailUpdateQueue.shutdown()
+        super().deleteLater()
 
 
     def getFileItem(self, file: str) -> FileItem | None:
@@ -275,7 +285,6 @@ class GalleryModel(QAbstractTableModel):
         assert not self.headerItems or next(fileIt, None) is None
 
 
-    @Slot(str)
     def onThumbnailLoaded(self, file: str):
         try:
             fileItem = self.fileItems[file]
@@ -412,6 +421,7 @@ class GalleryModel(QAbstractTableModel):
         return self.numColumns
 
     @override
+    @returnOnException(None)
     def data(self, index: QModelIndex | QPersistentModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
         item = self.posItems.get(GridPos(index.row(), index.column()))
         if item is None:
@@ -472,6 +482,7 @@ class GalleryModel(QAbstractTableModel):
 
 
     @override
+    @returnOnException(False)
     def setData(self, index: QModelIndex | QPersistentModelIndex, value, role: int = Qt.ItemDataRole.DisplayRole) -> bool:
         item = self.posItems.get(GridPos(index.row(), index.column()))
         if item is None:
@@ -492,6 +503,7 @@ class GalleryModel(QAbstractTableModel):
 
 
     @override
+    @returnOnException(Qt.ItemFlag.NoItemFlags)
     def flags(self, index: QModelIndex | QPersistentModelIndex) -> Qt.ItemFlag:
         itemType = index.data(GalleryModel.ROLE_TYPE)
         if itemType == ItemType.File:

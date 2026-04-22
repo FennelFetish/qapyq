@@ -1,4 +1,4 @@
-import os
+import os, weakref
 from typing import NamedTuple, Iterable
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot
@@ -87,7 +87,7 @@ class GalleryHeader(QtWidgets.QWidget):
 class MenuLabel(QtWidgets.QLabel):
     def __init__(self, header: GalleryHeader):
         super().__init__("☰")
-        self.header = header
+        self.header = weakref.ref(header)
 
     def setText(self, text: str) -> None:
         text = f"{text}   ☰" if text else "☰"
@@ -97,24 +97,26 @@ class MenuLabel(QtWidgets.QLabel):
         if event.button() in (Qt.MouseButton.LeftButton, Qt.MouseButton.RightButton):
             event.accept()
 
-            menu = self.buildMenu()
-            menu.exec_(self.mapToGlobal(event.position()).toPoint())
-            return
+            if header := self.header():
+                menu = self.buildMenu(header)
+                menu.exec_(self.mapToGlobal(event.position()).toPoint())
 
-        super().mousePressEvent(event)
+        else:
+            super().mousePressEvent(event)
 
-    def buildMenu(self) -> QtWidgets.QMenu:
+    @staticmethod
+    def buildMenu(header: GalleryHeader) -> QtWidgets.QMenu:
         menu = QtWidgets.QMenu("Folder")
 
         actSelectFiles = menu.addAction("Select Files")
-        actSelectFiles.triggered.connect(self.header.selectFiles)
+        actSelectFiles.triggered.connect(header.selectFiles)
 
         actOpenFiles = menu.addAction("Open Files in New Tab")
-        actOpenFiles.triggered.connect(self.header.openFilesInNewTab)
+        actOpenFiles.triggered.connect(header.openFilesInNewTab)
 
         menu.addSeparator()
 
         actRemoveFiles = menu.addAction("Unload Files")
-        actRemoveFiles.triggered.connect(self.header.removeFiles)
+        actRemoveFiles.triggered.connect(header.removeFiles)
 
         return menu

@@ -1,4 +1,5 @@
-import random
+import random, traceback
+from functools import wraps
 
 
 def rnd01():
@@ -13,6 +14,22 @@ def stripCountPadding(text: str) -> tuple[str, int, int]:
     padRight = len(text) - padLeft - len(textStrip)
 
     return textStrip, padLeft, padRight
+
+
+
+def returnOnException(default=None):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except:
+                traceback.print_exc()
+                return default
+
+        return wrapper
+
+    return decorator
 
 
 

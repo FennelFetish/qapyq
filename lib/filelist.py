@@ -1,4 +1,4 @@
-import os, enum, time
+import os, enum, time, weakref
 from typing import Iterable, Iterator, Any, Callable
 from bisect import bisect_left, bisect_right
 from PySide6.QtCore import Qt, Signal, Slot, QThreadPool, QRunnable, QObject, QMutex, QMutexLocker
@@ -362,7 +362,7 @@ class FileList:
             self.currentIndex = -1
 
         if finished:
-            self._loadReceiver.deleteLater()
+            #self._loadReceiver.deleteLater()
             self._loadReceiver = None
 
             # Enable lazy loading if there's only one file
@@ -798,8 +798,12 @@ class FileList:
 
 
 
+# FileListLoadTask must outlive FileListLoadReceiver:
+# Deallocate FileListLoadReceiver by setting "self._loadReceiver = None" in FileList._applyLoadedFiles()
+# - This happens during the _onApply @Slot, but deletion happens afterwards
+# - This will also deallocate the task afterwards
 class FileListLoadReceiver(QObject):
-    apply = Signal(tuple, str, bool)  # wrapped files, common root, finished
+    apply = Signal(object, str, bool)  # file list (as object to prevent copy), common root, finished
 
     def __init__(self, filelist: FileList):
         super().__init__(parent=None)
@@ -808,12 +812,12 @@ class FileListLoadReceiver(QObject):
 
         self.task: FileListLoadTask | None = None
 
-    @Slot(tuple, str, bool)
-    def _onApply(self, wrappedFiles: tuple[list[str]], commonRoot: str, finished: bool):
+    @Slot(object, str, bool)
+    def _onApply(self, files: list[str], commonRoot: str, finished: bool):
         if self.filelist is None:
             return
 
-        self.filelist._applyLoadedFiles(wrappedFiles[0], commonRoot, finished)
+        self.filelist._applyLoadedFiles(files, commonRoot, finished)
 
         if finished:
             self.filelist = None
@@ -824,7 +828,7 @@ class FileListLoadReceiver(QObject):
 
     def startTask(self, paths: list[str]):
         self.task = FileListLoadTask(self, paths)
-        QThreadPool.globalInstance().start(self.task)
+        QThreadPool.globalInstance().start(QRunnable.create(self.task))
 
     def abortTask(self):
         self.apply.disconnect()
@@ -852,16 +856,14 @@ class Folder:
         return (entry[0] for entry in self.fileEntries)
 
 
-class FileListLoadTask(QRunnable):
+class FileListLoadTask:
     NOTIFY_INTERVAL_FIRST =   300_000_000  # 300 ms
     NOTIFY_INTERVAL       = 2_000_000_000  # 2 seconds
 
     def __init__(self, receiver: FileListLoadReceiver, paths: list[str]):
-        super().__init__()
-        self.setAutoDelete(True)
         self.startTime = time.monotonic_ns()
 
-        self.receiver = receiver
+        self.receiver = weakref.ref(receiver)
         self.paths = paths
 
         self.numInitialFiles = 0
@@ -918,12 +920,11 @@ class FileListLoadTask(QRunnable):
         return folder
 
 
-    @Slot()
-    def run(self):
+    def __call__(self):
         fileEntryKey = lambda entry: entry[1]
 
         try:
-            for path in self.paths:
+            for path in filter(None, self.paths):
                 path = os.path.abspath(path)
 
                 # Walk folders
@@ -981,6 +982,10 @@ class FileListLoadTask(QRunnable):
         self.apply()
 
     def apply(self, finished: bool = False):
+        receiver = self.receiver()
+        if receiver is None:
+            return
+
         folders = sorted(self.folders.values(), key=Folder.key)
 
         files = list[str]()
@@ -988,4 +993,4 @@ class FileListLoadTask(QRunnable):
             files.extend(folder.files)
 
         commonRoot = getCommonRoot(files)
-        self.receiver.apply.emit((files,), commonRoot, finished)  # Wrap list in tuple to prevent copy
+        receiver.apply.emit(files, commonRoot, finished)

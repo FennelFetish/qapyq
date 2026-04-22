@@ -54,6 +54,7 @@ class Gallery(QtWidgets.QWidget):
 
     @override
     def deleteLater(self):
+        self.galleryView.deleteLater()
         self.galleryModel.deleteLater()
         super().deleteLater()
 

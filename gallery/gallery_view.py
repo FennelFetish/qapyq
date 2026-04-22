@@ -56,7 +56,7 @@ class GalleryView(QTableView):
             self.delegate.deleteLater()
             self.delegate = None
 
-        return super().deleteLater()
+        super().deleteLater()
 
 
     @override
