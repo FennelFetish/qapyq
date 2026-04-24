@@ -1,7 +1,7 @@
 from typing import Callable
 import math
 from llama_cpp import Llama
-from llama_cpp.llama_chat_format import Llava15ChatHandler
+#from llama_cpp._utils import suppress_stdout_stderr
 from host.imagecache import ImageFile
 from .backend import InferenceBackend
 from .devmap import DevMap
@@ -12,6 +12,7 @@ class LlamaCppBackend(InferenceBackend):
         super().__init__(config)
 
         deviceId = DevMap.getDeviceId()
+        flashAttn = DevMap.isFlashAttentionAvailable()
 
         self.llm = Llama(
             model_path=config.get("model_path"),
@@ -20,7 +21,7 @@ class LlamaCppBackend(InferenceBackend):
             n_ctx=config.get("ctx_length", 32768), # n_ctx should be increased to accommodate the image embedding
             n_batch=config.get("batch_size", 512),
             n_threads=config.get("num_threads", 11),
-            flash_attn=True,
+            flash_attn=flashAttn,
             seed=self.randomSeed(),
             #logits_all=True,# needed to make llava work (DEPRECATED - set llama_batch.logits instead)
             verbose=False,
@@ -106,6 +107,7 @@ class LlamaCppBackend(InferenceBackend):
             for i, (name, prompt) in enumerate(conversation.items()):
                 messages.append( {"role": "user", "content": userContentFunc(prompt, i)} )
 
+                #with suppress_stdout_stderr(disable=False):
                 completion = self.llm.create_chat_completion(
                     messages = messages,
                     stop=self.stop,
@@ -123,11 +125,23 @@ class LlamaCppBackend(InferenceBackend):
 
 
 class LlamaCppVisionBackend(LlamaCppBackend):
-    def __init__(self, config: dict, chatHandlerType: type):
-        chatHandler = chatHandlerType(
-            clip_model_path=config.get("proj_path"),
-            verbose=False
-        )
+    def __init__(self, config: dict, chatHandlerType: type | None = None):
+        if chatHandlerType is None:
+            from .gguf_chat_handler import JinjaChatHandler
+            chatHandler = JinjaChatHandler(
+                model_path=config["model_path"],
+                clip_model_path=config["proj_path"],
+                verbose=False,
+                enable_thinking=False
+            )
+            self.createContentFunc = self._createContentFuncBytes
+
+        else:
+            chatHandler = chatHandlerType(
+                clip_model_path=config.get("proj_path"),
+                verbose=False
+            )
+            self.createContentFunc = self._createContentFuncURI
 
         super().__init__(config, chat_handler=chatHandler)
         self.stop.append("USER:")
@@ -135,6 +149,12 @@ class LlamaCppVisionBackend(LlamaCppBackend):
 
 
     def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt=None) -> dict[str, str]:
+        getUserContent = self.createContentFunc(imgFile)
+        return self._tryAnswer(getUserContent, prompts, systemPrompt)
+
+
+    @staticmethod
+    def _createContentFuncURI(imgFile: ImageFile):
         imgURI = imgFile.getURI()
 
         def getUserContent(prompt: str, index: int):
@@ -146,57 +166,19 @@ class LlamaCppVisionBackend(LlamaCppBackend):
             else:
                 return prompt.strip()
 
-        return self._tryAnswer(getUserContent, prompts, systemPrompt)
+        return getUserContent
 
+    @staticmethod
+    def _createContentFuncBytes(imgFile: ImageFile):
+        imgBytes = imgFile.getEncodedBytes()
 
+        def getUserContent(prompt: str, index: int):
+            if index == 0:
+                return [
+                    {"type": "text", "text": prompt.strip()},
+                    {"type": "image_bytes", "image_bytes": imgBytes}
+                ]
+            else:
+                return prompt.strip()
 
-# https://github.com/abetlen/llama-cpp-python/pull/1989
-class Gemma3ChatHandler(Llava15ChatHandler):
-    # Chat Format:
-    # '<bos><start_of_turn>user\n{system_prompt}\n\n{prompt}<end_of_turn>\n<start_of_turn>model\n'
-
-    DEFAULT_SYSTEM_MESSAGE = None
-
-    CHAT_FORMAT = (
-        "{% if messages[0]['role'] == 'system' %}"
-        "{% if messages[0]['content'] is string %}"
-        "{% set first_user_prefix = messages[0]['content'] + '\n\n' %}"
-        "{% else %}"
-        "{% set first_user_prefix = messages[0]['content'][0]['text'] + '\n\n' %}"
-        "{% endif %}"
-        "{% set loop_messages = messages[1:] %}"
-        "{% else %}"
-        "{% set first_user_prefix = \"\" %}"
-        "{% set loop_messages = messages %}"
-        "{% endif %}"
-        "{% for message in loop_messages %}"
-        "{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}"
-        "{{ raise_exception(\"Conversation roles must alternate user/assistant/user/assistant/...\") }}"
-        "{% endif %}"
-        "{% if (message['role'] == 'assistant') %}"
-        "{% set role = \"model\" %}"
-        "{% else %}"
-        "{% set role = message['role'] %}"
-        "{% endif %}"
-        "{{ '<start_of_turn>' + role + '\n' + (first_user_prefix if loop.first else \"\") }}"
-        "{% if message['content'] is string %}"
-        "{{ message['content'] | trim }}"
-        "{% elif message['content'] is iterable %}"
-        "{% for item in message['content'] %}"
-        "{% if item['type'] == 'image_url' and item['image_url'] is string %}"
-        "{{ '\n\n' + item['image_url'] + '\n\n' }}"
-        "{% elif item['type'] == 'image_url' and item['image_url'] is mapping %}"
-        "{{ '\n\n' + item['image_url']['url'] + '\n\n' }}"
-        "{% elif item['type'] == 'text' %}"
-        "{{ item['text'] | trim }}"
-        "{% endif %}"
-        "{% endfor %}"
-        "{% else %}"
-        "{{ raise_exception(\"Invalid content type\") }}"
-        "{% endif %}"
-        "{{ '<end_of_turn>\n' }}"
-        "{% endfor %}"
-        "{% if add_generation_prompt %}"
-        "{{ '<start_of_turn>model\n' }}"
-        "{% endif %}"
-    )
+        return getUserContent

@@ -63,11 +63,9 @@ class ImageFile:
         source = BytesIO(self.data) if self.data else self.file
         return imagerw.loadImagePIL(source, forceRGB, allowGreyscale, allowAlpha)
 
-    def getURI(self) -> str:
-        import base64
 
-        # URI could be f"file://{self.file}",
-        # but always load image with PIL to apply sRGB color profile and exif rotation.
+    def _normalizeEncoding(self) -> tuple[bytes, str]:
+        # Always load image with PIL to convert format, apply sRGB color profile and exif rotation.
         img = self.openPIL()
         buffer = BytesIO()
 
@@ -78,7 +76,17 @@ class ImageFile:
             img.save(buffer, format='JPEG', optimize=False, quality=95)
             mimetype = "image/jpeg"
 
-        base64Data = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        return buffer.getvalue(), mimetype
+
+    def getEncodedBytes(self) -> bytes:
+        imgBytes, mimetype = self._normalizeEncoding()
+        return imgBytes
+
+    def getURI(self) -> str:
+        # URI could be f"file://{self.file}", but always load image with PIL to convert format
+        import base64
+        imgBytes, mimetype = self._normalizeEncoding()
+        base64Data = base64.b64encode(imgBytes).decode('utf-8')
         return "".join(("data:", mimetype, ";base64,", base64Data))
 
 

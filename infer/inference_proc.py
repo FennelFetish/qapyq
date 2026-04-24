@@ -171,7 +171,7 @@ class InferenceProcess(QObject):
             env.insert("VLLM_NO_USAGE_STATS", "1")
             env.insert("VLLM_DO_NOT_TRACK", "1")
 
-            self.proc = QProcess()
+            self.proc = QProcess(self)
             self.proc.setProgram(self.procCfg.executable)
             self.proc.setArguments(self.procCfg.arguments)
 

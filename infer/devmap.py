@@ -10,7 +10,7 @@ class DevMap:
         return int(Config.inferDevices[0] or 0) if Config.inferDevices else 0
 
     @classmethod
-    def getTorchDeviceDtype(cls, half=True) -> tuple:
+    def getTorchDeviceDtype(cls, half=True):
         import torch
         if torch.cuda.is_available():
             device = torch.device("cuda", cls.getDeviceId())
@@ -121,11 +121,18 @@ class DevMap:
         if self.hasCpuLayers:
             return "eager"
 
+        if self.isFlashAttentionAvailable():
+            return "flash_attention_2"
+        else:
+            return "eager"
+
+    @staticmethod
+    def isFlashAttentionAvailable() -> bool:
         try:
             import flash_attn
-            return "flash_attention_2"
+            return True
         except:
-            return "eager"
+            return False
 
 
     def print(self) -> None:
