@@ -24,7 +24,7 @@
 
 ## Features
 
-- **Media Viewer**: Display and navigate images and videos
+- **🧿 Media Viewer**: Display and navigate images and videos
   - Quick-starting desktop application built with Qt
   - Runs smoothly with a million files
   - Modular interface that lets you place windows on different monitors
@@ -36,7 +36,7 @@
   - Measure size, area and pixel distances <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#measure-tool)</sup>
   - Slideshow <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#slideshow-tool)</sup>
 
-- **Image/Mask Editor**: Prepare media for training
+- **🎨 Image/Mask Editor**: Prepare media for training
   - Crop and save parts of images <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#crop-tool)</sup>
   - Scale images, optionally using AI upscale models <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#scale-tool)</sup>
   - Crop and scale videos, trimmed to exact frame count
@@ -46,7 +46,7 @@
   - Record masking operations into macros <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#macro-recording)</sup>
   - VAE-encode images and check their latent representation <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#vae-reconstruction)</sup>
 
-- **Captioning**: Describe media with text
+- **📜 Captioning**: Describe media with text
   - Edit captions manually with drag-and-drop support <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#caption-window)</sup>
   - Save multiple captions in per-media JSON files <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#captions-in-text-files-vs-json-files)</sup>
   - *Multi-Edit Mode*: Edit captions across multiple files simultaneously <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#multi-edit-mode)</sup>
@@ -60,20 +60,20 @@
   - Multi-turn conversations with VLMs <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#prompts-and-conversations)</sup>
   - Further refinement with LLMs
 
-- **Stats/Filters**: Summarize your data and get an overview
+- **📐 Stats/Filters**: Summarize your data and get an overview
   - List all tags, media resolutions, masked regions, or size of concept folders <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#stats)</sup>
   - Filter media and create subsets <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Tips-and-Workflows#training-on-subsets)</sup>
   - Combine and chain filters
   - Export the summaries as CSV
 
-- **Batch Processing**: Process whole folders at once
+- **🚀 Batch Processing**: Process whole folders at once
   - Flexible batch captioning, tagging and transformation <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#batch)</sup>
   - Batch scaling of images
   - Batch masking with user-defined macros
   - Batch cropping of images using your macros
   - Copy, move and rename files, create symlinks, ZIP captions for backups
 
-- **AI Assistance**:
+- **🔮 AI Assistance**:
   - Support for state-of-the-art captioning and masking models
   - Model and sampling settings, GPU acceleration with CPU offload support
   - On-the-fly NF4 and INT8 quantization
@@ -138,31 +138,55 @@ Find more specialized finetuned models on [huggingface.co](https://huggingface.c
 
 
 ## Setup
-Requires [Python](https://www.python.org/downloads/) 3.10 or later.<br>
-And for video processing you'll need [ffmpeg](https://ffmpeg.org/download.html) added to your `PATH` environment variable.
 
-By default, prebuilt packages for CUDA 12.8 are installed. If you need a different CUDA version, change the URLs in `requirements-pytorch.txt` and `requirements-flashattn.txt` before running the setup script.
-
-1. Git clone or [download](https://github.com/FennelFetish/qapyq/archive/refs/heads/main.zip) this repository.
+1. [Download](https://github.com/FennelFetish/qapyq/archive/refs/heads/main.zip) this repository or clone it with git:
+   - `git clone https://github.com/FennelFetish/qapyq.git`
 2. Run `setup.sh` on Linux, `setup.bat` on Windows.
    - Packages are installed into a virtual environment.
-   - The setup script will ask you which components to install.
-     - FlashAttention is optional for most models but recommended for speed.
-     - You can choose to install only the GUI and media processing packages without AI assistance.
-     - When installing on a headless server for remote inference, you can choose to install only the backend.
+
+The setup script will ask you which components to install:
+- On Linux, it lets you to choose between installed Python versions.
+- FlashAttention is optional for most models but recommended for speed.
+- You can choose to install only the GUI and media processing packages without AI assistance.
+- When installing on a headless server for remote inference, you can choose to install only the backend.
 
 If the setup scripts didn't work for you, but you manually got it running, please share your solution and raise an issue.
 
-### Startup
+### Dependencies
+#### Requires [Python](https://www.python.org/downloads/) 3.10 or later
+- Python 3.14 can run the GUI, but may cause issues with setup and slow inference.
+  - Consider installing a lower Python version (3.12 for widest compatibility).
+
+#### External Dependencies
+- To run GGUF models with `llama-cpp-python` you may need to install CUDA runtime libraries<br>(e.g. `libcudart12`, `libcublas12` from Ubuntu's package manager).
+- For exporting videos you'll need [ffmpeg](https://ffmpeg.org/download.html) added to your `PATH` environment variable.
+
+#### Compute Platform
+During setup, select the compute platform that matches your system.
+In combination with the Python version, the platform affects the version and availability of prebuilt wheels:
+
+| Platform      | `torch` | `onnxruntime` <sup>1</sup> | `llama-cpp-python` <sup>2</sup> | `flash_attn` <sup>3</sup> |
+|---------------|---------|---------------|--------------|--------------------|
+| **CUDA 12.8** | 2.8     | `onnxruntime-gpu`<br>Python 3.10 - 3.14 | for CUDA 12.4<br>Linux: Python 3.10 - 3.14 | Python 3.10 - 3.13 |
+| **CUDA 13.0** | 2.11    | `onnxruntime-gpu` <sup>(nightly)</sup><br>Python 3.11 - 3.14 | for CUDA 12.4<br>Linux: Python 3.10 - 3.14 | Python 3.10 - 3-14 |
+| **ROCm 7.2**  | 2.11    | `onnxruntime-migraphx`<br>Python 3.10 and 3.12 | 🚫 | 🚫 |
+| **CPU**       | 2.11    | `onnxruntime`<br>Python 3.10 - 3.14 | 0.3.19<br>Python 3.10 - 3.13 | 🚫 |
+
+<sup>1</sup> For running WD/PixAI tagging models and semantic sorting<br>
+<sup>2</sup> For running GGUF models<br>
+<sup>3</sup> Improves inference speed
+
+
+## Startup
 - Linux: `run.sh`
 - Windows: `run.bat` or `run-console.bat`
 
 You can open files or folders directly in qapyq by associating the file types with the respective run script in your OS.
 For shortcuts, icons are available in the `qapyq/res` folder.
 
-### Update
-If git was used to clone the repository, simply use `git pull` to update.<br>
-If the repository was downloaded as a zip archive, download it again and replace the installed files.
+## Update
+If you cloned the repository with git, simply use `git pull` to update.<br>
+If you downloaded the repository as a zip archive, download it again and replace the installed files.
 
 To update the installed packages in the virtual environment, run the setup script again.
 
@@ -171,7 +195,8 @@ New dependencies may be added. If the program fails to start or crashes, run the
 
 ## User Guide
 More information is available in the [Wiki](https://github.com/FennelFetish/qapyq/wiki).<br>
-Use the page index on the right side to find topics and navigate the Wiki.
+Use the page index on the right side to navigate and find topics.<br>
+Or click on the <sup>[?](#features)</sup> in the feature list above.
 
 **How to**:
 - Setup and configure AI models: [Model Setup](https://github.com/FennelFetish/qapyq/wiki/Setup#model-setup)

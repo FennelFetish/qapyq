@@ -1,13 +1,29 @@
+# The index URL and torch version is set in main_setup.py during setup.
+# The values passed to pip depend on user input and this choice
+# also affects availability of prebuilt flash_attn wheels.
+
+# Selecting CUDA 12.8 in qapyq's setup script will install torch 2.8.
+# Selecting CUDA 13.0 will install torch 2.11.
+
+# Some URLs are listed below for reference or manual installation.
+# For more variants, see: https://pytorch.org/get-started/locally/
+
+
+# PyTorch for CUDA (nvidia)
 #--extra-index-url https://download.pytorch.org/whl/cu121
 #--extra-index-url https://download.pytorch.org/whl/cu124
 #--extra-index-url https://download.pytorch.org/whl/cu126
---extra-index-url https://download.pytorch.org/whl/cu128
+#--extra-index-url https://download.pytorch.org/whl/cu128
 #--extra-index-url https://download.pytorch.org/whl/cu129
 #--extra-index-url https://download.pytorch.org/whl/cu130
-#--extra-index-url https://download.pytorch.org/whl/rocm6.4
 
-# torch version is set in main_setup.py
-# it affects availability of prebuilt flash_attn wheels
+# PyTorch for ROCm (AMD)
+#--extra-index-url https://download.pytorch.org/whl/rocm6.4
+#--extra-index-url https://download.pytorch.org/whl/rocm7.2
+
+# PyTorch for CPU
+#--extra-index-url https://download.pytorch.org/whl/cpu
+
 
 torch
 torchvision

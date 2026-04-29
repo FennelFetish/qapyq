@@ -2,9 +2,6 @@ import os, sys, subprocess, traceback
 from typing import NamedTuple
 
 
-# PyTorch version affects availability of prebuilt flash_attn wheels
-TORCH = "torch<2.9"
-
 OLD_TRANSFORMERS_VERSION = "4.45.2"
 
 PIP_ARGS = [sys.executable, "-m", "pip", "install", "--upgrade", "--upgrade-strategy", "eager"]
@@ -12,48 +9,101 @@ PIP_ARGS = [sys.executable, "-m", "pip", "install", "--upgrade", "--upgrade-stra
 
 class Component:
     def __init__(self, title: str, required: bool, args: list[str]):
-        self.title = title
-        self.required = required
-        self.args = args
+        self.title: str      = title
+        self.required: bool  = required
+        self.args: list[str] = args
+        self.prepareArgs: list[str] | None  = None
+
+    def pipPrepare(self) -> bool:
+        if self.prepareArgs:
+            subprocess.check_call(self.prepareArgs)
+            return True
+        return False
 
     def pipInstall(self):
         args = PIP_ARGS + self.args
         subprocess.check_call(args)
 
 
-class ComponentList(NamedTuple):
+
+COMP_ONNX_CPU    = Component("ONNX runtime for CPU",            False, ["onnxruntime"])
+COMP_ONNX_ROCM   = Component("ONNX runtime for ROCm/MIGraphX",  False, ["-r", "requirements-onnx-rocm.txt"])
+COMP_ONNX_CUDA   = Component("ONNX runtime for CUDA 12",        False, ["onnxruntime-gpu"])
+COMP_ONNX_CUDA13 = Component("ONNX runtime for CUDA 13",        False, [
+    "--index-url", "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ort-cuda-13-nightly/pypi/simple/",
+    "onnxruntime-gpu==1.25.0.dev20260331005"  # https://github.com/microsoft/onnxruntime/issues/27944
+])
+
+ONNX_UNINSTALL_ARGS = [sys.executable, "-m", "pip", "uninstall", "-y", "onnxruntime", "onnxruntime-gpu"]
+
+
+# COMP_FLASHATTN_CUDA = Component("FlashAttention", False, ["flash_attn", "--no-build-isolation", "--verbose"])
+COMP_FLASHATTN_CUDA   = Component("FlashAttention", False, ["-r", "requirements-flashattn.txt"])
+COMP_FLASHATTN_CUDA13 = Component("FlashAttention", False, ["-r", "requirements-flashattn-cuda13.txt"])
+
+
+COMP_LLAMACPP_CUDA   = Component("llama.cpp for CUDA", False, ["--index-url", "https://abetlen.github.io/llama-cpp-python/whl/cu124", "llama-cpp-python"])
+COMP_LLAMACPP_CPU    = Component("llama.cpp for CPU",  False, ["--index-url", "https://abetlen.github.io/llama-cpp-python/whl/cpu",   "llama-cpp-python"])
+
+
+class ComputePlatform(NamedTuple):
     title: str
-    backend: bool
-    components: list[Component]
+    torch: str
+    torchIndex: str
+    onnx: Component | None = None
+    flashAttn: Component | None = None
+    llamaCpp: Component | None = None
 
-
-COMP_PIP       = Component("package installer", True,   ["pip"])
-COMP_INFERENCE = Component("inference backend", True,   ["-r", "requirements-infer.txt", TORCH])
-COMP_FLASHATTN = Component("FlashAttention",    False,  ["-r", "requirements-flashattn.txt", TORCH])
-#COMP_FLASHATTN = Component("FlashAttention",    False,  ["flash_attn", "--no-build-isolation", "--verbose"])
-
-COMPONENTS = {
-    "1": ComponentList("all components", True, [
-        COMP_PIP,
-        Component("base requirements",      True,   ["-r", "requirements.txt"]),
-        Component("GUI requirements",       True,   ["-r", "requirements-gui.txt"]),
-        Component("PyTorch",                True,   ["-r", "requirements-pytorch.txt", TORCH]),
-        COMP_INFERENCE,
-        Component("llama.cpp",              False,  ["-r", "requirements-llamacpp.txt"]),
-    ]),
-    "2": ComponentList("only GUI", False, [
-        COMP_PIP,
-        Component("base requirements",      True,   ["-r", "requirements.txt"]),
-        Component("GUI requirements",       True,   ["-r", "requirements-gui.txt"]),
-    ]),
-    "3": ComponentList("only backend", True, [
-        COMP_PIP,
-        Component("base requirements",      True,   ["-r", "requirements.txt"]),
-        Component("PyTorch",                True,   ["-r", "requirements-pytorch.txt", TORCH]),
-        COMP_INFERENCE,
-        Component("llama.cpp",              False,  ["-r", "requirements-llamacpp.txt"]),
-    ])
+# PyTorch version affects availability of prebuilt flash_attn wheels
+PLATFORMS = {
+    "1": ComputePlatform("CUDA 12.8",   "torch==2.8.*",     "https://download.pytorch.org/whl/cu128",    COMP_ONNX_CUDA,    COMP_FLASHATTN_CUDA,    COMP_LLAMACPP_CUDA),
+    "2": ComputePlatform("CUDA 13.0",   "torch==2.11.*",    "https://download.pytorch.org/whl/cu130",    COMP_ONNX_CUDA13,  COMP_FLASHATTN_CUDA13,  COMP_LLAMACPP_CUDA),
+    "3": ComputePlatform("ROCm 7.2",    "torch==2.11.*",    "https://download.pytorch.org/whl/rocm7.2",  COMP_ONNX_ROCM),
+    "4": ComputePlatform("CPU",         "torch==2.11.*",    "https://download.pytorch.org/whl/cpu",      COMP_ONNX_CPU,     None,                   COMP_LLAMACPP_CPU),
 }
+
+
+
+class ComponentOption(NamedTuple):
+    title: str
+    gui: bool
+    backend: bool
+
+COMPONENT_OPTIONS = {
+    "1": ComponentOption("all components",  True,  True),
+    "2": ComponentOption("only GUI",        True,  False),
+    "3": ComponentOption("only backend",    False, True),
+}
+
+
+
+def buildComponents(choice: ComponentOption, platform: ComputePlatform, oldTransformers: bool, flashAttn: bool) -> list[Component]:
+    components = [
+        Component("package installer", True, ["pip"]),
+        Component("base requirements", True, ["-r", "requirements.txt"]),
+    ]
+
+    if choice.gui:
+        components.append( Component("GUI requirements", True, ["-r", "requirements-gui.txt"]) )
+
+    if choice.backend:
+        components.append( Component("PyTorch", True, ["--extra-index-url", platform.torchIndex, "-r", "requirements-pytorch.txt", platform.torch]) )
+
+        transformersArgs = [f"transformers=={OLD_TRANSFORMERS_VERSION}"] if oldTransformers else []
+        components.append( Component("inference backend", True, ["-r", "requirements-infer.txt", platform.torch, *transformersArgs]) )
+
+        if platform.onnx:
+            platform.onnx.prepareArgs = ONNX_UNINSTALL_ARGS
+            components.append(platform.onnx)
+
+        if platform.llamaCpp:
+            components.append(platform.llamaCpp)
+
+        if flashAttn and platform.flashAttn:
+            platform.flashAttn.args.append(platform.torch)
+            components.append(platform.flashAttn)
+
+    return components
 
 
 
@@ -62,31 +112,61 @@ def printSep(text: str):
     print()
 
 
+
 ASK_COMPONENTS_TEXT = """
 qapyq supports automatic captioning, upscaling, masking and semantic sorting using AI models.
-The required packages are installed into a virtual environment that needs 12 GB of space.
+The required packages are installed into a virtual environment that needs 10-15 GB of space.
 
-You can also choose to install only the GUI and image processing packages,
-which need around 900 MB.
+You can also choose to install only the GUI and media processing packages,
+which need around 1 GB.
 
 When installing on a headless server for remote inference, you can choose to
 install only the backend.
 
 Which components do you want to install?
-  [1] All components:    GUI, image processing, AI assistance
-  [2] Only GUI:          GUI, image processing
-  [3] Only backend:           image processing, AI assistance
+  [1] All components:    GUI, media processing, AI assistance
+  [2] Only GUI:          GUI, media processing
+  [3] Only backend:           media processing, AI assistance
 """
 
-def askComponents() -> ComponentList:
+def askComponents() -> ComponentOption:
     printSep(ASK_COMPONENTS_TEXT)
     while True:
         choice = input("[1/2/3, default 1] ").strip() or "1"
-        if components := COMPONENTS.get(choice):
-            printSep(f"Selecting {components.title} for installation.")
-            return components
+        if option := COMPONENT_OPTIONS.get(choice):
+            printSep(f"Selecting {option.title} for installation.")
+            return option
 
         printSep("Invalid selection. Please enter a number from 1 to 3.")
+
+
+
+ASK_PLATFORM_TEXT = """
+To run AI models, the installed compute platform must match your hardware and driver.
+
+If you have an nvidia GPU with recent driver, and 'nvidia-smi' shows a CUDA version >= 13.0,
+you can install the CUDA 13.0 platform. Otherwise, choose CUDA 12.8 for older drivers.
+
+Choose ROCm if you have an AMD GPU. Note that qapyq with ROCm is untested.
+
+Select your compute platform:"""
+
+def askPlatform():
+    printSep(LINE)
+    print(ASK_PLATFORM_TEXT.lstrip())
+    for key, platform in PLATFORMS.items():
+        print(f"  [{key}] {platform.title}")
+    print()
+
+    count = len(PLATFORMS)
+    while True:
+        choice = input(f"[1-{count}, default 1] ").strip() or "1"
+        if platform := PLATFORMS.get(choice):
+            printSep(f"Selecting {platform.title} for installation")
+            return platform
+
+        printSep(f"Invalid selection. Please enter a number from 1 to {count}.")
+
 
 
 ASK_TRANSFORMERS_TEXT = """
@@ -113,7 +193,8 @@ Do you want to install the OLD version of transformers?
 (Compatibility with GGUF models is not affected by this choice.)"""
 
 def askOldTransformers() -> bool:
-    print(ASK_TRANSFORMERS_TEXT)
+    printSep(LINE)
+    print(ASK_TRANSFORMERS_TEXT.lstrip())
     while True:
         choice = input("[y/n, default n] ").strip().lower() or "n"
         if choice == "y":
@@ -127,7 +208,7 @@ def askOldTransformers() -> bool:
 
 
 def askFlashAttention() -> bool:
-    print()
+    printSep(LINE)
     print("Does your hardware support FlashAttention 2? (nvidia 30xx GPU, Ampere generation or later)")
     while True:
         choice = input("[y/n, default n] ").strip().lower() or "n"
@@ -145,13 +226,19 @@ def askFlashAttention() -> bool:
 LINE = "---------------------------------------------------------------------------------------------"
 
 def mainSetup() -> int:
-    compList = askComponents()
-    components = compList.components.copy()
-    if compList.backend:
-        if askOldTransformers():
-            COMP_INFERENCE.args.append(f"transformers=={OLD_TRANSFORMERS_VERSION}")
-        if askFlashAttention():
-            components.append(COMP_FLASHATTN)
+    platform = ComputePlatform("No backend", "", "")
+    oldTransformers = False
+    flashAttn = False
+
+    choice = askComponents()
+    if choice.backend:
+        platform = askPlatform()
+        if platform.flashAttn:
+            flashAttn = askFlashAttention()
+
+        oldTransformers = askOldTransformers()
+
+    components = buildComponents(choice, platform, oldTransformers, flashAttn)
 
     print(LINE)
 
@@ -162,6 +249,9 @@ def mainSetup() -> int:
         print(f"({i}/{numSteps}) Installing {comp.title}")
 
         try:
+            if comp.pipPrepare():
+                print()
+
             comp.pipInstall()
         except KeyboardInterrupt:
             raise

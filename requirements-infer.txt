@@ -9,15 +9,18 @@ bitsandbytes
 # llama-cpp-python
 diskcache
 
-# onnx
-onnxruntime-gpu
+# onnxruntime
+# The version of onnxruntime/onnxruntime-gpu is selected in main_setup.py
+# and depends on user input.
+flatbuffers
 
 # InternVL2
 sentencepiece
 
 # Ovis 2.5
 # triton version 3.4 for torch 2.8
-triton-windows<3.5; platform_system == "Windows"
+# TODO: Change to 3.6 for torch 2.11?
+triton-windows==3.4.*; platform_system == "Windows"
 
 # YOLO
 ultralytics
@@ -27,7 +30,8 @@ onnx
 kornia
 
 # InSPyReNet rembg
-transparent-background
+# Breaks setup on Python 3.14
+transparent-background; python_version < "3.14"
 
 # Image Upscaling
 spandrel
