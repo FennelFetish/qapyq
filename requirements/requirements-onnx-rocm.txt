@@ -1,0 +1,13 @@
+# Info:
+#   https://repo.radeon.com/rocm/manylinux/
+#   https://onnxruntime.ai/docs/execution-providers/ROCm-ExecutionProvider.html
+
+
+# ROCm 6.4.4
+https://repo.radeon.com/rocm/manylinux/rocm-rel-6.4.4/onnxruntime_rocm-1.21.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl; platform_system == "Linux" and python_version == "3.10"
+https://repo.radeon.com/rocm/manylinux/rocm-rel-6.4.4/onnxruntime_rocm-1.21.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl; platform_system == "Linux" and python_version == "3.12"
+
+
+# ROCm 7.0.2
+# https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/onnxruntime_rocm-1.22.1-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl; platform_system == "Linux" and python_version == "3.10"
+# https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/onnxruntime_rocm-1.22.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl; platform_system == "Linux" and python_version == "3.12"

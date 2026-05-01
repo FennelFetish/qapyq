@@ -167,12 +167,14 @@ In combination with the Python version, the platform affects the version and ava
 
 | Platform      | `torch` | `onnxruntime` <sup>1</sup> | `llama-cpp-python` <sup>2</sup> | `flash_attn` <sup>3</sup> |
 |---------------|---------|---------------|--------------|--------------------|
-| **CUDA 12.8** | 2.8     | `onnxruntime-gpu`<br>Python 3.10 - 3.14 | for CUDA 12.4<br>Linux: Python 3.10 - 3.14 | Python 3.10 - 3.13 |
+| **CUDA 12.6** | 2.11    | `onnxruntime-gpu`<br>Python 3.10 - 3.14 | for CUDA 12.4<br>Linux: Python 3.10 - 3.14 | Python 3.10 - 3.14 |
+| **CUDA 12.8** | 2.11    | `onnxruntime-gpu`<br>Python 3.10 - 3.14 | for CUDA 12.4<br>Linux: Python 3.10 - 3.14 | Python 3.10 - 3.14 |
 | **CUDA 13.0** | 2.11    | `onnxruntime-gpu` <sup>(nightly)</sup><br>Python 3.11 - 3.14 | for CUDA 12.4<br>Linux: Python 3.10 - 3.14 | Python 3.10 - 3-14 |
+| **ROCm 6.4**  | 2.9     | `onnxruntime-rocm`<br>Python 3.10 and 3.12 | 🚫 | 🚫 |
 | **ROCm 7.2**  | 2.11    | `onnxruntime-migraphx`<br>Python 3.10 and 3.12 | 🚫 | 🚫 |
 | **CPU**       | 2.11    | `onnxruntime`<br>Python 3.10 - 3.14 | 0.3.19<br>Python 3.10 - 3.13 | 🚫 |
 
-<sup>1</sup> For running WD/PixAI tagging models and semantic sorting<br>
+<sup>1</sup> For running WD/PixAI tagging models, YOLO detection and semantic sorting<br>
 <sup>2</sup> For running GGUF models<br>
 <sup>3</sup> Improves inference speed
 

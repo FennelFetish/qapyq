@@ -1,6 +1,6 @@
 # This file contains URLs to prebuilt packages of flash_attn.
 # These wheels are built against a specific Python, torch and CUDA version, and they must match the installed torch version.
-# When CUDA 12.8 is selected while running qapyq's setup script, a package for torch 2.8 and CUDA 12.8 is installed using this file.
+# When CUDA 12.6 is selected while running qapyq's setup script, a package for torch 2.11 and CUDA 12.6 is installed using this file.
 
 # Some more URLs are listed below for reference or manual installation.
 # For other variants, check: https://github.com/mjun0812/flash-attention-prebuild-wheels
@@ -11,23 +11,22 @@
 # The installer will select the package that matches the OS and Python filters at the end of a line.
 
 
-# PyTorch 2.8
-# CUDA 12.8
+# PyTorch 2.11
+# CUDA 12.6
 
 # Linux, FlashAttention 2.8.3
-https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.4.11/flash_attn-2.8.3+cu128torch2.8-cp310-cp310-linux_x86_64.whl; platform_system == "Linux" and python_version == "3.10"
-https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.4.11/flash_attn-2.8.3+cu128torch2.8-cp311-cp311-linux_x86_64.whl; platform_system == "Linux" and python_version == "3.11"
-https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.4.11/flash_attn-2.8.3+cu128torch2.8-cp312-cp312-linux_x86_64.whl; platform_system == "Linux" and python_version == "3.12"
-https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.4.12/flash_attn-2.8.3+cu128torch2.8-cp313-cp313-linux_x86_64.whl; platform_system == "Linux" and python_version == "3.13"
+https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.4/flash_attn-2.8.3+cu126torch2.11-cp310-cp310-linux_x86_64.whl; platform_system == "Linux" and python_version == "3.10"
+https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.4/flash_attn-2.8.3+cu126torch2.11-cp311-cp311-linux_x86_64.whl; platform_system == "Linux" and python_version == "3.11"
+https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.4/flash_attn-2.8.3+cu126torch2.11-cp312-cp312-linux_x86_64.whl; platform_system == "Linux" and python_version == "3.12"
+https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.4/flash_attn-2.8.3+cu126torch2.11-cp313-cp313-linux_x86_64.whl; platform_system == "Linux" and python_version == "3.13"
+https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.4/flash_attn-2.8.3+cu126torch2.11-cp314-cp314-linux_x86_64.whl; platform_system == "Linux" and python_version == "3.14"
 
 # Windows, FlashAttention 2.8.3
-https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.7/flash_attn-2.8.3+cu128torch2.8-cp310-cp310-win_amd64.whl; platform_system == "Windows" and python_version == "3.10"
-# (missing wheel for Python 3.11, use version 2.8.2 below)
-https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.11/flash_attn-2.8.3+cu128torch2.8-cp312-cp312-win_amd64.whl; platform_system == "Windows" and python_version == "3.12"
-https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.11/flash_attn-2.8.3+cu128torch2.8-cp313-cp313-win_amd64.whl; platform_system == "Windows" and python_version == "3.13"
-
-# Windows, FlashAttention 2.8.2
-https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.4.10/flash_attn-2.8.2+cu128torch2.8-cp311-cp311-win_amd64.whl; platform_system == "Windows" and python_version == "3.11"
+https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.6/flash_attn-2.8.3+cu126torch2.11-cp310-cp310-win_amd64.whl; platform_system == "Windows" and python_version == "3.10"
+https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.6/flash_attn-2.8.3+cu126torch2.11-cp311-cp311-win_amd64.whl; platform_system == "Windows" and python_version == "3.11"
+https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.6/flash_attn-2.8.3+cu126torch2.11-cp312-cp312-win_amd64.whl; platform_system == "Windows" and python_version == "3.12"
+https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.6/flash_attn-2.8.3+cu126torch2.11-cp313-cp313-win_amd64.whl; platform_system == "Windows" and python_version == "3.13"
+https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.6/flash_attn-2.8.3+cu126torch2.11-cp314-cp314-win_amd64.whl; platform_system == "Windows" and python_version == "3.14"
 
 
 

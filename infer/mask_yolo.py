@@ -19,9 +19,10 @@ class YoloMask:
         names = ", ".join(self.model.names.values())
         print(f"Yolo classes: {names}")
 
+        device, dtype = DevMap.getTorchDeviceDtype()
         self.inferenceArgs = {
             "verbose": False,
-            "device": DevMap.getDeviceId()
+            "device": str(device)
         }
 
 

@@ -26,24 +26,30 @@ class Component:
 
 
 
-COMP_ONNX_CPU    = Component("ONNX runtime for CPU",            False, ["onnxruntime"])
-COMP_ONNX_ROCM   = Component("ONNX runtime for ROCm/MIGraphX",  False, ["-r", "requirements-onnx-rocm.txt"])
-COMP_ONNX_CUDA   = Component("ONNX runtime for CUDA 12",        False, ["onnxruntime-gpu"])
-COMP_ONNX_CUDA13 = Component("ONNX runtime for CUDA 13",        False, [
-    "--index-url", "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ort-cuda-13-nightly/pypi/simple/",
-    "onnxruntime-gpu==1.25.0.dev20260331005"  # https://github.com/microsoft/onnxruntime/issues/27944
-])
+class Onnx:
+    CUDA12 = Component("ONNX for CUDA 12",          False, ["-r", "requirements/requirements-onnx-cuda12.txt"])
+    CUDA13 = Component("ONNX for CUDA 13",          False, ["-r", "requirements/requirements-onnx-cuda13.txt"])
+    ROCM   = Component("ONNX for ROCm",             False, ["-r", "requirements/requirements-onnx-rocm.txt"])
+    MIGX   = Component("ONNX for ROCm/MIGraphX",    False, ["-r", "requirements/requirements-onnx-migraphx.txt"])
+    CPU    = Component("ONNX for CPU",              False, ["-r", "requirements/requirements-onnx-cpu.txt"])
 
-ONNX_UNINSTALL_ARGS = [sys.executable, "-m", "pip", "uninstall", "-y", "onnxruntime", "onnxruntime-gpu"]
-
-
-# COMP_FLASHATTN_CUDA = Component("FlashAttention", False, ["flash_attn", "--no-build-isolation", "--verbose"])
-COMP_FLASHATTN_CUDA   = Component("FlashAttention", False, ["-r", "requirements-flashattn.txt"])
-COMP_FLASHATTN_CUDA13 = Component("FlashAttention", False, ["-r", "requirements-flashattn-cuda13.txt"])
+    UNINSTALL_ARGS = [
+        sys.executable, "-m", "pip", "uninstall", "-y",
+        "onnxruntime", "onnxruntime-gpu", "onnxruntime-rocm", "onnxruntime-migraphx"
+    ]
 
 
-COMP_LLAMACPP_CUDA   = Component("llama.cpp for CUDA", False, ["--index-url", "https://abetlen.github.io/llama-cpp-python/whl/cu124", "llama-cpp-python"])
-COMP_LLAMACPP_CPU    = Component("llama.cpp for CPU",  False, ["--index-url", "https://abetlen.github.io/llama-cpp-python/whl/cpu",   "llama-cpp-python"])
+class FlashAttn:
+    # BUILD = Component("FlashAttention", False, ["flash_attn", "--no-build-isolation", "--verbose"])
+    CUDA126 = Component("FlashAttention", False, ["-r", "requirements/requirements-flashattn-cuda126.txt"])
+    CUDA128 = Component("FlashAttention", False, ["-r", "requirements/requirements-flashattn-cuda128.txt"])
+    CUDA130 = Component("FlashAttention", False, ["-r", "requirements/requirements-flashattn-cuda130.txt"])
+
+
+class LlamaCpp:
+    CUDA = Component("llama.cpp for CUDA", False, ["--index-url", "https://abetlen.github.io/llama-cpp-python/whl/cu124", "-r", "requirements/requirements-llamacpp.txt"])
+    CPU  = Component("llama.cpp for CPU",  False, ["--index-url", "https://abetlen.github.io/llama-cpp-python/whl/cpu",   "-r", "requirements/requirements-llamacpp.txt"])
+
 
 
 class ComputePlatform(NamedTuple):
@@ -56,10 +62,12 @@ class ComputePlatform(NamedTuple):
 
 # PyTorch version affects availability of prebuilt flash_attn wheels
 PLATFORMS = {
-    "1": ComputePlatform("CUDA 12.8",   "torch==2.8.*",     "https://download.pytorch.org/whl/cu128",    COMP_ONNX_CUDA,    COMP_FLASHATTN_CUDA,    COMP_LLAMACPP_CUDA),
-    "2": ComputePlatform("CUDA 13.0",   "torch==2.11.*",    "https://download.pytorch.org/whl/cu130",    COMP_ONNX_CUDA13,  COMP_FLASHATTN_CUDA13,  COMP_LLAMACPP_CUDA),
-    "3": ComputePlatform("ROCm 7.2",    "torch==2.11.*",    "https://download.pytorch.org/whl/rocm7.2",  COMP_ONNX_ROCM),
-    "4": ComputePlatform("CPU",         "torch==2.11.*",    "https://download.pytorch.org/whl/cpu",      COMP_ONNX_CPU,     None,                   COMP_LLAMACPP_CPU),
+    "1": ComputePlatform("CUDA 12.6",   "torch==2.11.*",    "https://download.pytorch.org/whl/cu126",       Onnx.CUDA12,    FlashAttn.CUDA126,  LlamaCpp.CUDA),
+    "2": ComputePlatform("CUDA 12.8",   "torch==2.11.*",    "https://download.pytorch.org/whl/cu128",       Onnx.CUDA12,    FlashAttn.CUDA128,  LlamaCpp.CUDA),
+    "3": ComputePlatform("CUDA 13.0",   "torch==2.11.*",    "https://download.pytorch.org/whl/cu130",       Onnx.CUDA13,    FlashAttn.CUDA130,  LlamaCpp.CUDA),
+    "4": ComputePlatform("ROCm 6.4",    "torch==2.9.*",     "https://download.pytorch.org/whl/rocm6.4",     Onnx.ROCM),
+    "5": ComputePlatform("ROCm 7.2",    "torch==2.11.*",    "https://download.pytorch.org/whl/rocm7.2",     Onnx.MIGX),
+    "6": ComputePlatform("CPU",         "torch==2.11.*",    "https://download.pytorch.org/whl/cpu",         Onnx.CPU,       None,               LlamaCpp.CPU),
 }
 
 
@@ -80,20 +88,23 @@ COMPONENT_OPTIONS = {
 def buildComponents(choice: ComponentOption, platform: ComputePlatform, oldTransformers: bool, flashAttn: bool) -> list[Component]:
     components = [
         Component("package installer", True, ["pip"]),
-        Component("base requirements", True, ["-r", "requirements.txt"]),
+        Component("base requirements", True, ["-r", "requirements/requirements.txt"]),
     ]
 
     if choice.gui:
-        components.append( Component("GUI requirements", True, ["-r", "requirements-gui.txt"]) )
+        components.append( Component("GUI requirements", True, ["-r", "requirements/requirements-gui.txt"]) )
 
     if choice.backend:
-        components.append( Component("PyTorch", True, ["--extra-index-url", platform.torchIndex, "-r", "requirements-pytorch.txt", platform.torch]) )
+        torchArgs = ["--extra-index-url", platform.torchIndex, "-r", "requirements/requirements-pytorch.txt", platform.torch]
+        components.append( Component(f"PyTorch for {platform.title}", True, torchArgs) )
 
-        transformersArgs = [f"transformers=={OLD_TRANSFORMERS_VERSION}"] if oldTransformers else []
-        components.append( Component("inference backend", True, ["-r", "requirements-infer.txt", platform.torch, *transformersArgs]) )
+        transformersArgs = ["-r", "requirements/requirements-infer.txt", platform.torch]
+        if oldTransformers:
+            transformersArgs.append(f"transformers=={OLD_TRANSFORMERS_VERSION}")
+        components.append( Component("inference backend", True, transformersArgs) )
 
         if platform.onnx:
-            platform.onnx.prepareArgs = ONNX_UNINSTALL_ARGS
+            platform.onnx.prepareArgs = Onnx.UNINSTALL_ARGS
             components.append(platform.onnx)
 
         if platform.llamaCpp:
@@ -102,6 +113,9 @@ def buildComponents(choice: ComponentOption, platform: ComputePlatform, oldTrans
         if flashAttn and platform.flashAttn:
             platform.flashAttn.args.append(platform.torch)
             components.append(platform.flashAttn)
+
+            # Triton has the same requirements as FlashAttention (CUDA only, >= Ampere Generation for triton 3.6)
+            components.append( Component("triton for Windows", False, ["-r", "requirements/requirements-triton-win.txt"]) )
 
     return components
 
@@ -145,13 +159,13 @@ ASK_PLATFORM_TEXT = """
 To run AI models, the installed compute platform must match your hardware and driver.
 
 If you have an nvidia GPU with recent driver, and 'nvidia-smi' shows a CUDA version >= 13.0,
-you can install the CUDA 13.0 platform. Otherwise, choose CUDA 12.8 for older drivers.
+you can install the CUDA 13.0 platform. Otherwise, choose CUDA 12.8/12.6 for older drivers.
 
 Choose ROCm if you have an AMD GPU. Note that qapyq with ROCm is untested.
 
 Select your compute platform:"""
 
-def askPlatform():
+def askPlatform() -> ComputePlatform:
     printSep(LINE)
     print(ASK_PLATFORM_TEXT.lstrip())
     for key, platform in PLATFORMS.items():
@@ -190,7 +204,8 @@ Qwen2.5-VL      -               OK
 Qwen3-VL        -               OK
 
 Do you want to install the OLD version of transformers?
-(Compatibility with GGUF models is not affected by this choice.)"""
+(Compatibility with GGUF models is not affected by this choice.)
+"""
 
 def askOldTransformers() -> bool:
     printSep(LINE)
@@ -207,9 +222,18 @@ def askOldTransformers() -> bool:
         printSep("Invalid selection. Please enter 'y' for the old version or 'n' for the newest version.")
 
 
+
+ASK_FLASHATTN_TEXT = """
+FlashAttention can improve inference speed on CUDA platforms.
+It's optional for most models but recommended.
+
+Does your hardware support FlashAttention 2? (nvidia 30xx GPU, Ampere generation or later)
+On Windows, choosing 'y' will also enable the installation of triton-windows 3.6.
+"""
+
 def askFlashAttention() -> bool:
     printSep(LINE)
-    print("Does your hardware support FlashAttention 2? (nvidia 30xx GPU, Ampere generation or later)")
+    print(ASK_FLASHATTN_TEXT.lstrip())
     while True:
         choice = input("[y/n, default n] ").strip().lower() or "n"
         if choice == "y":

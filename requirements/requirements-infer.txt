@@ -17,11 +17,6 @@ flatbuffers
 # InternVL2
 sentencepiece
 
-# Ovis 2.5
-# triton version 3.4 for torch 2.8
-# TODO: Change to 3.6 for torch 2.11?
-triton-windows==3.4.*; platform_system == "Windows"
-
 # YOLO
 ultralytics
 onnx

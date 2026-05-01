@@ -1,0 +1,4 @@
+# Ovis 2.5
+# triton version 3.6 for torch 2.11
+# triton version 3.4 for torch 2.8
+triton-windows==3.6.*; platform_system == "Windows"

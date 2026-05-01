@@ -44,10 +44,7 @@ class WDTag(TagBackend):
         # https://onnxruntime.ai/docs/api/python/api_summary.html
         # https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html#configuration-options
         # CUDAExecutionProvider needs 'import torch'
-        providers = [
-            ('CUDAExecutionProvider', {"device_id": DevMap.getDeviceId()}),
-            'CPUExecutionProvider'
-        ]
+        providers = DevMap.getOnnxProviders()
 
         self.model = ort.InferenceSession(config.get("model_path"), sess_options=sessOpts, providers=providers)
         _, height, width, _ = self.model.get_inputs()[0].shape

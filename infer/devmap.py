@@ -135,6 +135,31 @@ class DevMap:
             return False
 
 
+    @classmethod
+    def getOnnxProviders(cls) -> list[tuple[str, dict] | str]:
+        import onnxruntime as ort
+
+        deviceId = cls.getDeviceId()
+        available: set[str] = set(ort.get_available_providers())
+
+        preferredOrder = [
+            #"TensorrtExecutionProvider",   # https://onnxruntime.ai/docs/execution-providers/TensorRT-ExecutionProvider.html
+            "CUDAExecutionProvider",        # https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html
+            "MIGraphXExecutionProvider",    # https://onnxruntime.ai/docs/execution-providers/MIGraphX-ExecutionProvider.html
+            "ROCMExecutionProvider",        # https://onnxruntime.ai/docs/execution-providers/ROCm-ExecutionProvider.html
+        ]
+
+        providers = []
+        for provider in preferredOrder:
+            if provider in available:
+                providers.append((provider, {
+                    "device_id": deviceId
+                }))
+
+        providers.append("CPUExecutionProvider")
+        return providers
+
+
     def print(self) -> None:
         sys.stderr.write(f"Device Map:{os.linesep}")
         for k, v in self.deviceMap.items():
@@ -159,19 +184,3 @@ class DevMap:
         with open(path, 'w') as file:
             for k, v in deviceMap.items():
                 file.write(f"{k} => {v}{os.linesep}")
-
-
-
-if __name__ == "__main__":
-    layers = 20
-    # for i in range(layers+1):
-    #     devmap = DevMap(layers-1)
-    #     devmap._setLayers("llm", i, layers-1, 0)
-    #     print(f"=== {i} / {layers} LLM Layers ===")
-    #     devmap.print()
-
-    for p in range(0, 101, 5):
-        devmap = DevMap(layers-1)
-        devmap.setLLMLayers("llm", p, 0)
-        print(f"=== {p}% / {layers} LLM Layers ===")
-        devmap.print()

@@ -1,0 +1,8 @@
+# Info:
+#   https://repo.radeon.com/rocm/manylinux/
+#   https://onnxruntime.ai/docs/execution-providers/MIGraphX-ExecutionProvider.html
+
+
+# ROCm 7.2.2 / MIGraphX
+https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2.2/onnxruntime_migraphx-1.23.2-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl; platform_system == "Linux" and python_version == "3.10"
+https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2.2/onnxruntime_migraphx-1.23.2-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl; platform_system == "Linux" and python_version == "3.12"

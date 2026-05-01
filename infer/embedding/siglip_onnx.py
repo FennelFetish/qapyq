@@ -43,23 +43,7 @@ class SiglipOnnx(EmbeddingBackend):
         self._sessOpts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         #self._sessOpts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_EXTENDED
 
-        deviceId = DevMap.getDeviceId()
-        self._providers = [
-            # ("TensorrtExecutionProvider", {
-            #     "device_id": deviceId,
-            #     "trt_fp16_enable": True,
-            #     #"trt_max_workspace_size": 2147483648
-            # }),
-            ("CUDAExecutionProvider", {
-                "device_id": deviceId,
-                "arena_extend_strategy": "kNextPowerOfTwo",
-                #"gpu_mem_limit": 16 * 1024 * 1024 * 1024,
-                "cudnn_conv_algo_search": "EXHAUSTIVE",
-                "do_copy_in_default_stream": True,
-                #"enable_cuda_graph": True,  # Doesn't work: Empty output
-            }),
-            "CPUExecutionProvider",
-        ]
+        self._providers = DevMap.getOnnxProviders()
 
         self._imageModel = None
         self._textModel  = None
@@ -146,18 +130,19 @@ class ImageEmbeddingStrategy(ABC):
         with open(path, "r") as file:
             data = json.load(file)
 
-        self._normMean: list[int] = data.get("image_mean", self.MEAN)
-        self._normStd: list[int]  = data.get("image_std", self.STD)
+        normMean: list[float] = data.get("image_mean", self.MEAN)
+        normStd: list[float]  = data.get("image_std", self.STD)
+        self._normMean = np.array(normMean, dtype=np.float32)
+        self._normStd  = np.array(normStd, dtype=np.float32)
 
         size: dict = data.get("size", {"width": self.W, "height": self.H})
         self._size: Size = Size(size.get("width", self.W), size.get("height", self.H))
 
     def normalize(self, mat: np.ndarray) -> np.ndarray:
         mat /= 255.0
+        mat -= self._normMean
+        mat /= self._normStd
         mat = mat.transpose(2, 0, 1) # HWC -> CHW
-        for c in range(3):
-            mat[c] -= self._normMean[c]
-            mat[c] /= self._normStd[c]
         return mat
 
     @abstractmethod

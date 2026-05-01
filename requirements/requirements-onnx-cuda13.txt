@@ -1,0 +1,4 @@
+# https://github.com/microsoft/onnxruntime/issues/27944
+
+--index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ort-cuda-13-nightly/pypi/simple/
+onnxruntime-gpu==1.25.0.dev20260331005
