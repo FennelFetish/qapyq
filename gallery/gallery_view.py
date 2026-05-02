@@ -246,7 +246,6 @@ class GalleryView(QTableView):
 
 
 
-# TODO: Right-click shouldn't select image but only open context menu.
 class GalleryMouseHandler(QObject):
     def __init__(self, view: GalleryView):
         super().__init__(view)
@@ -284,12 +283,12 @@ class GalleryMouseHandler(QObject):
         if not file:
             return
 
+        selection = index.data(GalleryModel.ROLE_SELECTION)
+
         if buttons == Qt.MouseButton.LeftButton:
             modifiers = QGuiApplication.keyboardModifiers()
             shift = bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
             ctrl  = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
-
-            selection = index.data(GalleryModel.ROLE_SELECTION)
 
             # Secondary range selection
             if shift:
@@ -318,8 +317,9 @@ class GalleryMouseHandler(QObject):
 
         # Primary selection and open menu
         elif buttons == Qt.MouseButton.RightButton:
-            with self.view.tab.takeFocus():
-                filelist.setCurrentFile(file)
+            if selection == SelectionState.Unselected:
+                with self.view.tab.takeFocus():
+                    filelist.setCurrentFile(file)
 
             menu = GalleryItemMenu(self.view)
             menu.exec(QCursor.pos())
@@ -338,12 +338,13 @@ class GalleryItemMenu(QtWidgets.QMenu):
         super().__init__("Gallery")
         self.view = galleryView
 
-        actClearSelection = self.addAction("Clear Selection")
         numSelected = len(galleryView.tab.filelist.selectedFiles)
         if numSelected > 0:
+            actClearSelection = self.addAction(f"Clear Selection ({numSelected} Files)")
             actClearSelection.triggered.connect(lambda: galleryView.tab.filelist.clearSelection())
-            strFiles = f"Files ({numSelected})"
+            strFiles = "Files"
         else:
+            actClearSelection = self.addAction(f"Clear Selection")
             actClearSelection.setEnabled(False)
             strFiles = "File"
 
