@@ -392,8 +392,6 @@ class GalleryItemMenu(QtWidgets.QMenu):
 
     @Slot()
     def _startDragFiles(self):
-        self.close()
-
         filelist = self.view.tab.filelist
         if filelist.selectedFiles:
             urls = [QUrl.fromLocalFile(file) for file in filelist.selection.sorted]
@@ -409,6 +407,9 @@ class GalleryItemMenu(QtWidgets.QMenu):
         drag = QDrag(self.view)
         drag.setMimeData(data)
         drag.exec(Qt.DropAction.CopyAction)
+
+        # On Wayland, the menu must stay open while dragging
+        self.close()
 
 
 
