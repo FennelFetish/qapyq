@@ -7,7 +7,7 @@ from collections import defaultdict, Counter
 from itertools import islice, takewhile
 from PySide6.QtWidgets import QCompleter, QPlainTextEdit, QTableView
 from PySide6.QtGui import QTextCursor, QGuiApplication, QKeyEvent, QFont, QColor, QPalette
-from PySide6.QtCore import Qt, Signal, Slot, QAbstractTableModel, QModelIndex, QPersistentModelIndex, QTimer, QRunnable, QObject, QThreadPool, QThread
+from PySide6.QtCore import Qt, Signal, Slot, QAbstractTableModel, QModelIndex, QPersistentModelIndex, QTimer, QRunnable, QObject, QThreadPool, QThread, QRect
 from difflib import SequenceMatcher
 #from rapidfuzz import fuzz, distance
 from lib import colorlib, qtlib
@@ -410,6 +410,8 @@ class TextEditCompleter:
         self._timer.timeout.connect(self._updateComplete)
         self._tLastComplete = 0
 
+        self._waylandPositionFix = ("wayland" in QGuiApplication.platformName())
+
 
     def isActive(self) -> bool:
         return self.completer.popup().isVisible()
@@ -598,7 +600,32 @@ class TextEditCompleter:
         rect.setWidth(width)
         self.completer.complete(rect)
 
+        if self._waylandPositionFix:
+            self._fixPopupPosition(rect)
+
         self._tLastComplete = time.monotonic_ns()
+
+    def _fixPopupPosition(self, cursorRect: QRect):
+        popup: AutoCompletePopup = self.completer.popup()
+        if not popup.isVisible():
+            return
+
+        # On Wayland, the popup covers the text cursor when there's not enough space below.
+        # Global window position to check for screen boundaries is unavailable, so constrain popup to window.
+        window = self.textEdit.window()
+        x, top = self.textEdit.mapTo(window, cursorRect.topLeft()).toTuple()
+        bottom = self.textEdit.mapTo(window, cursorRect.bottomLeft()).y()
+
+        spaceBelow = window.height() - bottom
+        spaceAbove = top
+
+        popupHeight = popup.frameGeometry().height()
+        if spaceBelow < popupHeight and spaceAbove > spaceBelow:
+            y = top - popupHeight  # Move above cursor
+        else:
+            y = bottom             # Move below cursor
+
+        popup.move(x, y)
 
 
     @Slot()
