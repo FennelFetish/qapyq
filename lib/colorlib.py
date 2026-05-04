@@ -13,6 +13,9 @@ HUE_OFFSET = 0.3819444  # 1.0 - inverted golden ratio = ~137.5°
 RED   = "#FF1616"
 GREEN = "#30FF30"
 
+RED_BUTTON   = "#440A0A"
+GREEN_BUTTON = "#0A440A"
+
 BUBBLE_BG       = "#161616"
 BUBBLE_BG_HOVER = "#808070"
 BUBBLE_BG_BAN   = "#454545"
@@ -47,6 +50,10 @@ def initColors(colorScheme: Qt.ColorScheme):
         global RED, GREEN
         RED   = "#FA0000"
         GREEN = "#08AA08"
+
+        global RED_BUTTON, GREEN_BUTTON
+        RED_BUTTON   = "#8A0A0A"
+        GREEN_BUTTON = "#2A8A2A"
 
         global BUBBLE_BG, BUBBLE_BG_HOVER, BUBBLE_BG_BAN, BUBBLE_TEXT
         BUBBLE_BG       = "#D0D0D0"

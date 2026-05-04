@@ -105,7 +105,6 @@ class NavigationTextEdit(QtWidgets.QPlainTextEdit):
         cursor.setPosition(start, QtGui.QTextCursor.MoveMode.KeepAnchor)
         self.setTextCursor(cursor)
 
-    @Slot()
     def moveCaptionSelection(self, offset: int, offsetLine: int):
         cursor = self.textCursor()
         if offsetLine != 0:
@@ -116,7 +115,6 @@ class NavigationTextEdit(QtWidgets.QPlainTextEdit):
         index = max(0, index+offset)
         self.selectCaption(index)
 
-    @Slot()
     def removeSelectedCaption(self):
         cursor = self.textCursor()
         index = self.getCaptionAtCharPos(self.toPlainText(), self._sep, cursor.position())[1]
@@ -198,7 +196,7 @@ class CaptionTextEdit(NavigationTextEdit):
         super().setCaption(text)
 
 
-    @Slot()
+    @Slot(str)
     def appendToCaption(self, text: str):
         super().appendToCaption(text)
         self.ctx.needsRulesApplied.emit()
@@ -232,7 +230,7 @@ class CaptionTextEdit(NavigationTextEdit):
         self.ctx.needsRulesApplied.emit()
 
 
-    @Slot()
+    @Slot(str)
     def _onSeparatorChanged(self, separator: str):
         self.separator = separator  # Set via property
 
@@ -291,7 +289,14 @@ class BorderlessNavigationTextEdit(NavigationTextEdit):
         palette = self.palette()
         bgColor = palette.color(QtGui.QPalette.ColorRole.Base).toHsv()
         h, s, v = bgColor.hueF(), bgColor.saturationF(), bgColor.valueF()
-        v *= 0.87 if colorlib.DARK_THEME else 0.92
+
+        if v < 0.1:
+            v += 0.04
+        elif v < 0.15:
+            v *= 0.5
+        else:
+            v *= 0.87 if colorlib.DARK_THEME else 0.92
+
         bgColor.setHsvF(h, s, v)
         palette.setColor(QtGui.QPalette.ColorRole.Base, bgColor)
         BorderlessNavigationTextEdit.PALETTE_ACTIVE = palette

@@ -464,16 +464,23 @@ class VerticalSeparator(QtWidgets.QWidget):
 
 
 class BubbleRemoveButton(QtWidgets.QPushButton):
-    STYLE = None
+    STYLE_FONT = None
 
     def __init__(self):
         super().__init__("⨯")
         self.setFixedWidth(18)
         self.setFixedHeight(18)
 
-        if BubbleRemoveButton.STYLE is None:
-            BubbleRemoveButton.STYLE = colorlib.removeButtonStyle("BubbleRemoveButton")
-        self.setStyleSheet(BubbleRemoveButton.STYLE)
+        if BubbleRemoveButton.STYLE_FONT is None:
+            style = colorlib.removeButtonStyle("BubbleRemoveButton")
+            font = getMonospaceFont()
+            font.setPointSizeF(12.0)
+            BubbleRemoveButton.STYLE_FONT = (style, font)
+        else:
+            style, font = BubbleRemoveButton.STYLE_FONT
+
+        self.setStyleSheet(style)
+        self.setFont(font)
 
 
 
@@ -507,13 +514,11 @@ class ColoredButton(QtWidgets.QPushButton):
 
 class SaveButton(ColoredButton):
     def __init__(self, text: str):
-        color = "#440A0A" if colorlib.DARK_THEME else "#8A0A0A"
-        super().__init__(text, color, "#FFEEEE")
+        super().__init__(text, colorlib.RED_BUTTON, "#FFEEEE")
 
 class GreenButton(ColoredButton):
     def __init__(self, text: str):
-        color = "#0A440A" if colorlib.DARK_THEME else "#2A8A2A"
-        super().__init__(text, color, "#EEFFEE")
+        super().__init__(text, colorlib.GREEN_BUTTON, "#EEFFEE")
 
 
 
@@ -608,6 +613,7 @@ class MenuComboBox(QtWidgets.QComboBox):
         self.menu.setFocus()
         self.menu.exec(pos)
 
+    @Slot()
     def hidePopup(self):
         self.menu.close()
         self._clickPos = None
@@ -695,11 +701,7 @@ class BaseColorScrollArea(QtWidgets.QScrollArea):
         super().__init__()
         self.setWidget(widget)
         self.setWidgetResizable(True)
-
-        palette = self.palette()
-        bgColor = palette.color(colorRole)
-        palette.setColor(QtGui.QPalette.ColorRole.Window, bgColor)
-        self.setPalette(palette)
+        self.setBackgroundRole(colorRole)
 
 
 class RowScrollArea(BaseColorScrollArea):
@@ -967,7 +969,7 @@ class LayoutFilter(QtWidgets.QHBoxLayout):
         return self._numVisible
 
 
-    @Slot()
+    @Slot(str)
     def setFilterText(self, filterText: str):
         if filterText:
             import re

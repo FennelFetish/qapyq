@@ -406,7 +406,7 @@ class CaptionControlGroup(QtWidgets.QWidget):
     def combineTags(self, checked: bool):
         self.chkCombine.setChecked(checked)
 
-    @Slot()
+    @Slot(bool)
     def _onCombineToggled(self, checked: bool):
         self.chkCombine.setText("Combine Tags:" if checked else "Combine Tags")
         self._updateCombineWords()
@@ -491,20 +491,20 @@ class CaptionControlGroup(QtWidgets.QWidget):
         text = self.groups.ctx.text.getSelectedCaption()
         self._addCaptionDrop(text)
 
-    @Slot()
+    @Slot(str)
     def _addCaptionDrop(self, text: str):
         if self.addCaption(text):
             self.groups._emitUpdatedApplyRules()
 
-    @Slot()
-    def _removeCaption(self, button):
+    @Slot(object)
+    def _removeCaption(self, button: GroupButton):
         self.buttonLayout.removeWidget(button)
         button.deleteLater()
         self._updateCombineWords()
         self.groups._emitUpdatedApplyRules()
 
 
-    @Slot()
+    @Slot(object)
     def _onButtonClicked(self, button: GroupButton):
         wildcardTags = expandWildcards(button.text, self.groups.wildcards)
         if len(wildcardTags) <= 1:
@@ -527,7 +527,6 @@ class CaptionControlGroup(QtWidgets.QWidget):
 
         menu.exec( button.mapToGlobal(button.rect().bottomLeft()) )
 
-    @Slot()
     def _toggleCaption(self, button: GroupButton, caption: str):
         # When the button is being unchecked, prepare words for removal from combined tags
         removeWords = None
@@ -701,38 +700,57 @@ class FilterMenu(QtWidgets.QMenu):
 
 
 class Trash(QtWidgets.QLabel):
+    PALETTE_ORIG: QtGui.QPalette = None
+    PALETTE_HOVER: QtGui.QPalette = None
+    ICON = None
+
     def __init__(self):
-        super().__init__("🗑")
+        super().__init__()
         self.setAcceptDrops(True)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setToolTip("Drag tags here to delete them")
 
-        self.setHover(False)
+        self.setBackgroundRole(QtGui.QPalette.ColorRole.Button)
+        self.setAutoFillBackground(True)
+        self.setFrameStyle(QtWidgets.QFrame.Shape.StyledPanel)
+
+        if Trash.ICON is None:
+            color = self.palette().color(QtGui.QPalette.ColorRole.Text)
+            Trash.ICON = qtlib.loadSvg(18, 18, "res/trash.svg", color)
+            self._initPalettes()
+
+        self.setPixmap(Trash.ICON)
+
+        self._setHover(False)
         self.setMinimumWidth(40)
 
-    def dragEnterEvent(self, event):
+    def _initPalettes(self):
+        Trash.PALETTE_ORIG = self.palette()
+
+        Trash.PALETTE_HOVER = self.palette()
+        Trash.PALETTE_HOVER.setColor(QtGui.QPalette.ColorRole.Button, colorlib.RED_BUTTON)
+
+    def _setHover(self, hover: bool):
+        palette = self.PALETTE_HOVER if hover else self.PALETTE_ORIG
+        self.setPalette(palette)
+
+
+    def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
         if event.mimeData().hasText():
-            self.setHover(True)
+            self._setHover(True)
             event.accept()
 
-    def dragLeaveEvent(self, event):
-        self.setHover(False)
+    def dragLeaveEvent(self, event: QtGui.QDragLeaveEvent):
+        self._setHover(False)
         event.accept()
 
-    def dragMoveEvent(self, event):
+    def dragMoveEvent(self, event: QtGui.QDragMoveEvent):
         event.accept()
 
-    def dropEvent(self, event):
-        self.setHover(False)
+    def dropEvent(self, event: QtGui.QDropEvent):
+        self._setHover(False)
         event.setDropAction(Qt.DropAction.MoveAction)
         event.accept()
-
-    def setHover(self, hover: bool):
-        style = "border: 1px solid #333333; font-size: 18px"
-        if hover:
-            style += "; background: #801616"
-
-        self.setStyleSheet("QLabel{" + style + "}")
 
 
 
@@ -751,7 +769,7 @@ class ExclusivityComboBox(qtlib.NonScrollComboBox):
 
         self.currentIndexChanged.connect(self._onModeChanged)
 
-    @Slot()
+    @Slot(int)
     def _onModeChanged(self, index: int):
         enabled = self.itemData(index) != MutualExclusivity.Disabled
         self.setFont(self._boldFont if enabled else self._origFont)
