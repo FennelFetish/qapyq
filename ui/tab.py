@@ -1,4 +1,5 @@
 import os, locale
+from typing import TYPE_CHECKING
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Signal, Slot, QTimer
 from config import Config
@@ -7,8 +8,10 @@ from lib.filelist import FileList
 from lib.captionfile import CaptionFile
 from ui.autocomplete import AutoCompleteSource, TemplateAutoCompleteSource, getAutoCompleteSource
 
+if TYPE_CHECKING:
+    from ui.main_window import MainWindow
 
-@Slot()
+
 def queueGC():
     import gc
     QTimer.singleShot(2000, lambda: gc.collect())
@@ -20,10 +23,9 @@ class ImgTab(QtWidgets.QMainWindow):
 
     tabTitleChanged = Signal(str)
 
-    def __init__(self, mainWindow):
+    def __init__(self, mainWindow: 'MainWindow'):
         super().__init__()
-        from main import MainWindow
-        self.mainWindow: MainWindow = mainWindow
+        self.mainWindow = mainWindow
 
         self._active: bool = False
         self._index: int = -1 # Store index when fullscreen
