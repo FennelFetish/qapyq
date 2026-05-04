@@ -375,7 +375,7 @@ class FileList:
         self.notifyListChanged()
 
 
-    def loadFilesFixed(self, paths: Iterable[str], copyFromFileList=None, copyKeys: list[str]=[DataKeys.ImageSize, DataKeys.Thumbnail]):
+    def loadFilesFixed(self, paths: Iterable[str], copyFromFileList: 'FileList' = None, copyKeys: list[str]=[DataKeys.ImageSize, DataKeys.Thumbnail]):
         self.reset(clearListeners=False)
 
         if copyFromFileList and copyKeys:
@@ -397,6 +397,46 @@ class FileList:
         self.currentFile = self.files[0] if numFiles > 0 else ""
         self.currentIndex = 0 if numFiles > 0 else -1 # No lazy-loading of folder when loading a single image!
         self.notifySelectionChanged()
+        self.notifyListChanged()
+
+
+    def mergeFiles(self, copyFromFileList: 'FileList', copyKeys: list[str]=[DataKeys.ImageSize, DataKeys.Thumbnail]):
+        self.abortLoading()
+        self.order = None
+
+        existingFiles = set(self.files)
+
+        for path in copyFromFileList.files:
+            if path in existingFiles:
+                continue
+
+            self.files.append(path)
+            if data := {key: val for key in copyKeys if (val := copyFromFileList.getData(path, key))}:
+                self.fileData[path] = data
+
+        self._postprocessList()
+
+        if len(self.files) > 0:
+            if len(existingFiles) <= 0:
+                self.currentFile = copyFromFileList.currentFile
+
+            try:
+                self.currentIndex = self.indexOf(self.currentFile)
+            except ValueError:
+                print(f"Warning: File {self.currentFile} not in FileList")
+                self.currentIndex = -1
+
+        else:
+            self.currentFile = ""
+            self.currentIndex = -1
+
+        numMergedFiles = len(self.files) - len(existingFiles)
+        msg = " ".join((
+            f"Merged tabs, added {numMergedFiles}",
+            "file" if numMergedFiles == 1 else "files",
+        ))
+        print(msg)
+
         self.notifyListChanged()
 
 

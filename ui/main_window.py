@@ -60,14 +60,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabWidget.setElideMode(Qt.TextElideMode.ElideMiddle)
         self.tabWidget.currentChanged.connect(self.onTabChanged)
         self.tabWidget.tabCloseRequested.connect(self.askCloseTab)
-        #self.tabWidget.tabBarClicked.connect(self._showTabMenu)
+        self.tabWidget.tabBarClicked.connect(self._showTabMenu)
         self.setCentralWidget(self.tabWidget)
 
-    # @Slot(int)
-    # def _showTabMenu(self, index: int):
-    #     if index >= 0 and self.app.mouseButtons() == Qt.MouseButton.RightButton:
-    #         menu = TabContextMenu(self, index)
-    #         menu.exec(QtGui.QCursor.pos())
+    @Slot(int)
+    def _showTabMenu(self, index: int):
+        if index >= 0 and self.app.mouseButtons() == Qt.MouseButton.RightButton:
+            menu = TabContextMenu(self, index)
+            menu.exec(QtGui.QCursor.pos())
 
     def tabs(self) -> Iterable[ImgTab]:
         for i in range(self.tabWidget.count()):
@@ -551,25 +551,25 @@ class MainToolBar(QtWidgets.QToolBar):
 
 
 
-# class TabContextMenu(QtWidgets.QMenu):
-#     def __init__(self, mainWindow: MainWindow, tabIndex: int):
-#         super().__init__()
-#         self.mainWindow = mainWindow
-#         self.index = tabIndex
+class TabContextMenu(QtWidgets.QMenu):
+    def __init__(self, mainWindow: MainWindow, tabIndex: int):
+        super().__init__()
+        self.mainWindow = mainWindow
+        self.index = tabIndex
 
-#         actMerge = self.addAction("Append Files to Left Tab")
-#         actMerge.triggered.connect(self._mergeLeft)
+        actMerge = self.addAction("Append Files to Left Tab")
+        actMerge.triggered.connect(self._mergeLeft)
 
-#         if self.index <= 0:
-#             actMerge.setEnabled(False)
+        if self.index <= 0:
+            actMerge.setEnabled(False)
 
-#     @Slot()
-#     def _mergeLeft(self):
-#         if self.index <= 0:
-#             return
+    @Slot()
+    def _mergeLeft(self):
+        if self.index <= 0:
+            return
 
-#         tabWidget = self.mainWindow.tabWidget
-#         clickedTab: ImgTab = tabWidget.widget(self.index)
-#         leftTab: ImgTab    = tabWidget.widget(self.index - 1)
+        tabWidget = self.mainWindow.tabWidget
+        clickedTab: ImgTab = tabWidget.widget(self.index)
+        leftTab: ImgTab    = tabWidget.widget(self.index - 1)
 
-#         leftTab.filelist.mergeFiles(clickedTab.filelist)
+        leftTab.filelist.mergeFiles(clickedTab.filelist)
