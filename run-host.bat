@@ -1,21 +1,19 @@
 @echo off
 setlocal
 
-if not defined VENV_DIR (set "VENV_DIR=%~dp0%.venv")
+if not defined VENV_DIR (
+    set "VENV_DIR=%~dp0.venv"
+)
 
-:check_venv
-dir "%VENV_DIR%" > NUL 2> NUL
-if not %ERRORLEVEL% == 0 goto :end
+set "PYTHON=%VENV_DIR%\Scripts\python.exe"
+if not exist "%PYTHON%" (
+    exit 1
+)
 
-:activate_venv
-set PYTHON="%VENV_DIR%\Scripts\python.exe"
-
-:launch
 set NO_ALBUMENTATIONS_UPDATE="1"
 set YOLO_OFFLINE="True"
 
-cd /d "%~dp0%"
+cd /d "%~dp0"
 %PYTHON% main_host.py %*
 
-:end
 endlocal

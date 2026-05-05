@@ -1,6 +1,6 @@
 #!/bin/bash
 
-script_dir="$(dirname "$(readlink -f "$0")")"
+script_dir="$(dirname "$(realpath "$0")")"
 
 venv_name=".venv"
 venv_path="${script_dir}/${venv_name}"
@@ -18,7 +18,7 @@ select_python() {
     declare -i count=0
     for cand in "${candidates[@]}"; do
         path="$(command -v "$cand" 2>/dev/null)" || continue
-        display_path="$(readlink -f "$path" 2>/dev/null || echo "$path")"
+        display_path="$(realpath "$path" 2>/dev/null || echo "$path")"
 
         available+=("$cand")
         ((count++))
@@ -64,7 +64,7 @@ create_venv() {
     fi
 
     echo "Creating virtual environment: '${venv_path}'"
-    "$python_exec" -m venv "$venv_name"
+    "$python_exec" -m venv "$venv_path"
 }
 
 

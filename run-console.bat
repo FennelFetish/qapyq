@@ -1,21 +1,20 @@
 @echo off
 setlocal
 
-if not defined VENV_DIR (set "VENV_DIR=%~dp0%.venv")
+if not defined VENV_DIR (
+    set "VENV_DIR=%~dp0.venv"
+)
 
-:check_venv
-dir "%VENV_DIR%" > NUL 2> NUL
-if %ERRORLEVEL% == 0 goto :activate_venv
-echo Virtual environment not found. Please run setup.bat first.
-goto :end
+set "PYTHON=%VENV_DIR%\Scripts\python.exe"
 
-:activate_venv
-echo Activating virtual environment: %VENV_DIR%
-set PYTHON="%VENV_DIR%\Scripts\python.exe"
-echo Using Python %PYTHON%
+if not exist "%PYTHON%" (
+    echo Virtual environment not found. Please run setup.bat first.
+    goto :end
+)
 
-:launch
-cd /d "%~dp0%"
+echo Using environment: '%VENV_DIR%'
+
+cd /d "%~dp0"
 %PYTHON% main.py %*
 
 :end

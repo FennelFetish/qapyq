@@ -1,6 +1,6 @@
 #!/bin/bash
 
-script_dir="$(dirname "$(readlink -f "$0")")"
+script_dir="$(dirname "$(realpath "$0")")"
 
 venv_name=".venv"
 venv_path="${script_dir}/${venv_name}"

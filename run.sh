@@ -1,6 +1,6 @@
 #!/bin/bash
 
-script_dir="$(dirname "$(readlink -f "$0")")"
+script_dir="$(dirname "$(realpath "$0")")"
 
 venv_name=".venv"
 venv_path="${script_dir}/${venv_name}"
@@ -30,6 +30,5 @@ export MALLOC_TOP_PAD_=2097152          # 2 MB
 
 # Set working directory and run main.py using the specified Python version.
 # Replace current process so it appears correctly in process monitors.
-# Write output to terminal and logfile.
 cd "$script_dir"
-exec "$python_exec" "./main.py" "$@" > >(tee "./last.log") 2>&1
+exec "$python_exec" "./main.py" "$@"
