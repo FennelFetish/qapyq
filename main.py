@@ -204,8 +204,9 @@ def main() -> int:
     win = MainWindow(app)
     win.show()
 
-    instanceServer = SingleInstanceServer(win)
-    instanceServer.start()
+    if Config.singleInstance:
+        instanceServer = SingleInstanceServer(win)
+        instanceServer.start()
 
     filelist.resetReadExtensions()
     loadInitialPaths(win)

@@ -3,6 +3,7 @@ class Config:
     startTime               = 0
     windowTitle             = "qapyq"
     windowIcon              = "res/qapyq.png"
+    singleInstance          = True
     guiScale                = 1.0
     qtStyle                 = "Fusion"
     colorScheme             = ""
@@ -184,6 +185,7 @@ class Config:
 
     @classmethod
     def _load(cls, data: dict):
+        cls.singleInstance        = bool(data.get("single_instance", cls.singleInstance))
         cls.guiScale              = float(data.get("gui_scale", cls.guiScale))
         cls.qtStyle               = data.get("qt_style", cls.qtStyle)
         cls.colorScheme           = data.get("color_scheme", cls.colorScheme)
@@ -262,6 +264,7 @@ class Config:
         data = dict()
         data["version"]                     = cls.version
 
+        data["single_instance"]             = cls.singleInstance
         data["gui_scale"]                   = cls.guiScale
         data["qt_style"]                    = cls.qtStyle
         data["color_scheme"]                = cls.colorScheme
