@@ -23,7 +23,7 @@ class Gallery(QtWidgets.QWidget):
         self._switchingMode = False
 
         # Initialize grid after delay: Wait for the window width to calculate column count
-        self._initTimer = QTimer(singleShot=True, interval=50)
+        self._initTimer = QTimer(singleShot=True, interval=1)
         self._initTimer.timeout.connect(self._initGrid)
 
         self._gridUpdateTimer = QTimer(singleShot=True, interval=100)
@@ -78,6 +78,8 @@ class Gallery(QtWidgets.QWidget):
 
         self.galleryModel.headersUpdated.connect(self.onHeadersUpdated)
         self.galleryModel.reloadImages()
+
+        self.ensureVisible(filelist.currentFile)
 
 
     def _buildTopRow(self):
@@ -347,7 +349,6 @@ class Gallery(QtWidgets.QWidget):
 
     def onFileListChanged(self, currentFile: str):
         self.ensureVisible(currentFile)
-        self.ensureVisible(currentFile, delay=True)
 
     def onFileSelectionChanged(self, selectedFiles: set[str]):
         self.updateStatusBar()
