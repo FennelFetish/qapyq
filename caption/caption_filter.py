@@ -4,6 +4,7 @@ from typing import Iterable
 from typing_extensions import override
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from lib.csv import ColumnNameCsvLoader
 from lib.template_parser import TemplateVariableParser
 from .caption_preset import MutualExclusivity
 from .caption_conditionals import ConditionalFilterRule
@@ -508,6 +509,98 @@ class SubsetFilter(CaptionFilter):
 
 
 
+class ImplicationFilter(CaptionFilter):
+    class ImplicationCsvLoader(ColumnNameCsvLoader):
+        FOLDER = "./user/tag-implications/"
+
+        def __init__(self):
+            super().__init__()
+            self.setColumnNames("antecedent_name", "consequent_name", "status")
+            self.setOptionalColumns(status="active")
+            self.implications = defaultdict(set)
+
+            from ui.autocomplete import NGramAutoCompleteSource
+            self._prepareTag = NGramAutoCompleteSource.prepareTag
+
+            # Per file
+            self._numRows = 0
+            self._numAntecedents = 0
+            self._numConsequents = 0
+
+        def processRow(self, rowIndex: int, values: list[str]):
+            self._numRows += 1
+
+            antecedent, consequent, status = values
+            if status != "active":
+                return
+
+            antecedent = self._prepareTag(antecedent)
+            consequent = self._prepareTag(consequent)
+
+            if not antecedent or not consequent:
+                return
+
+            numAntecedentsBefore = len(self.implications)
+            consequents = self.implications[antecedent]
+            if len(self.implications) > numAntecedentsBefore:
+                self._numAntecedents += 1
+
+            numConsequentsBefore = len(consequents)
+            consequents.add(consequent)
+            if len(consequents) > numConsequentsBefore:
+                self._numConsequents += 1
+
+        def fileDone(self, file: str, timeMs: float):
+            print(f"Implications: Loaded {self._numRows} rows ({self._numAntecedents} antecedents, {self._numConsequents} total consequents) in {timeMs:.03f} ms from '{file}'")
+            self._numRows = 0
+            self._numAntecedents = 0
+            self._numConsequents = 0
+
+        def fileFail(self, file: str):
+            print(f"Implications: Couldn't load tag implications from '{file}'")
+
+        @classmethod
+        def loadImplications(cls):
+            loader = cls()
+            loader.loadAll(cls.FOLDER)
+            return {k: frozenset(v) for k, v in loader.implications.items()}
+
+
+    # antecedent -> consequent (remove consequent tags)
+    IMPLICATIONS = None
+
+    def __init__(self):
+        super().__init__()
+        self.matcherNode: MatcherNode[bool] = None
+
+    def setup(self, matcherNode: MatcherNode[bool]):
+        self.matcherNode = matcherNode
+
+        try:
+            if ImplicationFilter.IMPLICATIONS is None:
+                ImplicationFilter.IMPLICATIONS = self.ImplicationCsvLoader.loadImplications()
+        except Exception:
+            ImplicationFilter.IMPLICATIONS = {}
+            import traceback
+            traceback.print_exc()
+
+    def filterCaptions(self, captions: list[str]) -> list[str]:
+        impliedTags = set[str]()
+        for cap in self.matcherNode.splitAll(captions):
+            self._addImpliedTags(impliedTags, cap)
+
+        return [cap for cap in captions if cap not in impliedTags] if impliedTags else captions
+
+    @classmethod
+    def _addImpliedTags(cls, impliedTags: set[str], tag: str):
+        if consequents := cls.IMPLICATIONS.get(tag):
+            impliedTags.update(consequents)
+            # Resolve transitive implications with recursion
+            for consTag in consequents:
+                cls._addImpliedTags(impliedTags, consTag)
+
+
+
 class SearchReplaceFilter:
     class ReplacementParser(TemplateVariableParser):
         def __init__(self):
@@ -590,6 +683,7 @@ class CaptionRulesSettings:
         self.searchReplace: bool            = True
         self.ban: bool                      = True
         self.removeDuplicates: bool         = True
+        self.removeImplications: bool       = True
         self.removeMutuallyExclusive: bool  = True
         self.sort: bool                     = True
         self.combineTags: bool              = True
@@ -601,6 +695,7 @@ class CaptionRulesSettings:
             self.searchReplace,
             self.ban,
             self.removeDuplicates,
+            self.removeImplications,
             self.removeMutuallyExclusive,
             self.sort,
             self.combineTags,
@@ -614,9 +709,10 @@ class CaptionRulesSettings:
 
 
 class CaptionRulesProcessor:
-    def __init__(self, separator: str, removeDup: bool, sortCaptions: bool, sortNonGroupCaptions: bool, whitelistGroups: bool):
+    def __init__(self, separator: str, removeDup: bool, removeImplications: bool, sortCaptions: bool, sortNonGroupCaptions: bool, whitelistGroups: bool):
         self.separator = separator
         self.removeDup = removeDup
+        self.removeImplications = removeImplications
         self.sortCaptions = sortCaptions
         self.whitelistGroups = whitelistGroups
 
@@ -631,6 +727,7 @@ class CaptionRulesProcessor:
         self.sortFilter = SortCaptionFilter(sortNonGroupCaptions)
         self.combineFilter = TagCombineFilter(sortCaptions)
         self.subsetFilter = SubsetFilter()
+        self.implicationFilter = ImplicationFilter()
         self.prefixSuffixFilter = PrefixSuffixFilter()
 
 
@@ -659,6 +756,10 @@ class CaptionRulesProcessor:
         self.exclusiveFilterPriority.setup(tags for tags, ex, _ in captionGroups if ex==MutualExclusivity.Priority)
 
         self.combineFilter.setup(tags for tags, _, combine in captionGroups if combine)
+
+        if self.removeImplications:
+            # Shared MatcherNode to split combined tags
+            self.implicationFilter.setup(self.combineFilter.matcherNode)
 
     def setConditionalRules(self, rules: Iterable[ConditionalFilterRule]) -> None:
         self.conditionalsFilter.setup(rules, self.separator)
@@ -703,6 +804,9 @@ class CaptionRulesProcessor:
             # Remove subsets after banning, so no tags are wrongly merged and removed with banned tags.
             captions = self.subsetFilter.filterCaptions(captions)
             captions = self.dupFilter.filterCaptions(captions) # SubsetFilter won't remove exact duplicates
+
+        if self.removeImplications and settings.removeImplications:
+            captions = self.implicationFilter.filterCaptions(captions)
 
         # Strip and remove empty captions
         captions = (cap for c in captions if (cap := c.strip()))

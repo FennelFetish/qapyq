@@ -21,6 +21,7 @@ class CaptionFilterTest(BaseCaptionFilterTest):
     def setUp(self):
         seperator = ", "
         removeDup = True
+        removeImplied = False
         sortCaptions = True
         sortNonGroup = False
         whitelistGroups = False
@@ -34,7 +35,7 @@ class CaptionFilterTest(BaseCaptionFilterTest):
 
         bans = ["realistic", "blurry"]
 
-        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, sortCaptions, sortNonGroup, whitelistGroups)
+        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, removeImplied, sortCaptions, sortNonGroup, whitelistGroups)
         self.rulesProcessor.setBannedCaptions(bans)
         self.rulesProcessor.setCaptionGroups(groups)
 
@@ -109,6 +110,7 @@ class CaptionFilterPrefixSuffixTest(BaseCaptionFilterTest):
         prefixSuffixSep = True
         seperator = ", "
         removeDup = True
+        removeImplied = False
         sortCaptions = True
         sortNonGroup = False
         whitelistGroups = False
@@ -117,7 +119,7 @@ class CaptionFilterPrefixSuffixTest(BaseCaptionFilterTest):
             (["long pants", "black pants", "white pants", "denim pants", "pants"], MutualExclusivity.Disabled, True) # Combine enabled
         ]
 
-        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, sortCaptions, sortNonGroup, whitelistGroups)
+        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, removeImplied, sortCaptions, sortNonGroup, whitelistGroups)
         self.rulesProcessor.setPrefixSuffix(prefix, suffix, prefixSuffixSep, prefixSuffixSep)
         self.rulesProcessor.setCaptionGroups(groups)
 
@@ -195,6 +197,7 @@ class CaptionFilterMutualExclusivityTest(BaseCaptionFilterTest):
     def setUp(self):
         seperator = ", "
         removeDup = True
+        removeImplied = False
         sortCaptions = True
         sortNonGroup = False
         whitelistGroups = False
@@ -205,7 +208,7 @@ class CaptionFilterMutualExclusivityTest(BaseCaptionFilterTest):
             (["lying", "sitting", "standing"], MutualExclusivity.Priority, False)
         ]
 
-        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, sortCaptions, sortNonGroup, whitelistGroups)
+        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, removeImplied, sortCaptions, sortNonGroup, whitelistGroups)
         self.rulesProcessor.setCaptionGroups(groups)
 
     def tearDown(self):
@@ -239,6 +242,7 @@ class CaptionFilterSortNonGroupTest(BaseCaptionFilterTest):
     def setUp(self):
         seperator = ", "
         removeDup = False
+        removeImplied = False
         sortCaptions = True
         sortNonGroup = True
         whitelistGroups = False
@@ -248,7 +252,7 @@ class CaptionFilterSortNonGroupTest(BaseCaptionFilterTest):
             (["GB0", "GB1", "GB2", "GB0 GB1"], MutualExclusivity.Disabled, False)
         ]
 
-        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, sortCaptions, sortNonGroup, whitelistGroups)
+        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, removeImplied, sortCaptions, sortNonGroup, whitelistGroups)
         self.rulesProcessor.setCaptionGroups(groups)
 
     def tearDown(self):
@@ -334,11 +338,12 @@ class CaptionFilterSearchReplaceTest(BaseCaptionFilterTest):
     def setUp(self):
         seperator = ". "  # Point
         removeDup = False
+        removeImplied = False
         sortCaptions = False
         sortNonGroup = False
         whitelistGroups = False
 
-        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, sortCaptions, sortNonGroup, whitelistGroups)
+        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, removeImplied, sortCaptions, sortNonGroup, whitelistGroups)
         #self.rulesProcessor.setPrefixSuffix("", ".", False, False)
         self.rulesProcessor.setCaptionGroups([])
 

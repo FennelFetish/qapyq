@@ -67,6 +67,10 @@ class CaptionSettings(CaptionTab):
         self.chkRemoveDup.toggled.connect(self._emitUpdate)
         layout.addWidget(self.chkRemoveDup, row, 1, Qt.AlignmentFlag.AlignTop)
 
+        self.chkRemoveImplications = QtWidgets.QCheckBox("Remove Implications")
+        self.chkRemoveImplications.toggled.connect(self._emitUpdate)
+        layout.addWidget(self.chkRemoveImplications, row, 2, Qt.AlignmentFlag.AlignTop)
+
         row += 1
         self.chkSortCaptions = QtWidgets.QCheckBox("Sort Tags")
         self.chkSortCaptions.setChecked(True)
@@ -173,6 +177,10 @@ class CaptionSettings(CaptionTab):
         return self.chkRemoveDup.isChecked()
 
     @property
+    def isRemoveImplications(self) -> bool:
+        return self.chkRemoveImplications.isChecked()
+
+    @property
     def isSortCaptions(self) -> bool:
         return self.chkSortCaptions.isChecked()
 
@@ -222,6 +230,7 @@ class CaptionSettings(CaptionTab):
         preset.prefixSeparator          = self.chkPrefixSeparator.isChecked()
         preset.suffixSeparator          = self.chkSuffixSeparator.isChecked()
         preset.removeDuplicates         = self.chkRemoveDup.isChecked()
+        preset.removeImplications       = self.chkRemoveImplications.isChecked()
         preset.sortCaptions             = self.chkSortCaptions.isChecked()
         preset.sortNonGroupCaptions     = self.chkSortNonGroupCaptions.isChecked()
         preset.whitelistGroups          = self.chkWhitelistGroups.isChecked()
@@ -315,6 +324,7 @@ class CaptionSettings(CaptionTab):
             self.chkPrefixSeparator.setChecked(preset.prefixSeparator)
             self.chkSuffixSeparator.setChecked(preset.suffixSeparator)
             self.chkRemoveDup.setChecked(preset.removeDuplicates)
+            self.chkRemoveImplications.setChecked(preset.removeImplications)
             self.chkSortCaptions.setChecked(preset.sortCaptions)
             self.chkSortNonGroupCaptions.setChecked(preset.sortNonGroupCaptions)
             self.chkWhitelistGroups.setChecked(preset.whitelistGroups)

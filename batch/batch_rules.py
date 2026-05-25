@@ -133,6 +133,10 @@ class BatchRules(QtWidgets.QWidget):
         self.chkRemoveDup.checkStateChanged.connect(self.updatePreview)
         layout.addWidget(self.chkRemoveDup, row, 1, Qt.AlignmentFlag.AlignTop)
 
+        self.chkRemoveImplications = QtWidgets.QCheckBox("Remove Implications")
+        self.chkRemoveImplications.checkStateChanged.connect(self.updatePreview)
+        layout.addWidget(self.chkRemoveImplications, row, 2, Qt.AlignmentFlag.AlignTop)
+
         row += 1
         self.chkSortCaptions = QtWidgets.QCheckBox("Sort Tags")
         self.chkSortCaptions.setChecked(False)
@@ -375,6 +379,7 @@ class BatchRules(QtWidgets.QWidget):
             self.chkPrefixSeparator.setChecked(preset.prefixSeparator)
             self.chkSuffixSeparator.setChecked(preset.suffixSeparator)
             self.chkRemoveDup.setChecked(preset.removeDuplicates)
+            self.chkRemoveImplications.setChecked(preset.removeImplications)
             self.chkSortCaptions.setChecked(preset.sortCaptions)
             self.chkSortNonGroupCaptions.setChecked(preset.sortNonGroupCaptions)
             self.chkWhitelistGroups.setChecked(preset.whitelistGroups)
@@ -441,6 +446,7 @@ class BatchRules(QtWidgets.QWidget):
         rulesProcessor = CaptionRulesProcessor(
             separator,
             self.chkRemoveDup.isChecked(),
+            self.chkRemoveImplications.isChecked(),
             self.chkSortCaptions.isChecked(),
             self.chkSortNonGroupCaptions.isChecked(),
             self.chkWhitelistGroups.isChecked()

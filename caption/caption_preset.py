@@ -21,6 +21,7 @@ class CaptionPreset:
 
         self.autoApplyRules: bool           = False
         self.removeDuplicates: bool         = True
+        self.removeImplications: bool       = False
         self.sortCaptions: bool             = True
         self.sortNonGroupCaptions: bool     = False
         self.whitelistGroups: bool          = False
@@ -52,6 +53,7 @@ class CaptionPreset:
             "suffix_separator": self.suffixSeparator,
             "auto_apply_rules": self.autoApplyRules,
             "remove_duplicates": self.removeDuplicates,
+            "remove_implications": self.removeImplications,
             "sort_captions": self.sortCaptions,
             "sort_nongroup_captions": self.sortNonGroupCaptions,
             "whitelist_groups": self.whitelistGroups,
@@ -74,13 +76,14 @@ class CaptionPreset:
         self.prefix                     = data.get("prefix", "")
         self.suffix                     = data.get("suffix", "")
         self.separator                  = data.get("separator", ", ")
-        self.prefixSeparator            = data.get("prefix_separator", True)
-        self.suffixSeparator            = data.get("suffix_separator", True)
-        self.autoApplyRules             = data.get("auto_apply_rules", False)
-        self.removeDuplicates           = data.get("remove_duplicates", True)
-        self.sortCaptions               = data.get("sort_captions", True)
-        self.sortNonGroupCaptions       = data.get("sort_nongroup_captions", False)
-        self.whitelistGroups            = data.get("whitelist_groups", False)
+        self.prefixSeparator            = bool(data.get("prefix_separator", True))
+        self.suffixSeparator            = bool(data.get("suffix_separator", True))
+        self.autoApplyRules             = bool(data.get("auto_apply_rules", False))
+        self.removeDuplicates           = bool(data.get("remove_duplicates", True))
+        self.removeImplications         = bool(data.get("remove_implications", False))
+        self.sortCaptions               = bool(data.get("sort_captions", True))
+        self.sortNonGroupCaptions       = bool(data.get("sort_nongroup_captions", False))
+        self.whitelistGroups            = bool(data.get("whitelist_groups", False))
         self.searchReplace              = data.get("search_replace", [])
         self.banned                     = data.get("banned", [])
         self.wildcards                  = data.get("wildcards", {})
@@ -91,7 +94,7 @@ class CaptionPreset:
                 group.get("name", "Group"),
                 group.get("color", "#000"),
                 self.loadExclusivity(group),
-                group.get("combine_tags", False),
+                bool(group.get("combine_tags", False)),
                 group.get("captions", [])
             )
 

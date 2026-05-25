@@ -135,6 +135,7 @@ class CaptionContext(QtWidgets.QTabWidget):
         rulesProcessor = CaptionRulesProcessor(
             cfg.separator,
             cfg.isRemoveDuplicates,
+            cfg.isRemoveImplications,
             cfg.isSortCaptions,
             cfg.isSortNonGroupCaptions,
             cfg.isWhitelistGroups

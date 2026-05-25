@@ -1,9 +1,9 @@
-import csv
 import numpy as np
 import onnxruntime as ort
 import torch # Not used directly, but required for GPU inference
 from host.imagecache import ImageFile
 from config import Config
+from lib.csv import ColumnNameCsvLoader
 from .tag import TagBackend, ThresholdMode
 from .devmap import DevMap
 
@@ -36,7 +36,7 @@ class WDTag(TagBackend):
         self.characterThresholdMode: ThresholdMode = ThresholdMode(self.DEFAULT_CHAR_THRESH, True, True)
 
         self.setConfig(config)
-        self.tagNames, self.indexes = self._loadLabels(config.get("csv_path"))
+        self.tagNames, self.indexes = SelectedTagsLoader.loadLabels(config.get("csv_path"))
 
         sessOpts = ort.SessionOptions()
         sessOpts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
@@ -153,36 +153,32 @@ class WDTag(TagBackend):
         return x[1]
 
 
+
+class SelectedTagsLoader(ColumnNameCsvLoader):
+    def __init__(self):
+        super().__init__()
+        self.setColumnNames("name", "category")
+
+        self.tagNames = list[str]()
+        self.indexes = CategoryIndexes()
+
+    def processRow(self, rowIndex: int, values: list[str]):
+        name, category = values
+        self.tagNames.append(TagBackend.removeUnderscore(name))
+
+        try:
+            match int(category):
+                case 0: self.indexes.general.append(rowIndex)
+                case 4: self.indexes.character.append(rowIndex)
+                case 9: self.indexes.rating.append(rowIndex)
+                case _:
+                    raise ValueError()
+
+        except ValueError:
+            raise ValueError(f"Invalid category in CSV file on row {rowIndex+1}: {category}")
+
     @staticmethod
-    def _loadLabels(csvPath: str) -> tuple[list[str], CategoryIndexes]:
-        tagNames = list[str]()
-        indexes = CategoryIndexes()
-
-        colName = -1
-        colCategory = -1
-
-        with open(csvPath, 'r', newline='') as csvFile:
-            # columns: tag_id, name, category, count
-            reader = csv.reader(csvFile)
-
-            row = next(reader)
-            for i, col in enumerate(row):
-                match col:
-                    case "name": colName = i
-                    case "category": colCategory = i
-
-            if colName < 0 or colCategory < 0:
-                raise ValueError("Couldn't find 'name' or 'category' column in CSV file")
-
-            for i, row in enumerate(reader):
-                tagNames.append(TagBackend.removeUnderscore(row[colName]))
-
-                category = int(row[colCategory])
-                match category:
-                    case 0: indexes.general.append(i)
-                    case 4: indexes.character.append(i)
-                    case 9: indexes.rating.append(i)
-                    case _:
-                        raise ValueError(f"Invalid category in CSV file on row {i+1}: {category}")
-
-        return tagNames, indexes
+    def loadLabels(csvPath: str) -> tuple[list[str], CategoryIndexes]:
+        loader = SelectedTagsLoader()
+        loader.load(csvPath)
+        return loader.tagNames, loader.indexes

@@ -11,6 +11,7 @@ from PySide6.QtCore import Qt, Signal, Slot, QAbstractTableModel, QModelIndex, Q
 from difflib import SequenceMatcher
 #from rapidfuzz import fuzz, distance
 from lib import colorlib, qtlib
+from lib.csv import CsvLoader, ColumnGetter
 from config import Config
 
 
@@ -27,8 +28,8 @@ def getAutoCompleteSource(type: AutoCompleteSourceType):
 
     match type:
         case AutoCompleteSourceType.Csv:
-            source = CsvNGramAutoCompleteSource()
-            source.loadAsync()
+            source = NGramAutoCompleteSource()
+            LoadCsvTask.loadAsync(source)
 
         case AutoCompleteSourceType.Template:
             source = TemplateAutoCompleteSource()
@@ -771,7 +772,7 @@ class NGramAutoCompleteSource(AutoCompleteSource):
     MIN_RATIO = 0.1
     MAX_RESULTS = 300
 
-    def __init__(self, scoreFactor: float):
+    def __init__(self, scoreFactor: float = 1.0):
         super().__init__()
         self.scoreFactor = scoreFactor
         self.n = 3
@@ -849,96 +850,51 @@ class GroupNGramAutoCompleteSource(NGramAutoCompleteSource):
 
 
 
-class CsvNGramAutoCompleteSource(NGramAutoCompleteSource):
-    ALIAS_SEP = ","
+class LoadCsvTask(QObject):
+    FOLDER = "./user/autocomplete/"
 
-    def __init__(self):
-        super().__init__(1.0)
+    done = Signal(object)
 
+    def __call__(self):
+        # Don't block at app start. Let other stuff initialize first.
+        timeSinceStart = time.monotonic_ns() - Config.startTime
+        delay = 1500 if timeSinceStart < 1_000_000_000 else 200
+        QThread.msleep(delay)
 
-    def loadAsync(self):
+        csvSource = NGramAutoCompleteSource()
+
+        try:
+            loader = AutocompleteCsvLoader(csvSource)
+            loader.loadAll(self.FOLDER)
+        finally:
+            self.done.emit(csvSource.ngrams)
+
+    @staticmethod
+    def loadAsync(source: NGramAutoCompleteSource):
+        def setNGrams(ngrams: defaultdict):
+            source.ngrams = ngrams
+
         task = LoadCsvTask()
-        task.signals.done.connect(self._setNgrams, Qt.ConnectionType.BlockingQueuedConnection)
+        task.done.connect(setNGrams, Qt.ConnectionType.BlockingQueuedConnection)
         QThreadPool.globalInstance().start(task)
 
-    @Slot(tuple)
-    def _setNgrams(self, wrappedNgrams: tuple[defaultdict]):
-        self.ngrams = wrappedNgrams[0]
 
+class AutocompleteCsvLoader(CsvLoader):
+    ALIAS_SEP = ","
 
-    def load(self, folder: str):
-        def fileFilter(file: str):
-            return file.endswith(".csv")
+    def __init__(self, source: NGramAutoCompleteSource):
+        super().__init__()
+        self.source = source
 
-        existingTags = set[str]()
-        for (root, dirs, files) in os.walk(folder, topdown=True, followlinks=True):
-            for file in filter(fileFilter, files):
-                path = os.path.join(root, file)
+        self.existingTags = set[str]()
+        self.excludeCategories = list(map(int, Config.autocomplete["exclude_categories"]))
 
-                try:
-                    t = time.monotonic_ns()
-                    numTags, numAliases = self._loadCsv(path, existingTags)
-                    t = (time.monotonic_ns() - t) / 1_000_000
-                    print(f"AutoComplete: Loaded {numTags} tags (+{numAliases} aliases) in {t:.2f} ms from '{path}'")
-                except:
-                    print(f"AutoComplete: Failed to load tags from '{path}'")
-                    import traceback
-                    traceback.print_exc()
+        # Per file
+        self.numTags = 0
+        self.numAliases = 0
 
-
-    def _loadCsv(self, path: str, existingTags: set[str]) -> tuple[int, int]:
-        numTags = 0
-        numAliases = 0
-
-        excludeCategories = Config.autocomplete["exclude_categories"]
-
-        bufferSize = 1048576 # 1MB
-        with open(path, 'r', newline='', encoding='utf-8', errors='replace', buffering=bufferSize) as csvFile:
-            colTag, colAlias, colCat, colFreq, skipHeaderRow = self._detectColumns(csvFile)
-
-            if colTag < 0:
-                print(f"WARNING: Couldn't find tag column in CSV file '{path}'")
-                return 0, 0
-
-            aliasGetter = self._createColumnGetter(colAlias, "")
-            catGetter   = self._createColumnGetter(colCat, -1)
-            freqGetter  = self._createColumnGetter(colFreq, 0)
-
-            csvFile.seek(0)
-            reader = csv.reader(csvFile)
-            if skipHeaderRow:
-                next(reader)
-
-            for i, row in enumerate(reader):
-                tag = self.prepareTag(row[colTag])
-                if not tag:
-                    continue
-
-                category = self.toInt(catGetter(row))
-                if category in excludeCategories:
-                    continue
-
-                freq = self.toInt(freqGetter(row))
-
-                if tag not in existingTags:
-                    existingTags.add(tag)
-                    self.addTag(tag, category, freq)
-                    numTags += 1
-
-                if aliases := aliasGetter(row):
-                    for alias in aliases.split(self.ALIAS_SEP):
-                        if (alias := self.prepareTag(alias)) and alias not in existingTags:
-                            existingTags.add(alias)
-                            self.addTag(alias, category, 0, aliasFor=tag)
-                            numAliases += 1
-
-                # Throttle to keep UI responsive
-                if not (i % 500):
-                    QThread.msleep(1)
-
-        return numTags, numAliases
-
-    def _detectColumns(self, csvFile) -> tuple[int, int, int, int, bool]:
+    @override
+    def detectColumns(self, csvFile, path: str) -> tuple[bool, list[ColumnGetter]]:
         singleTag = Counter[int]()
         multiTag  = Counter[int]()
         smallNr   = Counter[int]()
@@ -950,7 +906,7 @@ class CsvNGramAutoCompleteSource(NGramAutoCompleteSource):
         row = next(reader)
         skipHeaderRow = len(row) > 1 and not any(val.isnumeric() for val in row)
 
-        for row in islice(csv.reader(csvFile), 50):
+        for row in islice(reader, 50):
             for col, val in enumerate(row):
                 nr = self.toInt(val)
                 if nr > 20:
@@ -962,13 +918,17 @@ class CsvNGramAutoCompleteSource(NGramAutoCompleteSource):
                 elif val.translate(invalidCharTrans):
                     singleTag[col] += 1
 
-        return (
-            self._counterMax(singleTag), # tag
-            self._counterMax(multiTag),  # aliases
-            self._counterMax(smallNr),   # category
-            self._counterMax(largeNr),   # frequency (count)
-            skipHeaderRow
-        )
+        tagColumn = self._counterMax(singleTag)
+        if tagColumn < 0:
+            raise ValueError(f"Couldn't find tag column in CSV file '{path}'")
+
+        getters = [
+            lambda row: row[tagColumn],                              # tag
+            self.createColumnGetter(self._counterMax(smallNr), -1),  # category
+            self.createColumnGetter(self._counterMax(largeNr), 0),   # frequency (count)
+            self.createColumnGetter(self._counterMax(multiTag), ""), # aliases
+        ]
+        return skipHeaderRow, getters
 
     @staticmethod
     def _counterMax(counter: Counter[int]) -> int:
@@ -980,44 +940,51 @@ class CsvNGramAutoCompleteSource(NGramAutoCompleteSource):
         return -1
 
     @staticmethod
-    def _createColumnGetter(col: int, default: Any) -> Callable[[list[str]], str | Any]:
-        if col >= 0:
-            return lambda row: row[col]
-        else:
-            return lambda row: default
-
-    @staticmethod
     def toInt(value: Any) -> int:
         try:
             return int(value)
         except ValueError:
             return -1
 
+    @override
+    def processRow(self, rowIndex: int, values: list[str]):
+        tag, category, freq, aliases = values
 
-class LoadCsvTask(QRunnable):
-    FOLDER = "./user/autocomplete/"
+        tag = NGramAutoCompleteSource.prepareTag(tag)
+        if not tag:
+            return
 
-    class Signals(QObject):
-        done = Signal(tuple)
+        category = self.toInt(category)
+        if category in self.excludeCategories:
+            return
 
+        freq = self.toInt(freq)
 
-    def __init__(self):
-        super().__init__()
-        self.setAutoDelete(True)
-        self.signals = self.Signals()
+        if tag not in self.existingTags:
+            self.existingTags.add(tag)
+            self.source.addTag(tag, category, freq)
+            self.numTags += 1
 
-    def run(self):
-        # Don't block at app start. Let other stuff initialize first.
-        timeSinceStart = time.monotonic_ns() - Config.startTime
-        delay = 1500 if timeSinceStart < 1_000_000_000 else 200
-        QThread.msleep(delay)
+        if aliases:
+            for alias in aliases.split(self.ALIAS_SEP):
+                if (alias := self.source.prepareTag(alias)) and alias not in self.existingTags:
+                    self.existingTags.add(alias)
+                    self.source.addTag(alias, category, 0, aliasFor=tag)
+                    self.numAliases += 1
 
-        csvSource = CsvNGramAutoCompleteSource()
+        # Throttle to keep UI responsive
+        if self.numTags % 500 == 0:
+            QThread.msleep(1)
 
-        try:
-            csvSource.load(self.FOLDER)
-        finally:
-            self.signals.done.emit((csvSource.ngrams,))
+    @override
+    def fileDone(self, file: str, timeMs: float):
+        print(f"AutoComplete: Loaded {self.numTags} tags (+{self.numAliases} aliases) in {timeMs:.2f} ms from '{file}'")
+        self.numTags = 0
+        self.numAliases = 0
+
+    @override
+    def fileFail(self, file: str):
+        print(f"AutoComplete: Failed to load tags from '{file}'")
 
 
 
