@@ -211,6 +211,7 @@ class TimeAverage:
         self.history: list[int] = [0] * self.HISTORY_SIZE
         self.idxHistory = 0
 
+        self.first = True
         self.num = 0
         self.sumNs = 0
         self.totalNs = 0
@@ -225,6 +226,11 @@ class TimeAverage:
         self.tLast = now
 
         if self.num < self.HISTORY_SIZE:
+            # Skip first value that includes model load time
+            if self.first:
+                self.first = False
+                return
+
             self.num += 1
         else:
             self.sumNs -= self.history[self.idxHistory]
@@ -284,8 +290,9 @@ class BatchProgressBar(qtlib.ProgressBar):
         self._lastTime = time
         timeSpent      = self.formatSeconds(time.timeSpent)
         timeRemaining  = self.formatSeconds(time.timeRemaining)
+        perFileText    = self._getTimePerFileText(time.timePerFile)
         self._timeText = f"{time.filesProcessed}/{time.filesTotal} Files processed in {timeSpent}, " \
-                       + f"{timeRemaining} remaining ({time.timePerFile:.2f}s per File)"
+                       + f"{timeRemaining} remaining ({perFileText})"
 
     def resetTime(self):
         self._lastTime = None
@@ -304,21 +311,29 @@ class BatchProgressBar(qtlib.ProgressBar):
     def reset(self):
         super().reset()
         if self._lastTime:
-            timeSpent = self.formatSeconds(self._lastTime.timeSpent)
-            self._timeText = f"{self._lastTime.filesProcessed} Files processed in {timeSpent} ({self._lastTime.timePerFile:.2f}s per File)"
+            timeSpent      = self.formatSeconds(self._lastTime.timeSpent)
+            perFileText    = self._getTimePerFileText(self._lastTime.timePerFile)
+            self._timeText = f"{self._lastTime.filesProcessed} Files processed in {timeSpent} ({perFileText})"
         else:
             self._timeText = ""
 
     @staticmethod
     def formatSeconds(seconds: float):
-        s = round(seconds)
-        hours = s // 3600
-        minutes = (s % 3600) // 60
-        seconds = s % 60
+        s = int(seconds)
+        hours, s = divmod(s, 3600)
+        minutes, seconds = divmod(s, 60)
 
         if hours > 0:
             return f"{hours:02}:{minutes:02}:{seconds:02}"
         return f"{minutes:02}:{seconds:02}"
+
+    @staticmethod
+    def _getTimePerFileText(timePerFile: float) -> str:
+        if 0.0 < timePerFile < 1.0:
+            filesPerSec = 1.0 / timePerFile
+            return f"{filesPerSec:.2f} Files/s"
+        else:
+            return f"{timePerFile:.2f}s per File"
 
 
 
