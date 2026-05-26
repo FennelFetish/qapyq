@@ -1,7 +1,7 @@
 import os
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QSignalBlocker, QTimer
-import lib.qtlib as qtlib
+from lib import qtlib, colorlib
 from ui.edit_table import EditableTable
 from ui.flow_layout import SortedStringFlowWidget
 from .caption_tab import CaptionTab
@@ -68,6 +68,7 @@ class CaptionSettings(CaptionTab):
         layout.addWidget(self.chkRemoveDup, row, 1, Qt.AlignmentFlag.AlignTop)
 
         self.chkRemoveImplications = QtWidgets.QCheckBox("Remove Implications")
+        self.chkRemoveImplications.toggled.connect(self._onRemoveImplicationsToggled)
         self.chkRemoveImplications.toggled.connect(self._emitUpdate)
         layout.addWidget(self.chkRemoveImplications, row, 2, Qt.AlignmentFlag.AlignTop)
 
@@ -143,6 +144,17 @@ class CaptionSettings(CaptionTab):
         if not sortEnabled:
             with QSignalBlocker(self.chkSortNonGroupCaptions):
                 self.chkSortNonGroupCaptions.setChecked(False)
+
+    @Slot()
+    def _onRemoveImplicationsToggled(self, state: bool):
+        if not state:
+            self.chkRemoveImplications.setStyleSheet("")
+            return
+
+        from .caption_filter import ImplicationFilter
+        if not ImplicationFilter.hasImplications():
+            self.chkRemoveImplications.setStyleSheet(f"color: {colorlib.RED}")
+            self.chkRemoveImplications.setToolTip("No implications defined. Place CSV files into the qapyq/user/tag-implications folder.")
 
     @Slot()
     def _emitUpdate(self):

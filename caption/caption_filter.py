@@ -563,6 +563,10 @@ class ImplicationFilter(CaptionFilter):
         def loadImplications(cls):
             loader = cls()
             loader.loadAll(cls.FOLDER)
+
+            if not loader.implications:
+                print("Warning: No tag implications loaded. Make sure to place CSV files into the 'qapyq/user/tag-implications' folder.")
+
             return {k: frozenset(v) for k, v in loader.implications.items()}
 
 
@@ -579,10 +583,20 @@ class ImplicationFilter(CaptionFilter):
         try:
             if ImplicationFilter.IMPLICATIONS is None:
                 ImplicationFilter.IMPLICATIONS = self.ImplicationCsvLoader.loadImplications()
+
         except Exception:
             ImplicationFilter.IMPLICATIONS = {}
             import traceback
             traceback.print_exc()
+
+    @classmethod
+    def hasImplications(cls) -> bool:
+        if cls.IMPLICATIONS:
+            return True
+
+        filter = ImplicationFilter()
+        filter.setup(None)
+        return bool(cls.IMPLICATIONS)
 
     def filterCaptions(self, captions: list[str]) -> list[str]:
         impliedTags = set[str]()
