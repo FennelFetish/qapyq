@@ -9,6 +9,7 @@ from infer.prompt import PromptWidget
 from lib import colorlib, qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser
+from lib.cascade import CascadeUpdate
 from ui.tab import ImgTab
 from .batch_task import BatchTask, BatchTaskHandler
 from .batch_log import BatchLog
@@ -73,7 +74,7 @@ class BatchApply(QtWidgets.QWidget):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
-        layout.setColumnStretch(2, 1)
+        layout.setColumnStretch(3, 1)
 
         row = 0
         self.promptWidget = PromptWidget("templateApplyPresets", "templateApplyDefault", self.tab.templateAutoCompleteSources, showSystemPrompt=False)
@@ -84,7 +85,7 @@ class BatchApply(QtWidgets.QWidget):
         self.promptWidget.lblPreview.setText("Preview:")
         self.promptWidget.connectDefaultPreviewUpdate(False)
         self.promptWidget.refreshPreviewClicked.connect(self.refreshPreview)
-        layout.addWidget(self.promptWidget, row, 0, 1, 3)
+        layout.addWidget(self.promptWidget, row, 0, 1, 4)
         layout.setRowStretch(row, 1)
 
         row += 1
@@ -108,7 +109,7 @@ class BatchApply(QtWidgets.QWidget):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
-        layout.setColumnStretch(5, 1)
+        layout.setColumnStretch(6, 1)
         layout.setColumnMinimumWidth(2, 20)
         layout.setColumnMinimumWidth(4, 4)
 
@@ -133,7 +134,7 @@ class BatchApply(QtWidgets.QWidget):
 
         self.txtDestFilePath = QtWidgets.QLineEdit("caption-list.txt")
         qtlib.setMonospace(self.txtDestFilePath)
-        layout.addWidget(self.txtDestFilePath, row, 5)
+        layout.addWidget(self.txtDestFilePath, row, 5, 1, 2)
 
         row += 1
         self.lblDestKey = QtWidgets.QLabel("Storage key:")
@@ -145,9 +146,13 @@ class BatchApply(QtWidgets.QWidget):
 
         layout.addWidget(QtWidgets.QLabel("Post Processing:"), row, 3)
 
+        self.chkCascade = QtWidgets.QCheckBox("Cascade Updates")
+        self.chkCascade.setChecked(True)
+        layout.addWidget(self.chkCascade, row, 5)
+
         self.chkDeleteJson = QtWidgets.QCheckBox("Delete .json files")
         self.chkDeleteJson.toggled.connect(self._updateDeleteJson)
-        layout.addWidget(self.chkDeleteJson, row, 5)
+        layout.addWidget(self.chkDeleteJson, row, 6)
 
         group = QtWidgets.QGroupBox("Destination")
         group.setLayout(layout)
@@ -198,7 +203,7 @@ class BatchApply(QtWidgets.QWidget):
 
         modeType = WRITE_MODE_TYPE[mode]
         self.destSelector.setFixedType(modeType)
-        for widget in (self.lblDestKey, self.destSelector):
+        for widget in (self.lblDestKey, self.destSelector, self.chkCascade):
             widget.setEnabled(modeType != FileTypeSelector.TYPE_TXT)
 
         backupPossible = not singleTxt
@@ -262,6 +267,10 @@ class BatchApply(QtWidgets.QWidget):
             writeModeText = colorlib.htmlRed(writeModeText)
         ops.append(writeModeText)
 
+        if self.chkCascade.isEnabled() and self.chkCascade.isChecked():
+            key = WRITE_MODE_TYPE[self.cboWriteMode.currentData()] + "." + self.destSelector.name.strip()
+            ops.append(colorlib.htmlRed(f'Cascade and update all content that depends on [{key}]!'))
+
         if self.chkDeleteJson.isChecked():
             ops.append(colorlib.htmlRed('Delete all .json files!'))
 
@@ -283,6 +292,7 @@ class BatchApply(QtWidgets.QWidget):
         task.writeMode   = self.cboWriteMode.currentData()
         task.destPath    = self.txtDestFilePath.text()
         task.destKey     = self.destSelector.name.strip()
+        task.cascade     = self.chkCascade.isChecked()
         task.deleteJson  = self.chkDeleteJson.isChecked()
         return task
 
@@ -304,6 +314,7 @@ class BatchApplyTask(BatchTask):
         self.destKey     = "" # For writing to .json
         self.dest: CaptionDest = None
 
+        self.cascade     = False
         self.deleteJson  = False
 
 
@@ -325,7 +336,7 @@ class BatchApplyTask(BatchTask):
             case WriteMode.SingleReplace | WriteMode.SingleAppend:
                 self.dest = SingleTxtFileDest(self.writeMode, self.destPath)
             case _:
-                self.dest = JsonDest(self.writeMode, self.destKey)
+                self.dest = JsonDest(self.writeMode, self.destKey, self.cascade)
 
     def runCleanup(self):
         self.dest.cleanup()
@@ -462,7 +473,7 @@ class SingleTxtFileDest(CaptionDest):
 
 
 class JsonDest(CaptionDest):
-    def __init__(self, writeMode: WriteMode, key: str):
+    def __init__(self, writeMode: WriteMode, key: str, cascade: bool):
         if not key:
             raise ValueError("Target key is empty")
 
@@ -470,14 +481,22 @@ class JsonDest(CaptionDest):
             case WriteMode.CaptionsReplace | WriteMode.CaptionsSkipExisting:
                 self.captionGetter = CaptionFile.getCaption
                 self.captionSetter = CaptionFile.addCaption
+                self.keyType = FileTypeSelector.TYPE_CAPTIONS
             case WriteMode.TagsReplace | WriteMode.TagsSkipExisting:
                 self.captionGetter = CaptionFile.getTags
                 self.captionSetter = CaptionFile.addTags
+                self.keyType = FileTypeSelector.TYPE_TAGS
             case _:
                 raise ValueError(f"Invalid WriteMode: {writeMode}")
 
         self.key = key
         self.skipExisting: bool = writeMode in (WriteMode.CaptionsSkipExisting, WriteMode.TagsSkipExisting)
+
+        if cascade:
+            self.cascade = CascadeUpdate()
+            self.cascade.enableCache()
+        else:
+            self.cascade = None
 
     @override
     def read(self, imgPathNoExt: str, captionFile: CaptionFile) -> str | None:
@@ -490,4 +509,8 @@ class JsonDest(CaptionDest):
 
         caption = captionFunc(imgPathNoExt, captionFile)
         self.captionSetter(captionFile, self.key, caption)
+
+        if self.cascade:
+            self.cascade.saveCascade(captionFile.jsonPath, captionFile, self.keyType, self.key)
+
         return captionFile.jsonPath, True

@@ -119,6 +119,8 @@ class GalleryModel(QAbstractTableModel):
     ROLE_CAPTION_DOC    = Qt.ItemDataRole.UserRole.value + 10
     ROLE_DOC_EDITED     = Qt.ItemDataRole.UserRole.value + 11
 
+    ROLE_CASCADE        = Qt.ItemDataRole.UserRole.value + 12
+
 
     headersUpdated = Signal(list)
 
@@ -149,6 +151,8 @@ class GalleryModel(QAbstractTableModel):
         self._docs: OrderedDict[str, QTextDocument] = OrderedDict()
         self._docsEdited: dict[str, QTextDocument] = {}
         self._docFont = qtlib.getMonospaceFont()
+
+        self._cascadeSaveEnabled: bool = True
 
         self._thumbnailUpdateQueue = ThumbnailUpdateQueue(self)
 
@@ -429,6 +433,8 @@ class GalleryModel(QAbstractTableModel):
 
         if role == self.ROLE_TYPE:
             return item.itemType
+        if role == self.ROLE_CASCADE:
+            return self._cascadeSaveEnabled
 
         if item.itemType == ItemType.File:
             match role:
@@ -497,6 +503,17 @@ class GalleryModel(QAbstractTableModel):
                     self._storeUnchangedDocument(item.path, doc)
 
             # Don't notify with dataChanged
+            return True
+
+        if role == self.ROLE_CASCADE and self._cascadeSaveEnabled != bool(value):
+            self._cascadeSaveEnabled = bool(value)
+
+            # Notify editors with modified docs
+            roles = [self.ROLE_CASCADE]
+            for file in self._docsEdited:
+                index = self.getFileIndex(file)
+                self.dataChanged.emit(index, index, roles)
+
             return True
 
         return False

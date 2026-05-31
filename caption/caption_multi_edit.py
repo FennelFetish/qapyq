@@ -217,14 +217,14 @@ class CaptionMultiEdit:
                 self.filelist.setData(file.file, DataKeys.Caption, caption)
                 self.filelist.setData(file.file, DataKeys.CaptionState, DataKeys.IconStates.Changed)
 
-    def saveCaptions(self, captionDest: FileTypeSelector) -> bool:
+    def saveCaptions(self, captionDest: FileTypeSelector, cascade: bool) -> bool:
         if not self._files:
             return False
 
         success = True
         for file in self._files:
             caption = self.separator.join(file.tags)
-            if captionDest.saveCaption(file.file, caption):
+            if captionDest.saveCaption(file.file, caption, cascade):
                 self.filelist.removeData(file.file, DataKeys.Caption)
                 self.filelist.setData(file.file, DataKeys.CaptionState, DataKeys.IconStates.Saved)
                 file.edited = False

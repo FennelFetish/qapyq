@@ -12,6 +12,7 @@ from ui.edit_table import EditableTable
 from ui.flow_layout import FlowLayout, SortedStringFlowWidget, ManualStartReorderWidget
 from lib import colorlib, qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
+from lib.cascade import CascadeUpdate
 from .batch_task import BatchTask, BatchTaskHandler
 from .batch_log import BatchLog
 
@@ -134,6 +135,7 @@ class BatchRules(QtWidgets.QWidget):
         layout.addWidget(self.chkRemoveDup, row, 1, Qt.AlignmentFlag.AlignTop)
 
         self.chkRemoveImplications = QtWidgets.QCheckBox("Remove Implications")
+        self.chkRemoveImplications.toggled.connect(self._onRemoveImplicationsToggled)
         self.chkRemoveImplications.checkStateChanged.connect(self.updatePreview)
         layout.addWidget(self.chkRemoveImplications, row, 2, Qt.AlignmentFlag.AlignTop)
 
@@ -247,9 +249,7 @@ class BatchRules(QtWidgets.QWidget):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
-        layout.setColumnStretch(0, 0)
-        layout.setColumnStretch(1, 0)
-        layout.setColumnStretch(2, 1)
+        layout.setColumnStretch(3, 1)
 
         row = 0
         layout.addWidget(QtWidgets.QLabel("Load key:"), row, 0, Qt.AlignmentFlag.AlignTop)
@@ -267,6 +267,10 @@ class BatchRules(QtWidgets.QWidget):
         self.chkSkipExisting = QtWidgets.QCheckBox("Skip file if key exists")
         layout.addWidget(self.chkSkipExisting, row, 2)
 
+        self.chkCascade = QtWidgets.QCheckBox("Cascade Updates")
+        self.chkCascade.setChecked(True)
+        layout.addWidget(self.chkCascade, row, 3)
+
         row += 1
         layout.setRowStretch(row, 1)
 
@@ -277,7 +281,7 @@ class BatchRules(QtWidgets.QWidget):
         qtlib.setTextEditHeight(self.txtPreview, 3, mode="min")
         qtlib.setShowWhitespace(self.txtPreview)
         layout.addWidget(QtWidgets.QLabel("Preview:"), row, 0, Qt.AlignmentFlag.AlignTop)
-        layout.addWidget(self.txtPreview, row, 1, 1, 2)
+        layout.addWidget(self.txtPreview, row, 1, 1, 3)
 
         groupBox = QtWidgets.QGroupBox("Batch Settings")
         groupBox.setLayout(layout)
@@ -289,6 +293,17 @@ class BatchRules(QtWidgets.QWidget):
         self.captionFile.loadFromJson()
         self.updatePreview()
 
+
+    @Slot()
+    def _onRemoveImplicationsToggled(self, state: bool):
+        if not state:
+            self.chkRemoveImplications.setStyleSheet("")
+            return
+
+        from caption.caption_filter import ImplicationFilter
+        if not ImplicationFilter.hasImplications():
+            self.chkRemoveImplications.setStyleSheet(f"color: {colorlib.RED}")
+            self.chkRemoveImplications.setToolTip("No implications defined. Place CSV files into the qapyq/user/tag-implications folder.")
 
     @Slot()
     def _onSortToggled(self):
@@ -499,6 +514,9 @@ class BatchRules(QtWidgets.QWidget):
             storeText = colorlib.htmlRed(storeText + " and overwrite the content!")
         ops.append(storeText)
 
+        if self.chkCascade.isChecked():
+            ops.append(colorlib.htmlRed(f'Cascade and update all content that depends on [{storeKey}]!'))
+
         return ops, False
 
 
@@ -510,6 +528,7 @@ class BatchRules(QtWidgets.QWidget):
         task.targetType = self.destSelector.type
         task.targetKey  = self.destSelector.name.strip()
         task.skipExisting = self.chkSkipExisting.isChecked()
+        task.cascadeEnabled = self.chkCascade.isChecked()
         return task
 
 
@@ -618,6 +637,8 @@ class BatchRulesTask(BatchTask):
         self.targetKey = ""
 
         self.skipExisting = False
+        self.cascadeEnabled = False
+        self.cascade: CascadeUpdate | None = None
 
         self._captionGetter: Callable[[CaptionFile, str], str | None]  = None
         self._captionSetter: Callable[[CaptionFile, str, str], None]   = None
@@ -643,6 +664,10 @@ class BatchRulesTask(BatchTask):
             case _:
                 raise ValueError("Invalid caption storage type")
 
+        if self.cascadeEnabled:
+            self.cascade = CascadeUpdate()
+            self.cascade.enableCache()
+
 
     def runProcessFile(self, imgFile: str) -> str | None:
         captionFile = CaptionFile(imgFile)
@@ -660,10 +685,14 @@ class BatchRulesTask(BatchTask):
 
         text = self.rulesProcessor.process(text)
         if not text:
-            self.log(f"WARNING: Caption is empty for {imgFile}, skipping")
+            self.log(f"WARNING: Resulting caption is empty for {imgFile}, skipping")
             return None
 
         self._captionSetter(captionFile, self.targetKey, text)
+
+        if self.cascade:
+            self.cascade.saveCascade(imgFile, captionFile, self.targetType, self.targetKey)
+
         captionFile.saveToJson()
         return captionFile.jsonPath
 

@@ -9,6 +9,7 @@ from .caption_filter import CaptionRulesProcessor
 from .caption_settings import CaptionSettings
 from .caption_groups import CaptionGroups
 from .caption_list import CaptionList
+from .caption_cascade import CaptionCascade
 from ui.autocomplete import AutoCompleteSource, GroupNGramAutoCompleteSource, getAutoCompleteSource
 
 
@@ -59,6 +60,7 @@ class CaptionContext(QtWidgets.QTabWidget):
         #self.addTab(QtWidgets.QWidget(), "Folder Overrides") # Let variables from json override settings?
         self.addTab(self.generate, "Generate")
         self.addTab(CaptionList(self), "List")
+        self.addTab(CaptionCascade(self.container, self), "Cascade Templates")
 
         self._activeWidget: CaptionTab = self.currentWidget()
         self.multiEditSupport: MultiEditSupport = self._activeWidget.getMultiEditSupport()

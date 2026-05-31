@@ -1,10 +1,15 @@
 import re, os, random
-from typing import Tuple, List, Callable
+from typing import Tuple, List, Callable, NamedTuple
 from collections import defaultdict
 from datetime import datetime
 from PySide6 import QtWidgets, QtGui
+from config import Config
 from .captionfile import CaptionFile
 from .colorlib import ColorCharFormats
+
+
+# Imported at the bottom
+# from caption.caption_filter import CaptionRulesProcessor
 
 
 class TemplateVariableParser:
@@ -385,6 +390,12 @@ class TemplateVariableParser:
                     argIndex = 1 if (search in value) else 2
                     return self._getFuncArg(args, argIndex, "")
 
+            # Rules
+            case "rules":
+                if len(args) > 0 and args[0]:
+                    if rulesProcessor := TemplateRulesProcessor.getProcessor(args[0]):
+                        return rulesProcessor.process(value)
+
             # TODO: Function for limiting text to max token count
 
         return value
@@ -526,3 +537,81 @@ class VariableHighlighter:
 
         sourceRanges.apply()
         targetRanges.apply()
+
+
+
+class TemplateRulesProcessor:
+    class CacheEntry(NamedTuple):
+        rulesProcessor: 'CaptionRulesProcessor'
+        modTime: float
+
+
+    CACHED_PROCESSORS: dict[str, CacheEntry] = {}
+
+
+    @classmethod
+    def getProcessor(cls, presetPath: str) -> 'CaptionRulesProcessor | None':
+        if not presetPath.endswith(".json"):
+            presetPath += ".json"
+
+        presetPath = os.path.join(Config.pathExport, presetPath)
+        presetPath = os.path.abspath(presetPath)
+
+        try:
+            modTime = os.path.getmtime(presetPath)
+        except OSError:
+            print(f"Template Parser: Failed to load rules preset from '{presetPath}'")
+            cls.CACHED_PROCESSORS.pop(presetPath, None)
+            return None
+
+        cacheEntry = cls.CACHED_PROCESSORS.get(presetPath)
+        if cacheEntry is None or cacheEntry.modTime != modTime:
+            print(f"Template Parser: Reloading rules preset from '{presetPath}'")
+            rulesProcessor = cls._createProcessor(presetPath)
+            cls.CACHED_PROCESSORS[presetPath] = cacheEntry = cls.CacheEntry(rulesProcessor, modTime)
+
+        return cacheEntry.rulesProcessor
+
+    @classmethod
+    def _createProcessor(cls, presetPath: str) -> 'CaptionRulesProcessor':
+        from caption.caption_preset import CaptionPreset, MutualExclusivity
+        from caption.caption_conditionals import ConditionalRule, ConditionalFilterRule
+        from caption.caption_wildcard import expandWildcards
+
+        preset = CaptionPreset()
+        preset.loadFrom(presetPath)
+
+        # TODO: Make lightweight converter without instatiating heavy 'ConditionalRule' GUI elements
+        condRules: list[ConditionalFilterRule] = []
+        for presetCondRule in preset.conditionals:
+            rule = ConditionalRule()
+            rule.loadFromPreset(presetCondRule)
+            condRules.append(rule.getFilterRule())
+
+        groups: list[tuple[list[str], MutualExclusivity, bool]] = []
+        for group in preset.groups:
+            groupTags = [tag
+                for origTag in group.captions
+                for tag in expandWildcards(origTag, preset.wildcards)
+            ]
+            groups.append((groupTags, group.exclusivity, group.combineTags))
+
+        rulesProcessor = CaptionRulesProcessor(
+            preset.separator,
+            preset.removeDuplicates,
+            preset.removeImplications,
+            preset.sortCaptions,
+            preset.sortNonGroupCaptions,
+            preset.whitelistGroups
+        )
+
+        rulesProcessor.setPrefixSuffix(preset.prefix, preset.suffix, preset.prefixSeparator, preset.suffixSeparator)
+        rulesProcessor.setSearchReplacePairs(preset.searchReplace)
+        rulesProcessor.setBannedCaptions(preset.banned)
+        rulesProcessor.setCaptionGroups(groups)
+        rulesProcessor.setConditionalRules(condRules)
+        return rulesProcessor
+
+
+
+from caption.caption_filter import CaptionRulesProcessor

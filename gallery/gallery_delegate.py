@@ -550,6 +550,7 @@ class GalleryListDelegate(GalleryDelegate):
     def setModelData(self, editor: QtWidgets.QWidget, model: GalleryModel, index: QModelIndex | QPersistentModelIndex):
         if isinstance(editor, GalleryCaptionEditor):
             model.setData(index, editor.edited, GalleryModel.ROLE_DOC_EDITED)
+            model.setData(index, editor.cascade, GalleryModel.ROLE_CASCADE)
 
 
 
@@ -572,18 +573,23 @@ class GalleryCaptionEditor(QtWidgets.QWidget):
 
         layout = QtWidgets.QGridLayout()
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0) # spacing moves the text field when showing the buttons
+        layout.setVerticalSpacing(0) # V-spacing moves the text field when showing the save controls
+        layout.setHorizontalSpacing(4)
         layout.setColumnStretch(0, 1)
-        layout.setColumnMinimumWidth(2, 4)
 
         row = 0
         layout.setRowMinimumHeight(row, labelHeight)
+
+        self.chkCascadeSave = QtWidgets.QCheckBox("Cascading Updates")
+        self.chkCascadeSave.setFixedHeight(labelHeight)
+        self.chkCascadeSave.toggled.connect(self._onCascadeToggled)
+        layout.addWidget(self.chkCascadeSave, row, 1)
 
         self.btnSave = qtlib.SaveButton("Save")
         self.btnSave.setChanged(True)
         self.btnSave.setFixedHeight(labelHeight)
         self.btnSave.clicked.connect(self.saveCaption)
-        layout.addWidget(self.btnSave, row, 1)
+        layout.addWidget(self.btnSave, row, 2)
 
         self.btnReload = QtWidgets.QPushButton("Reload")
         self.btnReload.setFixedHeight(labelHeight)
@@ -591,6 +597,7 @@ class GalleryCaptionEditor(QtWidgets.QWidget):
         layout.addWidget(self.btnReload, row, 3)
 
         if not self.edited:
+            self.chkCascadeSave.hide()
             self.btnSave.hide()
             self.btnReload.hide()
 
@@ -631,13 +638,38 @@ class GalleryCaptionEditor(QtWidgets.QWidget):
                 cursor.clearSelection()
                 self.txtCaption.setTextCursor(cursor)
 
+        cascade = index.data(GalleryModel.ROLE_CASCADE)
+        with QSignalBlocker(self.chkCascadeSave):
+            self.chkCascadeSave.setChecked(cascade)
+
 
     def setEdited(self, edited: bool):
+        if edited and not self.chkCascadeSave.isVisible():
+            self._updateCascade()
+
+        self.chkCascadeSave.setVisible(edited)
         self.btnSave.setVisible(edited)
         self.btnReload.setVisible(edited)
 
         self.edited = edited
         self.delegate.commitData.emit(self)
+
+
+    @property
+    def cascade(self) -> bool:
+        return self.chkCascadeSave.isChecked()
+
+    @Slot(bool)
+    def _onCascadeToggled(self, state: bool):
+        self.setEdited(True)
+
+    def _updateCascade(self):
+        index = self.delegate.view.model().getFileIndex(self.file)
+        if index.isValid():
+            cascade = index.data(GalleryModel.ROLE_CASCADE)
+            with QSignalBlocker(self.chkCascadeSave):
+                self.chkCascadeSave.setChecked(cascade)
+
 
     @Slot()
     def _onCaptionChanged(self):
@@ -665,7 +697,7 @@ class GalleryCaptionEditor(QtWidgets.QWidget):
     @Slot()
     def saveCaption(self):
         text = self.txtCaption.rstripCaption()
-        if self.delegate.caption.captionSrc.saveCaption(self.file, text):
+        if self.delegate.caption.captionSrc.saveCaption(self.file, text, self.cascade):
             self.delegate.view.tab.filelist.setData(self.file, DataKeys.CaptionState, DataKeys.IconStates.Saved)
             self.setEdited(False)
 
