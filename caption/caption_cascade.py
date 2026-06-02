@@ -1,6 +1,6 @@
 from __future__ import annotations
-import enum
-from typing import Iterable, TYPE_CHECKING
+import enum, os, re
+from typing import Generator, TYPE_CHECKING
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Signal, Slot, QSignalBlocker
@@ -9,6 +9,7 @@ from lib.template_parser import TemplateVariableParser, VariableHighlighter
 from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.cascade import CascadeUpdate, CascadeGraph
 from ui.autocomplete import TemplateTextEdit
+from config import Config
 from .caption_tab import CaptionTab, MultiEditSupport
 from .caption_list import KeyType
 
@@ -82,10 +83,6 @@ class CaptionCascade(CaptionTab):
         if self._needsReload:
             self.reloadTabs()
 
-    @override
-    def onTabDisabled(self):
-        pass
-
 
     def onFileChanged(self, currentFile: str):
         if self.ctx.currentWidget() is self:
@@ -97,16 +94,21 @@ class CaptionCascade(CaptionTab):
         self.onFileChanged(currentFile)
 
 
-    def getTabs(self):
+    def getTabs(self) -> Generator[CascadeTab]:
         for i in range(self.tabs.count()):
             tab: CascadeTab = self.tabs.widget(i)
             yield tab
+
+    def _clearTabs(self):
+        for tab in self.getTabs():
+            tab.deleteLater()
+        self.tabs.clear()
 
     @Slot()
     def reloadTabs(self):
         file = self.ctx.tab.filelist.currentFile
         self.parser.setup(file)
-        self.tabs.clear()
+        self._clearTabs()
 
         parentTemplates = {}
         for jsonFile, name in zip(*CascadeUpdate.getJsonFiles(file)):
@@ -132,7 +134,8 @@ class CaptionCascade(CaptionTab):
 
         self._needsReload = False
 
-    @Slot(object)
+
+    @Slot(object, object)
     def _onEntryEdited(self, tab: CascadeTab, entry: CascadeTemplateEntry):
         self.btnSaveAll.setChanged(True)
 
@@ -147,19 +150,13 @@ class CaptionCascade(CaptionTab):
 
         for tab in self.getTabs():
             with QSignalBlocker(tab): # Avoid recursion through 'CascadeTab.entryEdited'
-                hasKey = False
-                for entry in tab.entries:
-                    if entry.key != key:
-                        continue
-                    hasKey = True
-
+                if entry := tab.getEntry(key):
                     if update:
                         entry.setInheritedText(template)
-
                     if entry.overrideEnabled:
                         template = entry.text
 
-                if update and not hasKey:
+                elif update:
                     entry = tab.addNewEntry(key, template)
                     entry.setOverrideEnabled(False)
 
@@ -167,6 +164,10 @@ class CaptionCascade(CaptionTab):
 
     @Slot()
     def _addNewEntry(self):
+        if self.tabs.count() == 0:
+            self.statusBar.showColoredMessage("No file loaded", False)
+            return
+
         keyName = self.addEntrySelector.name.strip()
         keyType = self.addEntrySelector.type
 
@@ -180,21 +181,15 @@ class CaptionCascade(CaptionTab):
             key = f"{keyType}.{keyName}"
 
         tab: CascadeTab = self.tabs.currentWidget()
-        if any(entry.key == key for entry in tab.entries):
+        if tab.getEntry(key) is not None:
             self.statusBar.showColoredMessage("Key already exists", False)
             return
 
         self.addEntrySelector.name = ""
 
         entry = tab.addNewEntry(key)
-        entry.setOverrideEnabled(True)
-        entry.edited = True
+        entry.setOverrideEnabled(True)  # Emits 'entryEdited' signal
         entry.textField.setFocus()
-        #self._updateTabOrder()
-        self._onEntryEdited(tab, entry)
-
-        # scrollBar = self._scrollArea.verticalScrollBar()
-        # QTimer.singleShot(DELAY_SCROLL, lambda: scrollBar.setValue(scrollBar.height() + 1000))
 
 
     @Slot()
@@ -237,9 +232,7 @@ class CaptionCascade(CaptionTab):
     def _tryGetCycle(self) -> str:
         templates = dict[str, str]()
         for tab in self.getTabs():
-            for entry in tab.entries:
-                if entry.overrideEnabled:
-                    templates[entry.key] = entry.text
+            tab.storeTemplates(templates)
 
         return CascadeGraph.getFirstCycle(templates)
 
@@ -252,8 +245,6 @@ class CascadeTab(QtWidgets.QWidget):
         super().__init__()
         self.cascade = cascade
         self.jsonPath = jsonPath
-
-        self.edited: bool = False
 
         self._layoutEntries = QtWidgets.QVBoxLayout()
         self._layoutEntries.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -282,15 +273,13 @@ class CascadeTab(QtWidgets.QWidget):
         templates = parentTemplates.copy()
         templates.update(ownTemplates)
 
-        if templates:
-            for key, template in sorted(templates.items(), key=self._entrySortKey):
-                entry = self._addEntry(key, template, parentTemplates.get(key))
-                entry.setOverrideEnabled(key in ownTemplates)
-
-            self._layoutEntries.addStretch(1)
-
-        else:
+        if not templates:
             self._addPlaceholder()
+            return
+
+        for key, template in sorted(templates.items(), key=self._entrySortKey):
+            entry = self._addEntry(key, template, parentTemplates.get(key))
+            entry.setOverrideEnabled(key in ownTemplates)
 
     @staticmethod
     def _entrySortKey(item: tuple[str, dict]) -> tuple[int, str]:
@@ -311,28 +300,37 @@ class CascadeTab(QtWidgets.QWidget):
 
         return (3, keyName)
 
-    def _clearSpacer(self):
-        # Remove spacer and placeholder
-        for i in range(self._layoutEntries.count()-1, -1, -1):
-            if item := self._layoutEntries.itemAt(i):
-                if item.spacerItem():
-                    self._layoutEntries.takeAt(i)
-                elif (widget := item.widget()) and not isinstance(widget, CascadeTemplateEntry):
-                    self._layoutEntries.takeAt(i)
-                    widget.deleteLater()
 
     def _addPlaceholder(self):
-        self._clearSpacer()
+        self._clearPlaceholder()
         self._layoutEntries.addWidget(PlaceholderWidget())
-        self._layoutEntries.addStretch(1)
+
+    def _clearPlaceholder(self):
+        # Remove spacer and placeholder
+        for i in range(self._layoutEntries.count()-1, -1, -1):
+            item = self._layoutEntries.itemAt(i)
+            if item and (widget := item.widget()) and not isinstance(widget, CascadeTemplateEntry):
+                self._layoutEntries.takeAt(i)
+                widget.deleteLater()
 
 
     @property
-    def entries(self) -> Iterable[CascadeTemplateEntry]:
+    def entries(self) -> Generator[CascadeTemplateEntry]:
         for i in range(self._layoutEntries.count()):
             item = self._layoutEntries.itemAt(i)
             if item and isinstance(widget := item.widget(), CascadeTemplateEntry):
                 yield widget
+
+    def getEntry(self, key: str) -> CascadeTemplateEntry | None:
+        for entry in self.entries:
+            if entry.key == key:
+                return entry
+        return None
+
+    def addNewEntry(self, key: str, inheritedText: str | None = None):
+        self._clearPlaceholder()
+        entry = self._addEntry(key, "", inheritedText)
+        return entry
 
     def _addEntry(self, key: str, text: str, inheritedText: str | None):
         entry = CascadeTemplateEntry(self, key, inheritedText)
@@ -346,14 +344,7 @@ class CascadeTab(QtWidgets.QWidget):
         self._layoutEntries.addWidget(entry)
         return entry
 
-    def addNewEntry(self, key: str, inheritedText: str | None = None):
-        self._clearSpacer()
-
-        entry = self._addEntry(key, "", inheritedText)
-        self._layoutEntries.addStretch(1)
-        return entry
-
-    def removeEntry(self, entry: CascadeTemplateEntry):
+    def _removeEntry(self, entry: CascadeTemplateEntry):
         self._layoutEntries.removeWidget(entry)
         entry.deleteLater()
 
@@ -362,100 +353,131 @@ class CascadeTab(QtWidgets.QWidget):
 
     @Slot(object)
     def _onEntryModeChanged(self, entry: CascadeTemplateEntry):
-        if not entry.overrideEnabled:
-            if entry.inheritedText is None:
-                self.removeEntry(entry)
-            else:
-                entry.text = entry.inheritedText
-
-        self.edited = True
         self.entryEdited.emit(self, entry)
 
-    @Slot()
+        if not entry.overrideEnabled and entry.inheritedText is None:
+            self._removeEntry(entry)
+
+
+    @Slot(object)
     def _scrollToTextField(self, textEdit: CascadeTemplateTextEdit):
         self._scrollArea.ensureWidgetVisible(textEdit.parentWidget())
+
+
+    def storeTemplates(self, templates: dict[str, str]):
+        for entry in self.entries:
+            if entry.overrideEnabled:
+                templates[entry.key] = entry.text
 
     def save(self) -> int:
         captionFile = CaptionFile(self.jsonPath)
         if captionFile.jsonExists() and not captionFile.loadFromJson():
             raise RuntimeError(f"Could not load existing templates from '{self.jsonPath}'")
 
-        cascade = {}
-        for entry in self.entries:
-            if entry.overrideEnabled:
-                cascade[entry.key] = entry.text
+        templates = dict[str, str]()
+        self.storeTemplates(templates)
 
-        if not cascade and not captionFile.cascade:
+        if not templates and not captionFile.cascade:
             return 0  # Nothing to write
 
-        captionFile.cascade = cascade
+        captionFile.cascade = templates
         captionFile.saveToJson()
-        self.edited = False
 
-        numTemplates = len(cascade)
+        numTemplates = len(templates)
         print(f"Saved {numTemplates} cascade templates to '{self.jsonPath}'")
         return numTemplates
 
 
 
-# TODO: Add combo box for selecting type: Template / Rules
-#       When selecting rules, it auto-generates the template with {{tags.tags#rules:....}}
 class CascadeTemplateEntry(QtWidgets.QWidget):
     modeChanged = Signal(object)
 
     def __init__(self, tab: CascadeTab, key: str, inheritedText: str | None):
         super().__init__()
         self.tab = tab
-        self.cascade = tab.cascade
 
         self.key: str = key
-        self.inheritedText = inheritedText
+        self.inheritedText: str | None = inheritedText
+        self.overrideEnabled: bool = True
 
-        self.edited = False
-        self.overrideEnabled = True
+        self._build(key)
 
+    def _build(self, key: str):
         layout = QtWidgets.QGridLayout()
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setHorizontalSpacing(8)
-        layout.setVerticalSpacing(21)
-        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        layout.setColumnMinimumWidth(1, 220)
-        layout.setColumnMinimumWidth(2, 12)
-        layout.setColumnStretch(3, 1)
-        layout.setColumnStretch(4, 1)
+        layout.setVerticalSpacing(2)
 
+        col = 0
         self.btnToggle = EntryToggleButton()
         self.btnToggle.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.btnToggle.clicked.connect(self._toggleOverrideEnabled)
-        layout.addWidget(self.btnToggle, 0, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.btnToggle, 0, col)
+
+        col += 1
+        layout.setColumnMinimumWidth(col, 220)
 
         self.txtKey = QtWidgets.QLabel(key)
         self.txtKey.setTextFormat(Qt.TextFormat.PlainText)
         self.txtKey.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        self.txtKey.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         qtlib.setMonospace(self.txtKey)
         self._setKeyColor(self.txtKey, key)
-        layout.addWidget(self.txtKey, 0, 1, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.txtKey, 0, col)
 
-        self.txtTemplate = CascadeTemplateTextEdit(self.cascade.ctx.tab.templateAutoCompleteSources)
-        qtlib.setMonospace(self.txtTemplate)
-        qtlib.setTextEditHeight(self.txtTemplate, 5)
-        self.txtTemplate.textChanged.connect(self._setEdited)
-        layout.addWidget(self.txtTemplate, 0, 3, Qt.AlignmentFlag.AlignTop)
+        self.chkUseRules = QtWidgets.QCheckBox("Rules")
+        self.chkUseRules.toggled.connect(self.setRulesMode)
+        layout.addWidget(self.chkUseRules, 1, col, Qt.AlignmentFlag.AlignTop)
+        layout.setRowStretch(1, 1)
+
+        col += 1
+        layout.setColumnMinimumWidth(col, 12)
+
+        col += 1
+        layout.setColumnStretch(col, 1)
+
+        self.templateStack = self._buildTemplateStack()
+        layout.addLayout(self.templateStack, 0, col, 2, 1, Qt.AlignmentFlag.AlignTop)
+
+        col += 1
+        layout.setColumnStretch(col, 1)
 
         self.txtPreview = QtWidgets.QPlainTextEdit()
         self.txtPreview.setReadOnly(True)
+        self.txtPreview.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.txtPreview.viewport().setCursor(Qt.CursorShape.ArrowCursor)
         qtlib.setMonospace(self.txtPreview)
         qtlib.setShowWhitespace(self.txtPreview)
-        qtlib.setTextEditHeight(self.txtPreview, 5)
-        layout.addWidget(self.txtPreview, 0, 4)
+        qtlib.setTextEditHeight(self.txtPreview, 3, "min")
 
+        # Wrap preview in another layout to fully stretch it vertically
+        previewStretchLayout = QtWidgets.QVBoxLayout()
+        previewStretchLayout.addWidget(self.txtPreview)
+        layout.addLayout(previewStretchLayout, 0, col, 2, 1, Qt.AlignmentFlag.AlignTop)
+
+        # Separator across all columns
         separatorLine = QtWidgets.QFrame()
         separatorLine.setFrameStyle(QtWidgets.QFrame.Shape.HLine | QtWidgets.QFrame.Shadow.Sunken)
-        layout.addWidget(separatorLine, 1, 0, 1, 5)
-        layout.setRowMinimumHeight(1, 12)
+        layout.addWidget(separatorLine, 2, 0, 1, 5)
+        layout.setRowMinimumHeight(2, 12)
 
         self.setLayout(layout)
+
+    def _buildTemplateStack(self):
+        self.txtTemplate = CascadeTemplateTextEdit(self.tab.cascade.ctx.tab.templateAutoCompleteSources)
+        self.txtTemplate.setTabChangesFocus(True)
+        qtlib.setMonospace(self.txtTemplate)
+        qtlib.setTextEditHeight(self.txtTemplate, 3, "min")
+        self.txtTemplate.textChanged.connect(self.updateHighlight)
+
+        self.rulesWidget = RuleChooserWidget()
+        self.rulesWidget.ruleTemplateChanged.connect(self.txtTemplate.setPlainText)
+
+        stack = QtWidgets.QStackedLayout()
+        stack.addWidget(self.txtTemplate)
+        stack.addWidget(self.rulesWidget)
+        return stack
 
     @staticmethod
     def _setKeyColor(txtKey: QtWidgets.QLabel, key: str):
@@ -488,17 +510,18 @@ class CascadeTemplateEntry(QtWidgets.QWidget):
 
     @property
     def text(self):
-        return self.txtTemplate.toPlainText()
+        if self.chkUseRules.isChecked():
+            return self.rulesWidget.getTemplate()
+        else:
+            return self.txtTemplate.toPlainText()
 
     @text.setter
     def text(self, text: str):
         self.txtTemplate.setPlainText(text)
 
+        rulesPatternMatch = self.rulesWidget.fromTemplate(text)
+        self.chkUseRules.setChecked(rulesPatternMatch)
 
-    @Slot()
-    def _setEdited(self):
-        self.edited = True
-        self.updateHighlight()
 
     @Slot()
     def _toggleOverrideEnabled(self):
@@ -506,8 +529,10 @@ class CascadeTemplateEntry(QtWidgets.QWidget):
 
     def setOverrideEnabled(self, enabled: bool):
         self.overrideEnabled = enabled
-        for widget in (self.txtKey, self.txtTemplate, self.txtPreview):
+        for widget in (self.txtKey, self.txtTemplate, self.rulesWidget):
             widget.setEnabled(enabled)
+
+        self.chkUseRules.setVisible(enabled)
 
         self.updateHighlight()
         self._updateMode()
@@ -521,19 +546,117 @@ class CascadeTemplateEntry(QtWidgets.QWidget):
         else:
             mode = EntryToggleButton.Mode.Add
 
+            if self.inheritedText is not None:
+                self.text = self.inheritedText
+
         self.btnToggle.setMode(mode)
         self.modeChanged.emit(self)
+
+
+    @Slot(bool)
+    def setRulesMode(self, rulesModeEnabled: bool):
+        index = 1 if rulesModeEnabled else 0
+        self.templateStack.setCurrentIndex(index)
+
+        if rulesModeEnabled:
+            self.rulesWidget.fromTemplate(self.text)
 
 
     def setInheritedText(self, text: str | None):
         self.inheritedText = text
         self._updateMode()
 
+    @Slot()
     def updateHighlight(self):
-        text, varPositions = self.cascade.parser.parseWithPositions(self.txtTemplate.toPlainText())
+        cascade = self.tab.cascade
+        text, varPositions = cascade.parser.parseWithPositions(self.txtTemplate.toPlainText())
         self.txtPreview.setPlainText(text)
         disabled = not self.overrideEnabled
-        self.cascade.highlighter.highlight(self.txtTemplate, self.txtPreview, varPositions, disabled)
+        cascade.highlighter.highlight(self.txtTemplate, self.txtPreview, varPositions, disabled)
+
+
+
+class RuleChooserWidget(QtWidgets.QWidget):
+    PATTERN_RULES = re.compile(r"^{{([^\.]+?\.[^\.]+?)#rules:([^:#]*?)}}$")
+
+    DEFAULT_PATH = Config.pathExport
+
+    ruleTemplateChanged = Signal(str) # template
+
+    def __init__(self):
+        super().__init__()
+
+        layout = QtWidgets.QGridLayout()
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        row = 0
+        self.srcSelector = FileTypeSelector(showTxtType=False)
+        self.srcSelector.cboKey.wheelEvent  = self._disableWheelEvent
+        self.srcSelector.cboType.wheelEvent = self._disableWheelEvent
+        self.srcSelector.fileTypeUpdated.connect(self._onPathChanged)
+
+        layout.addWidget(QtWidgets.QLabel("Source Key:"), row, 0)
+        layout.addLayout(self.srcSelector, row, 1, 1, 2)
+
+        row += 1
+        self.txtRulesPath = QtWidgets.QLineEdit()
+        qtlib.setMonospace(self.txtRulesPath)
+        self.txtRulesPath.textChanged.connect(self._onPathChanged)
+        layout.addWidget(QtWidgets.QLabel("Preset Path:"), row, 0)
+        layout.addWidget(self.txtRulesPath, row, 1)
+
+        self.btnChooseRulesPath = QtWidgets.QPushButton("Choose...")
+        self.btnChooseRulesPath.clicked.connect(self._chooseFile)
+        layout.addWidget(self.btnChooseRulesPath, row, 2)
+
+        self.setLayout(layout)
+
+    @staticmethod
+    def _disableWheelEvent(event):
+        pass
+
+    @Slot()
+    def _chooseFile(self):
+        path = self.txtRulesPath.text() or RuleChooserWidget.DEFAULT_PATH
+        path = os.path.join(Config.pathExport, path)
+
+        fileFilter = "Rules Preset (*.json)"
+        path, selectedFilter = QtWidgets.QFileDialog.getOpenFileName(self, "Load preset", path, fileFilter)
+
+        if path:
+            path = os.path.abspath(path)
+            self.txtRulesPath.setText(path)
+            RuleChooserWidget.DEFAULT_PATH = os.path.dirname(path)
+
+    @Slot()
+    def _onPathChanged(self):
+        template = self.getTemplate()
+        self.ruleTemplateChanged.emit(template)
+
+    def getTemplate(self) -> str:
+        key = f"{self.srcSelector.type}.{self.srcSelector.name.strip()}"
+        path = self.txtRulesPath.text()
+        return "{{" + f"{key}#rules:{path}" + "}}"
+
+    @classmethod
+    def isRulesTemplate(cls, template: str) -> bool:
+        return cls.PATTERN_RULES.match(template) is not None
+
+    def fromTemplate(self, template: str) -> bool:
+        if match := self.PATTERN_RULES.match(template):
+            keyType, keyName = match.group(1).split(".")
+            if keyType not in (FileTypeSelector.TYPE_CAPTIONS, FileTypeSelector.TYPE_TAGS):
+                return False
+
+            self.srcSelector.type = keyType
+            self.srcSelector.name = keyName
+
+            path = match.group(2)
+            self.txtRulesPath.setText(path)
+            return True
+
+        return False
 
 
 
@@ -608,6 +731,11 @@ class CascadeTemplateTextEdit(TemplateTextEdit):
     @override
     def focusInEvent(self, e: QtGui.QFocusEvent):
         super().focusInEvent(e)
+
+        # Don't move cursor when autocomplete popup was closed
+        if e.reason() != Qt.FocusReason.PopupFocusReason:
+            self.moveCursor(QtGui.QTextCursor.MoveOperation.End)
+
         self.focusReceived.emit(self)
 
 
@@ -638,4 +766,5 @@ class PlaceholderWidget(QtWidgets.QScrollArea):
         layout.addWidget(QtWidgets.QLabel("Cascading updates are enabled by default but only effective when you define templates."))
         layout.addWidget(QtWidgets.QLabel("Use the toggle button in the bottom right corner of this Caption Window to disable them. The Batch and Gallery windows have a separate toggle."))
 
+        layout.addStretch(1)
         self.setWidget(widget)

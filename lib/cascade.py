@@ -192,7 +192,7 @@ class CascadeUpdate:
             print(f"Warning: {ex}")
             return
 
-        self._printUpdates(imgPath, nodeOrder, nodePaths)
+        self._printUpdates(imgPath, nodePaths)
 
         self.parser.setup(imgPath, captionFile)
         for node in nodeOrder:
@@ -221,11 +221,15 @@ class CascadeUpdate:
                 raise ValueError(f"Invalid key type: '{keyType}'")
 
     @staticmethod
-    def _printUpdates(imgPath: str, nodeOrder: list[CascadeNode], nodePaths: dict[str, list[str]]):
+    def _printUpdates(imgPath: str, nodePaths: dict[str, list[str]]):
         print(f"Cascading updates for: {imgPath}")
-        for node in nodeOrder:
-            nodePath = " → ".join(key for key in nodePaths[node.key])
-            print(f"  {nodePath}")
+
+        seenKeys = set[str]()
+        for pathKeys in sorted(nodePaths.values(), key=len, reverse=True):
+            if not seenKeys.issuperset(pathKeys):
+                seenKeys.update(pathKeys)
+                nodePath = " → ".join(key for key in pathKeys)
+                print(f"  {nodePath}")
 
 
     @staticmethod

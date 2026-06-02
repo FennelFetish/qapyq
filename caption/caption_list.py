@@ -244,6 +244,10 @@ class CaptionList(CaptionTab):
 
     @Slot()
     def _addNewEntry(self):
+        if not self.ctx.tab.filelist.currentFile:
+            self.statusBar.showColoredMessage("No file loaded", False)
+            return
+
         keyName = self.addEntrySelector.name.strip()
         keyType = TYPE_MAP[self.addEntrySelector.type]
         jsonType = (keyType != KeyType.TextFile)

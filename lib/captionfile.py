@@ -182,7 +182,7 @@ class FileTypeSelector(QtWidgets.QHBoxLayout):
         self.cboKey.setMinimumWidth(200)
         self.cboKey.currentTextChanged.connect(self._onEdited)
         qtlib.setMonospace(self.cboKey)
-        self.addWidget(self.cboKey)
+        self.addWidget(self.cboKey, stretch=1)
 
         self._onTypeChanged(self.cboType.currentIndex())
 
