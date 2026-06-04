@@ -1,15 +1,15 @@
 import re, os, random
-from typing import Tuple, List, Callable, NamedTuple
+from typing import Tuple, List, Callable, NamedTuple, TYPE_CHECKING
 from collections import defaultdict
+from contextlib import contextmanager
 from datetime import datetime
 from PySide6 import QtWidgets, QtGui
 from config import Config
 from .captionfile import CaptionFile
 from .colorlib import ColorCharFormats
 
-
-# Imported at the bottom
-# from caption.caption_filter import CaptionRulesProcessor
+if TYPE_CHECKING:
+    from caption.caption_filter import CaptionRulesProcessor
 
 
 class TemplateVariableParser:
@@ -29,6 +29,8 @@ class TemplateVariableParser:
         self.stripAround = True
         self.stripMultiWhitespace = True
 
+        self._tempOverrides: dict[str, str] = dict()
+
         self.missingVars = set()
         self.storedVars: dict[str, str] = dict()
 
@@ -43,6 +45,14 @@ class TemplateVariableParser:
             self.captionFile = CaptionFile(self.imgPath)
             self.captionFile.loadFromJson()
         return self.captionFile
+
+
+    @contextmanager
+    def withTemporaryOverrides(self):
+        try:
+            yield self._tempOverrides
+        finally:
+            self._tempOverrides = {}
 
 
     def parse(self, text: str) -> str:
@@ -168,30 +178,31 @@ class TemplateVariableParser:
         var, *funcs = var.split("#")
         var = var.strip()
 
-        value = None
-        if var.startswith(self.PREFIX_CAPTION):
-            name = var[len(self.PREFIX_CAPTION):]
-            value =  self.getCaptionFile().getCaption(name)
+        value = self._tempOverrides.get(var)
+        if value is None:
+            if var.startswith(self.PREFIX_TAG):
+                name = var[len(self.PREFIX_TAG):].lstrip()
+                value = self.getCaptionFile().getTags(name)
 
-        elif var.startswith(self.PREFIX_PROMPT):
-            name = var[len(self.PREFIX_PROMPT):]
-            value =  self.getCaptionFile().getPrompt(name)
+            elif var.startswith(self.PREFIX_CAPTION):
+                name = var[len(self.PREFIX_CAPTION):].lstrip()
+                value = self.getCaptionFile().getCaption(name)
 
-        elif var.startswith(self.PREFIX_TAG):
-            name = var[len(self.PREFIX_TAG):]
-            value =  self.getCaptionFile().getTags(name)
+            elif var.startswith(self.PREFIX_PROMPT):
+                name = var[len(self.PREFIX_PROMPT):].lstrip()
+                value = self.getCaptionFile().getPrompt(name)
 
-        elif var == "text":
-            value = self._readTextFile()
+            elif var == "text":
+                value = self._readTextFile()
 
-        else:
-            value = self._getImgProperties(var)
-            if value is None:
-                value = self._getMoreValues(var)
+            else:
+                value = self._getImgProperties(var)
+                if value is None:
+                    value = self._getMoreValues(var)
 
-        if not value:
-            self.missingVars.add(var)
-            value = ""
+            if not value:
+                self.missingVars.add(var)
+                value = ""
 
         for func in funcs:
             value = self._applyFunction(value, func) # Don't strip func (avoid changing arguments with spaces)
@@ -574,6 +585,7 @@ class TemplateRulesProcessor:
 
     @classmethod
     def _createProcessor(cls, presetPath: str) -> 'CaptionRulesProcessor':
+        from caption.caption_filter import CaptionRulesProcessor
         from caption.caption_preset import CaptionPreset, MutualExclusivity
         from caption.caption_conditionals import ConditionalRule, ConditionalFilterRule
         from caption.caption_wildcard import expandWildcards
@@ -611,7 +623,3 @@ class TemplateRulesProcessor:
         rulesProcessor.setCaptionGroups(groups)
         rulesProcessor.setConditionalRules(condRules)
         return rulesProcessor
-
-
-
-from caption.caption_filter import CaptionRulesProcessor

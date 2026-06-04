@@ -1,5 +1,6 @@
 import os, enum
-from typing import Iterator
+from typing import Iterator, Iterable
+from itertools import chain
 from .template_parser import TemplateVariableParser
 from .captionfile import CaptionFile, FileTypeSelector
 
@@ -14,13 +15,37 @@ class DfsState(enum.IntEnum):
 
 
 class CascadeNode:
-    __slots__ = ('key', 'outKeys', 'state', 'template')
+    __slots__ = ('key', 'keyType', 'keyName', 'state', 'template', 'inNodes', 'outNodes')
 
-    def __init__(self, key: str):
+    def __init__(self, key: str, keyType: str = "", keyName: str = ""):
         self.key: str = key
-        self.outKeys: set[str] = set()
+        self.keyType: str = keyType
+        self.keyName: str = keyName
+
         self.state = DfsState.Unvisited
         self.template: str | None = None
+
+        self.inNodes: set[CascadeNode] = set()
+        "Nodes with keys that exist in this node's template. Empty if no template is defined, or template doesn't use variables."
+
+        self.outNodes: set[CascadeNode] = set()
+        "Nodes with templates that contain variables referencing this node"
+
+    @staticmethod
+    def fromKey(key: str) -> 'CascadeNode':
+        if key == FileTypeSelector.TYPE_TXT:
+            return CascadeNode(key, key, "")
+
+        try:
+            keyType, keyName = key.split(".")
+            if not keyType or not keyName:
+                raise ValueError()
+
+            return CascadeNode(key, keyType, keyName)
+
+        except ValueError:
+            raise ValueError(f"Invalid key: '{key}'") from None
+
 
 
 class CycleError(ValueError):
@@ -34,10 +59,11 @@ class CycleError(ValueError):
 class CascadeGraph:
     def __init__(self, templates: dict[str, str]):
         self.nodes = self._buildGraph(templates)
+        self._virtualRoot: CascadeNode | None = None
 
     @classmethod
     def _buildGraph(cls, templates: dict[str, str]) -> dict[str, CascadeNode]:
-        # Parse all templates with dummy caption file to list missing variables
+        # Parse all templates with dummy caption file to list missing variables (= all caption/tag keys)
         parser = TemplateVariableParser()
         parser.setup("/dummypath", CaptionFile(""))
 
@@ -48,22 +74,31 @@ class CascadeGraph:
 
             keyNode = nodes.get(key)
             if keyNode is None:
-                nodes[key] = keyNode = CascadeNode(key)
+                nodes[key] = keyNode = CascadeNode.fromKey(key)
             keyNode.template = template
 
             parser.parse(template)
             for var in filter(cls.checkKey, parser.missingVars):
                 varNode = nodes.get(var)
                 if varNode is None:
-                    nodes[var] = varNode = CascadeNode(var)
+                    nodes[var] = varNode = CascadeNode.fromKey(var)
 
-                varNode.outKeys.add(key)
+                varNode.outNodes.add(keyNode)
+                keyNode.inNodes.add(varNode)
 
-        # print("=== Graph Nodes ===")
-        # for k, v in nodes.items():
-        #     print(f"{k} => {v.outKeys} - '{v.template}'")
-        # print("===")
         return nodes
+
+    def printGraph(self):
+        print("=== Graph Nodes ===")
+        for k, node in self.nodes.items():
+            print(f"{k}")
+            for n in node.inNodes:
+                print(f"  In:  {n.key}")
+            for n in node.outNodes:
+                print(f"  Out: {n.key}")
+            if node.template is not None:
+                print(f"  Template: '{node.template}'")
+        print("===")
 
     @staticmethod
     def checkKey(key: str) -> bool:
@@ -74,7 +109,7 @@ class CascadeGraph:
             node.state = DfsState.Unvisited
 
     def topologicalSort(self, startNode: CascadeNode) -> tuple[list[CascadeNode], dict[str, list[str]]]:
-        stack: list[tuple[CascadeNode, Iterator[str]]] = [(startNode, iter(startNode.outKeys))]
+        stack: list[tuple[CascadeNode, Iterator[CascadeNode]]] = [(startNode, iter(startNode.outNodes))]
         order: list[CascadeNode] = []
         paths: dict[str, list[str]] = {}
 
@@ -82,27 +117,36 @@ class CascadeGraph:
         while stack:
             node, neighbors = stack[-1]
 
-            for neighKey in neighbors:
-                neighNode = self.nodes[neighKey]
-
+            for neighNode in neighbors:
                 if neighNode.state == DfsState.Visiting:
                     cyclePath = [n for n, _ in stack] + [neighNode]
                     raise CycleError(cyclePath)
 
                 if neighNode.state == DfsState.Unvisited:
                     neighNode.state = DfsState.Visiting
-                    stack.append((neighNode, iter(neighNode.outKeys)))
+                    stack.append((neighNode, iter(neighNode.outNodes)))
                     break
 
             # All neighbor nodes visited - loop completed without breaking
             else:
-                paths[node.key] = [n.key for n, _ in stack]
+                if node is not self._virtualRoot:
+                    paths[node.key] = [n.key for n, _ in stack if n is not self._virtualRoot]
+                    order.append(node)
+
                 stack.pop()
                 node.state = DfsState.Done
-                order.append(node)
 
         order.reverse()
         return order, paths
+
+    def topologicalSortMultiStart(self, startNodes: Iterable[CascadeNode]) -> tuple[list[CascadeNode], dict[str, list[str]]]:
+        try:
+            self._virtualRoot = CascadeNode("__virtual-cascade-root__")
+            self._virtualRoot.outNodes.update(startNodes)
+            return self.topologicalSort(self._virtualRoot)  # Resets state of virtual root to DfsState.Visiting
+        finally:
+            self._virtualRoot = None
+
 
     @classmethod
     def getFirstCycle(cls, templates: dict[str, str]) -> str:
@@ -150,13 +194,16 @@ class CascadeGraphCache:
         # Add file templates
         path = os.path.splitext(imgPath)[0] + ".json"
         captionFile = CaptionFile(path)
+
         if captionFile.loadFromJson() and captionFile.cascade:
             templates.update(captionFile.cascade)
             return CascadeGraph(templates)
-        else:
-            graph = self.graphCache[folder]
+        elif graph := self.graphCache.get(folder):
             graph.resetState()
             return graph
+        else:
+            # No cached folder graph (when CascadeUpdate.getJsonFiles() finds no writable folders)
+            return CascadeGraph({})
 
 
 
@@ -180,45 +227,102 @@ class CascadeUpdate:
             templates = self._accumulateTemplates(imgPath)
             graph = CascadeGraph(templates)
 
-        if key not in graph.nodes:
+        startNode = graph.nodes.get(key)
+        if startNode is None:
             return
 
+        # Collect upstream dependencies where values are missing but a template exists.
+        # These templates are evaluated to fill values in downstream templates, but the value is not saved to disk.
+        upstreamNodes = self._collectUpstreamNodes(startNode, captionFile)
+        graph.resetState()
+
         try:
-            startNode = graph.nodes[key]
-            nodeOrder, nodePaths = graph.topologicalSort(startNode)
+            nodeOrder, nodePaths = graph.topologicalSortMultiStart(chain((startNode,), upstreamNodes))
             nodeOrder.remove(startNode)
             del nodePaths[key]
         except CycleError as ex:
             print(f"Warning: {ex}")
             return
 
+        if not nodeOrder:
+            return
+
         self._printUpdates(imgPath, nodePaths)
 
         self.parser.setup(imgPath, captionFile)
-        for node in nodeOrder:
-            assert node.template is not None
-            text = self.parser.parse(node.template)
+        with self.parser.withTemporaryOverrides() as upstreamValues:
+            for node in nodeOrder:
+                assert node.template is not None
+                text = self.parser.parse(node.template)
 
-            # Immediately save or store in CaptionFile because downstream templates may depend on it
-            if node.key == FileTypeSelector.TYPE_TXT:
-                FileTypeSelector.saveCaptionTxt(imgPath, text)
+                # Immediately save or store in CaptionFile because downstream templates may depend on it
+                if node in upstreamNodes:
+                    upstreamValues[node.key] = text
+                else:
+                    self._storeText(captionFile, node, text)
+
+
+    @classmethod
+    def _collectUpstreamNodes(cls, node: CascadeNode, captionFile: CaptionFile) -> set[CascadeNode]:
+        def visit(nodes: set[CascadeNode]):
+            for node in nodes:
+                if node.state == DfsState.Unvisited:
+                    node.state = DfsState.Done
+                    yield node
+
+        node.state = DfsState.Done
+        stack: list[Iterator[CascadeNode]] = [visit(node.outNodes)]
+
+        # The collecting runs in two phases to ensure downstream nodes are not wrongly marked as upstream.
+        # First collect all downstream nodes that are reachable from the start node and mark them as DfsState.Done through visit().
+        downstreamNodes = list[CascadeNode]()
+        while stack:
+            if outNode := next(stack[-1], None):
+                downstreamNodes.append(outNode)
+                stack.append(visit(outNode.outNodes))
             else:
-                self._storeText(captionFile, node.key, text)
+                stack.pop()
+
+        # Collect upstream nodes for all gathered downstream nodes
+        upstreamNodes = set[CascadeNode]()
+        for downNode in downstreamNodes:
+            stack = [visit(downNode.inNodes)]
+
+            while stack:
+                if inNode := next(stack[-1], None):
+                    # Template exists, but missing value -> evaluate template
+                    if (inNode.template is not None) and (not cls._getText(captionFile, inNode)):
+                        upstreamNodes.add(inNode)
+                        stack.append(visit(inNode.inNodes))
+                else:
+                    stack.pop()
+
+        return upstreamNodes
+
 
     @staticmethod
-    def _storeText(captionFile: CaptionFile, key: str, text: str):
-        try:
-            keyType, keyName = key.split(".")
-        except ValueError:
-            raise ValueError(f"Invalid key: '{key}'") from None
-
-        match keyType:
+    def _getText(captionFile: CaptionFile, node: CascadeNode) -> str | None:
+        match node.keyType:
+            case FileTypeSelector.TYPE_TXT:
+                return FileTypeSelector.loadCaptionTxt(captionFile.jsonPath)
             case FileTypeSelector.TYPE_TAGS:
-                captionFile.addTags(keyName, text)
+                return captionFile.getTags(node.keyName)
             case FileTypeSelector.TYPE_CAPTIONS:
-                captionFile.addCaption(keyName, text)
+                return captionFile.getCaption(node.keyName)
             case _:
-                raise ValueError(f"Invalid key type: '{keyType}'")
+                raise ValueError(f"Failed to get caption: Invalid key ({node.key})")
+
+    @staticmethod
+    def _storeText(captionFile: CaptionFile, node: CascadeNode, text: str):
+        match node.keyType:
+            case FileTypeSelector.TYPE_TXT:
+                FileTypeSelector.saveCaptionTxt(captionFile.jsonPath, text)
+            case FileTypeSelector.TYPE_TAGS:
+                captionFile.addTags(node.keyName, text)
+            case FileTypeSelector.TYPE_CAPTIONS:
+                captionFile.addCaption(node.keyName, text)
+            case _:
+                raise ValueError(f"Failed to store caption: Invalid key ({node.key})")
 
     @staticmethod
     def _printUpdates(imgPath: str, nodePaths: dict[str, list[str]]):
@@ -234,6 +338,11 @@ class CascadeUpdate:
 
     @staticmethod
     def getJsonFiles(imgFile: str) -> tuple[list[str], list[str]]:
+        """
+        Returns a list of (json path, folder name) for each writable parent folder of the given file,
+        and one last entry for the file itself.
+        """
+
         jsonFiles = list[str]()
         names = list[str]()
         if not imgFile:

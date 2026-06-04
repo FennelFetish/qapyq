@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt, Slot, Signal, QObject, QSignalBlocker
 import lib.qtlib as qtlib
 from config import Config
 
-# Imported at the bottom
+# Imported in FileTypeSelector.saveCaption()
 # from .cascade import CascadeUpdate
 
 
@@ -272,24 +272,25 @@ class FileTypeSelector(QtWidgets.QHBoxLayout):
             self.saveCaptionTxt(imgPath, text)
             return True
 
-        type = self.type
-        name = self.name
+        keyType = self.type
+        keyName = self.name
 
         captionFile = CaptionFile(imgPath)
         if captionFile.jsonExists() and not captionFile.loadFromJson():
-            print(f"Failed to save caption to file: {captionFile.jsonPath} [{type}.{name}] (couldn't load file for updating)")
+            print(f"Failed to save caption to file: {captionFile.jsonPath} [{keyType}.{keyName}] (couldn't load file for updating)")
             return False
 
-        if type == FileTypeSelector.TYPE_CAPTIONS:
-            captionFile.addCaption(name, text)
+        if keyType == FileTypeSelector.TYPE_CAPTIONS:
+            captionFile.addCaption(keyName, text)
         else:
-            captionFile.addTags(name, text)
+            captionFile.addTags(keyName, text)
 
         if cascade:
-            CascadeUpdate().saveCascade(imgPath, captionFile, type, name)
+            from .cascade import CascadeUpdate
+            CascadeUpdate().saveCascade(imgPath, captionFile, keyType, keyName)
 
         captionFile.saveToJson()
-        print(f"Saved caption to file: {captionFile.jsonPath} [{type}.{name}]")
+        print(f"Saved caption to file: {captionFile.jsonPath} [{keyType}.{keyName}]")
         return True
 
     @classmethod
@@ -450,7 +451,3 @@ class KeySettingsWindow(QtWidgets.QDialog):
         if default:
             return [default]
         return [defaultIfEmpty]
-
-
-
-from .cascade import CascadeUpdate
