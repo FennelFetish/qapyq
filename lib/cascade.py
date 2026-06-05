@@ -108,10 +108,9 @@ class CascadeGraph:
         for node in self.nodes.values():
             node.state = DfsState.Unvisited
 
-    def topologicalSort(self, startNode: CascadeNode) -> tuple[list[CascadeNode], dict[str, list[str]]]:
+    def topologicalSort(self, startNode: CascadeNode) -> list[CascadeNode]:
         stack: list[tuple[CascadeNode, Iterator[CascadeNode]]] = [(startNode, iter(startNode.outNodes))]
         order: list[CascadeNode] = []
-        paths: dict[str, list[str]] = {}
 
         startNode.state = DfsState.Visiting
         while stack:
@@ -131,16 +130,15 @@ class CascadeGraph:
             # All neighbor nodes visited - loop completed without breaking
             else:
                 if node is not self._virtualRoot:
-                    paths[node.key] = [n.key for n, _ in stack if n is not self._virtualRoot]
                     order.append(node)
 
                 stack.pop()
                 node.state = DfsState.Done
 
         order.reverse()
-        return order, paths
+        return order
 
-    def topologicalSortMultiStart(self, startNodes: Iterable[CascadeNode]) -> tuple[list[CascadeNode], dict[str, list[str]]]:
+    def topologicalSortMultiStart(self, startNodes: Iterable[CascadeNode]) -> list[CascadeNode]:
         try:
             self._virtualRoot = CascadeNode("__virtual-cascade-root__")
             self._virtualRoot.outNodes.update(startNodes)
@@ -237,9 +235,8 @@ class CascadeUpdate:
         graph.resetState()
 
         try:
-            nodeOrder, nodePaths = graph.topologicalSortMultiStart(chain((startNode,), upstreamNodes))
+            nodeOrder = graph.topologicalSortMultiStart(chain((startNode,), upstreamNodes))
             nodeOrder.remove(startNode)
-            del nodePaths[key]
         except CycleError as ex:
             print(f"Warning: Failed to cascade updates due to reference cycle ({ex.pathStr})")
             return
@@ -247,7 +244,7 @@ class CascadeUpdate:
         if not nodeOrder:
             return
 
-        self._printUpdates(imgPath, nodePaths, upstreamNodes)
+        self._printUpdates(imgPath, startNode, nodeOrder, upstreamNodes)
 
         self.parser.setup(imgPath, captionFile)
         with self.parser.withTemporaryOverrides() as upstreamValues:
@@ -325,17 +322,33 @@ class CascadeUpdate:
                 raise ValueError(f"Failed to store caption: Invalid key ({node.key})")
 
     @staticmethod
-    def _printUpdates(imgPath: str, nodePaths: dict[str, list[str]], upstreamNodes: set[CascadeNode]):
+    def _printUpdates(imgPath: str, startNode: CascadeNode, order: list[CascadeNode], upstreamNodes: set[CascadeNode]):
+        # Find longest paths with dynamic programming: For each node, extend the longest incoming path.
+        # Follows topological order, so all inNodes of a node are already processed.
+        longestPaths: dict[CascadeNode, list[CascadeNode]] = {}
+        downstreamNodes = (n for n in order if n not in upstreamNodes)
+        for node in downstreamNodes:
+            longest = max(
+                (candidate for inNode in node.inNodes if (candidate := longestPaths.get(inNode))),
+                key=len, default=None
+            )
+
+            longest = longest.copy() if longest is not None else []
+            longest.append(node)
+            longestPaths[node] = longest
+
         print(f"Cascading updates for: {imgPath}")
 
-        upstreamKeys = set(n.key for n in upstreamNodes)
-        seenKeys = set[str]()
+        if upstreamNodes:
+            upstreamKeys = ", ".join(n.key for n in upstreamNodes)
+            print(f"  Evaluate upstream templates for missing keys: {upstreamKeys}")
 
-        for pathKeys in sorted(nodePaths.values(), key=len, reverse=True):
-            if not (seenKeys.issuperset(pathKeys) or upstreamKeys.issuperset(pathKeys)):
-                seenKeys.update(pathKeys)
-                nodePath = " → ".join(key for key in pathKeys)
-                print(f"  {nodePath}")
+        seenNodes = set[CascadeNode]()
+        for pathNodes in sorted(longestPaths.values(), key=len, reverse=True):
+            if not seenNodes.issuperset(pathNodes):  # Only print lines with unseen nodes
+                seenNodes.update(pathNodes)
+                path = " → ".join(n.key for n in pathNodes)
+                print(f"  {startNode.key} → {path}")
 
 
     @staticmethod

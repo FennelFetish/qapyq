@@ -29,7 +29,7 @@ def sortGraph(graph: CascadeGraph, startKey: str) -> dict[str, int]:
 
     graph.resetState()
 
-    order, _ = graph.topologicalSortMultiStart(upstreamNodes)
+    order = graph.topologicalSortMultiStart(upstreamNodes)
     return {n.key: order.index(n) for n in order}
 
 
