@@ -234,7 +234,7 @@ class CaptionCascade(CaptionTab):
         for tab in self.getTabs():
             tab.storeTemplates(templates)
 
-        return CascadeGraph.getFirstCycle(templates)
+        return CascadeGraph(templates).getFirstCycle()
 
 
 

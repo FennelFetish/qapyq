@@ -51,8 +51,8 @@ class CascadeNode:
 class CycleError(ValueError):
     def __init__(self, path: list[CascadeNode]):
         self.path = path
-        msg = " → ".join(node.key for node in path)
-        super().__init__("Cycle in cascading updates: " + msg)
+        self.pathStr = " → ".join(node.key for node in path)
+        super().__init__(f"Cycle in cascading updates ({self.pathStr})")
 
 
 
@@ -119,7 +119,8 @@ class CascadeGraph:
 
             for neighNode in neighbors:
                 if neighNode.state == DfsState.Visiting:
-                    cyclePath = [n for n, _ in stack] + [neighNode]
+                    cyclePath = [n for n, _ in stack if n is not self._virtualRoot]
+                    cyclePath.append(neighNode)
                     raise CycleError(cyclePath)
 
                 if neighNode.state == DfsState.Unvisited:
@@ -148,13 +149,11 @@ class CascadeGraph:
             self._virtualRoot = None
 
 
-    @classmethod
-    def getFirstCycle(cls, templates: dict[str, str]) -> str:
-        graph = CascadeGraph(templates)
-        for startNode in graph.nodes.values():
+    def getFirstCycle(self) -> str:
+        for startNode in self.nodes.values():
             if startNode.state == DfsState.Unvisited:
                 try:
-                    graph.topologicalSort(startNode)
+                    self.topologicalSort(startNode)
                 except CycleError as ex:
                     return " ➜ ".join(node.key for node in ex.path)
 
@@ -166,6 +165,11 @@ class CascadeGraphCache:
     def __init__(self):
         self.graphCache: dict[str, CascadeGraph] = {}       # Folder => Graph
         self.templateCache: dict[str, dict[str, str]] = {}  # Folder => Accumulated templates
+
+    def addEntry(self, folderPath: str, templates: dict[str, str]):
+        templates = templates.copy()
+        self.templateCache[folderPath] = templates
+        self.graphCache[folderPath] = CascadeGraph(templates)
 
     def getGraph(self, imgPath: str) -> CascadeGraph:
         folder = os.path.dirname(imgPath)
@@ -186,18 +190,14 @@ class CascadeGraphCache:
                     captionFile = CaptionFile(path)
                     if captionFile.loadFromJson():
                         templates.update(captionFile.cascade)
-
-                    folderTemplates = templates.copy()
-                    self.templateCache[folderPath] = folderTemplates
-                    self.graphCache[folderPath] = CascadeGraph(folderTemplates)
+                    self.addEntry(folderPath, templates)
 
         # Add file templates
         path = os.path.splitext(imgPath)[0] + ".json"
         captionFile = CaptionFile(path)
 
         if captionFile.loadFromJson() and captionFile.cascade:
-            templates.update(captionFile.cascade)
-            return CascadeGraph(templates)
+            return CascadeGraph(templates | captionFile.cascade)  # Copy templates
         elif graph := self.graphCache.get(folder):
             graph.resetState()
             return graph
@@ -241,13 +241,13 @@ class CascadeUpdate:
             nodeOrder.remove(startNode)
             del nodePaths[key]
         except CycleError as ex:
-            print(f"Warning: {ex}")
+            print(f"Warning: Failed to cascade updates due to reference cycle ({ex.pathStr})")
             return
 
         if not nodeOrder:
             return
 
-        self._printUpdates(imgPath, nodePaths)
+        self._printUpdates(imgPath, nodePaths, upstreamNodes)
 
         self.parser.setup(imgPath, captionFile)
         with self.parser.withTemporaryOverrides() as upstreamValues:
@@ -325,12 +325,14 @@ class CascadeUpdate:
                 raise ValueError(f"Failed to store caption: Invalid key ({node.key})")
 
     @staticmethod
-    def _printUpdates(imgPath: str, nodePaths: dict[str, list[str]]):
+    def _printUpdates(imgPath: str, nodePaths: dict[str, list[str]], upstreamNodes: set[CascadeNode]):
         print(f"Cascading updates for: {imgPath}")
 
+        upstreamKeys = set(n.key for n in upstreamNodes)
         seenKeys = set[str]()
+
         for pathKeys in sorted(nodePaths.values(), key=len, reverse=True):
-            if not seenKeys.issuperset(pathKeys):
+            if not (seenKeys.issuperset(pathKeys) or upstreamKeys.issuperset(pathKeys)):
                 seenKeys.update(pathKeys)
                 nodePath = " → ".join(key for key in pathKeys)
                 print(f"  {nodePath}")
