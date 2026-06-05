@@ -78,12 +78,15 @@ class CaptionFile:
 
 
     def loadFromJson(self) -> bool:
-        if self.jsonExists():
+        try:
             with open(self.jsonPath, 'r') as file:
                 data = json.load(file)
             if Keys.VERSION not in data:
                 return False
-        else:
+        except FileNotFoundError:
+            return False
+        except Exception as ex:
+            print(f"Warning: Failed to load captions from '{self.jsonPath}': {ex} ({type(ex).__name__})")
             return False
 
         self.captions = data.get(Keys.CAPTIONS, {})
@@ -95,13 +98,16 @@ class CaptionFile:
 
 
     def updateToJson(self) -> bool:
-        if self.jsonExists():
+        try:
             with open(self.jsonPath, 'r') as file:
                 data = json.load(file)
             if Keys.VERSION not in data:
                 return False
-        else:
+        except FileNotFoundError:
             data = dict()
+        except Exception as ex:
+            print(f"Warning: Failed to load captions from '{self.jsonPath}': {ex} ({type(ex).__name__})")
+            return False
 
         data[Keys.VERSION] = CaptionFile.VERSION
 

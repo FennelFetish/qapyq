@@ -29,6 +29,7 @@ class CaptionCascade(CaptionTab):
         self.highlighter = VariableHighlighter()
 
         self._build()
+        self._fontMetrics = self.tabs.fontMetrics()
 
         self.ctx.tab.filelist.addListener(self)
 
@@ -111,28 +112,62 @@ class CaptionCascade(CaptionTab):
         self._clearTabs()
 
         parentTemplates = {}
-        for jsonFile, name in zip(*CascadeUpdate.getJsonFiles(file)):
-            if name.endswith(".json"):
-                name = f"📄 {name}"
-            else:
-                name = f"📁 {name}"
+        writableFound = False
+        tabIndex = -1
+
+        for jsonFile, name in CascadeUpdate.getJsonFiles(file):
+            exists, writable = self._checkPermission(jsonFile)
+
+            # Show all folders after first writable folder or after first existing file
+            writableFound |= writable | exists
+            if not writableFound:
+                continue
 
             captionFile = CaptionFile(jsonFile)
             captionFile.loadFromJson()
 
-            if captionFile.cascade:
-                name = f"{name} ({len(captionFile.cascade)})"
+            name, tooltip = self._buildNameTooltip(name, len(captionFile.cascade), writable)
 
-            tab = CascadeTab(self, jsonFile, parentTemplates, captionFile.cascade)
+            tab = CascadeTab(self, jsonFile, writable, parentTemplates, captionFile.cascade)
             tab.entryEdited.connect(self._onEntryEdited)
+
+            tabIndex = self.tabs.count()
             self.tabs.addTab(tab, name)
+            self.tabs.setTabToolTip(tabIndex, tooltip)
 
             parentTemplates.update(captionFile.cascade)
 
-        self.tabs.setCurrentIndex(self.tabs.count()-1)
+        self.tabs.setCurrentIndex(tabIndex)
         self.btnSaveAll.setChanged(False)
 
         self._needsReload = False
+
+    @staticmethod
+    def _checkPermission(jsonPath: str) -> tuple[bool, bool]:
+        exists = os.path.exists(jsonPath)
+        if exists:
+            writable = os.access(jsonPath, os.W_OK)
+        else:
+            dirPath = os.path.dirname(jsonPath)
+            writable = os.access(dirPath, os.W_OK)
+
+        return exists, writable
+
+    def _buildNameTooltip(self, name: str, numEntries: int, writable: bool):
+        symbols = "📄" if name.endswith(".json") else "📁"
+        if not writable:
+            symbols += " 🚫"
+
+        elidedName = self._fontMetrics.elidedText(name, Qt.TextElideMode.ElideMiddle, 300)
+
+        if len(elidedName) < len(name):
+            tooltip = name if writable else f"{name} (No write permission)"
+        else:
+            tooltip = "" if writable else "No write permission"
+
+        entriesStr = f" ({numEntries})" if numEntries else ""
+        elidedName = f"{symbols} {elidedName}{entriesStr}"
+        return elidedName, tooltip
 
 
     @Slot(object, object)
@@ -168,6 +203,11 @@ class CaptionCascade(CaptionTab):
             self.statusBar.showColoredMessage("No file loaded", False)
             return
 
+        tab: CascadeTab = self.tabs.currentWidget()
+        if not tab.writable:
+            self.statusBar.showColoredMessage("No write permission for this file", False)
+            return
+
         keyName = self.addEntrySelector.name.strip()
         keyType = self.addEntrySelector.type
 
@@ -180,7 +220,6 @@ class CaptionCascade(CaptionTab):
 
             key = f"{keyType}.{keyName}"
 
-        tab: CascadeTab = self.tabs.currentWidget()
         if tab.getEntry(key) is not None:
             self.statusBar.showColoredMessage("Key already exists", False)
             return
@@ -241,10 +280,11 @@ class CaptionCascade(CaptionTab):
 class CascadeTab(QtWidgets.QWidget):
     entryEdited = Signal(object, object)  # CascadeTab, CascadeTemplateEntry
 
-    def __init__(self, cascade: CaptionCascade, jsonPath: str, parentTemplates: dict[str, str], ownTemplates: dict[str, str]):
+    def __init__(self, cascade: CaptionCascade, jsonPath: str, writable: bool, parentTemplates: dict[str, str], ownTemplates: dict[str, str]):
         super().__init__()
         self.cascade = cascade
         self.jsonPath = jsonPath
+        self.writable = writable
 
         self._layoutEntries = QtWidgets.QVBoxLayout()
         self._layoutEntries.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -252,6 +292,9 @@ class CascadeTab(QtWidgets.QWidget):
 
         self._build()
         self._initEntries(parentTemplates, ownTemplates)
+
+        if not writable:
+            self.setEnabled(False)
 
     def _build(self):
         layout = QtWidgets.QGridLayout()
@@ -370,6 +413,9 @@ class CascadeTab(QtWidgets.QWidget):
                 templates[entry.key] = entry.text
 
     def save(self) -> int:
+        if not self.writable:
+            return 0
+
         captionFile = CaptionFile(self.jsonPath)
         if captionFile.jsonExists() and not captionFile.loadFromJson():
             raise RuntimeError(f"Could not load existing templates from '{self.jsonPath}'")
@@ -638,10 +684,6 @@ class RuleChooserWidget(QtWidgets.QWidget):
         key = f"{self.srcSelector.type}.{self.srcSelector.name.strip()}"
         path = self.txtRulesPath.text()
         return "{{" + f"{key}#rules:{path}" + "}}"
-
-    @classmethod
-    def isRulesTemplate(cls, template: str) -> bool:
-        return cls.PATTERN_RULES.match(template) is not None
 
     def fromTemplate(self, template: str) -> bool:
         if match := self.PATTERN_RULES.match(template):

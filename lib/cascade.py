@@ -1,5 +1,5 @@
 import os, enum
-from typing import Iterator, Iterable
+from typing import Iterator, Iterable, NamedTuple
 from itertools import chain
 from .template_parser import TemplateVariableParser
 from .captionfile import CaptionFile, FileTypeSelector
@@ -177,8 +177,7 @@ class CascadeGraphCache:
         if templates is None:
             templates = {}
 
-            jsonFiles, _ = CascadeUpdate.getJsonFiles(imgPath)
-            for path in jsonFiles[:-1]:
+            for path, _ in CascadeUpdate.getJsonFiles(imgPath)[:-1]:  # Only folders
                 folderPath = os.path.dirname(path)
 
                 folderTemplates = self.templateCache.get(folderPath)
@@ -200,7 +199,7 @@ class CascadeGraphCache:
             graph.resetState()
             return graph
         else:
-            # No cached folder graph (when CascadeUpdate.getJsonFiles() finds no writable folders)
+            # No cached folder graph (when CascadeUpdate.getJsonFiles() returns no folders)
             return CascadeGraph({})
 
 
@@ -351,46 +350,41 @@ class CascadeUpdate:
                 print(f"  {startNode.key} → {path}")
 
 
-    @staticmethod
-    def getJsonFiles(imgFile: str) -> tuple[list[str], list[str]]:
+    class JsonFileInfo(NamedTuple):
+        jsonPath: str
+        name: str
+
+    @classmethod
+    def getJsonFiles(cls, imgFile: str) -> list[JsonFileInfo]:
         """
-        Returns a list of (json path, folder name) for each writable parent folder of the given file,
+        Returns a list of (json path, folder name) for each parent folder of the given file,
         and one last entry for the file itself.
         """
 
-        jsonFiles = list[str]()
-        names = list[str]()
+        items = list[cls.JsonFileInfo]()
         if not imgFile:
-            return jsonFiles, names
+            return items
 
         jsonPath = os.path.splitext(imgFile)[0] + ".json"
         path, filename = os.path.split(jsonPath)
-        jsonFiles.append(jsonPath)
-        names.append(filename)
+        items.append(cls.JsonFileInfo(jsonPath, filename))
 
         while True:
             jsonPath = os.path.join(path, CASCADE_FOLDER_FILE)
-            writable = os.access(path, os.W_OK)
-
             path, folder = os.path.split(path)
 
             if folder:
-                if writable:
-                    jsonFiles.append(jsonPath)
-                    names.append(folder)
+                items.append(cls.JsonFileInfo(jsonPath, folder))
             else:
                 break
 
-        jsonFiles.reverse()
-        names.reverse()
-        return jsonFiles, names
+        items.reverse()
+        return items
 
     @staticmethod
     def _accumulateTemplates(imgPath: str) -> dict[str, str]:
-        jsonFiles, _ = CascadeUpdate.getJsonFiles(imgPath)
         templates = {}
-
-        for path in jsonFiles:
+        for path, _ in CascadeUpdate.getJsonFiles(imgPath):
             captionFile = CaptionFile(path)
             if captionFile.loadFromJson():
                 templates.update(captionFile.cascade)
