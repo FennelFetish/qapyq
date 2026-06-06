@@ -403,8 +403,9 @@ class TemplateVariableParser:
 
             # Rules
             case "rules":
-                if len(args) > 0 and args[0]:
-                    if rulesProcessor := TemplateRulesProcessor.getProcessor(args[0]):
+                # Re-join args that were previously split by ":" to reconstruct Windows paths (C:\).
+                if path := ":".join(args):
+                    if rulesProcessor := TemplateRulesProcessor.getProcessor(path):
                         return rulesProcessor.process(value)
 
             # TODO: Function for limiting text to max token count
@@ -586,27 +587,23 @@ class TemplateRulesProcessor:
     @classmethod
     def _createProcessor(cls, presetPath: str) -> 'CaptionRulesProcessor':
         from caption.caption_filter import CaptionRulesProcessor
-        from caption.caption_preset import CaptionPreset, MutualExclusivity
-        from caption.caption_conditionals import ConditionalRule, ConditionalFilterRule
+        from caption.caption_preset import CaptionPreset
+        from caption.caption_conditionals import ConditionalFilterRule
         from caption.caption_wildcard import expandWildcards
 
         preset = CaptionPreset()
         preset.loadFrom(presetPath)
 
-        # TODO: Make lightweight converter without instatiating heavy 'ConditionalRule' GUI elements
-        condRules: list[ConditionalFilterRule] = []
-        for presetCondRule in preset.conditionals:
-            rule = ConditionalRule()
-            rule.loadFromPreset(presetCondRule)
-            condRules.append(rule.getFilterRule())
+        def groupGenerator():
+            for group in preset.groups:
+                groupTags = [
+                    tag
+                    for origTag in group.captions
+                    for tag in expandWildcards(origTag, preset.wildcards)
+                ]
+                yield (groupTags, group.exclusivity, group.combineTags)
 
-        groups: list[tuple[list[str], MutualExclusivity, bool]] = []
-        for group in preset.groups:
-            groupTags = [tag
-                for origTag in group.captions
-                for tag in expandWildcards(origTag, preset.wildcards)
-            ]
-            groups.append((groupTags, group.exclusivity, group.combineTags))
+        condRulesGenerator = (ConditionalFilterRule.fromPreset(presetCond) for presetCond in preset.conditionals)
 
         rulesProcessor = CaptionRulesProcessor(
             preset.separator,
@@ -620,6 +617,6 @@ class TemplateRulesProcessor:
         rulesProcessor.setPrefixSuffix(preset.prefix, preset.suffix, preset.prefixSeparator, preset.suffixSeparator)
         rulesProcessor.setSearchReplacePairs(preset.searchReplace)
         rulesProcessor.setBannedCaptions(preset.banned)
-        rulesProcessor.setCaptionGroups(groups)
-        rulesProcessor.setConditionalRules(condRules)
+        rulesProcessor.setCaptionGroups(groupGenerator())
+        rulesProcessor.setConditionalRules(condRulesGenerator)
         return rulesProcessor
