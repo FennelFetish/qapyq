@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, Signal, Slot, QSignalBlocker
 from lib import colorlib, qtlib
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
 from lib.captionfile import CaptionFile, FileTypeSelector
-from lib.cascade import CascadeUpdate, CascadeGraph
+from lib.cascade import CascadeUpdate, CascadeGraph, CASCADE_FOLDER_FILE
 from ui.autocomplete import TemplateTextEdit
 from config import Config
 from .caption_tab import CaptionTab, MultiEditSupport
@@ -18,12 +18,20 @@ if TYPE_CHECKING:
     from .caption_container import CaptionContainer
 
 
+class EntryEditReason(enum.IntEnum):
+    TextChanged     = 0
+    EntryAdded      = 1
+    EntryRemoved    = 2
+
+
+
 class CaptionCascade(CaptionTab):
     def __init__(self, container: CaptionContainer, context: CaptionContext):
         super().__init__(context)
         self.container = container
 
         self._needsReload = True
+        self._editedTemplates = EditedFolderTemplates()
 
         self.parser = TemplateVariableParser()
         self.highlighter = VariableHighlighter()
@@ -64,7 +72,7 @@ class CaptionCascade(CaptionTab):
 
         self.btnReloadAll = qtlib.SaveButton("Reload All")
         self.btnReloadAll.setMinimumWidth(120)
-        self.btnReloadAll.clicked.connect(self.reloadTabs)
+        self.btnReloadAll.clicked.connect(self._onReloadClicked)
         layout.addWidget(self.btnReloadAll, row, 3)
 
         self.btnSaveAll = qtlib.SaveButton("Save All")
@@ -89,9 +97,11 @@ class CaptionCascade(CaptionTab):
         if self.ctx.currentWidget() is self:
             self.reloadTabs()
         else:
+            self._clearTabs()
             self._needsReload = True
 
     def onFileListChanged(self, currentFile: str):
+        self._editedTemplates.clear()
         self.onFileChanged(currentFile)
 
 
@@ -103,13 +113,30 @@ class CaptionCascade(CaptionTab):
     def _clearTabs(self):
         for tab in self.getTabs():
             tab.deleteLater()
-        self.tabs.clear()
+        self.tabs.clear() # Does not delete
+
 
     @Slot()
+    def _onReloadClicked(self):
+        activeTab: CascadeTab = self.tabs.currentWidget()
+        restoreTabPath = activeTab.jsonPath
+        del activeTab
+
+        for tab in self.getTabs():
+            self._editedTemplates.clearFolder(tab)
+
+        self.reloadTabs()
+
+        for i, tab in enumerate(self.getTabs()):
+            if tab.jsonPath == restoreTabPath:
+                self.tabs.setCurrentIndex(i)
+                break
+
     def reloadTabs(self):
         file = self.ctx.tab.filelist.currentFile
         self.parser.setup(file)
         self._clearTabs()
+        self.btnSaveAll.setChanged(False)
 
         parentTemplates = {}
         writableFound = False
@@ -125,21 +152,25 @@ class CaptionCascade(CaptionTab):
 
             captionFile = CaptionFile(jsonFile)
             captionFile.loadFromJson()
+            templates = captionFile.cascade
 
-            name, tooltip = self._buildNameTooltip(name, len(captionFile.cascade), writable)
+            edited = self._editedTemplates.getFolderEntries(jsonFile, templates)
+            elidedName, tooltip = self._buildNameTooltip(name, len(templates), writable)
 
-            tab = CascadeTab(self, jsonFile, writable, parentTemplates, captionFile.cascade)
+            tab = CascadeTab(self, jsonFile, name, writable, parentTemplates, templates)
             tab.entryEdited.connect(self._onEntryEdited)
 
             tabIndex = self.tabs.count()
-            self.tabs.addTab(tab, name)
+            self.tabs.addTab(tab, elidedName)
             self.tabs.setTabToolTip(tabIndex, tooltip)
 
-            parentTemplates.update(captionFile.cascade)
+            parentTemplates.update(templates)
+
+            if edited:
+                self.btnSaveAll.setChanged(True)
+                self.tabs.tabBar().setTabTextColor(tabIndex, colorlib.RED)
 
         self.tabs.setCurrentIndex(tabIndex)
-        self.btnSaveAll.setChanged(False)
-
         self._needsReload = False
 
     @staticmethod
@@ -169,33 +200,6 @@ class CaptionCascade(CaptionTab):
         elidedName = f"{symbols} {elidedName}{entriesStr}"
         return elidedName, tooltip
 
-
-    @Slot(object, object)
-    def _onEntryEdited(self, tab: CascadeTab, entry: CascadeTemplateEntry):
-        self.btnSaveAll.setChanged(True)
-
-        tabIndex = self.tabs.indexOf(tab)
-        self.tabs.tabBar().setTabTextColor(tabIndex, colorlib.RED)
-
-        self._updateInheritance(tab, entry.key)
-
-    def _updateInheritance(self, startTab: CascadeTab, key: str):
-        template: str | None = None  # Accumulated template for this key
-        update = False               # Only update tabs to the right of 'startTab'
-
-        for tab in self.getTabs():
-            with QSignalBlocker(tab): # Avoid recursion through 'CascadeTab.entryEdited'
-                if entry := tab.getEntry(key):
-                    if update:
-                        entry.setInheritedText(template)
-                    if entry.overrideEnabled:
-                        template = entry.text
-
-                elif update:
-                    entry = tab.addNewEntry(key, template)
-                    entry.setOverrideEnabled(False)
-
-            update |= (tab is startTab)
 
     @Slot()
     def _addNewEntry(self):
@@ -231,6 +235,40 @@ class CaptionCascade(CaptionTab):
         entry.textField.setFocus()
 
 
+    @Slot(object, object, EntryEditReason)
+    def _onEntryEdited(self, tab: CascadeTab, entry: CascadeTemplateEntry, reason: EntryEditReason):
+        self.btnSaveAll.setChanged(True)
+
+        tabIndex = self.tabs.indexOf(tab)
+        self.tabs.tabBar().setTabTextColor(tabIndex, colorlib.RED)
+
+        if reason != EntryEditReason.TextChanged:
+            numEntries = sum(1 for entry in tab.entries if entry.overrideEnabled)
+            name, _ = self._buildNameTooltip(tab.name, numEntries, tab.writable)
+            self.tabs.setTabText(tabIndex, name)
+
+        self._updateInheritance(tab, entry.key)
+        self._editedTemplates.setEntry(entry, reason)
+
+    def _updateInheritance(self, startTab: CascadeTab, key: str):
+        template: str | None = None  # Accumulated template for this key
+        update = False               # Only update tabs to the right of 'startTab'
+
+        for tab in self.getTabs():
+            with QSignalBlocker(tab): # Avoid recursion through 'CascadeTab.entryEdited'
+                if entry := tab.getEntry(key):
+                    if update:
+                        entry.setInheritedText(template)
+                    if entry.overrideEnabled:
+                        template = entry.text
+
+                elif update:
+                    entry = tab.addNewEntry(key, template)
+                    entry.setOverrideEnabled(False)
+
+            update |= (tab is startTab)
+
+
     @Slot()
     def saveAllTabs(self):
         if cyclePath := self._tryGetCycle():
@@ -247,6 +285,9 @@ class CaptionCascade(CaptionTab):
                 if numTemplatesSaved > 0:
                     saveCount += 1
                     templateCount += numTemplatesSaved
+
+                self._editedTemplates.clearFolder(tab)
+
             except Exception as ex:
                 errorCount += 1
                 print(f"Failed to save cascade templates: {ex} ({type(ex).__name__})")
@@ -277,13 +318,58 @@ class CaptionCascade(CaptionTab):
 
 
 
-class CascadeTab(QtWidgets.QWidget):
-    entryEdited = Signal(object, object)  # CascadeTab, CascadeTemplateEntry
+class EditedFolderTemplates:
+    ENTRY_REMOVED = object()
 
-    def __init__(self, cascade: CaptionCascade, jsonPath: str, writable: bool, parentTemplates: dict[str, str], ownTemplates: dict[str, str]):
+    def __init__(self):
+        self.folderTemplates: dict[str, dict[str, str | object]] = {}  # JSON Path => [Key => Template]
+
+    def setEntry(self, entry: CascadeTemplateEntry, reason: EntryEditReason):
+        jsonPath = entry.tab.jsonPath
+        if not jsonPath.endswith(CASCADE_FOLDER_FILE):
+            return
+
+        cachedTemplates = self.folderTemplates.get(jsonPath)
+        if cachedTemplates is None:
+            self.folderTemplates[jsonPath] = cachedTemplates = {}
+
+        match reason:
+            case EntryEditReason.TextChanged | EntryEditReason.EntryAdded:
+                cachedTemplates[entry.key] = entry.text
+            case EntryEditReason.EntryRemoved:
+                cachedTemplates[entry.key] = self.ENTRY_REMOVED
+            case _:
+                raise ValueError(f"Invalid reason for changed cascade entry: {reason}")
+
+    def getFolderEntries(self, jsonPath: str, templates: dict[str, str]) -> bool:
+        if cachedTemplates := self.folderTemplates.get(jsonPath):
+            for k, v in cachedTemplates.items():
+                if isinstance(v, str):
+                    templates[k] = v
+                else:
+                    templates.pop(k, None)
+
+            return True
+        else:
+            return False
+
+
+    def clearFolder(self, tab: CascadeTab):
+        self.folderTemplates.pop(tab.jsonPath, None)
+
+    def clear(self):
+        self.folderTemplates = {}
+
+
+
+class CascadeTab(QtWidgets.QWidget):
+    entryEdited = Signal(object, object, EntryEditReason)  # CascadeTab, CascadeTemplateEntry, EntryEditReason
+
+    def __init__(self, cascade: CaptionCascade, jsonPath: str, name: str, writable: bool, parentTemplates: dict[str, str], ownTemplates: dict[str, str]):
         super().__init__()
         self.cascade = cascade
         self.jsonPath = jsonPath
+        self.name = name
         self.writable = writable
 
         self._layoutEntries = QtWidgets.QVBoxLayout()
@@ -380,7 +466,7 @@ class CascadeTab(QtWidgets.QWidget):
         entry.text = text
 
         entry.modeChanged.connect(self._onEntryModeChanged)
-        entry.textField.textChanged.connect(lambda: self.entryEdited.emit(self, entry))
+        entry.textField.textChanged.connect(lambda: self.entryEdited.emit(self, entry, EntryEditReason.TextChanged))
         entry.textField.focusReceived.connect(self._scrollToTextField)
         entry.textField.save.connect(self.cascade.saveAllTabs)
 
@@ -391,15 +477,18 @@ class CascadeTab(QtWidgets.QWidget):
         self._layoutEntries.removeWidget(entry)
         entry.deleteLater()
 
-        if sum(1 for e in self.entries) == 0:
+        if not next(self.entries, None):
             self._addPlaceholder()
 
     @Slot(object)
     def _onEntryModeChanged(self, entry: CascadeTemplateEntry):
-        self.entryEdited.emit(self, entry)
+        if entry.overrideEnabled:
+            self.entryEdited.emit(self, entry, EntryEditReason.EntryAdded)
+        else:
+            self.entryEdited.emit(self, entry, EntryEditReason.EntryRemoved)
 
-        if not entry.overrideEnabled and entry.inheritedText is None:
-            self._removeEntry(entry)
+            if entry.inheritedText is None:
+                self._removeEntry(entry)
 
 
     @Slot(object)
