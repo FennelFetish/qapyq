@@ -59,7 +59,6 @@ class CycleError(ValueError):
 class CascadeGraph:
     def __init__(self, templates: dict[str, str]):
         self.nodes = self._buildGraph(templates)
-        self._virtualRoot: CascadeNode | None = None
 
     @classmethod
     def _buildGraph(cls, templates: dict[str, str]) -> dict[str, CascadeNode]:
@@ -108,17 +107,21 @@ class CascadeGraph:
         for node in self.nodes.values():
             node.state = DfsState.Unvisited
 
-    def topologicalSort(self, startNode: CascadeNode) -> list[CascadeNode]:
+
+    @staticmethod
+    def topologicalSort(startNode: CascadeNode, excludeStartNode: bool = False) -> list[CascadeNode]:
         stack: list[tuple[CascadeNode, Iterator[CascadeNode]]] = [(startNode, iter(startNode.outNodes))]
         order: list[CascadeNode] = []
 
         startNode.state = DfsState.Visiting
+        excludeNode = startNode if excludeStartNode else None
+
         while stack:
             node, neighbors = stack[-1]
 
             for neighNode in neighbors:
                 if neighNode.state == DfsState.Visiting:
-                    cyclePath = [n for n, _ in stack if n is not self._virtualRoot]
+                    cyclePath = [n for n, _ in stack if n is not excludeNode]
                     cyclePath.append(neighNode)
                     raise CycleError(cyclePath)
 
@@ -129,7 +132,7 @@ class CascadeGraph:
 
             # All neighbor nodes visited - loop completed without breaking
             else:
-                if node is not self._virtualRoot:
+                if node is not excludeNode:
                     order.append(node)
 
                 stack.pop()
@@ -138,13 +141,11 @@ class CascadeGraph:
         order.reverse()
         return order
 
-    def topologicalSortMultiStart(self, startNodes: Iterable[CascadeNode]) -> list[CascadeNode]:
-        try:
-            self._virtualRoot = CascadeNode("__virtual-cascade-root__")
-            self._virtualRoot.outNodes.update(startNodes)
-            return self.topologicalSort(self._virtualRoot)  # Resets state of virtual root to DfsState.Visiting
-        finally:
-            self._virtualRoot = None
+    @classmethod
+    def topologicalSortMultiStart(cls, startNodes: Iterable[CascadeNode]) -> list[CascadeNode]:
+        virtualRoot = CascadeNode("__virtual-cascade-root__")
+        virtualRoot.outNodes.update(startNodes)
+        return cls.topologicalSort(virtualRoot, True)
 
 
     def getFirstCycle(self) -> str:
@@ -230,7 +231,7 @@ class CascadeUpdate:
 
         # Collect upstream dependencies where values are missing but a template exists.
         # These templates are evaluated to fill values in downstream templates, but the value is not saved to disk.
-        upstreamNodes = self._collectUpstreamNodes(startNode, captionFile)
+        upstreamNodes, missingNodes = self._collectUpstreamNodes(startNode, captionFile)
         graph.resetState()
 
         try:
@@ -243,7 +244,7 @@ class CascadeUpdate:
         if not nodeOrder:
             return
 
-        self._printUpdates(imgPath, startNode, nodeOrder, upstreamNodes)
+        self._printUpdates(imgPath, startNode, nodeOrder, upstreamNodes, missingNodes)
 
         self.parser.setup(imgPath, captionFile)
         with self.parser.withTemporaryOverrides() as upstreamValues:
@@ -259,7 +260,7 @@ class CascadeUpdate:
 
 
     @classmethod
-    def _collectUpstreamNodes(cls, node: CascadeNode, captionFile: CaptionFile) -> set[CascadeNode]:
+    def _collectUpstreamNodes(cls, node: CascadeNode, captionFile: CaptionFile) -> tuple[set[CascadeNode], set[CascadeNode]]:
         def visit(nodes: set[CascadeNode]):
             for node in nodes:
                 if node.state == DfsState.Unvisited:
@@ -281,32 +282,41 @@ class CascadeUpdate:
 
         # Collect upstream nodes for all gathered downstream nodes
         upstreamNodes = set[CascadeNode]()
+        missingNodes = set[CascadeNode]()
         for downNode in downstreamNodes:
             stack = [visit(downNode.inNodes)]
 
             while stack:
                 if inNode := next(stack[-1], None):
-                    # Template exists, but missing value -> evaluate template
-                    if (inNode.template is not None) and (not cls._getText(captionFile, inNode)):
-                        upstreamNodes.add(inNode)
-                        stack.append(visit(inNode.inNodes))
+                    if not cls._hasText(captionFile, inNode):
+                        if inNode.template is None:
+                            missingNodes.add(inNode)
+                        else:
+                            # Missing value, but upstream template exists -> evaluate template
+                            upstreamNodes.add(inNode)
+                            stack.append(visit(inNode.inNodes))
                 else:
                     stack.pop()
 
-        return upstreamNodes
+        return upstreamNodes, missingNodes
 
 
     @staticmethod
-    def _getText(captionFile: CaptionFile, node: CascadeNode) -> str | None:
+    def _hasText(captionFile: CaptionFile, node: CascadeNode) -> bool:
         match node.keyType:
             case FileTypeSelector.TYPE_TXT:
-                return FileTypeSelector.loadCaptionTxt(captionFile.jsonPath)
+                try:
+                    txtPath = os.path.splitext(captionFile.jsonPath)[0] + FileTypeSelector.CAPTION_FILE_EXT
+                    return os.path.getsize(txtPath) > 0
+                except FileNotFoundError:
+                    return False
+
             case FileTypeSelector.TYPE_TAGS:
-                return captionFile.getTags(node.keyName)
+                return bool(captionFile.getTags(node.keyName))
             case FileTypeSelector.TYPE_CAPTIONS:
-                return captionFile.getCaption(node.keyName)
+                return bool(captionFile.getCaption(node.keyName))
             case _:
-                raise ValueError(f"Failed to get caption: Invalid key ({node.key})")
+                raise ValueError(f"Failed to get value: Invalid key ({node.key})")
 
     @staticmethod
     def _storeText(captionFile: CaptionFile, node: CascadeNode, text: str):
@@ -318,10 +328,11 @@ class CascadeUpdate:
             case FileTypeSelector.TYPE_CAPTIONS:
                 captionFile.addCaption(node.keyName, text)
             case _:
-                raise ValueError(f"Failed to store caption: Invalid key ({node.key})")
+                raise ValueError(f"Failed to store value: Invalid key ({node.key})")
+
 
     @staticmethod
-    def _printUpdates(imgPath: str, startNode: CascadeNode, order: list[CascadeNode], upstreamNodes: set[CascadeNode]):
+    def _printUpdates(imgPath: str, startNode: CascadeNode, order: list[CascadeNode], upstreamNodes: set[CascadeNode], missingNodes: set[CascadeNode]):
         # Find longest paths with dynamic programming: For each node, extend the longest incoming path.
         # Follows topological order, so all inNodes of a node are already processed.
         longestPaths: dict[CascadeNode, list[CascadeNode]] = {}
@@ -348,6 +359,10 @@ class CascadeUpdate:
                 seenNodes.update(pathNodes)
                 path = " → ".join(n.key for n in pathNodes)
                 print(f"  {startNode.key} → {path}")
+
+        if missingNodes:
+            missingKeys = ", ".join(n.key for n in missingNodes)
+            print(f"  Warning: Missing keys without template: {missingKeys}")
 
 
     class JsonFileInfo(NamedTuple):

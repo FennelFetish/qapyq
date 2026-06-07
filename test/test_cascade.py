@@ -24,13 +24,13 @@ def createGraph(templates: dict[str, str]) -> CascadeGraph:
 
 def sortGraph(graph: CascadeGraph, startKey: str) -> dict[str, int]:
     startNode = graph.nodes[startKey]
-    upstreamNodes = CascadeUpdate()._collectUpstreamNodes(startNode, CaptionFile(""))
+    upstreamNodes, _ = CascadeUpdate()._collectUpstreamNodes(startNode, CaptionFile(""))
     upstreamNodes.add(startNode)
 
     graph.resetState()
 
     order = graph.topologicalSortMultiStart(upstreamNodes)
-    return {n.key: order.index(n) for n in order}
+    return {n.key: i for i, n in enumerate(order)}
 
 
 
@@ -40,8 +40,13 @@ class CascadeTest(unittest.TestCase):
         self.assertSetEqual(actualKeys, set(expectedKeys))
 
     def assertUpstreamNodes(self, graph: CascadeGraph, captionFile: CaptionFile, changedNode: CascadeNode, *expectedKeys: str):
-        upstreamNodes = CascadeUpdate()._collectUpstreamNodes(changedNode, captionFile)
+        upstreamNodes, _ = CascadeUpdate()._collectUpstreamNodes(changedNode, captionFile)
         self.assertNodeKeys(upstreamNodes, *expectedKeys)
+        graph.resetState()
+
+    def assertMissingNodes(self, graph: CascadeGraph, captionFile: CaptionFile, changedNode: CascadeNode, *expectedKeys: str):
+        _, missingNodes = CascadeUpdate()._collectUpstreamNodes(changedNode, captionFile)
+        self.assertNodeKeys(missingNodes, *expectedKeys)
         graph.resetState()
 
     def assertTextFile(self, imgPath: str, expectedText: str):
@@ -436,6 +441,7 @@ class CascadeTest(unittest.TestCase):
     def testUpstreamFunc(self):
         graph = createGraph(self.TEMPLATES_FUNC)
         self.assertUpstreamNodes(graph, CaptionFile(""), graph.nodes["tags.0"], "tags.up")
+        self.assertMissingNodes(graph, CaptionFile(""), graph.nodes["tags.0"], "tags.miss")
 
 
 
