@@ -609,6 +609,10 @@ class CascadeTemplateEntry(QtWidgets.QWidget):
         self.rulesWidget = RuleChooserWidget()
         self.rulesWidget.ruleTemplateChanged.connect(self.txtTemplate.setPlainText)
 
+        # Prevent flashing windows on Windows
+        self.txtTemplate.setParent(self)
+        self.rulesWidget.setParent(self)
+
         stack = QtWidgets.QStackedLayout()
         stack.addWidget(self.txtTemplate)
         stack.addWidget(self.rulesWidget)
