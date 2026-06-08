@@ -253,7 +253,6 @@ class CaptionContainer(QtWidgets.QWidget):
         self.chkCascadeSave.setIcon(self.ICON_CASCADE)
         self.chkCascadeSave.setToolTip("Toggle cascading updates")
         self.chkCascadeSave.setChecked(True)
-        qtlib.setMonospace(self.chkCascadeSave, 1.2)
         self.chkCascadeSave.setFixedWidth(26)
         layout.addWidget(self.chkCascadeSave, 0, col)
 
@@ -262,7 +261,6 @@ class CaptionContainer(QtWidgets.QWidget):
         self.chkSkipOnSave.setIcon(self.ICON_FORWARD)
         self.chkSkipOnSave.setToolTip("Toggle: Skip to next (selected) image after saving, without looping.\nOnly active in Single Edit Mode.")
         self.chkSkipOnSave.setChecked(False)
-        qtlib.setMonospace(self.chkSkipOnSave, 1.2)
         self.chkSkipOnSave.setFixedWidth(26)
         layout.addWidget(self.chkSkipOnSave, 0, col)
 

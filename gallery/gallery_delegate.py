@@ -580,7 +580,7 @@ class GalleryCaptionEditor(QtWidgets.QWidget):
         row = 0
         layout.setRowMinimumHeight(row, labelHeight)
 
-        self.chkCascadeSave = QtWidgets.QCheckBox("Cascading Updates")
+        self.chkCascadeSave = QtWidgets.QCheckBox("Cascade Updates")
         self.chkCascadeSave.setFixedHeight(labelHeight)
         self.chkCascadeSave.toggled.connect(self._onCascadeToggled)
         layout.addWidget(self.chkCascadeSave, row, 1)
