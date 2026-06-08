@@ -15,12 +15,16 @@ from .caption_highlight import HighlightState
 from .caption_multi_edit import CaptionMultiEdit
 from .caption_tab import MultiEditSupport
 from .caption_list import AutoSizeTextEdit
+from .caption_cascade import CascadeTemplateTextEdit
 
 if TYPE_CHECKING:
     from gallery.gallery import Gallery
 
 
 class CaptionContainer(QtWidgets.QWidget):
+    ICON_CASCADE: QtGui.QPixmap = None
+    ICON_FORWARD: QtGui.QPixmap = None
+
     def __init__(self, tab):
         super().__init__()
 
@@ -54,6 +58,9 @@ class CaptionContainer(QtWidgets.QWidget):
         self.captionMenu = CaptionMenu(self, self.ctx)
         self.captionMenu.rulesSettingsUpdated.connect(self._onRulesSettingsUpdated)
 
+        if CaptionContainer.ICON_CASCADE is None:
+            self._initIcons()
+
         self._build(self.ctx)
 
         self.ctx.separatorChanged.connect(self._onSeparatorChanged)
@@ -78,6 +85,11 @@ class CaptionContainer(QtWidgets.QWidget):
 
         if Config.captionShowPreview:
             QTimer.singleShot(1, lambda: self._onPreviewToggled(True))
+
+    def _initIcons(self):
+        color = self.palette().color(QtGui.QPalette.ColorRole.Text)
+        CaptionContainer.ICON_CASCADE = qtlib.loadSvg(32, 32, "res/cascade.svg", color)
+        CaptionContainer.ICON_FORWARD = qtlib.loadSvg(32, 32, "res/forward.svg", color)
 
 
     def _build(self, ctx):
@@ -237,10 +249,18 @@ class CaptionContainer(QtWidgets.QWidget):
         layout.setColumnStretch(col, 0)
 
         col += 1
-        self.chkSkipOnSave = qtlib.ToggleButton("⏭️")
+        self.chkCascadeSave = qtlib.ToggleButton("")
+        self.chkCascadeSave.setIcon(self.ICON_CASCADE)
+        self.chkCascadeSave.setToolTip("Toggle cascading updates")
+        self.chkCascadeSave.setChecked(True)
+        self.chkCascadeSave.setFixedWidth(26)
+        layout.addWidget(self.chkCascadeSave, 0, col)
+
+        col += 1
+        self.chkSkipOnSave = qtlib.ToggleButton("")
+        self.chkSkipOnSave.setIcon(self.ICON_FORWARD)
         self.chkSkipOnSave.setToolTip("Toggle: Skip to next (selected) image after saving, without looping.\nOnly active in Single Edit Mode.")
         self.chkSkipOnSave.setChecked(False)
-        qtlib.setMonospace(self.chkSkipOnSave, 1.2)
         self.chkSkipOnSave.setFixedWidth(26)
         layout.addWidget(self.chkSkipOnSave, 0, col)
 
@@ -483,10 +503,12 @@ class CaptionContainer(QtWidgets.QWidget):
 
     @Slot()
     def _saveCaptionShortcut(self):
-        # Check if any text field from 'List' tab is focused
+        # This slot handles save requests for the whole window. Check focused widget and delegate to source.
         widget = QtWidgets.QApplication.focusWidget()
         if isinstance(widget, AutoSizeTextEdit):
-            widget.save.emit()
+            widget.save.emit()  # Save caption list
+        elif isinstance(widget, CascadeTemplateTextEdit):
+            widget.save.emit()  # Save caption cascade
         else:
             self.saveCaption()
             widget = self.txtCaption
@@ -503,9 +525,10 @@ class CaptionContainer(QtWidgets.QWidget):
 
     def saveCaptionNoSkip(self) -> bool:
         text = self.txtCaption.rstripCaption()
+        cascade = self.chkCascadeSave.isChecked()
 
         if self.multiEdit.active:
-            if self.multiEdit.saveCaptions(self.destSelector):
+            if self.multiEdit.saveCaptions(self.destSelector, cascade):
                 self.btnSave.setChanged(False)
                 return True
             else:
@@ -514,7 +537,7 @@ class CaptionContainer(QtWidgets.QWidget):
         else:
             currentFile = self.filelist.getCurrentFile()
 
-            if self.destSelector.saveCaption(currentFile, text):
+            if self.destSelector.saveCaption(currentFile, text, cascade):
                 self.captionCache.remove()
                 self.captionCache.setState(DataKeys.IconStates.Saved)
                 self.btnSave.setChanged(False)

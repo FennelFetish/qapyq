@@ -1,10 +1,15 @@
 import re, os, random
-from typing import Tuple, List, Callable
+from typing import Tuple, List, Callable, NamedTuple, TYPE_CHECKING
 from collections import defaultdict
+from contextlib import contextmanager
 from datetime import datetime
 from PySide6 import QtWidgets, QtGui
+from config import Config
 from .captionfile import CaptionFile
 from .colorlib import ColorCharFormats
+
+if TYPE_CHECKING:
+    from caption.caption_filter import CaptionRulesProcessor
 
 
 class TemplateVariableParser:
@@ -24,6 +29,8 @@ class TemplateVariableParser:
         self.stripAround = True
         self.stripMultiWhitespace = True
 
+        self._tempOverrides: dict[str, str] = dict()
+
         self.missingVars = set()
         self.storedVars: dict[str, str] = dict()
 
@@ -38,6 +45,14 @@ class TemplateVariableParser:
             self.captionFile = CaptionFile(self.imgPath)
             self.captionFile.loadFromJson()
         return self.captionFile
+
+
+    @contextmanager
+    def withTemporaryOverrides(self):
+        try:
+            yield self._tempOverrides
+        finally:
+            self._tempOverrides = {}
 
 
     def parse(self, text: str) -> str:
@@ -163,30 +178,31 @@ class TemplateVariableParser:
         var, *funcs = var.split("#")
         var = var.strip()
 
-        value = None
-        if var.startswith(self.PREFIX_CAPTION):
-            name = var[len(self.PREFIX_CAPTION):]
-            value =  self.getCaptionFile().getCaption(name)
+        value = self._tempOverrides.get(var)
+        if value is None:
+            if var.startswith(self.PREFIX_TAG):
+                name = var[len(self.PREFIX_TAG):].lstrip()
+                value = self.getCaptionFile().getTags(name)
 
-        elif var.startswith(self.PREFIX_PROMPT):
-            name = var[len(self.PREFIX_PROMPT):]
-            value =  self.getCaptionFile().getPrompt(name)
+            elif var.startswith(self.PREFIX_CAPTION):
+                name = var[len(self.PREFIX_CAPTION):].lstrip()
+                value = self.getCaptionFile().getCaption(name)
 
-        elif var.startswith(self.PREFIX_TAG):
-            name = var[len(self.PREFIX_TAG):]
-            value =  self.getCaptionFile().getTags(name)
+            elif var.startswith(self.PREFIX_PROMPT):
+                name = var[len(self.PREFIX_PROMPT):].lstrip()
+                value = self.getCaptionFile().getPrompt(name)
 
-        elif var == "text":
-            value = self._readTextFile()
+            elif var == "text":
+                value = self._readTextFile()
 
-        else:
-            value = self._getImgProperties(var)
-            if value is None:
-                value = self._getMoreValues(var)
+            else:
+                value = self._getImgProperties(var)
+                if value is None:
+                    value = self._getMoreValues(var)
 
-        if not value:
-            self.missingVars.add(var)
-            value = ""
+            if not value:
+                self.missingVars.add(var)
+                value = ""
 
         for func in funcs:
             value = self._applyFunction(value, func) # Don't strip func (avoid changing arguments with spaces)
@@ -385,6 +401,13 @@ class TemplateVariableParser:
                     argIndex = 1 if (search in value) else 2
                     return self._getFuncArg(args, argIndex, "")
 
+            # Rules
+            case "rules":
+                # Re-join args that were previously split by ":" to reconstruct Windows paths (C:\).
+                if path := ":".join(args):
+                    if rulesProcessor := TemplateRulesProcessor.getProcessor(path):
+                        return rulesProcessor.process(value)
+
             # TODO: Function for limiting text to max token count
 
         return value
@@ -526,3 +549,74 @@ class VariableHighlighter:
 
         sourceRanges.apply()
         targetRanges.apply()
+
+
+
+class TemplateRulesProcessor:
+    class CacheEntry(NamedTuple):
+        rulesProcessor: 'CaptionRulesProcessor'
+        modTime: float
+
+
+    CACHED_PROCESSORS: dict[str, CacheEntry] = {}
+
+
+    @classmethod
+    def getProcessor(cls, presetPath: str) -> 'CaptionRulesProcessor | None':
+        if not presetPath.endswith(".json"):
+            presetPath += ".json"
+
+        presetPath = os.path.join(Config.pathExport, presetPath)
+        presetPath = os.path.abspath(presetPath)
+
+        try:
+            modTime = os.path.getmtime(presetPath)
+        except OSError:
+            print(f"Template Parser: Failed to load rules preset from '{presetPath}'")
+            cls.CACHED_PROCESSORS.pop(presetPath, None)
+            return None
+
+        cacheEntry = cls.CACHED_PROCESSORS.get(presetPath)
+        if cacheEntry is None or cacheEntry.modTime != modTime:
+            print(f"Template Parser: Reloading rules preset from '{presetPath}'")
+            rulesProcessor = cls._createProcessor(presetPath)
+            cls.CACHED_PROCESSORS[presetPath] = cacheEntry = cls.CacheEntry(rulesProcessor, modTime)
+
+        return cacheEntry.rulesProcessor
+
+    @classmethod
+    def _createProcessor(cls, presetPath: str) -> 'CaptionRulesProcessor':
+        from caption.caption_filter import CaptionRulesProcessor
+        from caption.caption_preset import CaptionPreset
+        from caption.caption_conditionals import ConditionalFilterRule
+        from caption.caption_wildcard import expandWildcards
+
+        preset = CaptionPreset()
+        preset.loadFrom(presetPath)
+
+        def groupGenerator():
+            for group in preset.groups:
+                groupTags = [
+                    tag
+                    for origTag in group.captions
+                    for tag in expandWildcards(origTag, preset.wildcards)
+                ]
+                yield (groupTags, group.exclusivity, group.combineTags)
+
+        condRulesGenerator = (ConditionalFilterRule.fromPreset(presetCond) for presetCond in preset.conditionals)
+
+        rulesProcessor = CaptionRulesProcessor(
+            preset.separator,
+            preset.removeDuplicates,
+            preset.removeImplications,
+            preset.sortCaptions,
+            preset.sortNonGroupCaptions,
+            preset.whitelistGroups
+        )
+
+        rulesProcessor.setPrefixSuffix(preset.prefix, preset.suffix, preset.prefixSeparator, preset.suffixSeparator)
+        rulesProcessor.setSearchReplacePairs(preset.searchReplace)
+        rulesProcessor.setBannedCaptions(preset.banned)
+        rulesProcessor.setCaptionGroups(groupGenerator())
+        rulesProcessor.setConditionalRules(condRulesGenerator)
+        return rulesProcessor

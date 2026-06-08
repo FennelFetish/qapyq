@@ -5,7 +5,9 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, QAbstractItemModel, QModelIndex
 from lib.filelist import folderSortKey, removeCommonRoot
 from ui.tab import ImgTab
-import lib.qtlib as qtlib
+from lib import qtlib
+from lib.captionfile import CaptionFile
+from lib.cascade import CASCADE_FOLDER_FILE
 from .stats_base import StatsLayout, StatsTreeView, StatsLoadGroupBox, StatsBaseProxyModel, StatsLoadTask, ExportCsv
 
 
@@ -73,8 +75,9 @@ class FolderStats(QtWidgets.QWidget):
 
     @Slot()
     def _adjustFolderColumns(self):
+        dontResizeCols = (1, 2)
         for col in range(self.model.columnCount(QModelIndex())):
-            if col != 1:
+            if col not in dontResizeCols:
                 self.tree.resizeColumnToContents(col)
 
         # Folder name column with padding and maximum width
@@ -82,8 +85,9 @@ class FolderStats(QtWidgets.QWidget):
         colWidth = min(colWidth, 300)
         self.tree.setColumnWidth(0, colWidth)
 
-        # Minimum width for "Subfolders" column
-        self.tree.setColumnWidth(1, 8)
+        # Minimum width
+        self.tree.setColumnWidth(1, 16) # "Cascade" column
+        self.tree.setColumnWidth(2, 8)  # "Subfolders" column
 
 
 
@@ -97,7 +101,8 @@ class FolderStatsLoadTask(StatsLoadTask):
         summary = FolderSummary()
 
         rootName = os.path.basename(self.commonRoot) if self.commonRoot else "/"
-        self.rootFolder = FolderData(self.commonRoot, rootName)
+        rootCascade = self._checkCascadeTemplates("" if self.commonRoot else "/")
+        self.rootFolder = FolderData(self.commonRoot, rootName, rootCascade)
         self.rootFolder.indexInParent = 0
 
         folders: dict[str, FolderData] = dict()
@@ -116,12 +121,18 @@ class FolderStatsLoadTask(StatsLoadTask):
         self.rootFolder.updateTree(summary.numFiles, summary.avgFolderSize)
         return self.rootFolder, summary
 
+    def _checkCascadeTemplates(self, folderPath: str) -> int:
+        cascadePath = os.path.join(self.commonRoot, folderPath, CASCADE_FOLDER_FILE)
+        captionFile = CaptionFile(cascadePath)
+        return len(captionFile.cascade) if captionFile.loadFromJson() else 0
+
     def _getFolderData(self, folders: dict[str, FolderData], folderPath: str) -> FolderData:
         if folderData := folders.get(folderPath):
             return folderData
 
         entryName = os.path.basename(folderPath)
-        folderData = FolderData(folderPath, entryName)
+        cascade = self._checkCascadeTemplates(folderPath)
+        folderData = FolderData(folderPath, entryName, cascade)
         folders[folderPath] = folderData
 
         parentFolderData = self._getParentFolderData(folders, folderPath)
@@ -141,10 +152,12 @@ class FolderStatsLoadTask(StatsLoadTask):
 
 
 class FolderData:
-    def __init__(self, path: str, name: str):
+    def __init__(self, path: str, name: str, numCascadeTemplates: int):
         self.path = path
         self.name = name
         self.sortName = folderSortKey(name)
+        self.numCascadeTemplates = numCascadeTemplates
+
         self.files: set[str] = set()
 
         self.parent: FolderData | None = None
@@ -269,26 +282,28 @@ class FolderModel(QAbstractItemModel):
         return parent.numSubfolders
 
     def columnCount(self, parent=QModelIndex()):
-        return 6
+        return 7
 
     def headerData(self, section: int, orientation: Qt.Orientation, role=Qt.ItemDataRole.DisplayRole) -> str | None:
         match role:
             case Qt.ItemDataRole.DisplayRole:
                 match section:
                     case 0: return "Folder"
-                    case 1: return "Subfolders"
-                    case 2: return "Images"
-                    case 3: return "% of Parent"
-                    case 4: return "% of Total"
-                    case 5: return "Repeats"
+                    case 1: return "Cascade"
+                    case 2: return "Subfolders"
+                    case 3: return "Files"
+                    case 4: return "% of Parent"
+                    case 5: return "% of Total"
+                    case 6: return "Repeats"
 
             case Qt.ItemDataRole.ToolTipRole:
                 match section:
-                    case 1: return "Number of direct subfolders"
-                    case 2: return "Total image count inside folder and subfolders.\n(In parantheses): Images directly inside folder, without subfolders."
-                    case 3: return "Percentage of parent folder.\n(In parantheses): Percentage of own images without subfolders."
-                    case 4: return "Percentage of total.\n(In parantheses): Percentage of own images without subfolders."
-                    case 5: return "Estimate for balancing concepts. Average folder size divided by image count in folder and subfolders.\n(In parantheses): Average folder size divided by image count without subfolders."
+                    case 1: return "Number of cascade templates at the folder level"
+                    case 2: return "Number of direct subfolders"
+                    case 3: return "Total media count inside folder and subfolders.\n(In parantheses): Files directly inside folder, without subfolders."
+                    case 4: return "Percentage of parent folder.\n(In parantheses): Percentage of own files without subfolders."
+                    case 5: return "Percentage of total.\n(In parantheses): Percentage of own files without subfolders."
+                    case 6: return "Estimate for balancing concepts. Average folder size divided by media count in folder and subfolders.\n(In parantheses): Average folder size divided by media count without subfolders."
 
         return super().headerData(section, orientation, role)
 
@@ -331,25 +346,28 @@ class FolderModel(QAbstractItemModel):
                     case 0:
                         return folder.name
 
-                    case 1: # Subfolders
+                    case 1: # Cascade templates
+                        return str(folder.numCascadeTemplates) if folder.numCascadeTemplates else ""
+
+                    case 2: # Subfolders
                         return str(folder.numSubfolders) if folder.subfolders else ""
 
-                    case 2: # Images
+                    case 3: # Files
                         if folder.subfolders and folder.selfNumFiles:
                             return f"{folder.numFilesTotal} ({folder.selfNumFiles})"
                         return f"{folder.numFilesTotal}"
 
-                    case 3: # % of Parent
+                    case 4: # % of Parent
                         if folder.subfolders and folder.selfNumFiles:
                             return f"{100*folder.percentOfParent:.1f}% ({100*folder.selfPercentOfParent:.1f}%)"
                         return f"{100*folder.percentOfParent:.1f}%"
 
-                    case 4: # % of Total
+                    case 5: # % of Total
                         if folder.subfolders and folder.selfNumFiles:
                             return f"{100*folder.percentOfTotal:.1f}% ({100*folder.selfPercentOfTotal:.1f}%)"
                         return f"{100*folder.percentOfTotal:.1f}%"
 
-                    case 5: # Repeats
+                    case 6: # Repeats
                         if folder.subfolders and folder.selfNumFiles:
                             return f"{folder.repeats:.2f} ({folder.selfRepeats:.2f})"
                         return f"{folder.repeats:.2f}"
@@ -360,11 +378,12 @@ class FolderModel(QAbstractItemModel):
             case ExportCsv.ROLE_CSV:
                 match index.column():
                     case 0: return folder.path
-                    case 1: return folder.numSubfolders
-                    case 2: return folder.numFilesTotal
-                    case 3: return folder.percentOfParent
-                    case 4: return folder.percentOfTotal
-                    case 5: return folder.repeats
+                    case 1: return folder.numCascadeTemplates
+                    case 2: return folder.numSubfolders
+                    case 3: return folder.numFilesTotal
+                    case 4: return folder.percentOfParent
+                    case 5: return folder.percentOfTotal
+                    case 6: return folder.repeats
 
         return None
 
@@ -387,13 +406,15 @@ class FolderProxyModel(StatsBaseProxyModel):
             dataLeft: FolderData  = self.sourceModel().data(left, FolderModel.ROLE_DATA)
             dataRight: FolderData = self.sourceModel().data(right, FolderModel.ROLE_DATA)
             match column:
-                case 0:
+                case 0: # Name
                     return dataLeft.sortName < dataRight.sortName
-                case 1:
+                case 1: # Cascade
+                    return dataLeft.numCascadeTemplates > dataRight.numCascadeTemplates
+                case 2: # Subfolder count
                     return dataLeft.numSubfolders > dataRight.numSubfolders
-                case 2 | 3 | 4:
+                case 3 | 4 | 5: # File count
                     return dataLeft.numFilesTotal > dataRight.numFilesTotal
-                case 5:
+                case 6: # Repeats
                     return dataLeft.numFilesTotal < dataRight.numFilesTotal
 
         return super().lessThan(left, right)

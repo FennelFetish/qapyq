@@ -5,12 +5,18 @@ from PySide6.QtCore import Qt, Slot, Signal, QObject, QSignalBlocker
 import lib.qtlib as qtlib
 from config import Config
 
+# Imported in FileTypeSelector.saveCaption()
+# from .cascade import CascadeUpdate
+
 
 class Keys:
     VERSION  = "version"
     CAPTIONS = "captions"
     PROMPTS  = "prompts"
     TAGS     = "tags"
+    METRICS  = "metrics"
+    CASCADE  = "cascade"
+
 
 
 class CaptionFile:
@@ -23,9 +29,11 @@ class CaptionFile:
         If the filename has multiple dots, another part of the filename will be removed to append ".json".
         '''
 
-        self.captions: dict[str, str] = dict()
-        self.prompts: dict[str, str] = dict()
-        self.tags: dict[str, str] = dict()
+        self.captions:  dict[str, str]      = dict()
+        self.prompts:   dict[str, str]      = dict()
+        self.tags:      dict[str, str]      = dict()
+        self.metrics:   dict[str, float]    = dict()
+        self.cascade:   dict[str, str]      = dict()
 
         self.jsonPath = os.path.splitext(file)[0] + ".json"
 
@@ -34,21 +42,35 @@ class CaptionFile:
         self.captions[name] = caption
 
     def getCaption(self, name: str) -> str | None:
-        return self.captions.get(name, None)
+        return self.captions.get(name)
 
 
     def addPrompt(self, name: str, prompt: str):
         self.prompts[name] = prompt
 
     def getPrompt(self, name: str) -> str | None:
-        return self.prompts.get(name, None)
+        return self.prompts.get(name)
 
 
     def addTags(self, name: str, tags: str):
         self.tags[name] = tags
 
     def getTags(self, name: str) -> str | None:
-        return self.tags.get(name, None)
+        return self.tags.get(name)
+
+
+    def addMetric(self, name: str, value: float):
+        self.metrics[name] = value
+
+    def getMetric(self, name: str) -> float | None:
+        return self.metrics.get(name)
+
+
+    def addCascade(self, name: str, template: str):
+        self.cascade[name] = template
+
+    def getCascade(self, name: str) -> str | None:
+        return self.cascade.get(name)
 
 
     def jsonExists(self) -> bool:
@@ -56,45 +78,44 @@ class CaptionFile:
 
 
     def loadFromJson(self) -> bool:
-        if self.jsonExists():
+        try:
             with open(self.jsonPath, 'r') as file:
                 data = json.load(file)
             if Keys.VERSION not in data:
                 return False
-        else:
+        except FileNotFoundError:
+            return False
+        except Exception as ex:
+            print(f"Warning: Failed to load captions from '{self.jsonPath}': {ex} ({type(ex).__name__})")
             return False
 
         self.captions = data.get(Keys.CAPTIONS, {})
         self.prompts  = data.get(Keys.PROMPTS, {})
         self.tags     = data.get(Keys.TAGS, {})
+        self.metrics  = data.get(Keys.METRICS, {})
+        self.cascade  = data.get(Keys.CASCADE, {})
         return True
 
 
     def updateToJson(self) -> bool:
-        if self.jsonExists():
+        try:
             with open(self.jsonPath, 'r') as file:
                 data = json.load(file)
             if Keys.VERSION not in data:
                 return False
-        else:
+        except FileNotFoundError:
             data = dict()
+        except Exception as ex:
+            print(f"Warning: Failed to load captions from '{self.jsonPath}': {ex} ({type(ex).__name__})")
+            return False
 
         data[Keys.VERSION] = CaptionFile.VERSION
 
-        captions = data.get(Keys.CAPTIONS, {})
-        captions.update(self.captions)
-        if captions := self._deleteEmpty(captions):
-            data[Keys.CAPTIONS] = captions
-
-        prompts = data.get(Keys.PROMPTS, {})
-        prompts.update(self.prompts)
-        if prompts := self._deleteEmpty(prompts):
-            data[Keys.PROMPTS] = prompts
-
-        tags = data.get(Keys.TAGS, {})
-        tags.update(self.tags)
-        if tags := self._deleteEmpty(tags):
-            data[Keys.TAGS] = tags
+        self._updateDict(data, self.captions, Keys.CAPTIONS)
+        self._updateDict(data, self.prompts, Keys.PROMPTS)
+        self._updateDict(data, self.tags, Keys.TAGS)
+        self._updateDict(data, self.metrics, Keys.METRICS, self._predNotNone)
+        self._updateDict(data, self.cascade, Keys.CASCADE)
 
         with open(self.jsonPath, 'w') as file:
             json.dump(data, file, indent=4)
@@ -115,18 +136,35 @@ class CaptionFile:
         if tags := self._deleteEmpty(self.tags):
             data[Keys.TAGS] = tags
 
+        if metrics := self._deleteEmpty(self.metrics, self._predNotNone):
+            data[Keys.METRICS] = metrics
+
+        if cascade := self._deleteEmpty(self.cascade):
+            data[Keys.CASCADE] = cascade
+
         with open(self.jsonPath, 'w') as file:
             json.dump(data, file, indent=4)
 
 
+    @classmethod
+    def _updateDict(cls, data: dict, addDict: dict, key: str, predKeep: Callable = bool):
+        subDict: dict = data.get(key, {})
+        subDict.update(addDict)
+        if subDict := cls._deleteEmpty(subDict, predKeep):
+            data[key] = subDict
+
     @staticmethod
-    def _deleteEmpty(data: dict) -> dict:
-        return {k: v for k, v in data.items() if v}
+    def _deleteEmpty(data: dict, predKeep: Callable = bool) -> dict:
+        return {k: v for k, v in data.items() if predKeep(v)}
+
+    @staticmethod
+    def _predNotNone(val) -> bool:
+        return (val is not None)
 
 
 
 class FileTypeSelector(QtWidgets.QHBoxLayout):
-    TYPE_TXT = "txt"
+    TYPE_TXT = "text"
     TYPE_TAGS = "tags"
     TYPE_CAPTIONS = "captions"
 
@@ -150,18 +188,18 @@ class FileTypeSelector(QtWidgets.QHBoxLayout):
         self.cboKey.setMinimumWidth(200)
         self.cboKey.currentTextChanged.connect(self._onEdited)
         qtlib.setMonospace(self.cboKey)
-        self.addWidget(self.cboKey)
+        self.addWidget(self.cboKey, stretch=1)
 
         self._onTypeChanged(self.cboType.currentIndex())
 
-    @Slot()
-    def _onTypeChanged(self, index):
+    @Slot(int)
+    def _onTypeChanged(self, index: int):
         keyType = self.cboType.itemData(index)
         self.cboKey.setKeyType(keyType)
 
         self.fileTypeUpdated.emit()
 
-    @Slot()
+    @Slot(str)
     def _onEdited(self, text: str):
         self.fileTypeUpdated.emit()
 
@@ -230,30 +268,36 @@ class FileTypeSelector(QtWidgets.QHBoxLayout):
         return JsonCaptionLoadFunctor(self.type, self.name)
 
 
-    def saveCaption(self, imgPath: str, text: str) -> bool:
+    def saveCaption(self, imgPath: str, text: str, cascade: bool = False) -> bool:
         if not imgPath:
             print(f"Failed to save caption to file: Path is empty")
             return False
 
         if self.type == FileTypeSelector.TYPE_TXT:
+            # No cascading updates
             self.saveCaptionTxt(imgPath, text)
             return True
 
+        keyType = self.type
+        keyName = self.name
+
         captionFile = CaptionFile(imgPath)
-        type = self.type
-        name = self.name
-
-        if type == FileTypeSelector.TYPE_CAPTIONS:
-            captionFile.addCaption(name, text)
-        else:
-            captionFile.addTags(name, text)
-
-        if captionFile.updateToJson():
-            print(f"Saved caption to file: {captionFile.jsonPath} [{type}.{name}]")
-            return True
-        else:
-            print(f"Failed to save caption to file: {captionFile.jsonPath} [{type}.{name}]")
+        if captionFile.jsonExists() and not captionFile.loadFromJson():
+            print(f"Failed to save caption to file: {captionFile.jsonPath} [{keyType}.{keyName}] (couldn't load file for updating)")
             return False
+
+        if keyType == FileTypeSelector.TYPE_CAPTIONS:
+            captionFile.addCaption(keyName, text)
+        else:
+            captionFile.addTags(keyName, text)
+
+        if cascade:
+            from .cascade import CascadeUpdate
+            CascadeUpdate().saveCascade(imgPath, captionFile, keyType, keyName)
+
+        captionFile.saveToJson()
+        print(f"Saved caption to file: {captionFile.jsonPath} [{keyType}.{keyName}]")
+        return True
 
     @classmethod
     def saveCaptionTxt(cls, imgPath: str, text: str) -> None:
@@ -331,7 +375,7 @@ class CaptionKeyComboBox(qtlib.MenuComboBox):
         self.setEditText(self.selectedKeys[keyType])
         self.setEnabled(keyType != FileTypeSelector.TYPE_TXT)
 
-    @Slot()
+    @Slot(str)
     def _onTextChanged(self, text: str):
         self.selectedKeys[self.currentType] = text
 

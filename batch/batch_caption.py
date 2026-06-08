@@ -9,6 +9,7 @@ from infer.prompt import PromptWidget
 from lib import colorlib, qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser
+from lib.cascade import CascadeUpdate
 from ui.tab import ImgTab
 from .batch_task import BatchInferenceTask, BatchTaskHandler
 from .batch_log import BatchLog
@@ -42,7 +43,7 @@ class BatchCaption(QtWidgets.QWidget):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
-        layout.setColumnStretch(3, 1)
+        layout.setColumnStretch(4, 1)
 
         row = 0
         self.promptWidget = PromptWidget("promptCaptionPresets", "promptCaptionDefault", self.tab.templateAutoCompleteSources)
@@ -51,7 +52,7 @@ class BatchCaption(QtWidgets.QWidget):
         qtlib.setTextEditHeight(self.promptWidget.txtPreview, 5, "min")
         self.promptWidget.txtPrompts.textChanged.connect(self._updatePreview)
         self.promptWidget.refreshPreviewClicked.connect(self.refreshPreview)
-        layout.addWidget(self.promptWidget, row, 0, 1, 4)
+        layout.addWidget(self.promptWidget, row, 0, 1, 5)
         layout.setRowStretch(row, 1)
 
         row += 1
@@ -81,6 +82,10 @@ class BatchCaption(QtWidgets.QWidget):
         self.chkStorePrompts = QtWidgets.QCheckBox("Store Prompts")
         layout.addWidget(self.chkStorePrompts, row, 3)
 
+        self.chkCascadeCaption = QtWidgets.QCheckBox("Cascade Updates")
+        self.chkCascadeCaption.setChecked(True)
+        layout.addWidget(self.chkCascadeCaption, row, 4)
+
         row += 1
         self.spinRounds = QtWidgets.QSpinBox()
         self.spinRounds.setRange(1, 100)
@@ -89,7 +94,7 @@ class BatchCaption(QtWidgets.QWidget):
         layout.addWidget(self.spinRounds, row, 1)
 
         row += 1
-        layout.addWidget(self.inferSettings, row, 0, 1, 4)
+        layout.addWidget(self.inferSettings, row, 0, 1, 5)
 
         groupBox = QtWidgets.QGroupBox("Generate Captions")
         groupBox.setCheckable(True)
@@ -102,7 +107,7 @@ class BatchCaption(QtWidgets.QWidget):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
-        layout.setColumnStretch(2, 1)
+        layout.setColumnStretch(3, 1)
 
         row = 0
         self.destTag = FileTypeSelector()
@@ -113,8 +118,12 @@ class BatchCaption(QtWidgets.QWidget):
         self.chkTagSkipExisting = QtWidgets.QCheckBox("Skip file if key exists")
         layout.addWidget(self.chkTagSkipExisting, row, 2)
 
+        self.chkCascadeTag = QtWidgets.QCheckBox("Cascade Updates")
+        self.chkCascadeTag.setChecked(True)
+        layout.addWidget(self.chkCascadeTag, row, 3)
+
         row += 1
-        layout.addWidget(self.tagSettings, row, 0, 1, 3)
+        layout.addWidget(self.tagSettings, row, 0, 1, 4)
 
         groupBox = QtWidgets.QGroupBox("Generate Tags")
         groupBox.setCheckable(True)
@@ -157,11 +166,14 @@ class BatchCaption(QtWidgets.QWidget):
                 captionText = colorlib.htmlRed(captionText + " and overwrite the content!")
             ops.append(captionText)
 
-        if self.chkStorePrompts.isChecked():
-            ops.append(f"Store the prompt in [prompts.{targetName}]")
+            if self.chkStorePrompts.isChecked():
+                ops.append(f"Store the prompt in [prompts.{targetName}]")
 
-        if self.spinRounds.value() > 1:
-            ops.append(f"Do {self.spinRounds.value()} rounds of captioning")
+            if self.spinRounds.value() > 1:
+                ops.append(f"Do {self.spinRounds.value()} rounds of captioning")
+
+            if self.chkCascadeCaption.isChecked():
+                ops.append(colorlib.htmlRed("Cascade and update all content that depends on written caption keys!"))
 
         if self.tagGroup.isChecked():
             ops.append(f"Use '{self.tagSettings.getSelectedPresetName()}' to generate new Tags")
@@ -173,6 +185,9 @@ class BatchCaption(QtWidgets.QWidget):
             else:
                 tagText = colorlib.htmlRed(tagText + " and overwrite the content!")
             ops.append(tagText)
+
+            if self.chkCascadeTag.isChecked():
+                ops.append(colorlib.htmlRed(f"Cascade and update all content that depends on [{tagKey}]!"))
 
         return ops, True
 
@@ -186,17 +201,19 @@ class BatchCaption(QtWidgets.QWidget):
             rounds = self.spinRounds.value()
             task.prompts = self.promptWidget.getParsedPrompts(storeName, rounds)
 
-            task.systemPrompt  = self.promptWidget.systemPrompt.strip()
-            task.configs       = self.inferSettings.getRemoteInferenceConfig()
-            task.overwriteMode = self.cboOverwriteMode.currentData()
-            task.storePrompts  = self.chkStorePrompts.isChecked()
-            task.stripAround   = self.chkStripAround.isChecked()
-            task.stripMulti    = self.chkStripMulti.isChecked()
+            task.systemPrompt    = self.promptWidget.systemPrompt.strip()
+            task.configs         = self.inferSettings.getRemoteInferenceConfig()
+            task.overwriteMode   = self.cboOverwriteMode.currentData()
+            task.storePrompts    = self.chkStorePrompts.isChecked()
+            task.cascadeCaption  = self.chkCascadeCaption.isChecked()
+            task.stripAround     = self.chkStripAround.isChecked()
+            task.stripMulti      = self.chkStripMulti.isChecked()
 
         if self.tagGroup.isChecked():
-            task.tagConfig = self.tagSettings.getInferenceConfig()
-            task.tagName = self.destTag.name.strip()
+            task.tagConfig       = self.tagSettings.getInferenceConfig()
+            task.tagName         = self.destTag.name.strip()
             task.tagSkipExisting = self.chkTagSkipExisting.isChecked()
+            task.cascadeTag      = self.chkCascadeTag.isChecked()
 
         return task
 
@@ -222,6 +239,12 @@ class BatchCaptionTask(BatchInferenceTask):
         self.varParser = None
         self.writeKeys = None
 
+        self.cascadeCaption = False
+        self.cascadeTag     = False
+
+        self.cascade = CascadeUpdate()
+        self.cascade.enableCache()
+
 
     def runPrepare(self, proc: InferenceProcess):
         self.doCaption = self.prompts is not None
@@ -240,10 +263,11 @@ class BatchCaptionTask(BatchInferenceTask):
             self.varParser.stripMultiWhitespace = self.stripMulti
 
         if self.doTag:
+            if not self.tagName:
+                raise ValueError("Empty storage key for tags")
+
             models.append("tag")
             proc.setupTag(self.tagConfig)
-            if not self.tagName:
-                self.tagName = "tags"
 
         modelsText = " and ".join(models)
         self.signals.progressMessage.emit(f"Loading {modelsText} model ...")
@@ -329,6 +353,9 @@ class BatchCaptionTask(BatchInferenceTask):
             captionFile.addCaption(name, caption)
             changed = True
 
+            if self.cascadeCaption:
+                self.cascade.saveCascade(imgFile, captionFile, FileTypeSelector.TYPE_CAPTIONS, name)
+
             if self.storePrompts:
                 prompt = next((conv[name] for conv in prompts if name in conv), None)
                 captionFile.addPrompt(name, prompt)
@@ -341,6 +368,10 @@ class BatchCaptionTask(BatchInferenceTask):
             return False
 
         captionFile.addTags(self.tagName, tags)
+
+        if self.cascadeTag:
+            self.cascade.saveCascade(imgFile, captionFile, FileTypeSelector.TYPE_TAGS, self.tagName)
+
         return True
 
 

@@ -387,6 +387,24 @@ class ConditionalFilterRule:
         self._expression = ""
         self._parsedExpression: ast.Expression | None = None
 
+    @staticmethod
+    def fromPreset(presetConditional: CaptionPresetConditional) -> ConditionalFilterRule:
+        rule = ConditionalFilterRule()
+        rule.setExpression(presetConditional.expression)
+
+        for i, cond in enumerate(presetConditional.conditions):
+            condDef = CONDITIONS[cond.key]
+            var = chr(65 + i)
+            params = [cond.params[paramKey] for paramKey in condDef.params]
+            rule.conditions[var] = condDef.factory(params)
+
+        for action in presetConditional.actions:
+            actionDef = ACTIONS[action.key]
+            params = [action.params[paramKey] for paramKey in actionDef.params]
+            rule.actions.append(actionDef.factory(params))
+
+        return rule
+
 
     def setExpression(self, expression: str):
         self._expression, self._parsedExpression = self.prepareExpression(expression)

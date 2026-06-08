@@ -1,7 +1,7 @@
 from __future__ import annotations
 import os
 from enum import Enum
-from typing import Generator
+from typing import Generator, TYPE_CHECKING
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QTimer, QSignalBlocker
@@ -13,6 +13,8 @@ from .caption_tab import CaptionTab
 from .caption_highlight import CaptionHighlight
 from .caption_text import BorderlessNavigationTextEdit
 
+if TYPE_CHECKING:
+    from .caption_context import CaptionContext
 
 # TODO: Add button (below key?) for loading it into the main text field, and setting the source of FileTypeSelector.
 
@@ -76,7 +78,7 @@ class CaptionList(CaptionTab):
         widget.setLayout(self._layoutEntries)
 
         self._scrollArea = qtlib.RowScrollArea(widget)
-        layout.addWidget(self._scrollArea, row, 0, 1, 6)
+        layout.addWidget(self._scrollArea, row, 0, 1, 5)
 
         row += 1
         self.addEntrySelector = FileTypeSelector()
@@ -197,7 +199,7 @@ class CaptionList(CaptionTab):
         QTimer.singleShot(DELAY_SCROLL, lambda: scrollBar.setValue(scrollPos))
 
     def addEntry(self, keyType: KeyType, keyName: str, text: str, deletable=True):
-        entry = CaptionEntry(self, keyType, keyName, deletable)
+        entry = CaptionEntry(self.ctx, keyType, keyName, deletable)
         self._layoutEntries.addWidget(entry)
         entry.text = text
 
@@ -242,6 +244,10 @@ class CaptionList(CaptionTab):
 
     @Slot()
     def _addNewEntry(self):
+        if not self.ctx.tab.filelist.currentFile:
+            self.statusBar.showColoredMessage("No file loaded", False)
+            return
+
         keyName = self.addEntrySelector.name.strip()
         keyType = TYPE_MAP[self.addEntrySelector.type]
         jsonType = (keyType != KeyType.TextFile)
@@ -367,9 +373,8 @@ class CaptionList(CaptionTab):
 class CaptionEntry(QtWidgets.QWidget):
     deleteClicked = Signal(object)
 
-    def __init__(self, captionList: CaptionList, keyType: KeyType, keyName: str, deletable=True):
+    def __init__(self, ctx: CaptionContext, keyType: KeyType, keyName: str, deletable=True):
         super().__init__()
-        self.captionList = captionList
 
         self.keyType: KeyType = keyType
         self.keyName: str = keyName
@@ -402,8 +407,8 @@ class CaptionEntry(QtWidgets.QWidget):
         layout.addWidget(self.txtKey, 0, 1, Qt.AlignmentFlag.AlignTop)
 
         separator = SEPARATORS[keyType]
-        autoCompleteSources = [captionList.ctx.groupAutoCompleteSource, getAutoCompleteSource(AutoCompleteSource.Type.Csv)]
-        self.txtCaption = AutoSizeTextEdit(captionList.ctx.highlight, separator, autoCompleteSources)
+        autoCompleteSources = [ctx.groupAutoCompleteSource, getAutoCompleteSource(AutoCompleteSource.Type.Csv)]
+        self.txtCaption = AutoSizeTextEdit(ctx.highlight, separator, autoCompleteSources)
         qtlib.setMonospace(self.txtCaption)
         self.txtCaption.textChanged.connect(self._setEdited)
         layout.addWidget(self.txtCaption, 0, 3, Qt.AlignmentFlag.AlignTop)
@@ -425,6 +430,7 @@ class CaptionEntry(QtWidgets.QWidget):
         keyColor = colorlib.getHighlightColor(keyColor)
         keyPalette = txtKey.palette()
         keyPalette.setColor(QtGui.QPalette.ColorRole.WindowText, keyColor)
+        keyPalette.setColor(QtGui.QPalette.ColorRole.Text, keyColor)
         txtKey.setPalette(keyPalette)
 
 
@@ -459,7 +465,7 @@ class CaptionEntry(QtWidgets.QWidget):
 
 class AutoSizeTextEdit(BorderlessNavigationTextEdit):
     focusReceived = Signal(object)
-    save = Signal()
+    save = Signal()  # Emitted in CaptionContainer._saveCaptionShortcut() that handles save shortcut for the window
 
     def __init__(self, highlight: CaptionHighlight, separator: str, autoCompleteSources: list[AutoCompleteSource] = []):
         super().__init__(separator, autoCompleteSources)

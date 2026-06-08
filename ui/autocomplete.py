@@ -1027,7 +1027,8 @@ class TemplateAutoCompleteSource(NGramAutoCompleteSource):
         "#noprefix":        ":Prefixes",
         "#nosubsets":       ":Var:Sep:VarSep:WordSeps",
         "#nodup":           ":Separator",
-        "#ifcontains":      ":Search:TrueText:FalseText"
+        "#ifcontains":      ":Search:TrueText:FalseText",
+        "#rules":           ":PresetPath",
     }
 
     ALL_INFO = VAR_INFO | FUNC_INFO

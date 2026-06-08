@@ -9,6 +9,7 @@ from infer.prompt import PromptWidget
 from lib import colorlib, qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser
+from lib.cascade import CascadeUpdate
 from ui.tab import ImgTab
 from .batch_task import BatchInferenceTask, BatchTaskHandler
 from .batch_log import BatchLog
@@ -37,7 +38,7 @@ class BatchTransform(QtWidgets.QWidget):
         layout = QtWidgets.QGridLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setColumnMinimumWidth(0, Config.batchWinLegendWidth)
-        layout.setColumnStretch(3, 1)
+        layout.setColumnStretch(4, 1)
 
         row = 0
         self.promptWidget = PromptWidget("promptLLMPresets", "promptLLMDefault", self.tab.templateAutoCompleteSources)
@@ -46,7 +47,7 @@ class BatchTransform(QtWidgets.QWidget):
         qtlib.setTextEditHeight(self.promptWidget.txtPreview, 5, "min")
         self.promptWidget.connectDefaultPreviewUpdate()
         self.promptWidget.refreshPreviewClicked.connect(self.refreshPreview)
-        layout.addWidget(self.promptWidget, row, 0, 1, 4)
+        layout.addWidget(self.promptWidget, row, 0, 1, 5)
         layout.setRowStretch(row, 1)
 
         row += 1
@@ -76,6 +77,10 @@ class BatchTransform(QtWidgets.QWidget):
         self.chkStorePrompts = QtWidgets.QCheckBox("Store Prompts")
         layout.addWidget(self.chkStorePrompts, row, 3)
 
+        self.chkCascade = QtWidgets.QCheckBox("Cascade Updates")
+        self.chkCascade.setChecked(True)
+        layout.addWidget(self.chkCascade, row, 4)
+
         row += 1
         self.spinRounds = QtWidgets.QSpinBox()
         self.spinRounds.setRange(1, 100)
@@ -84,7 +89,7 @@ class BatchTransform(QtWidgets.QWidget):
         layout.addWidget(self.spinRounds, row, 1)
 
         row += 1
-        layout.addWidget(self.inferSettings, row, 0, 1, 4)
+        layout.addWidget(self.inferSettings, row, 0, 1, 5)
 
         groupBox = QtWidgets.QGroupBox("Transform Captions with LLM")
         groupBox.setLayout(layout)
@@ -124,6 +129,10 @@ class BatchTransform(QtWidgets.QWidget):
         if self.spinRounds.value() > 1:
             ops.append(f"Do {self.spinRounds.value()} rounds of transformations")
 
+        if self.chkCascade.isChecked():
+            ops.append(colorlib.htmlRed(f'Cascade and update all content that depends on written caption keys!'))
+
+
         return ops, True
 
 
@@ -138,10 +147,11 @@ class BatchTransform(QtWidgets.QWidget):
         task.prompts = prompts
         task.systemPrompt = self.promptWidget.systemPrompt.strip()
 
-        task.overwriteMode = self.cboOverwriteMode.currentData()
-        task.storePrompts  = self.chkStorePrompts.isChecked()
-        task.stripAround   = self.chkStripAround.isChecked()
-        task.stripMulti    = self.chkStripMulti.isChecked()
+        task.overwriteMode   = self.cboOverwriteMode.currentData()
+        task.storePrompts    = self.chkStorePrompts.isChecked()
+        task.cascadeEnabled  = self.chkCascade.isChecked()
+        task.stripAround     = self.chkStripAround.isChecked()
+        task.stripMulti      = self.chkStripMulti.isChecked()
         return task
 
 
@@ -155,11 +165,15 @@ class BatchTransformTask(BatchInferenceTask):
 
         self.overwriteMode = TRANSFORM_OVERWRITE_MODE_ALL
         self.storePrompts  = False
-        self.stripAround = True
-        self.stripMulti  = False
+        self.stripAround   = True
+        self.stripMulti    = False
 
         self.varParser = None
         self.writeKeys = None
+
+        self.cascadeEnabled = False
+        self.cascade = CascadeUpdate()
+        self.cascade.enableCache()
 
 
     def runPrepare(self, proc: InferenceProcess):
@@ -231,6 +245,9 @@ class BatchTransformTask(BatchInferenceTask):
 
             captionFile.addCaption(name, caption)
             changed = True
+
+            if self.cascadeEnabled:
+                self.cascade.saveCascade(imgFile, captionFile, FileTypeSelector.TYPE_CAPTIONS, name)
 
             if self.storePrompts:
                 prompt = next((conv[name] for conv in prompts if name in conv), None)
