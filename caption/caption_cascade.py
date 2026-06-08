@@ -138,7 +138,7 @@ class CaptionCascade(CaptionTab):
         self._clearTabs()
         self.btnSaveAll.setChanged(False)
 
-        parentTemplates = {}
+        parentTemplates: dict[str, str] = {}
         writableFound = False
         tabIndex = -1
 
@@ -155,14 +155,13 @@ class CaptionCascade(CaptionTab):
             templates = captionFile.cascade
 
             edited = self._editedTemplates.getFolderEntries(jsonFile, templates)
-            elidedName, tooltip = self._buildNameTooltip(name, len(templates), writable)
 
             tab = CascadeTab(self, jsonFile, name, writable, parentTemplates, templates)
             tab.entryEdited.connect(self._onEntryEdited)
 
             tabIndex = self.tabs.count()
-            self.tabs.addTab(tab, elidedName)
-            self.tabs.setTabToolTip(tabIndex, tooltip)
+            self.tabs.addTab(tab, self._buildTabName(tab, len(templates)))
+            self.tabs.setTabToolTip(tabIndex, self._buildTabTooltip(tab))
 
             parentTemplates.update(templates)
 
@@ -184,21 +183,23 @@ class CaptionCascade(CaptionTab):
 
         return exists, writable
 
-    def _buildNameTooltip(self, name: str, numEntries: int, writable: bool):
-        symbols = "📄" if name.endswith(".json") else "📁"
-        if not writable:
-            symbols += " 🚫"
+    def _buildTabName(self, tab: CascadeTab, numEntries: int) -> str:
+        parts: list[str] = ["📁"] if tab.isFolderTab() else ["📄"]
+        if not tab.writable:
+            parts.append("🚫")
 
-        elidedName = self._fontMetrics.elidedText(name, Qt.TextElideMode.ElideMiddle, 300)
+        name = self._fontMetrics.elidedText(tab.name, Qt.TextElideMode.ElideMiddle, 300)
+        parts.append(name)
 
-        if len(elidedName) < len(name):
-            tooltip = name if writable else f"{name} (No write permission)"
-        else:
-            tooltip = "" if writable else "No write permission"
+        if numEntries:
+            parts.append(f"({numEntries})")
 
-        entriesStr = f" ({numEntries})" if numEntries else ""
-        elidedName = f"{symbols} {elidedName}{entriesStr}"
-        return elidedName, tooltip
+        return " ".join(parts)
+
+    def _buildTabTooltip(self, tab: CascadeTab) -> str:
+        if tab.writable:
+            return tab.jsonPath
+        return tab.jsonPath + " (No write permission)"
 
 
     @Slot()
@@ -244,7 +245,7 @@ class CaptionCascade(CaptionTab):
 
         if reason != EntryEditReason.TextChanged:
             numEntries = sum(1 for entry in tab.entries if entry.overrideEnabled)
-            name, _ = self._buildNameTooltip(tab.name, numEntries, tab.writable)
+            name = self._buildTabName(tab, numEntries)
             self.tabs.setTabText(tabIndex, name)
 
         self._updateInheritance(tab, entry.key)
@@ -319,16 +320,14 @@ class CaptionCascade(CaptionTab):
 
 
 class EditedFolderTemplates:
-    ENTRY_REMOVED = object()
-
     def __init__(self):
-        self.folderTemplates: dict[str, dict[str, str | object]] = {}  # JSON Path => [Key => Template]
+        self.folderTemplates: dict[str, dict[str, str | None]] = {}  # JSON Path => [Key => Template]
 
     def setEntry(self, entry: CascadeTemplateEntry, reason: EntryEditReason):
-        jsonPath = entry.tab.jsonPath
-        if not jsonPath.endswith(CASCADE_FOLDER_FILE):
+        if not entry.tab.isFolderTab():
             return
 
+        jsonPath = entry.tab.jsonPath
         cachedTemplates = self.folderTemplates.get(jsonPath)
         if cachedTemplates is None:
             self.folderTemplates[jsonPath] = cachedTemplates = {}
@@ -337,17 +336,17 @@ class EditedFolderTemplates:
             case EntryEditReason.TextChanged | EntryEditReason.EntryAdded:
                 cachedTemplates[entry.key] = entry.text
             case EntryEditReason.EntryRemoved:
-                cachedTemplates[entry.key] = self.ENTRY_REMOVED
+                cachedTemplates[entry.key] = None
             case _:
                 raise ValueError(f"Invalid reason for changed cascade entry: {reason}")
 
     def getFolderEntries(self, jsonPath: str, templates: dict[str, str]) -> bool:
         if cachedTemplates := self.folderTemplates.get(jsonPath):
             for k, v in cachedTemplates.items():
-                if isinstance(v, str):
-                    templates[k] = v
-                else:
+                if v is None:
                     templates.pop(k, None)
+                else:
+                    templates[k] = v
 
             return True
         else:
@@ -411,7 +410,7 @@ class CascadeTab(QtWidgets.QWidget):
             entry.setOverrideEnabled(key in ownTemplates)
 
     @staticmethod
-    def _entrySortKey(item: tuple[str, dict]) -> tuple[int, str]:
+    def _entrySortKey(item: tuple[str, str]) -> tuple[int, str]:
         key = item[0]
         if key == FileTypeSelector.TYPE_TXT:
             return (2, "")
@@ -441,6 +440,10 @@ class CascadeTab(QtWidgets.QWidget):
             if item and (widget := item.widget()) and not isinstance(widget, CascadeTemplateEntry):
                 self._layoutEntries.takeAt(i)
                 widget.deleteLater()
+
+
+    def isFolderTab(self) -> bool:
+        return self.jsonPath.endswith(CASCADE_FOLDER_FILE)
 
 
     @property
