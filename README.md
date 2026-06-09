@@ -49,6 +49,7 @@
 - **📜 Captioning**: Describe media with text
   - Edit captions manually with drag-and-drop support <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#caption-window)</sup>
   - Save multiple captions in per-media JSON files <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#captions-in-text-files-vs-json-files)</sup>
+  - Cascading auto-updates from JSON to TXT files with hierarchical templates <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#cascading-updates)</sup>
   - *Multi-Edit Mode*: Edit captions across multiple files simultaneously <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#multi-edit-mode)</sup>
   - *Focus Mode*: Add the same tags to many files quickly <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#focus-mode)</sup>
   - Tag grouping, merging, sorting, filtering and replacement rules <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Captioning#rules)</sup>
