@@ -265,9 +265,11 @@ class Gallery(QtWidgets.QWidget):
     def updateStatusBar(self):
         filelist = self.tab.filelist
 
-        numFiles = filelist.getNumFiles()
+        numFiles   = filelist.getNumFiles()
         numFolders = self.cboFolders.count()
-        text = locale.format_string("%d Images in %d Folders", (numFiles, numFolders), grouping=True)
+        strFiles   = "File" if numFiles == 1 else "Files"
+        strFolders = "Folder" if numFolders == 1 else "Folders"
+        text = locale.format_string("%d %s in %d %s", (numFiles, strFiles, numFolders, strFolders), grouping=True)
 
         msgs = list[str]()
         if numSelectedFiles := len(filelist.selectedFiles):

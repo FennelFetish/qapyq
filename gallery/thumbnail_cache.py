@@ -8,6 +8,8 @@ from .gallery_model import GalleryModel
 
 
 class ThumbnailRequest:
+    __slots__ = ('time', '__weakref__')
+
     def __init__(self):
         self.time = 0
 
