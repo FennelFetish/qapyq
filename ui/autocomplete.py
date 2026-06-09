@@ -1027,6 +1027,10 @@ class TemplateAutoCompleteSource(NGramAutoCompleteSource):
         "#noprefix":        ":Prefixes",
         "#nosubsets":       ":Var:Sep:VarSep:WordSeps",
         "#nodup":           ":Separator",
+        "#add":             ":Tags:Separator",
+        "#addvar":          ":Var:Sep:VarSep",
+        "#subtract":        ":Tags:Separator",
+        "#subtractvar":     ":Var:Sep:VarSep",
         "#ifcontains":      ":Search:TrueText:FalseText",
         "#rules":           ":PresetPath",
     }

@@ -379,6 +379,13 @@ class TemplateVariableParser:
                 val2 = self._getValue(key)
                 return sep.join(val for v in (value, val2) if (val := v.strip()))
 
+            case "noprefix":
+                for prefix in self._getFuncArg(args, 0, "A ,a ,An ,an ,The ,the ").split(","):
+                    value = value.removeprefix(prefix)
+                return value
+
+            # Set operations on tags
+
             case "nodup":
                 sep = self._getFuncArg(args, 0, ", ")
                 return self._funcSplitProcess(value, sep, self._funcRemoveDuplicates)
@@ -391,11 +398,31 @@ class TemplateVariableParser:
                     sepsWord = self._getFuncArg(args, 3, " -")
                     return self._funcSplitProcess(value, sep, self._createFuncRemoveSubsets(val2, sepsOther, sepsWord))
 
-            case "noprefix":
-                for prefix in self._getFuncArg(args, 0, "A ,a ,The ,the ").split(","):
-                    value = value.removeprefix(prefix)
-                return value
+            case "add":
+                if len(args) > 0 and args[0]:
+                    sep = self._getFuncArg(args, 1, ", ")
+                    return self._funcSplitProcess(value, sep, self._createFuncAdd(args[0], sep.strip()))
 
+            case "addvar":
+                if len(args) > 0 and args[0]:
+                    val2 = self._getValue(args[0])
+                    sep = self._getFuncArg(args, 1, ", ")
+                    sepsOther = self._getFuncArg(args, 2, ",.:;")
+                    return self._funcSplitProcess(value, sep, self._createFuncAdd(val2, sepsOther))
+
+            case "subtract":
+                if len(args) > 0 and args[0]:
+                    sep = self._getFuncArg(args, 1, ", ")
+                    return self._funcSplitProcess(value, sep, self._createFuncSubtract(args[0], sep.strip()))
+
+            case "subtractvar":
+                if len(args) > 0 and args[0]:
+                    val2 = self._getValue(args[0])
+                    sep = self._getFuncArg(args, 1, ", ")
+                    sepsOther = self._getFuncArg(args, 2, ",.:;")
+                    return self._funcSplitProcess(value, sep, self._createFuncSubtract(val2, sepsOther))
+
+            # Conditions
             case "ifcontains":
                 if search := self._getFuncArg(args, 0, ""):
                     argIndex = 1 if (search in value) else 2
@@ -463,6 +490,34 @@ class TemplateVariableParser:
             return newElements
 
         return funcRemoveSubsets
+
+    def _createFuncAdd(self, otherValue: str, otherSeps: str):
+        sep = otherSeps[0]
+        otherValue = otherValue.translate(str.maketrans({
+            sepChar: sep for sepChar in otherSeps[1:]
+        }))
+
+        otherElements: list = [ele for e in otherValue.split(sep) if (ele := e.strip())]
+
+        def funcAdd(elements: list[str]):
+            seen = set(elements)
+            elements += [ele for ele in otherElements if not (ele in seen or seen.add(ele))]
+            return elements
+
+        return funcAdd
+
+    def _createFuncSubtract(self, otherValue: str, otherSeps: str):
+        sep = otherSeps[0]
+        otherValue = otherValue.translate(str.maketrans({
+            sepChar: sep for sepChar in otherSeps[1:]
+        }))
+
+        otherElements: set = {ele for e in otherValue.split(sep) if (ele := e.strip())}
+
+        def funcSubtract(elements: list[str]):
+            return [ele for ele in elements if ele not in otherElements]
+
+        return funcSubtract
 
 
     # === Utility Functions ===
