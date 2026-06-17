@@ -622,7 +622,7 @@ class SearchReplaceFilter:
             self.matchGroups: dict[int, str] = dict()
 
         @override
-        def _getImgProperties(self, var: str) -> str | None:
+        def _getImgProperties(self, var: str, args) -> str | None:
             try:
                 val = self.matchGroups.get(int(var))
                 if val is not None:
@@ -630,7 +630,7 @@ class SearchReplaceFilter:
             except ValueError:
                 pass
 
-            return super()._getImgProperties(var)
+            return super()._getImgProperties(var, args)
 
         def getReplacement(self, replacement: str, match: re.Match) -> str:
             self.matchGroups.clear()

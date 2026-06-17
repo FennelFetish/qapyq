@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 
 class TemplateVariableParser:
-    PATTERN_VARS        = re.compile( r'{{([^}]+)}}' )
+    PATTERN_VARS        = re.compile( r'{{((?:[^}\\]|\\.)*?)}}' )  # Matches '{{...}}' and allows escaping '\}'
     PATTERN_MULTI_SPACE = re.compile( r'(?m) {2,}|\n{2,}' )
 
     PREFIX_KEEP_VAR     = "!"
@@ -75,7 +75,8 @@ class TemplateVariableParser:
     def _replace(self, match: re.Match) -> str:
         return self._getValue(match.group(1))
 
-    def _replaceSpace(self, match: re.Match) -> str:
+    @staticmethod
+    def _replaceSpace(match: re.Match) -> str:
         return match.group(0)[0]
 
 
@@ -167,16 +168,24 @@ class TemplateVariableParser:
 
 
     def _getValue(self, var: str) -> str:
-        varOrig = var
-        var = var.lstrip()
+        try:
+            expr = ExpressionParser.parse(var)
+            return self._evalExpression(expr)
+        except ValueError as ex:
+            print(f"Template parser error: {ex}")
+            return ""
+
+    def _evalSubExpression(self, sub: 'Sub') -> str:
+        return sub.literal if sub.expr is None else self._evalExpression(sub.expr)
+
+    def _evalExpression(self, expr: 'Expr') -> str:
+        var = self._evalSubExpression(expr.name).strip()
+        args = [self._evalSubExpression(arg) for arg in expr.args]
 
         optional = True
         if var.startswith(self.PREFIX_KEEP_VAR):
             var = var[len(self.PREFIX_KEEP_VAR):].lstrip()
             optional = False
-
-        var, *funcs = var.split("#")
-        var = var.strip()
 
         value = self._tempOverrides.get(var)
         if value is None:
@@ -196,20 +205,20 @@ class TemplateVariableParser:
                 value = self._readTextFile()
 
             else:
-                value = self._getImgProperties(var)
+                value = self._getImgProperties(var, args)
                 if value is None:
-                    value = self._getMoreValues(var)
+                    value = self._getMoreValues(var, args)
 
             if not value:
                 self.missingVars.add(var)
                 value = ""
 
-        for func in funcs:
+        for func in expr.funcs:
             value = self._applyFunction(value, func) # Don't strip func (avoid changing arguments with spaces)
 
         if value or optional:
             return value
-        return "{{" + varOrig + "}}"
+        return "".join(("{{", str(expr), "}}"))
 
 
     def _readTextFile(self) -> str | None:
@@ -224,7 +233,7 @@ class TemplateVariableParser:
         return None
 
 
-    def _getImgProperties(self, var: str) -> str | None:
+    def _getImgProperties(self, var: str, args: list[str]) -> str | None:
         match var:
             case "path":
                 return os.path.splitext(self.imgPath)[0]
@@ -244,7 +253,10 @@ class TemplateVariableParser:
                 path = os.path.dirname(self.imgPath)
                 rest = var[len("folder"):]
                 if not rest:
-                    return os.path.basename(path)
+                    if basePath := ":".join(args):
+                        return self.makeRelPath(path, basePath)
+                    else:
+                        return os.path.basename(path)
 
                 if rest.startswith("-"):
                     up = int( rest[1:] )
@@ -252,33 +264,32 @@ class TemplateVariableParser:
                         path = os.path.dirname(path)
                     return os.path.basename(path)
 
-                if rest.startswith(":"):
-                    basePath = rest[1:]
-                    return self.makeRelPath(path, basePath)
             except ValueError:
                 return None
 
         return None
 
 
-    def _getMoreValues(self, var: str) -> str | None:
+    def _getMoreValues(self, var: str, args: list[str]) -> str | None:
         match var:
             case "date":
                 return datetime.now().strftime('%Y%m%d')
             case "time":
                 return datetime.now().strftime('%H%M%S')
 
-        if args := self._matchNameGetArgs(var, "load"):
-            return self.storedVars.get(args[0].strip(), "")
+            case "load":
+                if args:
+                    return self.storedVars.get(args[0].strip(), "")
 
-        if args := self._matchNameGetArgs(var, "static"):
-            return args[0]
+            case "static":
+                if args:
+                    return args[0]
 
-        if args := self._matchNameGetArgs(var, "coinflip"):
-            valTrue  = self._getFuncArg(args, 0, "1")
-            valFalse = self._getFuncArg(args, 1, "0")
-            chance   = self._getFuncArgInt(args, 2, 2)
-            return valTrue if random.random() < 1/chance else valFalse
+            case "coinflip":
+                valTrue  = self._getFuncArg(args, 0, "1")
+                valFalse = self._getFuncArg(args, 1, "0")
+                chance   = self._getFuncArgInt(args, 2, 2)
+                return valTrue if random.random() < 1/chance else valFalse
 
         return None
 
@@ -307,11 +318,13 @@ class TemplateVariableParser:
             return default
 
 
-    def _applyFunction(self, value: str, func: str) -> str:
-        func, *args = func.split(":")
-        func = func.strip()
+    def _applyFunction(self, value: str, func: 'Func') -> str:
+        funcName = self._evalSubExpression(func.name).strip()
+        args = [self._evalSubExpression(arg) for arg in func.args]
 
-        match func:
+        match funcName:
+            # String functions
+
             case "store":
                 if var := self._getFuncArg(args, 0, "").strip():
                     self.storedVars[var] = value
@@ -338,7 +351,6 @@ class TemplateVariableParser:
                     count = self._getFuncArgInt(args, 2, -1)
                     return value.replace(args[0], args[1], count)
 
-            # TODO: Second layer of highlighting for loaded variables? (underline)
             case "replacevar":
                 if len(args) > 1 and args[0]:
                     val2 = self._getValue(args[1])
@@ -346,6 +358,30 @@ class TemplateVariableParser:
                     return value.replace(args[0], val2, count)
 
             # TODO: replacerand  (replace with one of randomly selected)
+
+            case "join":
+                if len(args) > 0 and args[0]:
+                    key = args[0].strip()
+                    sep = self._getFuncArg(args, 1, ", ")
+                    val2 = self._getValue(key)
+                    return sep.join(val for v in (value, val2) if (val := v.strip()))
+
+            case "append":
+                if val2 := self._getFuncArg(args, 0, ""):
+                    sep = self._getFuncArg(args, 1, ", ")
+                    return sep.join(val for v in (value, val2) if (val := v.strip()))
+
+            case "prepend":
+                if val2 := self._getFuncArg(args, 0, ""):
+                    sep = self._getFuncArg(args, 1, ", ")
+                    return sep.join(val for v in (val2, value) if (val := v.strip()))
+
+            case "noprefix":
+                for prefix in self._getFuncArg(args, 0, "A ,a ,An ,an ,The ,the ").split(","):
+                    value = value.removeprefix(prefix)
+                return value
+
+            # List functions
 
             case "reverse":
                 sep = self._getFuncArg(args, 0, ", ")
@@ -369,20 +405,6 @@ class TemplateVariableParser:
                 count = max(1, self._getFuncArgInt(args, 0, 1))
                 sep = self._getFuncArg(args, 1, ", ")
                 return self._funcSplitProcess(value, sep, lambda elements: elements[:-count])
-
-            case "join":
-                if not args:
-                    return value
-
-                key = args[0].strip()
-                sep = self._getFuncArg(args, 1, ", ")
-                val2 = self._getValue(key)
-                return sep.join(val for v in (value, val2) if (val := v.strip()))
-
-            case "noprefix":
-                for prefix in self._getFuncArg(args, 0, "A ,a ,An ,an ,The ,the ").split(","):
-                    value = value.removeprefix(prefix)
-                return value
 
             # Set operations on tags
 
@@ -551,6 +573,177 @@ class TemplateVariableParser:
 
         sepIndex = pathTemplate.rfind(os.sep, 0, varIndex) + 1
         return pathTemplate[:sepIndex], pathTemplate[sepIndex:]
+
+
+
+class Sub(NamedTuple):
+    expr: 'Expr | None' = None
+    literal: str = ""
+
+    def __str__(self) -> str:
+        return f"[{self.expr}]" if self.expr else self.literal
+
+    def print(self, level: int):
+        indent = "  " * level
+        if self.expr:
+            print(f"{indent}sub expr:")
+            self.expr.print(level + 1)
+        else:
+            print(f"{indent}sub literal: '{self.literal}'")
+
+class Func(NamedTuple):
+    name: Sub
+    args: list[Sub]
+
+    def __str__(self) -> str:
+        return "#" + ":".join(str(sub) for sub in (self.name, *self.args))
+
+    def print(self, level: int):
+        indent = "  " * level
+        print(f"{indent}func name:")
+        self.name.print(level + 1)
+        if self.args:
+            print(f"{indent}func args:")
+            for arg in self.args:
+                arg.print(level + 1)
+
+class Expr(NamedTuple):
+    name:  Sub
+    args:  list[Sub]
+    funcs: list[Func]
+
+    def __str__(self):
+        text = ":".join(str(sub) for sub in (self.name, *self.args))
+        text += "".join(str(func) for func in self.funcs)
+        return text
+
+    def print(self, level: int = 0):
+        indent = "  " * level
+        print(f"{indent}expr name:")
+        self.name.print(level + 1)
+        if self.args:
+            print(f"{indent}expr args:")
+            for arg in self.args:
+                arg.print(level + 1)
+        if self.funcs:
+            print(f"{indent}expr funcs:")
+            for func in self.funcs:
+                func.print(level + 1)
+
+
+class ExpressionParser:
+    # Grammar:
+
+    # expr      := sub arg* func*
+    # arg       := ':' sub
+    # func      := '#' sub arg*
+    # sub       := ws '[' expr ']' ws  |  literal
+    # literal   := ( escaped | [^#:\[\]\\}] )*
+    # escaped   := '\' [#:\[\]\\}n]
+    # ws        := [ \t]*
+
+    STOP_PATTERN    = re.compile(r"[:#\[\]\\]")
+    REPLACE_ESCAPED = re.compile(r"\\([:#\[\]}n])")
+
+    def __init__(self, text: str):
+        self.text = text
+        self.pos = 0
+
+        self._stopsIter = self.STOP_PATTERN.finditer(text)
+
+    @staticmethod
+    def parse(text: str) -> Expr:
+        parser = ExpressionParser(text)
+        expr, prefix = parser._readExpr()
+
+        if prefix:
+            raise ValueError(f"Unexpected suffix: {prefix!r}")
+
+        return expr
+
+
+    def _readExpr(self) -> tuple[Expr, str]:
+        sub, prefix = self._readSub()
+
+        args: list[Sub] = []
+        while prefix == ":":
+            arg, prefix = self._readSub()
+            args.append(arg)
+
+        funcs: list[Func] = []
+        while prefix == "#":
+            func, prefix = self._readFunc()
+            funcs.append(func)
+
+        return Expr(sub, args, funcs), prefix
+
+    def _readFunc(self) -> tuple[Func, str]:
+        sub, prefix = self._readSub()
+
+        args = []
+        while prefix == ":":
+            argSub, prefix = self._readSub()
+            args.append(argSub)
+
+        return Func(sub, args), prefix
+
+    def _readSub(self) -> tuple[Sub, str]:
+        text, prefix = self._readNext()
+        if prefix != "[":
+            # Prefix may be empty when end of text was reached
+            return Sub(literal=text), prefix
+
+        # Parse sub expression:
+        # Check whitespace before sub expression
+        if len(text) > 0 and not text.isspace():
+            raise ValueError(f"Unexpected '[' after text: {text!r}")
+
+        expr, prefix = self._readExpr()
+        if prefix != "]":
+            raise ValueError("Unclosed sub expression: Expected ']'")
+
+        # Read rest of whitespace until next stop char
+        text, prefix = self._readNext()
+        if len(text) > 0 and not text.isspace():
+            raise ValueError(f"Unexpected text after ']': {text!r}")
+
+        return Sub(expr=expr), prefix
+
+
+    def _readNext(self) -> tuple[str, str]:
+        escapePos = -1
+
+        try:
+            # Get next stop char, but skip escaped
+            while True:
+                stopMatch = next(self._stopsIter)
+                suffix = stopMatch.group()
+
+                if stopMatch.start() != escapePos:
+                    if suffix == "\\":
+                        escapePos = stopMatch.end()
+                    else:
+                        break
+
+            text = self.text[self.pos : stopMatch.start()]
+            self.pos = stopMatch.end()
+
+        except StopIteration:
+            suffix = ""
+            text = self.text[self.pos : ]
+            self.pos = len(self.text)
+
+        # If any '\' exists in text
+        if escapePos > 0:
+            text = self.REPLACE_ESCAPED.sub(self._replaceEscaped, text)
+
+        # The suffix (stop char) becomes the next prefix
+        return text, suffix
+
+    @staticmethod
+    def _replaceEscaped(match: re.Match) -> str:
+        char = match.group(1)
+        return "\n" if char == "n" else char
 
 
 

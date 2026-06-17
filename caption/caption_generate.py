@@ -259,14 +259,14 @@ class CurrentVariableParser(TemplateVariableParser):
     def updateRefinedCaption(self, caption: str):
         self.refinedCaption = self.ctx.rulesProcessor().process(caption)
 
-    def _getImgProperties(self, var: str) -> str | None:
+    def _getImgProperties(self, var: str, args) -> str | None:
         match var:
             case self.CURRENT_VAR_NAME:
                 return self.ctx.text.getCaption()
             case self.REFINED_VAR_NAME:
                 return self.refinedCaption
 
-        return super()._getImgProperties(var)
+        return super()._getImgProperties(var, args)
 
     @classmethod
     def currentInPrompt(cls, prompt: str) -> bool:
@@ -297,7 +297,7 @@ class FrozenCurrentVariableParser(TemplateVariableParser):
 
         self.rulesProcessor = context.createRulesProcessor() if needsRefined else None
 
-    def _getImgProperties(self, var: str) -> str | None:
+    def _getImgProperties(self, var: str, args) -> str | None:
         match var:
             case CurrentVariableParser.CURRENT_VAR_NAME:
                 return self.currentCaptions.get(self.imgPath)
@@ -306,7 +306,7 @@ class FrozenCurrentVariableParser(TemplateVariableParser):
                     return self.rulesProcessor.process(caption)
                 return None
 
-        return super()._getImgProperties(var)
+        return super()._getImgProperties(var, args)
 
 
 

@@ -445,6 +445,68 @@ class CascadeTest(unittest.TestCase):
 
 
 
+    TEMPLATES_SUBEXPR = {
+        "tags.up":      "up",
+        "tags.A":       "{{static:abc#append:[tags.0]#append:[static:def]}}",
+        "tags.B":       "{{static:[tags.up#upper]#join:tags.0}}",
+        "text":         "{{tags.A#append:[tags.B#lower]#append:[tags.miss#shuffle]}}"
+    }
+
+    def testRenderSubexpr(self):
+        expectedText = "abc, tag, def, up, tag"
+        expectedTags = {
+            "0": "tag",
+            "A": "abc, tag, def",
+            "B": "UP, tag"
+        }
+
+        self.assertCascadeUpdate(self.TEMPLATES_SUBEXPR, "tags.0", "tag", expectedTags, expectedText)
+
+    def testGraphSubexpr(self):
+        graph = createGraph(self.TEMPLATES_SUBEXPR)
+        nodes = graph.nodes
+
+        self.assertNodeKeys(nodes.values(), "tags.0", "tags.up", "tags.A", "tags.B", "tags.miss", "text")
+
+        self.assertNodeKeys(nodes["tags.0"].inNodes)
+        self.assertNodeKeys(nodes["tags.0"].outNodes, "tags.A", "tags.B")
+
+        self.assertNodeKeys(nodes["tags.up"].inNodes)
+        self.assertNodeKeys(nodes["tags.up"].outNodes, "tags.B")
+
+        self.assertNodeKeys(nodes["tags.A"].inNodes, "tags.0")
+        self.assertNodeKeys(nodes["tags.A"].outNodes, "text")
+
+        self.assertNodeKeys(nodes["tags.B"].inNodes, "tags.0", "tags.up")
+        self.assertNodeKeys(nodes["tags.B"].outNodes, "text")
+
+        self.assertNodeKeys(nodes["tags.miss"].inNodes)
+        self.assertNodeKeys(nodes["tags.miss"].outNodes, "text")
+
+        self.assertNodeKeys(nodes["text"].inNodes, "tags.A", "tags.B", "tags.miss")
+        self.assertNodeKeys(nodes["text"].outNodes)
+
+    def testSortSubexpr(self):
+        graph = createGraph(self.TEMPLATES_SUBEXPR)
+        index = sortGraph(graph, "tags.0")
+
+        self.assertLess(index["tags.0"], index["tags.A"])
+        self.assertLess(index["tags.0"], index["tags.B"])
+
+        self.assertLess(index["tags.up"], index["tags.B"])
+
+        self.assertLess(index["tags.A"], index["text"])
+        self.assertLess(index["tags.B"], index["text"])
+
+        self.assertIsNone(index.get("tags.miss"))
+
+    def testUpstreamSubexpr(self):
+        graph = createGraph(self.TEMPLATES_SUBEXPR)
+        self.assertUpstreamNodes(graph, CaptionFile(""), graph.nodes["tags.0"], "tags.up")
+        self.assertMissingNodes(graph, CaptionFile(""), graph.nodes["tags.0"], "tags.miss")
+
+
+
     TEMPLATES_FOLDER_1 = {
         "tags.A":       "{{tags.0#upper}}-1",
         "tags.name":    "default-name",

@@ -193,7 +193,7 @@ class ExportWidget(QtWidgets.QWidget):
         return widget
 
 
-    @Slot()
+    @Slot(int)
     def _onSaveModeChanged(self, index: int):
         enabled = (self.cboSaveMode.itemData(index) == self.MODE_AUTO)
         self.txtPathSample.setEnabled(enabled)
@@ -427,7 +427,7 @@ Examples:
     def overwriteFiles(self, overwrite: bool):
         self.chkOverwrite.setChecked(overwrite)
 
-    @Slot()
+    @Slot(bool)
     def _onOverwriteToggled(self, state: bool):
         style = f"color: {colorlib.RED}" if state else None
         self.chkOverwrite.setStyleSheet(style)
@@ -445,7 +445,7 @@ Examples:
     def skipExistingFiles(self, skip: bool):
         self.chkSkipExisting.setChecked(skip)
 
-    @Slot()
+    @Slot(bool)
     def _onSkipExistingToggled(self, state: bool):
         if state:
             self.overwriteFiles = False
@@ -472,6 +472,7 @@ Examples:
             self.txtPreview.setPlainText(text)
             self.highlighter.highlight(self.txtPathTemplate, self.txtPreview, varPositions, not self.isEnabled())
 
+    @Slot()
     def _choosePath(self):
         path = self.txtPathTemplate.toPlainText()
         path = path.replace("{{path}}", "{{name}}")
@@ -677,7 +678,7 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
 
 
     @override
-    def _getImgProperties(self, var: str) -> str | None:
+    def _getImgProperties(self, var: str, args) -> str | None:
         match var:
             case "w": return str(self.width)
             case "h": return str(self.height)
@@ -688,7 +689,7 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
             case "fps": return f"{self.fps:.0f}"     if self.exportFileType == ExportFileType.Video else "0"
             case "speed": return f"{self.speed:.2f}" if self.exportFileType == ExportFileType.Video else "0.00"
 
-        return super()._getImgProperties(var)
+        return super()._getImgProperties(var, args)
 
 
 
@@ -810,12 +811,12 @@ class ScalePresetComboBox(QtWidgets.QComboBox):
         index = max(index, 0)
         self.setCurrentIndex(index)
 
-    @Slot()
+    @Slot(str)
     def _onPresetChanged(self, presetName: str):
         Config.inferSelectedPresets[self.CONFIG_ATTR] = presetName
 
-    @Slot()
-    def _onPresetListChanged(self, attr):
+    @Slot(str)
+    def _onPresetListChanged(self, attr: str):
         if attr == self.CONFIG_ATTR:
             with QSignalBlocker(self):
                 self.reloadPresets()

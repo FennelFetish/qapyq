@@ -1024,6 +1024,8 @@ class TemplateAutoCompleteSource(NGramAutoCompleteSource):
         "#shufflekeep":     ":Count:Separator",
         "#reverse":         ":Separator",
         "#join":            ":Var:Separator",
+        "#append":          ":Text:Separator",
+        "#prepend":         ":Text:Separator",
         "#noprefix":        ":Prefixes",
         "#nosubsets":       ":Var:Sep:VarSep:WordSeps",
         "#nodup":           ":Separator",

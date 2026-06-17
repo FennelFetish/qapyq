@@ -312,9 +312,9 @@ class DestinationPathVariableParser(export.ExportVariableParser):
         self.flatFolders: bool = False
 
     @override
-    def _getImgProperties(self, var: str) -> str | None:
+    def _getImgProperties(self, var: str, args) -> str | None:
         if var != "basepath":
-            return super()._getImgProperties(var)
+            return super()._getImgProperties(var, args)
 
         if self.flatFolders:
             return None
