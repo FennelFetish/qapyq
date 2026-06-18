@@ -837,13 +837,14 @@ class CaptionRulesProcessor:
         if settings.combineTags:
             captions = self.combineFilter.filterCaptions(captions)
 
+        # Remove implications before removing subsets (before removing antecedents)
+        if self.removeImplications and settings.removeImplications:
+            captions = self.implicationFilter.filterCaptions(captions)
+
         if self.removeDup and settings.removeDuplicates:
             # Remove subsets after banning, so no tags are wrongly merged and removed with banned tags.
             captions = self.subsetFilter.filterCaptions(captions)
             captions = self.dupFilter.filterCaptions(captions) # SubsetFilter won't remove exact duplicates
-
-        if self.removeImplications and settings.removeImplications:
-            captions = self.implicationFilter.filterCaptions(captions)
 
         # Strip and remove empty captions
         captions = (cap for c in captions if (cap := c.strip()))
