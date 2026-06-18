@@ -570,12 +570,11 @@ class ConditionalFilterRule:
 
 
 class RuleParams(QtWidgets.QHBoxLayout):
-    def __init__(self, defs: dict[str, ConditionDef] | dict[str, ActionDef], signalUpdate, firstStretch=1):
+    def __init__(self, defs: dict[str, ConditionDef] | dict[str, ActionDef], signalUpdate):
         super().__init__()
         self.setContentsMargins(0, 0, 0, 0)
         self._defs = defs
         self.signalUpdate = signalUpdate
-        self.firstStretch = firstStretch
 
         self.txtParams = list[QtWidgets.QLineEdit]()
         self._definition: ConditionDef | ActionDef = None
@@ -596,9 +595,11 @@ class RuleParams(QtWidgets.QHBoxLayout):
     def updateParams(self):
         numParams = self._definition.numParams
         params = self._definition.params
+        sizes = self._definition.sizes
 
         # Update existing text fields
-        for i, txt in enumerate(self.txtParams[0:numParams]):
+        for i, txt in enumerate(self.txtParams[:numParams]):
+            self.setStretch(i, sizes[i])
             txt.setPlaceholderText(params[i])
             txt.setToolTip(params[i])
             txt.show()
@@ -607,8 +608,7 @@ class RuleParams(QtWidgets.QHBoxLayout):
             txt.hide()
 
         # Add missing text fields
-        startIndex = max(0, len(self.txtParams))
-        for i in range(startIndex, numParams):
+        for i in range(len(self.txtParams), numParams):
             txt = QtWidgets.QLineEdit()
             qtlib.setMonospace(txt)
             txt.setMinimumWidth(50)
@@ -617,8 +617,7 @@ class RuleParams(QtWidgets.QHBoxLayout):
             txt.textChanged.connect(lambda: self.signalUpdate.emit())
 
             self.txtParams.append(txt)
-            stretch = self.firstStretch if i==0 else 1
-            self.addWidget(txt, stretch)
+            self.addWidget(txt, stretch=sizes[i])
 
         # Set tab order
         if parentWidget := self.parentWidget():
@@ -686,7 +685,7 @@ class RuleCondition(QtWidgets.QWidget):
 
         layout.addWidget(QtWidgets.QLabel("If:"))
 
-        self.params = RuleParams(CONDITIONS, self.conditionUpdated, 10)
+        self.params = RuleParams(CONDITIONS, self.conditionUpdated)
         layout.addWidget(self.params.cboDefinitions)
         layout.addLayout(self.params)
 
@@ -790,7 +789,7 @@ class ConditionVariableParser:
 
 
 def splitParams(paramText: str) -> list[str]:
-    return [p for p in paramText.split(SEP)]
+    return paramText.split(SEP)
 
 def splitParamsNonEmpty(paramText: str) -> list[str]:
     return [p for p in paramText.split(SEP) if p]
@@ -872,6 +871,10 @@ def createCondNumTagsPresent(params: list[str]) -> ConditionFunc:
     minTags = getIntParam(params[1], 1)
     maxTags = getIntParam(params[2], 2**31)
 
+    if minTags > maxTags:
+        print("Warning: Minimum parameter is larger than maximum (\"Some tags present\" condition)")
+        return falseCondition
+
     def condNumTagsPresent(tags: list[str]) -> ConditionResult:
         foundTags = [tag for tag in tags if tag in searchSet]
         if minTags <= len(foundTags) <= maxTags:
@@ -908,11 +911,48 @@ def createCondAnyStringsPresent(params: list[str]) -> ConditionFunc:
     return condAnyStringsPresent
 
 
+def createCondAllLengthsBetween(params: list[str]) -> ConditionFunc:
+    minLenParam = getIntParam(params[0], 0)
+    maxLenParam = getIntParam(params[1], 2**31)
+
+    if minLenParam > maxLenParam:
+        print("Warning: Minimum parameter is larger than maximum (\"All tag lengths between\" condition)")
+        return falseCondition
+
+    def condAllLengthsBetween(tags: list[str]) -> ConditionResult:
+        minLen = min((len(tag) for tag in tags), default=0)
+        maxLen = max((len(tag) for tag in tags), default=0)
+        if minLen >= minLenParam and maxLen <= maxLenParam:
+            return True, [str(minLen), str(maxLen)]
+        else:
+            return False, None
+
+    return condAllLengthsBetween
+
+
+def createCondAnyTagContainsRegex(params: list[str]) -> ConditionFunc:
+    try:
+        pattern = re.compile(params[0], re.IGNORECASE)
+    except re.error:
+        print(f"Warning: Invalid regex pattern: '{params[0]}' (\"Any tag contains regex\" condition)")
+        return falseCondition
+
+    def condAnyTagContainsRegex(tags: list[str]) -> ConditionResult:
+        for tag in tags:
+            if match := pattern.search(tag):
+                return True, list(match.groups())
+
+        return False, None
+
+    return condAnyTagContainsRegex
+
+
 
 class ConditionDef:
-    def __init__(self, name: str, factory: Callable, params: list[str]):
+    def __init__(self, name: str, factory: Callable, params: list[str], sizes: list[int] | None = None):
         self.name = name
         self.params = params
+        self.sizes = sizes or ([1] * len(params))
         self.factory = factory
 
     @property
@@ -923,9 +963,11 @@ class ConditionDef:
 CONDITIONS = {
     "AllTagsPresent":       ConditionDef("All tags present", createCondAllTagsPresent, ["tags"]),
     "AnyTagsPresent":       ConditionDef("Any tags present", createCondAnyTagsPresent, ["tags"]),
-    "NumTagsPresent":       ConditionDef("Some tags present", createCondNumTagsPresent, ["tags", "min", "max"]),
+    "NumTagsPresent":       ConditionDef("Some tags present", createCondNumTagsPresent, ["tags", "min", "max"], [10, 1, 1]),
     "AnyWordsPresent":      ConditionDef("Any words present", createCondAnyWordsPresent, ["words"]),
-    "AnyStringsPresent":    ConditionDef("Any strings present", createCondAnyStringsPresent, ["strings"])
+    "AnyStringsPresent":    ConditionDef("Any strings present", createCondAnyStringsPresent, ["strings"]),
+    "AllTagLengthsBetween": ConditionDef("All tag lengths between", createCondAllLengthsBetween, ["min", "max"]),
+    "AnyTagContainsRegex":  ConditionDef("Any tag contains regex", createCondAnyTagContainsRegex, ["pattern"]),
 }
 
 # TODO: Any superset present (words checked as subsets)
@@ -954,7 +996,7 @@ def createActionRemoveTags(params: list[str]) -> ActionFunc:
 
 
 def createActionRemoveTagsContaining(params: list[str]) -> ActionFunc:
-    search = [param for param in splitParams(params[0]) if param]
+    search = splitParamsNonEmpty(params[0])
 
     def actRemoveTagsContaining(varParser: ConditionVariableParser, tags: list[str]) -> list[str]:
         parsedSearch = [varParser.parse(s) for s in search]
@@ -1062,6 +1104,7 @@ class ActionDef:
     def __init__(self, name: str, factory: Callable, params: list[str]):
         self.name = name
         self.params = params
+        self.sizes = [1] * len(params)
         self.factory = factory
 
     @property
