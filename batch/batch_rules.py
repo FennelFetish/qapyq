@@ -233,13 +233,27 @@ class BatchRules(QtWidgets.QWidget):
         scrollArea.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
         condReorderWidget.enableBorderScroll(scrollArea)
 
-        layout = QtWidgets.QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(scrollArea, 1)
+        layout = QtWidgets.QGridLayout()
+        layout.setContentsMargins(0, 0, 0, 1)
+        layout.setVerticalSpacing(2)
+        layout.setHorizontalSpacing(12)
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(1, 5)
+
+        layout.addWidget(scrollArea, 0, 0, 1, 2)
 
         btnAddConditional = QtWidgets.QPushButton("✚ Add Conditional Rule")
         btnAddConditional.clicked.connect(self._addConditionalClick)
-        layout.addWidget(btnAddConditional, 0, Qt.AlignmentFlag.AlignBottom)
+        layout.addWidget(btnAddConditional, 1, 0, Qt.AlignmentFlag.AlignBottom)
+
+        self.chkSidechainCond = QtWidgets.QCheckBox("Sidechain (Output Only)")
+        self.chkSidechainCond.setToolTip(
+            "When enabled, the input text is cleared and replaced by the output of conditional rules.\n"
+            "The conditions evaluate the original text, but actions create a fresh output instead. The sidechain output is always joined with comma.\n"
+            "Useful for flagging errors or contradictions for manual inspection - save the output under a separate key to keep the original intact."
+        )
+        self.chkSidechainCond.toggled.connect(self.updatePreview)
+        layout.addWidget(self.chkSidechainCond, 1, 1)
 
         widget = QtWidgets.QWidget()
         widget.setLayout(layout)
@@ -398,6 +412,7 @@ class BatchRules(QtWidgets.QWidget):
             self.chkSortCaptions.setChecked(preset.sortCaptions)
             self.chkSortNonGroupCaptions.setChecked(preset.sortNonGroupCaptions)
             self.chkWhitelistGroups.setChecked(preset.whitelistGroups)
+            self.chkSidechainCond.setChecked(preset.sidechainConditionals)
             self.tableReplace.setContent(preset.searchReplace)
             self.banWidget.setItems(preset.banned)
             self.wildcards = preset.wildcards
@@ -467,11 +482,14 @@ class BatchRules(QtWidgets.QWidget):
             self.chkWhitelistGroups.isChecked()
         )
 
+        groupGen = ((group.captionsExpandWildcards(self.wildcards), group.exclusivity, group.combineTags) for group in self.groups)
+        condGen  = (condRule.getFilterRule() for condRule in self.conditionals)
+
         rulesProcessor.setPrefixSuffix(prefix, suffix, prefixSep, suffixSep)
         rulesProcessor.setSearchReplacePairs(self.tableReplace.getContent())
         rulesProcessor.setBannedCaptions(self.bannedCaptions)
-        rulesProcessor.setCaptionGroups( (group.captionsExpandWildcards(self.wildcards), group.exclusivity, group.combineTags) for group in self.groups )
-        rulesProcessor.setConditionalRules(condRule.getFilterRule() for condRule in self.conditionals)
+        rulesProcessor.setCaptionGroups(groupGen)
+        rulesProcessor.setConditionalRules(condGen, self.chkSidechainCond.isChecked())
         return rulesProcessor
 
     @Slot()

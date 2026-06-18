@@ -866,5 +866,5 @@ class TemplateRulesProcessor:
         rulesProcessor.setSearchReplacePairs(preset.searchReplace)
         rulesProcessor.setBannedCaptions(preset.banned)
         rulesProcessor.setCaptionGroups(groupGenerator())
-        rulesProcessor.setConditionalRules(condRulesGenerator)
+        rulesProcessor.setConditionalRules(condRulesGenerator, preset.sidechainConditionals)
         return rulesProcessor

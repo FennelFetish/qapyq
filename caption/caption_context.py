@@ -147,7 +147,7 @@ class CaptionContext(QtWidgets.QTabWidget):
         rulesProcessor.setSearchReplacePairs(cfg.searchReplacePairs)
         rulesProcessor.setBannedCaptions(cfg.bannedCaptions)
         rulesProcessor.setCaptionGroups( (group.captionsExpandWildcards, group.exclusivity, group.combineTags) for group in self.groups.groups )
-        rulesProcessor.setConditionalRules(self.conditionals.getFilterRules())
+        rulesProcessor.setConditionalRules(self.conditionals.getFilterRules(), self.conditionals.sidechain)
         return rulesProcessor
 
 

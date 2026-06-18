@@ -4,6 +4,7 @@ sys.path.append( os.path.abspath(os.path.join(os.path.dirname(__file__), '..')) 
 import unittest, itertools
 from caption.caption_filter import CaptionRulesProcessor
 from caption.caption_preset import MutualExclusivity
+import caption.caption_conditionals as cond
 
 
 class BaseCaptionFilterTest(unittest.TestCase):
@@ -423,6 +424,68 @@ class CaptionFilterSearchReplaceTest(BaseCaptionFilterTest):
         caption  = 'The image contains a text reading "sub.web.site". A watermark "site.com" is in the corner.'
         expected = 'The image contains a text READING -subwebURL-. A WATERMARK -URLcom- is in the corner'
         self.assertProcessedEqual(caption, expected)
+
+
+
+class CaptionFilterConditionalsTest(BaseCaptionFilterTest):
+    def setUp(self):
+        seperator = ", "
+        removeDup = False
+        removeImplied = False
+        sortCaptions = False
+        sortNonGroup = False
+        whitelistGroups = False
+
+        self.rulesProcessor = CaptionRulesProcessor(seperator, removeDup, removeImplied, sortCaptions, sortNonGroup, whitelistGroups)
+        self.rulesProcessor.setCaptionGroups([])
+
+    def tearDown(self):
+        del self.rulesProcessor
+
+    @staticmethod
+    def _createRules():
+        rule1 = cond.ConditionalFilterRule()
+        rule1.setExpression("")
+        rule1.conditions["A"] = cond.createCondAllTagsPresent(["a"])
+        rule1.actions.append(cond.createActionAddTags(["b"]))
+
+        rule2 = cond.ConditionalFilterRule()
+        rule2.setExpression("")
+        rule2.conditions["A"] = cond.createCondAnyTagsPresent(["x, y, z"])
+        rule2.actions.append(cond.createActionAddTags(["_{{A}}_"]))
+
+        return (rule1, rule2)
+
+
+    def test_cond(self):
+        self.rulesProcessor.setConditionalRules(self._createRules(), False)
+
+        self.assertProcessedEqual("", "")
+        self.assertProcessedEqual("1, 2", "1, 2")
+
+        self.assertProcessedEqual("a", "a, b")
+        self.assertProcessedEqual("a, b", "a, b, b")
+        self.assertProcessedEqual("b, a", "b, a, b")
+
+        self.assertProcessedEqual("x", "x, _x_")
+        self.assertProcessedEqual("y, x", "y, x, _y_")
+
+        self.assertProcessedEqual("b, a, z, x, c", "b, a, z, x, c, b, _z_")
+
+    def test_cond_sidechain(self):
+        self.rulesProcessor.setConditionalRules(self._createRules(), True)
+
+        self.assertProcessedEqual("", "")
+        self.assertProcessedEqual("1, 2", "")
+
+        self.assertProcessedEqual("a", "b")
+        self.assertProcessedEqual("a, b", "b")
+        self.assertProcessedEqual("b, a", "b")
+
+        self.assertProcessedEqual("x", "_x_")
+        self.assertProcessedEqual("y, x", "_y_")
+
+        self.assertProcessedEqual("b, a, z, x, c", "b, _z_")
 
 
 

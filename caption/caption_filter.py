@@ -357,11 +357,18 @@ class ConditionalsFilter(CaptionFilter):
         self.rules = list[ConditionalFilterRule]()
         self.separator = ", "
 
-    def setup(self, rules: Iterable[ConditionalFilterRule], separator: str) -> None:
+        self.filterCaptions = self._filterCaptionsKeep
+
+    def setup(self, rules: Iterable[ConditionalFilterRule], separator: str, sidechain: bool) -> None:
         self.rules = list(rules)
         self.separator = separator
 
+        self.filterCaptions = self._filterCaptionsSidechain if sidechain else self._filterCaptionsKeep
+
     def filterCaptions(self, captions: list[str]) -> list[str]:
+        raise NotImplementedError()
+
+    def _filterCaptionsKeep(self, captions: list[str]) -> list[str]:
         for rule in self.rules:
             if varParser := rule.evaluateExpression(captions):
                 varParser.separator = self.separator
@@ -369,6 +376,17 @@ class ConditionalsFilter(CaptionFilter):
                     captions = action(varParser, captions)
 
         return captions
+
+    def _filterCaptionsSidechain(self, captions: list[str]) -> list[str]:
+        newCaptions = list[str]()
+
+        for rule in self.rules:
+            if varParser := rule.evaluateExpression(captions):
+                # Don't set varParser separator: Keep default separator (comma) for joining with {{var.all}}
+                for action in rule.actions:
+                    newCaptions = action(varParser, newCaptions)
+
+        return newCaptions
 
 
 
@@ -725,6 +743,8 @@ class CaptionRulesSettings:
 class CaptionRulesProcessor:
     def __init__(self, separator: str, removeDup: bool, removeImplications: bool, sortCaptions: bool, sortNonGroupCaptions: bool, whitelistGroups: bool):
         self.separator = separator
+        self.joinSeparator = separator
+
         self.removeDup = removeDup
         self.removeImplications = removeImplications
         self.sortCaptions = sortCaptions
@@ -775,8 +795,11 @@ class CaptionRulesProcessor:
             # Shared MatcherNode to split combined tags
             self.implicationFilter.setup(self.combineFilter.matcherNode)
 
-    def setConditionalRules(self, rules: Iterable[ConditionalFilterRule]) -> None:
-        self.conditionalsFilter.setup(rules, self.separator)
+    def setConditionalRules(self, rules: Iterable[ConditionalFilterRule], sidechain: bool) -> None:
+        self.conditionalsFilter.setup(rules, self.separator, sidechain)
+
+        # Always join sidechain tags with comma
+        self.joinSeparator = ", " if sidechain else self.separator
 
 
     def process(self, text: str, settings: CaptionRulesSettings = CaptionRulesSettings()) -> str:
@@ -827,7 +850,7 @@ class CaptionRulesProcessor:
 
         # If the caption already contains prefix or suffix as a tag in another place, and sorting is enabled,
         # that tag is sorted to front/back instead of prepending prefix/appending suffix.
-        text = self.separator.join(captions)
+        text = self.joinSeparator.join(captions)
 
         if settings.prefixSuffix:
             text = self.prefixSuffixFilter.filterText(text)

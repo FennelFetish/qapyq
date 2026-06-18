@@ -39,6 +39,8 @@ ActionFunc = Callable[[ConditionVariableParser, list[str]], list[str]]
 class CaptionConditionals(CaptionTab):
     def __init__(self, context):
         super().__init__(context)
+        self._emitUpdateEnabled = True
+
         self._build()
 
 
@@ -50,7 +52,7 @@ class CaptionConditionals(CaptionTab):
 
         reorderWidget = ManualStartReorderWidget()
         reorderWidget.setLayout(self._layout)
-        reorderWidget.orderChanged.connect(lambda: self.ctx.controlUpdated.emit())
+        reorderWidget.orderChanged.connect(self._emitUpdate)
         scrollArea = qtlib.RowScrollArea(reorderWidget, True)
         scrollArea.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
         reorderWidget.enableBorderScroll(scrollArea)
@@ -67,27 +69,53 @@ class CaptionConditionals(CaptionTab):
         barLayout.setContentsMargins(0, 1, 0, 1)
         barLayout.setSpacing(0)
 
-        btnAddRule = QtWidgets.QPushButton("✚ Add Conditional Rule")
-        btnAddRule.clicked.connect(self.addRule)
-        barLayout.addWidget(btnAddRule, 1)
+        barLayout.addLayout(self._buildBarLeft(), 2)
 
         self.lblStatus = QtWidgets.QLabel()
-        barLayout.addWidget(self.lblStatus, 2, Qt.AlignmentFlag.AlignCenter)
+        barLayout.addWidget(self.lblStatus, 3, Qt.AlignmentFlag.AlignCenter)
 
         self.filter = qtlib.LayoutFilter(self._layout, self._getFilterTexts)
         self.filter.setStatusLabel("Conditional Rules", self.lblStatus)
-        barLayout.addLayout(self.filter, 1)
+        barLayout.addLayout(self.filter, 2)
 
         frame = QtWidgets.QFrame()
         frame.setFrameStyle(QtWidgets.QFrame.Shape.Panel | QtWidgets.QFrame.Shadow.Sunken)
         frame.setLayout(barLayout)
         return frame
 
+    def _buildBarLeft(self):
+        btnAddRule = QtWidgets.QPushButton("✚ Add Conditional Rule")
+        btnAddRule.clicked.connect(self.addRule)
+
+        self.chkSidechain = QtWidgets.QCheckBox("Sidechain (Output Only)")
+        self.chkSidechain.setToolTip(
+            "When enabled, the input text is cleared and replaced by the output of conditional rules.\n"
+            "The conditions evaluate the original text, but actions create a fresh output instead. The sidechain output is always joined with comma.\n"
+            "Useful for flagging errors or contradictions for manual inspection - save the output under a separate key to keep the original intact."
+        )
+        self.chkSidechain.toggled.connect(self._emitUpdate)
+
+        layout = QtWidgets.QHBoxLayout()
+        layout.setSpacing(12)
+        layout.addWidget(btnAddRule, 1)
+        layout.addWidget(self.chkSidechain, 0)
+        return layout
+
+
+    @Slot()
+    def _emitUpdate(self):
+        if self._emitUpdateEnabled:
+            self.ctx.controlUpdated.emit()
+
 
     @staticmethod
     def _getFilterTexts(rule: ConditionalRule) -> Generator[str]:
         for entry in chain(rule.ruleConditions, rule.ruleActions):
             yield from entry.params.getFilterTexts()
+
+    @property
+    def sidechain(self) -> bool:
+        return self.chkSidechain.isChecked()
 
     @property
     def rules(self) -> Generator[ConditionalRule]:
@@ -100,11 +128,11 @@ class CaptionConditionals(CaptionTab):
     @Slot()
     def addRule(self) -> ConditionalRule:
         rule = ConditionalRule()
-        rule.ruleUpdated.connect(lambda: self.ctx.controlUpdated.emit())
+        rule.ruleUpdated.connect(self._emitUpdate)
         rule.removeClicked.connect(self.removeRule)
         self._layout.addWidget(rule)
         self.filter.updateStatus()
-        self.ctx.controlUpdated.emit()
+        self._emitUpdate()
         return rule
 
     @Slot()
@@ -112,7 +140,7 @@ class CaptionConditionals(CaptionTab):
         self._layout.removeWidget(rule)
         rule.deleteLater()
         self.filter.updateStatus()
-        self.ctx.controlUpdated.emit()
+        self._emitUpdate()
 
     def clearRules(self):
         for i in reversed(range(self._layout.count())):
@@ -130,24 +158,30 @@ class CaptionConditionals(CaptionTab):
 
 
     def updateState(self, tags: list[str]):
-        with QSignalBlocker(self):
-            for rule in self.rules:
-                rule.updateConditionStates(tags)
+        for rule in self.rules:
+            rule.updateConditionStates(tags)
 
 
     def saveToPreset(self, preset: CaptionPreset):
+        preset.sidechainConditionals = self.chkSidechain.isChecked()
         for rule in self.rules:
             presetRule = CaptionPresetConditional()
             rule.saveToPreset(presetRule)
             preset.conditionals.append(presetRule)
 
     def loadFromPreset(self, preset: CaptionPreset):
-        with QSignalBlocker(self):
+        try:
+            self._emitUpdateEnabled = False
+            self.chkSidechain.setChecked(preset.sidechainConditionals)
+
             with self.filter.postponeUpdates():
                 self.clearRules()
                 for presetRule in preset.conditionals:
                     ruleWidget = self.addRule()
                     ruleWidget.loadFromPreset(presetRule)
+
+        finally:
+            self._emitUpdateEnabled = True
 
 
 

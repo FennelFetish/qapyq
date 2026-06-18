@@ -25,6 +25,7 @@ class CaptionPreset:
         self.sortCaptions: bool             = True
         self.sortNonGroupCaptions: bool     = False
         self.whitelistGroups: bool          = False
+        self.sidechainConditionals: bool    = False
 
         self.groups         = list[CaptionPresetGroup]()
         self.wildcards      = dict[str, list[str]]()
@@ -57,6 +58,7 @@ class CaptionPreset:
             "sort_captions": self.sortCaptions,
             "sort_nongroup_captions": self.sortNonGroupCaptions,
             "whitelist_groups": self.whitelistGroups,
+            "sidechain_conditionals": self.sidechainConditionals,
             "groups": groupData,
             "wildcards": self.wildcards,
             "conditionals": conditionals,
@@ -84,6 +86,7 @@ class CaptionPreset:
         self.sortCaptions               = bool(data.get("sort_captions", True))
         self.sortNonGroupCaptions       = bool(data.get("sort_nongroup_captions", False))
         self.whitelistGroups            = bool(data.get("whitelist_groups", False))
+        self.sidechainConditionals      = bool(data.get("sidechain_conditionals", False))
         self.searchReplace              = data.get("search_replace", [])
         self.banned                     = data.get("banned", [])
         self.wildcards                  = data.get("wildcards", {})
