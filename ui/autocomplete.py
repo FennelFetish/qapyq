@@ -666,7 +666,9 @@ class TextEditCompleter:
 class TemplateTextEditCompleter(TextEditCompleter):
     MIN_PREFIX_LEN = 1
 
-    PUNCTUATION_TRANS = TextEditCompleter.createPunctuationTrans("#:{}")
+    PUNCTUATION_TRANS = TextEditCompleter.createPunctuationTrans("#:{}[]")  # overrides 'PUNCTUATION_TRANS' from TextEditCompleter
+    BLOCK_TRANS = str.maketrans("#[]", ":::")
+
 
     def __init__(self, textEdit: QPlainTextEdit, autoCompleteSources: list[AutoCompleteSource]):
         super().__init__(textEdit, autoCompleteSources, "}}")
@@ -694,8 +696,8 @@ class TemplateTextEditCompleter(TextEditCompleter):
         if text.rfind("}}", start+2, pos) >= 0:
             return ""  # Not inside block
 
-        for char in "#:":
-            start = max(start, text.rfind(char, start+1, pos))
+        blockText = text[start:pos].translate(self.BLOCK_TRANS)
+        start = max(start, blockText.rfind(":", 2))
 
         cursor.setPosition(start, QTextCursor.MoveMode.KeepAnchor)
         return cursor.selectedText()
