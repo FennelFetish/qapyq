@@ -204,13 +204,13 @@ class Gallery(QtWidgets.QWidget):
             cap.captionHighlight = captionCtx.highlight
             cap.separator        = captionCtx.settings.separator
 
-            cap.autoCompleteSources.append(captionCtx.groupAutoCompleteSource)
+            cap.autoCompleteSources = captionCtx.getAutoCompleteSources()
 
             if self.chkFilterCaptions.isChecked():
                 cap.filterNode      = captionCtx.groups.getGalleryFilterNode()
                 cap.rulesProcessor  = captionCtx.rulesProcessor()
 
-        if not self.isGridView:
+        elif not self.isGridView:
             cap.autoCompleteSources.append(getAutoCompleteSource(AutoCompleteSource.Type.Csv))
 
     def onCaptionFilterUpdated(self):

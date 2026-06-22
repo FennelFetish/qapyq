@@ -6,6 +6,7 @@ from ui.flow_layout import FlowLayout
 from .caption_tab import CaptionTab, MultiEditSupport
 from .caption_context import CaptionContext
 from .caption_container import CaptionContainer
+from .caption_text import NavigationTextEdit
 
 
 HELP = [
@@ -51,14 +52,14 @@ class CaptionFocus(CaptionTab):
         row = 0
         layout.addWidget(QtWidgets.QLabel("Focus on:"), row, 0)
 
-        self.txtFocusTags = QtWidgets.QLineEdit()
+        self.txtFocusTags = FocusTextEdit(self.separator, self.ctx.getAutoCompleteSources())
         qtlib.setMonospace(self.txtFocusTags)
         self.txtFocusTags.textChanged.connect(lambda: self.ctx.controlUpdated.emit())
         self.txtFocusTags.textChanged.connect(self.updateBubbles)
         layout.addWidget(self.txtFocusTags, row, 1, 1, 2)
 
         btnClear = QtWidgets.QPushButton("Clear")
-        btnClear.clicked.connect(lambda: self.txtFocusTags.setText(""))
+        btnClear.clicked.connect(lambda: self.txtFocusTags.setCaption(""))
         layout.addWidget(btnClear, row, 3)
 
         row += 1
@@ -96,7 +97,7 @@ class CaptionFocus(CaptionTab):
         layout.addWidget(lblHelp2, row, 0, 1, 4, Qt.AlignmentFlag.AlignCenter)
 
         row += 1
-        self.btnFocusEnable = FocusEnabledButton("Enable Keyboard Shortcuts")
+        self.btnFocusEnable = FocusEnabledButton("Enable &Keyboard Shortcuts")
         self.btnFocusEnable.installEventFilter(self.keyHandler)
         layout.addWidget(self.btnFocusEnable, row, 0, 1, 4)
 
@@ -118,20 +119,20 @@ class CaptionFocus(CaptionTab):
     def getFocusSet(self) -> set[str]:
         if not self._tabActive:
             return set()
-        return {tag for t in self.txtFocusTags.text().split(self.separator.strip()) if (tag := t.strip())}
+        return {tag for t in self.txtFocusTags.getCaption().split(self.separator.strip()) if (tag := t.strip())}
 
     def setFocusTags(self, tags: list[str]):
         text = self.separator.join(tags)
-        self.txtFocusTags.setText(text)
+        self.txtFocusTags.setCaption(text)
 
     def appendFocusTags(self, newTags: Iterable[str]):
-        focusTags = [tag for t in self.txtFocusTags.text().split(self.separator.strip()) if (tag := t.strip())]
+        focusTags = [tag for t in self.txtFocusTags.getCaption().split(self.separator.strip()) if (tag := t.strip())]
         numFocusTags = len(focusTags)
         focusTags.extend(tag for t in newTags if (tag := t.strip()) and (tag not in focusTags))
 
         if len(focusTags) != numFocusTags:
             text = self.separator.join(focusTags)
-            self.txtFocusTags.setText(text)
+            self.txtFocusTags.setCaption(text)
 
 
     @Slot()
@@ -156,7 +157,7 @@ class CaptionFocus(CaptionTab):
         self.bubbles.clear()
         self.bubbleLayout.clear()
 
-        text = self.txtFocusTags.text()
+        text = self.txtFocusTags.getCaption()
         if not text:
             return
 
@@ -265,6 +266,24 @@ class CaptionFocus(CaptionTab):
 
         event.setDropAction(Qt.DropAction.CopyAction)
         event.accept()
+
+
+
+class FocusTextEdit(qtlib.SingleLineTextEditMixin, NavigationTextEdit):
+    def keyPressEvent(self, event: QtGui.QKeyEvent):
+        match event.key():
+            case Qt.Key.Key_Return:
+                event.ignore()
+                return
+
+            case Qt.Key.Key_Tab:
+                # Completer inactive: Tab changes focus
+                if self.completer and not self.completer.isActive():
+                    event.ignore()
+                    return
+
+        super().keyPressEvent(event)
+
 
 
 class FocusBubble(QtWidgets.QFrame):

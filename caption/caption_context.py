@@ -41,6 +41,9 @@ class CaptionContext(QtWidgets.QTabWidget):
         self.settings = CaptionSettings(self)
         self.groups = CaptionGroups(self)
 
+        self._groupAutoCompleteSource = GroupNGramAutoCompleteSource()
+        self.controlUpdated.connect(self._updateGroupAutoComplete)
+
         from .caption_conditionals import CaptionConditionals
         self.conditionals = CaptionConditionals(self)
 
@@ -51,7 +54,7 @@ class CaptionContext(QtWidgets.QTabWidget):
         self.generate = CaptionGenerate(self)
 
         from .caption_text import CaptionTextEdit
-        self.text = CaptionTextEdit(self, self._setupAutoCompleteSources())
+        self.text = CaptionTextEdit(self, self.getAutoCompleteSources())
 
         self.addTab(self.settings, "Rules")
         self.addTab(self.groups, "Groups")
@@ -151,17 +154,13 @@ class CaptionContext(QtWidgets.QTabWidget):
         return rulesProcessor
 
 
-    def _setupAutoCompleteSources(self) -> list[AutoCompleteSource]:
-        self.groupAutoCompleteSource = GroupNGramAutoCompleteSource()
-        self.controlUpdated.connect(self._updateGroupAutoComplete)
-        self._updateGroupAutoComplete()
-
-        return [self.groupAutoCompleteSource, getAutoCompleteSource(AutoCompleteSource.Type.Csv)]
+    def getAutoCompleteSources(self) -> list[AutoCompleteSource]:
+        return [self._groupAutoCompleteSource, getAutoCompleteSource(AutoCompleteSource.Type.Csv)]
 
     @Slot()
     def _updateGroupAutoComplete(self):
         groups = (group.captionsExpandWildcards for group in self.groups.groups)
-        self.groupAutoCompleteSource.update(groups)
+        self._groupAutoCompleteSource.update(groups)
 
 
 

@@ -21,15 +21,6 @@ INTERP_MODES = {
     "Lanczos": cv.INTER_LANCZOS4
 }
 
-INTERP_MODES_PIL = {
-    "Nearest": Image.Resampling.NEAREST,
-    "Linear":  Image.Resampling.BILINEAR,
-    "Cubic":   Image.Resampling.BICUBIC,
-    "Area":    Image.Resampling.BOX,
-    "Lanczos": Image.Resampling.LANCZOS,
-    "Hamming": Image.Resampling.HAMMING
-}
-
 
 class Format:
     def __init__(self, saveParams: dict, conversion: dict = {}):
@@ -295,6 +286,9 @@ class ExportWidget(QtWidgets.QWidget):
 
 
 
+class PathTextEdit(qtlib.SingleLineTextEditMixin, TemplateTextEdit): pass
+
+
 class PathSettings(QtWidgets.QWidget):
     INFO = """Available variables in path template:
     {{path}}      Image path
@@ -359,11 +353,10 @@ Examples:
             getAutoCompleteSource(AutoCompleteSource.Type.PathTemplate)
         ]
 
-        self.txtPathTemplate = TemplateTextEdit(autoCompleteSources)
+        self.txtPathTemplate = PathTextEdit(autoCompleteSources)
         self.txtPathTemplate.textChanged.connect(self.updatePreview)
         qtlib.setMonospace(self.txtPathTemplate)
         qtlib.setShowWhitespace(self.txtPathTemplate)
-        qtlib.setSingleLineTextEdit(self.txtPathTemplate)
         layout.addWidget(QtWidgets.QLabel("Template:"), row, 0, Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self.txtPathTemplate, row, 1, 1, 2)
 
@@ -455,19 +448,7 @@ Examples:
     @Slot()
     def updatePreview(self):
         text = self.txtPathTemplate.toPlainText()
-        textLen = len(text)
-        text = text.translate(INVALID_CHARS)
-
         with QSignalBlocker(self.txtPathTemplate):
-            # When newlines are pasted and removed, put text cursor at end of pasted text.
-            lenDiff = textLen - len(text)
-            if lenDiff != 0:
-                cursor = self.txtPathTemplate.textCursor()
-                cursorPos = cursor.position() - lenDiff
-                self.txtPathTemplate.setPlainText(text)
-                cursor.setPosition(cursorPos)
-                self.txtPathTemplate.setTextCursor(cursor)
-
             text, varPositions = self.parser.parsePathWithPositions(text)
             self.txtPreview.setPlainText(text)
             self.highlighter.highlight(self.txtPathTemplate, self.txtPreview, varPositions, not self.isEnabled())

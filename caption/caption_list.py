@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt, Slot, Signal, QTimer, QSignalBlocker
 from lib.captionfile import CaptionFile, FileTypeSelector, Keys
 from lib.filelist import DataKeys
 from lib import colorlib, qtlib
-from ui.autocomplete import AutoCompleteSource, getAutoCompleteSource
+from ui.autocomplete import AutoCompleteSource
 from .caption_tab import CaptionTab
 from .caption_highlight import CaptionHighlight
 from .caption_text import BorderlessNavigationTextEdit
@@ -407,8 +407,7 @@ class CaptionEntry(QtWidgets.QWidget):
         layout.addWidget(self.txtKey, 0, 1, Qt.AlignmentFlag.AlignTop)
 
         separator = SEPARATORS[keyType]
-        autoCompleteSources = [ctx.groupAutoCompleteSource, getAutoCompleteSource(AutoCompleteSource.Type.Csv)]
-        self.txtCaption = AutoSizeTextEdit(ctx.highlight, separator, autoCompleteSources)
+        self.txtCaption = AutoSizeTextEdit(ctx.highlight, separator, ctx.getAutoCompleteSources())
         qtlib.setMonospace(self.txtCaption)
         self.txtCaption.textChanged.connect(self._setEdited)
         layout.addWidget(self.txtCaption, 0, 3, Qt.AlignmentFlag.AlignTop)
@@ -467,7 +466,7 @@ class AutoSizeTextEdit(BorderlessNavigationTextEdit):
     focusReceived = Signal(object)
     save = Signal()  # Emitted in CaptionContainer._saveCaptionShortcut() that handles save shortcut for the window
 
-    def __init__(self, highlight: CaptionHighlight, separator: str, autoCompleteSources: list[AutoCompleteSource] = []):
+    def __init__(self, highlight: CaptionHighlight, separator: str, autoCompleteSources: list[AutoCompleteSource]):
         super().__init__(separator, autoCompleteSources)
         self.highlight = highlight
 

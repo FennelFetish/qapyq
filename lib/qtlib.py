@@ -2,7 +2,7 @@ import weakref
 from typing import Any, Callable, Iterable, cast
 from contextlib import contextmanager
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QRect, QEvent
+from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QRect, QEvent, QTimer
 import numpy as np
 from lib import colorlib
 from config import Config
@@ -49,25 +49,19 @@ def setFontSize(widget: QtWidgets.QWidget, size: float):
     widget.setFont(font)
 
 
-def setTextEditHeight(textEdit, numRows, mode=None):
+def setTextEditHeight(textEdit: QtWidgets.QTextEdit | QtWidgets.QPlainTextEdit, numRows: int, mode=None):
     lineHeight = textEdit.fontMetrics().lineSpacing()
     docMargin = textEdit.document().documentMargin()
     frameWidth = textEdit.frameWidth()
     margins = textEdit.contentsMargins()
 
-    height = lineHeight*numRows + 2*(docMargin + frameWidth) + margins.top() + margins.bottom()
+    height = lineHeight*numRows + round(2*(docMargin + frameWidth)) + margins.top() + margins.bottom()
     if mode == "max":
         textEdit.setMaximumHeight(height)
     elif mode == "min":
         textEdit.setMinimumHeight(height)
     else:
         textEdit.setFixedHeight(height)
-
-def setSingleLineTextEdit(textEdit: QtWidgets.QPlainTextEdit):
-    setTextEditHeight(textEdit, 1)
-    textEdit.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.NoWrap)
-    textEdit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-    textEdit.setTabChangesFocus(True)
 
 def setShowWhitespace(textEdit):
     doc = textEdit.document()
@@ -198,20 +192,6 @@ def loadSvg(maxW: int, maxH: int, path: str, color: QtGui.QColor | None = None) 
 
 
 
-class DynamicLineEdit(QtWidgets.QLineEdit):
-    def __init__(self):
-        super().__init__()
-        self.textChanged.connect(self.updateWidth)
-        self.extraWidth = 8
-
-    @Slot()
-    def updateWidth(self):
-        width = self.fontMetrics().boundingRect(self.text()).width() + self.extraWidth
-        width = max(width, self.minimumSizeHint().width())
-        self.setFixedWidth(width)
-
-
-
 class EllipsisLabel(QtWidgets.QLabel):
     _ellipsis = "…"
     _ellipsisLength = len(_ellipsis) + 2
@@ -251,6 +231,19 @@ class EllipsisLabel(QtWidgets.QLabel):
 
 
 
+class DynamicLineEdit(QtWidgets.QLineEdit):
+    def __init__(self):
+        super().__init__()
+        self.textChanged.connect(self.updateWidth)
+        self.extraWidth = 8
+
+    @Slot()
+    def updateWidth(self):
+        width = self.fontMetrics().boundingRect(self.text()).width() + self.extraWidth
+        width = max(width, self.minimumSizeHint().width())
+        self.setFixedWidth(width)
+
+
 class AbortableLineEdit(QtWidgets.QLineEdit):
     focusLost = Signal()
 
@@ -275,6 +268,42 @@ class AbortableLineEdit(QtWidgets.QLineEdit):
 
         # editingFinished is only emitted on focus loss when the text was changed
         self.focusLost.emit()
+
+
+class SingleLineTextEditMixin:
+    INVALID_CHARS = str.maketrans('', '', '\n\r\t')
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        textEdit: QtWidgets.QPlainTextEdit = self
+        textEdit.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.NoWrap)
+        textEdit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        textEdit.textChanged.connect(self._onTextChanged)
+
+        setTextEditHeight(self, 1)
+        QTimer.singleShot(0, lambda: setTextEditHeight(self, 1))
+
+    @Slot()
+    def _onTextChanged(self):
+        textEdit: QtWidgets.QPlainTextEdit = self
+        text = textEdit.toPlainText()
+        textLen = len(text)
+        text = text.translate(self.INVALID_CHARS)
+
+        with QSignalBlocker(textEdit):
+            # When newlines are pasted and removed, put text cursor at end of pasted text.
+            lenDiff = textLen - len(text)
+            if lenDiff != 0:
+                cursor = textEdit.textCursor()
+                cursorPos = cursor.position() - lenDiff
+                # TODO: Preserving undo like this doesn't work because the previous text has invalid chars. -> Filter mime data while pasting
+                #setTextPreserveUndo(cursor, text)
+                textEdit.setPlainText(text)
+                cursor.setPosition(cursorPos)
+                textEdit.setTextCursor(cursor)
+
 
 
 class EditablePushButton(QtWidgets.QWidget):
