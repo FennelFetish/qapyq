@@ -132,6 +132,7 @@ class CaptionContainer(QtWidgets.QWidget):
 
         row += 1
         qtlib.setMonospace(self.txtCaption, 1.2)
+        qtlib.setTabWidth(self.txtCaption)
         splitterBottom.addWidget(self.txtCaption)
 
         splitterBottom.setSizes((50, 125, 110)) # Relative initial size for: preview, bubbles, text

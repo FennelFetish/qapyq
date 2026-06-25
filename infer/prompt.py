@@ -58,6 +58,7 @@ class PromptWidget(QtWidgets.QWidget):
         self.lblPrompts = QtWidgets.QLabel("Prompt Template:")
         self.txtPrompts = TemplateTextEdit(autoCompleteSources)
         qtlib.setMonospace(self.txtPrompts)
+        qtlib.setTabWidth(self.txtPrompts)
         self._addSplitterRow(self.txtPrompts, self.lblPrompts)
 
         # Preview row
@@ -78,6 +79,7 @@ class PromptWidget(QtWidgets.QWidget):
         self.txtPreview.setReadOnly(True)
         self.txtPreview.viewport().setCursor(Qt.CursorShape.ArrowCursor)
         qtlib.setMonospace(self.txtPreview)
+        qtlib.setTabWidth(self.txtPreview)
         qtlib.setShowWhitespace(self.txtPreview)
 
         self.previewWidget = self._addSplitterRow(self.txtPreview, None, previewLayout)

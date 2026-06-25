@@ -63,6 +63,12 @@ def setTextEditHeight(textEdit: QtWidgets.QTextEdit | QtWidgets.QPlainTextEdit, 
     else:
         textEdit.setFixedHeight(height)
 
+def setTabWidth(textEdit: QtWidgets.QTextEdit | QtWidgets.QPlainTextEdit, width: int = 4):
+    font = textEdit.document().defaultFont()
+    fontMetrics = QtGui.QFontMetricsF(font)
+    tabWidth = fontMetrics.horizontalAdvance(" " * width)
+    textEdit.setTabStopDistance(tabWidth)
+
 def setShowWhitespace(textEdit):
     doc = textEdit.document()
     opt = doc.defaultTextOption()

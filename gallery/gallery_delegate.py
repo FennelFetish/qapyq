@@ -624,6 +624,7 @@ class GalleryCaptionEditor(QtWidgets.QWidget):
             with QSignalBlocker(self.txtCaption):
                 self.txtCaption.setDocument(doc)
                 self.txtCaption.moveCursor(QtGui.QTextCursor.MoveOperation.End)
+                qtlib.setTabWidth(self.txtCaption)
 
         QTimer.singleShot(0, self._updateHighlight)
 
