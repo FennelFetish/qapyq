@@ -1,16 +1,91 @@
-from PySide6 import QtWidgets, QtGui
+from typing import NamedTuple
+from typing_extensions import override
+from PySide6 import QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QTimer
+from PySide6.QtWidgets import QPlainTextEdit, QTextEdit, QFrame
 from lib import colorlib, qtlib, util
 from ui.autocomplete import TextEditCompleter, AutoCompleteSource
 
 
-class NavigationTextEdit(QtWidgets.QPlainTextEdit):
+class OccurrenceHighlightState(NamedTuple):
+    text: str
+    format: QtGui.QTextCharFormat
+
+
+class NavigationTextEdit(QPlainTextEdit):
+    WORD_SPLIT_TRANS = str.maketrans(",.:;-\t", "      ")
+
+    OCCURRENCE_FORMAT_WORD: QtGui.QTextCharFormat = None
+    OCCURRENCE_FORMAT_SEL: QtGui.QTextCharFormat  = None
+
     def __init__(self, separator: str, autoCompleteSources: list[AutoCompleteSource] = []):
         super().__init__()
-        #self.setTabChangesFocus(True)
         self._sep = separator
 
         self.completer = TextEditCompleter(self, autoCompleteSources, separator) if autoCompleteSources else None
+
+        if NavigationTextEdit.OCCURRENCE_FORMAT_WORD is None:
+            self._initFormat()
+
+        self.textChanged.connect(self._resetOccurrenceHighlight)
+        self.selectionChanged.connect(self._highlightOccurrences)
+        self.cursorPositionChanged.connect(self._highlightOccurrences)
+
+        self._highlightState = OccurrenceHighlightState("", self.OCCURRENCE_FORMAT_WORD)
+
+    def _initFormat(self):
+        palette = self.palette()
+        color = palette.color(palette.ColorRole.Highlight).toHsv()
+        h, s, v = color.hueF(), color.saturationF(), color.valueF()
+        color.setHsvF(h, s*0.8, v)
+        color.setAlphaF(0.33)
+
+        NavigationTextEdit.OCCURRENCE_FORMAT_SEL = QtGui.QTextCharFormat()
+        NavigationTextEdit.OCCURRENCE_FORMAT_SEL.setBackground(color)
+
+        color.setHsvF(h, s*0.5, v)
+        color.setAlphaF(0.2)
+        NavigationTextEdit.OCCURRENCE_FORMAT_WORD = QtGui.QTextCharFormat()
+        NavigationTextEdit.OCCURRENCE_FORMAT_WORD.setBackground(color)
+
+
+    @Slot()
+    def _resetOccurrenceHighlight(self):
+        self._highlightState = OccurrenceHighlightState("", self.OCCURRENCE_FORMAT_WORD)
+
+    @Slot()
+    def _highlightOccurrences(self):
+        if text := self.textCursor().selectedText():
+            format = self.OCCURRENCE_FORMAT_SEL
+        else:
+            text = self.getSelectedWord()
+            format = self.OCCURRENCE_FORMAT_WORD
+
+        state = OccurrenceHighlightState(text, format)
+        if state == self._highlightState:
+            return
+        self._highlightState = state
+
+        # U+2029 is Qt's paragraph separator
+        if len(text) < 2 or "\u2029" in text:
+            self.setExtraSelections([])
+            return
+
+        doc = self.document()
+        cursor = QtGui.QTextCursor(doc)
+
+        selections: list[QTextEdit.ExtraSelection] = []
+        while not (cursor := doc.find(text, cursor)).isNull():
+            sel = QTextEdit.ExtraSelection()
+            sel.cursor = cursor
+            sel.format = format
+            selections.append(sel)
+
+        if len(selections) < 2:
+            selections.clear()
+
+        self.setExtraSelections(selections)
+
 
     def getCaption(self) -> str:
         return self.toPlainText()
@@ -81,6 +156,19 @@ class NavigationTextEdit(QtWidgets.QPlainTextEdit):
 
         return "", -1
 
+    def getSelectedWord(self) -> str:
+        cursor = self.textCursor()
+        pos = cursor.positionInBlock()
+        text = cursor.block().text().translate(self.WORD_SPLIT_TRANS)
+
+        accumulatedLength = 0
+        for word in text.split(" "):
+            accumulatedLength += len(word) + 1
+            if pos < accumulatedLength:
+                return word
+
+        return ""
+
 
     def selectCaption(self, index: int):
         self.setFocus()
@@ -127,6 +215,7 @@ class NavigationTextEdit(QtWidgets.QPlainTextEdit):
         self.setTextCursor(cursor)
 
 
+    @override
     def keyPressEvent(self, event: QtGui.QKeyEvent):
         if event.modifiers() & Qt.KeyboardModifier.AltModifier:
             move = None
@@ -154,7 +243,7 @@ class NavigationTextEdit(QtWidgets.QPlainTextEdit):
         else:
             super().keyPressEvent(event)
 
-
+    @override
     def dropEvent(self, event: QtGui.QDropEvent):
         with QSignalBlocker(self):
             super().dropEvent(event)
@@ -190,12 +279,14 @@ class CaptionTextEdit(NavigationTextEdit):
         self.textChanged.connect(self._clearVerticalLines)
 
 
+    @override
     def setCaption(self, text: str):
         self.captionReplaced.emit()
         self._verticalLinePos = None
         super().setCaption(text)
 
 
+    @override
     @Slot(str)
     def appendToCaption(self, text: str):
         super().appendToCaption(text)
@@ -235,10 +326,12 @@ class CaptionTextEdit(NavigationTextEdit):
         self.separator = separator  # Set via property
 
 
+    @override
     def focusInEvent(self, event: QtGui.QFocusEvent):
         super().focusInEvent(event)
         self.focusChanged.emit()
 
+    @override
     def focusOutEvent(self, event: QtGui.QFocusEvent):
         super().focusOutEvent(event)
         self.focusChanged.emit()
@@ -253,6 +346,7 @@ class CaptionTextEdit(NavigationTextEdit):
         self._verticalLinePos = None
 
 
+    @override
     def paintEvent(self, e: QtGui.QPaintEvent):
         if self._verticalLinePos:
             painter = QtGui.QPainter(self.viewport())
@@ -278,7 +372,7 @@ class BorderlessNavigationTextEdit(NavigationTextEdit):
 
     def __init__(self, separator: str, autoCompleteSources: list[AutoCompleteSource] = []):
         super().__init__(separator, autoCompleteSources)
-        self.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
+        self.setFrameStyle(QFrame.Shape.NoFrame)
 
         if not BorderlessNavigationTextEdit.PALETTE_ORIG:
             self._initPalettes()
