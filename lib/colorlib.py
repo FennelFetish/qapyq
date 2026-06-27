@@ -36,10 +36,13 @@ TEXT_HIGHLIGHT_V = 1.0
 FOCUS     = "#901313"
 FOCUS_BAN = "#686868"
 
+SCROLLBAR_HANDLE       = "#000"
+SCROLLBAR_HANDLE_HOVER = "#000"
+SCROLLBAR_BG           = "#000"
 
-def initColors(colorScheme: Qt.ColorScheme):
-    from PySide6.QtWidgets import QApplication
-    v = QApplication.palette().color(QPalette.ColorRole.Text).valueF()
+
+def initColors(colorScheme: Qt.ColorScheme, palette: QPalette):
+    v = palette.color(QPalette.ColorRole.Text).valueF()
     global TEXT_HIGHLIGHT_V
     TEXT_HIGHLIGHT_V = max(v, 0.65)
 
@@ -82,6 +85,13 @@ def initColors(colorScheme: Qt.ColorScheme):
     global BUBBLE_BG_H, BUBBLE_BG_S, BUBBLE_BG_V
     BUBBLE_BG_H, BUBBLE_BG_S, BUBBLE_BG_V = toHsv(BUBBLE_BG)
 
+    hl = palette.color(QPalette.ColorRole.Highlight)
+    global SCROLLBAR_HANDLE, SCROLLBAR_HANDLE_HOVER
+    SCROLLBAR_HANDLE = f"rgba({hl.red()}, {hl.green()}, {hl.blue()}, 0.4)"
+    SCROLLBAR_HANDLE_HOVER = f"rgba({hl.red()}, {hl.green()}, {hl.blue()}, 0.7)"
+
+    global SCROLLBAR_BG
+    SCROLLBAR_BG = palette.color(QPalette.ColorRole.Window).name()
 
 
 def mixBubbleColor(destColor: str, mixS: float, mixV: float) -> str:
@@ -137,6 +147,19 @@ def removeButtonStyle(className: str) -> str:
     return f".{className}{{color: {textColor}; background-color: {bgColor}; " \
            f"border: 1px solid {borderColor}; border-radius: 4px; padding: 0px 0px 1px 0px}}"
 
+
+def scrollbarStyle(width: int = 13) -> str:
+    radius = width // 3
+    return "\n".join((
+        f"QScrollBar:vertical {{width: {width}px; background: {SCROLLBAR_BG}; margin: 0}}",
+        f"QScrollBar:horizontal {{height: {width}px; background: {SCROLLBAR_BG}; margin: 0}}",
+        f"QScrollBar::handle:vertical {{background: {SCROLLBAR_HANDLE}; min-height: 24px; border-radius: {radius}px}}",
+        f"QScrollBar::handle:horizontal {{background: {SCROLLBAR_HANDLE}; min-width: 24px; border-radius: {radius}px}}",
+        f"QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {{background: {SCROLLBAR_HANDLE_HOVER}}}",
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {height: 0px}",
+        "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {width: 0px}",
+        "QScrollBar::up-arrow, QScrollBar::down-arrow, QScrollBar::left-arrow, QScrollBar::right-arrow, QScrollBar::add-page, QScrollBar::sub-page {background: none}",
+    ))
 
 
 def getHighlightColor(colorHex: str) -> QColor:

@@ -2,7 +2,7 @@ import locale, os
 from typing_extensions import override
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, QSignalBlocker, QTimer
-from lib import qtlib
+from lib import colorlib, qtlib
 from lib.captionfile import FileTypeSelector
 from ui.tab import ImgTab
 from ui.autocomplete import AutoCompleteSource, getAutoCompleteSource
@@ -34,6 +34,7 @@ class Gallery(QtWidgets.QWidget):
 
         self.galleryModel: GalleryModel = GalleryModel(tab.filelist, self.galleryCaption)
         self.galleryView: GalleryView = GalleryView(tab, self.galleryCaption, Config.galleryThumbnailSize)
+        self.galleryView.verticalScrollBar().setStyleSheet(colorlib.scrollbarStyle())
         self.galleryView.verticalScrollBar().valueChanged.connect(self.updateComboboxFolder)
         self.galleryView.setModel(self.galleryModel)
 

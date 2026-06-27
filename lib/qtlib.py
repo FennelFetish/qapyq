@@ -732,11 +732,18 @@ class PercentageSpinBox(QtWidgets.QSpinBox):
 
 
 class BaseColorScrollArea(QtWidgets.QScrollArea):
+    SCROLLBAR_STYLE = ""
+
     def __init__(self, widget: QtWidgets.QWidget, colorRole=QtGui.QPalette.ColorRole.Base):
         super().__init__()
         self.setWidget(widget)
         self.setWidgetResizable(True)
         self.setBackgroundRole(colorRole)
+
+        if not BaseColorScrollArea.SCROLLBAR_STYLE:
+            BaseColorScrollArea.SCROLLBAR_STYLE = colorlib.scrollbarStyle()
+        self.verticalScrollBar().setStyleSheet(BaseColorScrollArea.SCROLLBAR_STYLE)
+        self.horizontalScrollBar().setStyleSheet(BaseColorScrollArea.SCROLLBAR_STYLE)
 
 
 class RowScrollArea(BaseColorScrollArea):

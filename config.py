@@ -7,6 +7,7 @@ class Config:
     guiScale                = 1.0
     qtStyle                 = "Fusion"
     colorScheme             = ""
+    loadColorPalette        = True,
     toolbarPosition         = "top"
     toolToolbarPosition     = "right"
     exifTransform           = False
@@ -189,6 +190,7 @@ class Config:
         cls.guiScale              = float(data.get("gui_scale", cls.guiScale))
         cls.qtStyle               = data.get("qt_style", cls.qtStyle)
         cls.colorScheme           = data.get("color_scheme", cls.colorScheme)
+        cls.loadColorPalette      = bool(data.get("load_color_palette", cls.loadColorPalette))
         cls.toolbarPosition       = data.get("toolbar_position", cls.toolbarPosition)
         cls.toolToolbarPosition   = data.get("tool_toolbar_position", cls.toolToolbarPosition)
         cls.fontMonospace         = data.get("font_monospace", cls.fontMonospace)
@@ -268,6 +270,7 @@ class Config:
         data["gui_scale"]                   = cls.guiScale
         data["qt_style"]                    = cls.qtStyle
         data["color_scheme"]                = cls.colorScheme
+        data["load_color_palette"]          = cls.loadColorPalette
         data["toolbar_position"]            = cls.toolbarPosition
         data["tool_toolbar_position"]       = cls.toolToolbarPosition
         data["font_monospace"]              = cls.fontMonospace

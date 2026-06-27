@@ -29,6 +29,8 @@ class StatsBaseProxyModel(QSortFilterProxyModel):
 class StatsLayout(QtWidgets.QVBoxLayout):
     ROLE_FILEPATH = Qt.ItemDataRole.UserRole
 
+    SCROLLBAR_STYLE = ""
+
     def __init__(self, tab: ImgTab, name: str, proxyModel: StatsBaseProxyModel, view: QtWidgets.QTableView | QtWidgets.QTreeView, row=0):
         super().__init__()
         self.tab = tab
@@ -45,6 +47,10 @@ class StatsLayout(QtWidgets.QVBoxLayout):
             view.verticalHeader().setVisible(False)
             view.resizeColumnsToContents()
 
+        if not StatsLayout.SCROLLBAR_STYLE:
+            StatsLayout.SCROLLBAR_STYLE = colorlib.scrollbarStyle()
+        view.setStyleSheet(StatsLayout.SCROLLBAR_STYLE)
+        self.listFiles.setStyleSheet(StatsLayout.SCROLLBAR_STYLE)
 
     def _build(self, name: str):
         self.col1Layout = QtWidgets.QVBoxLayout()

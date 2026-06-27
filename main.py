@@ -9,6 +9,7 @@ os.environ["QT_LOGGING_RULES"] = (
 from typing import TextIO, TYPE_CHECKING
 from PySide6.QtCore import Qt, QThreadPool, QIODeviceBase, qInstallMessageHandler
 from PySide6.QtNetwork import QLocalSocket, QLocalServer
+from PySide6.QtGui import QPalette, QColor, QPixmapCache
 from config import Config
 
 if TYPE_CHECKING:
@@ -143,6 +144,7 @@ class QtLogFilter:
             print(message)
 
 
+
 def applyStyle(app: 'QApplication'):
     match Config.colorScheme:
         case "dark":  colorSchemeOverride = Qt.ColorScheme.Dark
@@ -161,8 +163,43 @@ def applyStyle(app: 'QApplication'):
     elif colorSchemeOverride is not None:
         app.setStyle(app.style().name())
 
+    palette = app.palette()
+    if Config.loadColorPalette:
+        paletteFile = "./res/palette-light.json" if colorScheme == Qt.ColorScheme.Light else "./res/palette-dark.json"
+        palette = loadPalette(palette, paletteFile)
+        app.setPalette(palette)
+
     from lib import colorlib
-    colorlib.initColors(colorScheme)
+    colorlib.initColors(colorScheme, palette)
+
+
+def loadPalette(palette: QPalette, path: str) -> QPalette:
+    import json
+    with open(path) as file:
+        data: dict[str, dict[str, str]] = json.load(file)
+
+    if "Inactive" not in data and (activeGroup := data.get("Active")):
+        data["Inactive"] = activeGroup
+
+    for groupName, roleColors in data.items():
+        group = QPalette.ColorGroup[groupName]
+        for roleName, hexColor in roleColors.items():
+            try:
+                role = QPalette.ColorRole[roleName]
+                palette.setColor(group, role, QColor(hexColor))
+            except KeyError:
+                continue  # role exists in file but not in this Qt version
+
+    # Derive colors from button/window color
+    deriveRoles = (QPalette.ColorRole.Light, QPalette.ColorRole.Midlight, QPalette.ColorRole.Dark, QPalette.ColorRole.Mid, QPalette.ColorRole.Shadow)
+    for group in (QPalette.ColorGroup.Active, QPalette.ColorGroup.Inactive, QPalette.ColorGroup.Disabled):
+        btnColor = palette.color(group, QPalette.ColorRole.Button)
+        winColor = palette.color(group, QPalette.ColorRole.Window)
+        p = QPalette(btnColor, winColor)
+        for role in deriveRoles:
+            palette.setColor(group, role, p.color(group, role))
+
+    return palette
 
 
 def loadInitialPaths(win: 'MainWindow'):
@@ -183,7 +220,6 @@ def restoreWindows(win: 'MainWindow'):
 
 def main() -> int:
     from PySide6.QtWidgets import QApplication
-    from PySide6.QtGui import QPixmapCache
     from ui.main_window import MainWindow
     from lib import filelist
 

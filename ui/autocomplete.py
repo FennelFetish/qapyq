@@ -291,19 +291,6 @@ class AutoCompleteModel(QAbstractTableModel):
 class AutoCompletePopup(QTableView):
     SCROLLBAR_STYLESHEET = None
 
-    @staticmethod
-    def _getScrollbarStylesheet(palette: QPalette) -> str:
-        color = palette.color(palette.ColorRole.Highlight)
-        color = f"rgba({color.red()}, {color.green()}, {color.blue()}, 0.4)"
-
-        return "\n".join((
-            "QScrollBar:vertical {width: 6px; background: transparent; margin: 0}",
-            "QScrollBar::handle:vertical {background: " + color + "; min-height: 20px; border-radius: 3px}",
-            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {height: 0px}",
-            "QScrollBar::up-arrow:vertical, QScrollBar::down-arrow:vertical, QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {background: none}"
-        ))
-
-
     def __init__(self):
         super().__init__()
         self.setShowGrid(False)
@@ -328,7 +315,7 @@ class AutoCompletePopup(QTableView):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         if AutoCompletePopup.SCROLLBAR_STYLESHEET is None:
-            AutoCompletePopup.SCROLLBAR_STYLESHEET = self._getScrollbarStylesheet(self.palette())
+            AutoCompletePopup.SCROLLBAR_STYLESHEET = colorlib.scrollbarStyle(6)
         self.verticalScrollBar().setStyleSheet(AutoCompletePopup.SCROLLBAR_STYLESHEET)
 
 

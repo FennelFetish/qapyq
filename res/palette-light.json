@@ -1,0 +1,30 @@
+{
+  "Active": {
+    "Base": "#fff6f6f6",
+    "AlternateBase": "#fffdfdfd",
+    "Text": "#ff2c2c2c",
+    "Window": "#ffe5e5e5",
+    "WindowText": "#ff282828",
+    "Button": "#ffe4e4e4",
+    "ButtonText": "#ff2c2c2c",
+    "BrightText": "#ffffffff",
+    "ToolTipBase": "#ff455e7e",
+    "ToolTipText": "#ffe7e8eb",
+    "PlaceholderText": "#ff989898",
+    "NoRole": "#ff000000"
+  },
+  "Disabled": {
+    "Base": "#ffdfdfdf",
+    "AlternateBase": "#ffe6e6e6",
+    "Text": "#ff989898",
+    "Window": "#ffc8c8c8",
+    "WindowText": "#ffadadad",
+    "Button": "#ffd4d4d4",
+    "ButtonText": "#ff9c9c9c",
+    "BrightText": "#ffdedede",
+    "ToolTipBase": "#ff455e7e",
+    "ToolTipText": "#ffe7e8eb",
+    "PlaceholderText": "#ffb4b4b4",
+    "NoRole": "#ff000000"
+  }
+}
