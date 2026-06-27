@@ -102,6 +102,7 @@ class CaptionContainer(QtWidgets.QWidget):
         self.txtRulesPreview.setReadOnly(True)
         qtlib.setMonospace(self.txtRulesPreview, 1.1)
         qtlib.setShowWhitespace(self.txtRulesPreview)
+        qtlib.setTabWidth(self.txtRulesPreview)
         qtlib.setTextEditHeight(self.txtRulesPreview, 2, "min")
         self.txtRulesPreview.hoverTextChanged.connect(lambda: self.ctx.controlUpdated.emit())
         self.txtRulesPreview.hide()

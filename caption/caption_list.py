@@ -200,7 +200,7 @@ class CaptionList(CaptionTab):
 
     def addEntry(self, keyType: KeyType, keyName: str, text: str, deletable=True):
         entry = CaptionEntry(self.ctx, keyType, keyName, deletable)
-        self._layoutEntries.addWidget(entry)
+        self._layoutEntries.addWidget(entry, alignment=Qt.AlignmentFlag.AlignTop)
         entry.text = text
 
         entry.deleteClicked.connect(self._removeEntry)
@@ -210,7 +210,7 @@ class CaptionList(CaptionTab):
         entry.textField.save.connect(self.saveAll)
 
         # Initial loading needs another size update to work consistently
-        QTimer.singleShot(DELAY_RESIZE2, entry.textField._resizeToContent)
+        QTimer.singleShot(DELAY_RESIZE2, entry.textField.resizeToContent)
         return entry
 
 
@@ -384,19 +384,20 @@ class CaptionEntry(QtWidgets.QWidget):
         layout = QtWidgets.QGridLayout()
         layout.setContentsMargins(0, 2, 0, 0)
         layout.setHorizontalSpacing(8)
-        layout.setVerticalSpacing(4)
+        layout.setVerticalSpacing(0)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        layout.setColumnMinimumWidth(1, 220)
-        layout.setColumnMinimumWidth(2, 12)
-        layout.setColumnStretch(3, 1)
 
+        col = 0
         if deletable:
             btnDelete = qtlib.BubbleRemoveButton()
             btnDelete.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             btnDelete.clicked.connect(self._deleteClicked)
-            layout.addWidget(btnDelete, 0, 0, Qt.AlignmentFlag.AlignTop)
+            layout.addWidget(btnDelete, 0, col, Qt.AlignmentFlag.AlignTop)
         else:
-            layout.setColumnMinimumWidth(0, 18)
+            layout.setColumnMinimumWidth(col, 18)
+
+        col += 1
+        layout.setColumnMinimumWidth(col, 220)
 
         keyText = f"{keyType.value}.{keyName}" if keyName else keyType.value
         self.txtKey = QtWidgets.QLabel(keyText)
@@ -404,18 +405,24 @@ class CaptionEntry(QtWidgets.QWidget):
         self.txtKey.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
         qtlib.setMonospace(self.txtKey)
         self._setKeyColor(self.txtKey, keyType)
-        layout.addWidget(self.txtKey, 0, 1, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.txtKey, 0, col, Qt.AlignmentFlag.AlignVCenter)
 
-        separator = SEPARATORS[keyType]
-        self.txtCaption = AutoSizeTextEdit(ctx.highlight, separator, ctx.getAutoCompleteSources())
+        col += 1
+        layout.setColumnMinimumWidth(2, 12)
+
+        col += 1
+        self.txtCaption = AutoSizeTextEdit(ctx.highlight, SEPARATORS[keyType], ctx.getAutoCompleteSources())
         qtlib.setMonospace(self.txtCaption)
         self.txtCaption.textChanged.connect(self._setEdited)
-        layout.addWidget(self.txtCaption, 0, 3, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.txtCaption, 0, col, 2, 1, Qt.AlignmentFlag.AlignVCenter)
+
+        layout.setRowStretch(1, 1)
+        layout.setRowMinimumHeight(2, 4)
 
         separatorLine = QtWidgets.QFrame()
         separatorLine.setFrameStyle(QtWidgets.QFrame.Shape.HLine | QtWidgets.QFrame.Shadow.Sunken)
-        layout.addWidget(separatorLine, 1, 0, 1, 4)
-        layout.setRowMinimumHeight(1, 12)
+        layout.addWidget(separatorLine, 3, 0, 1, col+1)
+        layout.setRowMinimumHeight(3, 12)
 
         self.setLayout(layout)
 
@@ -482,10 +489,10 @@ class AutoSizeTextEdit(BorderlessNavigationTextEdit):
     @Slot()
     def _onTextChanged(self):
         self.updateHighlight()
-        QTimer.singleShot(DELAY_RESIZE, self._resizeToContent)
+        QTimer.singleShot(DELAY_RESIZE, self.resizeToContent)
 
     @Slot()
-    def _resizeToContent(self):
+    def resizeToContent(self):
         with QSignalBlocker(self):
             doc = self.document()
             doc.setDocumentMargin(0)

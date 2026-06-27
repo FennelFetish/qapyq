@@ -829,19 +829,13 @@ class EntryToggleButton(QtWidgets.QPushButton):
     @classmethod
     def initStyles(cls):
         if colorlib.DARK_THEME:
-            addColor     = "#40D540"
-            removeColor  = "#D54040"
-            inheritColor = "#D5B040"
-            bgColor, borderColor = "#1B1B1B", "#204020"
+            cls.STYLE[cls.Mode.Add]     = cls._mkStyle("#40D540", "#1B1B1B", "#204020")
+            cls.STYLE[cls.Mode.Remove]  = cls._mkStyle("#D54040", "#1B1B1B", "#402020")
+            cls.STYLE[cls.Mode.Inherit] = cls._mkStyle("#D5B040", "#1B1B1B", "#404020")
         else:
-            addColor     = "#10E010"
-            removeColor  = "#E01010"
-            inheritColor = "#E0B010"
-            bgColor, borderColor = "#DBDBDB", "#809080"
-
-        cls.STYLE[cls.Mode.Add]     = cls._mkStyle(addColor, bgColor, borderColor)
-        cls.STYLE[cls.Mode.Remove]  = cls._mkStyle(removeColor, bgColor, borderColor)
-        cls.STYLE[cls.Mode.Inherit] = cls._mkStyle(inheritColor, bgColor, borderColor)
+            cls.STYLE[cls.Mode.Add]     = cls._mkStyle("#10E010", "#DBDBDB", "#809080")
+            cls.STYLE[cls.Mode.Remove]  = cls._mkStyle("#E01010", "#DBDBDB", "#908080")
+            cls.STYLE[cls.Mode.Inherit] = cls._mkStyle("#E0B010", "#DBDBDB", "#909080")
 
         font = qtlib.getMonospaceFont()
         font.setPointSizeF(12.0)
@@ -878,17 +872,17 @@ class CascadeTemplateTextEdit(TemplateTextEdit):
 
 
 
-class PlaceholderWidget(QtWidgets.QScrollArea):
+class PlaceholderWidget(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
-        self.setWidgetResizable(True)
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         title = QtWidgets.QLabel("No templates defined at this level")
         qtlib.setFontSize(title, 1.2)
         qtlib.setFontBold(title, True)
-
-        widget = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(widget)
         layout.addWidget(title)
 
         layout.addWidget(QtWidgets.QLabel("Cascading updates work similar to Batch Apply, but they're automatic and resolve dependencies between templates."))
@@ -904,5 +898,4 @@ class PlaceholderWidget(QtWidgets.QScrollArea):
         layout.addWidget(QtWidgets.QLabel("Cascading updates are enabled by default but only effective when you define templates."))
         layout.addWidget(QtWidgets.QLabel("Use the toggle button in the bottom right corner of this Caption Window to disable them. The Batch and Gallery windows have a separate toggle."))
 
-        layout.addStretch(1)
-        self.setWidget(widget)
+        self.setLayout(layout)

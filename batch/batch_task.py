@@ -368,17 +368,21 @@ class BatchTaskHandler(QObject):
 
     def _buildStartButtonLayout(self) -> QtWidgets.QLayout:
         layout = QtWidgets.QHBoxLayout()
+        h = 24
 
         self.btnStart = QtWidgets.QPushButton(f"▶  Start Batch {self.name} (All Files)")
+        self.btnStart.setFixedHeight(h)
         self.btnStart.clicked.connect(lambda: self.startStop(BatchTaskFileSelection.All))
         layout.addWidget(self.btnStart, 2)
 
         self.btnStartSelected = QtWidgets.QPushButton(f"▷  Start (Selected Files)")
+        self.btnStartSelected.setFixedHeight(h)
         self.btnStartSelected.setMinimumWidth(200)
         self.btnStartSelected.clicked.connect(lambda: self.startStop(BatchTaskFileSelection.Selected))
         layout.addWidget(self.btnStartSelected, 1)
 
         self.btnStartCurrent = QtWidgets.QPushButton(f"▷  Start (Current File)")
+        self.btnStartCurrent.setFixedHeight(h)
         self.btnStartCurrent.setMinimumWidth(200)
         self.btnStartCurrent.clicked.connect(lambda: self.startStop(BatchTaskFileSelection.Current))
         layout.addWidget(self.btnStartCurrent, 1)
