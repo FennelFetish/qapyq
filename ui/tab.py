@@ -21,7 +21,7 @@ def queueGC():
 class ImgTab(QtWidgets.QMainWindow):
     EMPTY_TAB_TITLE = "Empty"
 
-    tabTitleChanged = Signal(str)
+    tabTitleChanged = Signal(object, str)
 
     def __init__(self, mainWindow: 'MainWindow'):
         super().__init__()
@@ -88,7 +88,7 @@ class ImgTab(QtWidgets.QMainWindow):
         tabWidget = self.mainWindow.tabWidget
         tabIndex = tabWidget.indexOf(self)
         tabWidget.setTabText(tabIndex, name)
-        self.tabTitleChanged.emit(name)
+        self.tabTitleChanged.emit(self, name)
 
         self._updateJsonAutocomplete(currentFile)
 

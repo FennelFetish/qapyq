@@ -35,7 +35,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose)
         self.setWindowIcon(QtGui.QPixmap(Config.windowIcon))
-        self.updateTitle(None)
+        self.updateTitle(None, None)
 
         self.auxWindows: dict[str, aux_window.AuxiliaryWindow] = dict()
 
@@ -134,7 +134,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._previousTab = tab
 
         self.toolbar.setTool(tab.toolName if tab else None)
-        self.updateTitle(self.tabWidget.tabText(index))
+        self.updateTitle(None, self.tabWidget.tabText(index))
 
 
     def closeTab(self, index: int):
@@ -183,8 +183,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.currentTab.setTool(toolName)
         self.toolbar.setTool(toolName)
 
-    @Slot(str)
-    def updateTitle(self, filename: str | None):
+    @Slot(object, str)
+    def updateTitle(self, tab: ImgTab | None, filename: str | None):
+        if tab and tab is not self.currentTab:
+            return
+
         title = Config.windowTitle
         if filename and filename != ImgTab.EMPTY_TAB_TITLE:
             title = f"{filename} - {title}"
