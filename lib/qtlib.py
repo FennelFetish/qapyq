@@ -593,6 +593,21 @@ class ToggleButton(QtWidgets.QPushButton):
 
 
 class MenuComboBox(QtWidgets.QComboBox):
+    class MenuHighlightStyle(QtWidgets.QProxyStyle):
+        def __init__(self, palette: QtGui.QPalette):
+            super().__init__()
+            self._bgColor = palette.color(QtGui.QPalette.ColorRole.Highlight)
+            self._bgColor.setAlphaF(0.2)
+
+        def drawControl(self, element, option: QtWidgets.QStyleOption, painter: QtGui.QPainter, widget=None):
+            # For CE_MenuItem, 'option' is of type QtWidgets.QStyleOptionMenuItem with 'font' attribute
+            if element == QtWidgets.QStyle.ControlElement.CE_MenuItem and option.font.bold():
+                painter.fillRect(option.rect, self._bgColor)
+            super().drawControl(element, option, painter, widget)
+
+    MENU_STYLE: MenuHighlightStyle = None
+
+
     def __init__(self, title: str = None, menuClass=QtWidgets.QMenu):
         super().__init__()
         self.menuClass = menuClass
@@ -603,39 +618,55 @@ class MenuComboBox(QtWidgets.QComboBox):
         self._clickPos = None
         self._ignoreRelease = True
 
-        self._activeActions: list[QtGui.QAction] = list()
+        # Keep references to all submenus and actions to prevent GC
+        self._submenus: list[QtWidgets.QMenu] = list()
         self._actions: dict[int, tuple[str, QtGui.QAction]] = dict()
+        self._activeActions: list[QtGui.QAction] = list()
         self._nextIndex = 0
 
+        if MenuComboBox.MENU_STYLE is None:
+            MenuComboBox.MENU_STYLE = MenuComboBox.MenuHighlightStyle(self.palette())
+        self.menu.setStyle(MenuComboBox.MENU_STYLE)
+
+
     def _updateActiveActions(self):
-        for act in self._activeActions:
-            setFontBold(act, False)
-        self._activeActions.clear()
+        try:
+            font = self.font()
+            for act in self._activeActions:
+                act.setFont(font)
+        except Exception as ex:
+            print(f"Failed to reset font in MenuComboBox: {ex} ({type(ex).__name__})")
+            return
+        finally:
+            self._activeActions.clear()
 
         currentEntry = self._actions.get(self.currentIndex())
         if currentEntry is None:
             return
 
         text, action = currentEntry
-        if text == self.currentText():
-            try:
-                self.menu.setActiveAction(action)
-            except Exception as ex:
-                # Why does this happen? RuntimeError: Internal C++ object (PySide6.QtGui.QAction) already deleted.
-                # FIXME: Folder with images loaded, but entry for that folder was missing.
-                print(f"Failed to set active action in MenuComboBox: {ex} ({type(ex).__name__})")
-                return
+        if text != self.currentText():
+            return
 
-            setFontBold(action)
+        try:
+            self.menu.setActiveAction(action)
+        except Exception as ex:
+            print(f"Failed to set active action in MenuComboBox: {ex} ({type(ex).__name__})")
+            return
+
+        fontBold = self.font()
+        fontBold.setBold(True)
+
+        action.setFont(fontBold)
+        self._activeActions.append(action)
+
+        # Set bold text to all parent submenus.
+        # But don't activate submenus: That would open them and they could swallow mouse hover events.
+        item = action
+        while (item := item.parent()) and item is not self.menu and isinstance(item, QtWidgets.QMenu):
+            action = item.menuAction()
+            action.setFont(fontBold)
             self._activeActions.append(action)
-
-            # Set bold text to all parent submenus.
-            # But don't activate submenus: That would open them and they could swallow mouse hover events.
-            item = action
-            while (item := item.parent()) and item is not self.menu and isinstance(item, QtWidgets.QMenu):
-                action = item.menuAction()
-                setFontBold(action)
-                self._activeActions.append(action)
 
 
     def showPopup(self):
@@ -688,7 +719,9 @@ class MenuComboBox(QtWidgets.QComboBox):
             parentMenu = self.menu
 
         submenu = self.menuClass(text, parentMenu)
+        submenu.setStyle(self.MENU_STYLE)
         parentMenu.addMenu(submenu)
+        self._submenus.append(submenu)
         return submenu
 
     def addSubmenuItem(self, submenu: QtWidgets.QMenu, text: str, prefix: str, userData=None, actionText: str | None = None):
@@ -707,9 +740,15 @@ class MenuComboBox(QtWidgets.QComboBox):
 
     def clear(self):
         self._activeActions.clear()
-        self._actions.clear()
-        super().clear()
+        self._actions = dict()
+
+        # Unparent submenus so Python can delete their C++ objects cleanly
+        for submenu in self._submenus:
+            submenu.setParent(None)
+        self._submenus = list()
+
         self.menu.clear()
+        super().clear()
         self._nextIndex = 0
 
 
