@@ -256,7 +256,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     initLogging()
-    if not Config.load():
+    if not Config.load(True):
         sys.exit(1)
 
     exitCode = main()

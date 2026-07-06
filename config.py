@@ -166,18 +166,23 @@ class Config:
 
 
     @classmethod
-    def load(cls) -> bool:
+    def load(cls, verbose: bool = False) -> bool:
         import json, os, time
         cls.startTime = time.monotonic_ns()
 
         try:
-            if os.path.exists(cls.pathConfig):
-                with open(cls.pathConfig, 'r') as file:
-                    data = json.load(file)
-            else:
-                data = dict()
+            with open(cls.pathConfig, 'r') as file:
+                data = json.load(file)
+
+            if verbose:
+                print(f"Using config from {cls.pathConfig}")
 
             cls._load(data)
+            return True
+
+        except FileNotFoundError:
+            if verbose:
+                print(f"{cls.pathConfig} not found. Using default config.")
             return True
         except Exception as ex:
             print(f"Error while reading config file from '{os.path.abspath(cls.pathConfig)}':")

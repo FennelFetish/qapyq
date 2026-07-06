@@ -12,6 +12,7 @@ msgpack
 
 # Misc
 typing-extensions
+tqdm
 
 # Setup
 wheel

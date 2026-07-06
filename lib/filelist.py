@@ -8,18 +8,26 @@ from config import Config
 ALL_READ_EXTENSIONS: frozenset[str] = ()
 
 def resetReadExtensions():
-    extensions = list[str]()
+    extensions   = list[str]()
+    loadingTypes = list[str]()
 
     if "image" not in Config.mediaExcludeTypes:
         from lib import imagerw
         extensions += imagerw.READ_EXTENSIONS
+        loadingTypes.append("image")
 
     if "video" not in Config.mediaExcludeTypes:
         from lib import videorw
         extensions += videorw.READ_EXTENSIONS
+        loadingTypes.append("video")
 
     global ALL_READ_EXTENSIONS
     ALL_READ_EXTENSIONS = frozenset(extensions)
+
+    if loadingTypes:
+        print("Loading file types: " + ", ".join(loadingTypes))
+    else:
+        print("Warning: All file types disabled for loading")
 
 
 try:
