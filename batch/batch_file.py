@@ -1,4 +1,4 @@
-import os, shutil, re
+import os, shutil, stat, re
 from datetime import datetime
 from enum import Enum
 from typing import Callable
@@ -517,8 +517,8 @@ class BatchFileTask(BatchTask):
             raise ValueError("Cannot rename masks when images are included")
 
         match self.mode:
-            case Mode.Copy: self.fileDest = self.copyFile
-            case Mode.Move: self.fileDest = self.moveFile
+            case Mode.Copy:    self.fileDest = self.copyFile
+            case Mode.Move:    self.fileDest = self.moveFile
             case Mode.Symlink: self.fileDest = self.createSymlink
             case _: raise ValueError("Invalid mode")
 
@@ -585,18 +585,57 @@ class BatchFileTask(BatchTask):
         self.maskPathParser.height = imgH
 
 
+    def clearDest(self, srcPath: str, destPath: str, overwrite: bool) -> bool:
+        try:
+            destStat = os.lstat(destPath)
+        except FileNotFoundError:
+            return True
+
+        destMode = destStat.st_mode
+        if stat.S_ISDIR(destMode):
+            self.log(f"WARNING: Target path is a folder (missing filename?): {destPath}")
+            return False
+
+        if stat.S_ISLNK(destMode):
+            try:
+                # Check if symlink points to directory
+                linkTargetStat = os.stat(destPath)
+                if stat.S_ISDIR(linkTargetStat.st_mode):
+                    self.log(f"WARNING: Target path is a symlink to folder (missing filename?): {destPath}")
+                    return False
+            except FileNotFoundError:
+                pass  # Broken symlink, continue with overwrite check
+
+        if not overwrite:
+            return False
+
+        # Remove existing symlinks and files, if overwrite is enabled
+        if stat.S_ISLNK(destMode):
+            os.remove(destPath)
+            return True
+
+        elif stat.S_ISREG(destMode):
+            srcStat = os.stat(srcPath)
+            if os.path.samestat(srcStat, destStat):
+                self.log(f"Skipping same file: {destPath}")
+                return False
+            else:
+                os.remove(destPath)
+                return True
+
+        else:
+            self.log(f"WARNING: Target exists and is not a file/symlink - won't overwrite: {destPath}")
+            return False
+
+
     def processFile(self, srcPath: str, targetFolder: str, targetFileName: str, overwrite: bool) -> str | None:
         destPath = os.path.join(targetFolder, targetFileName)
-        if (not overwrite) and os.path.exists(destPath):
-            return None
-
-        if os.path.isdir(destPath):
-            self.log(f"WARNING: Target path is a folder (missing filename?): {destPath}")
+        if not self.clearDest(srcPath, destPath, overwrite):
             return None
 
         if not os.path.exists(targetFolder):
             self.log(f"Creating folder: {targetFolder}")
-            os.makedirs(targetFolder)
+            os.makedirs(targetFolder, exist_ok=True)
 
         self.fileDest(srcPath, destPath)
         return destPath
@@ -635,7 +674,6 @@ class BatchFileTask(BatchTask):
         shutil.move(srcPath, destPath)
 
     def createSymlink(self, srcPath: str, destPath: str):
-        # This will fail if destPath exists
         self.log(f"Symlink '{srcPath}' <= '{destPath}'")
         os.symlink(srcPath, destPath)
 
@@ -687,14 +725,14 @@ class BatchFileTask(BatchTask):
         if not self.overwriteCaptions:
             archivePathNoExt, archiveExt = os.path.splitext(archivePath)
             counter = 1
-            while os.path.exists(archivePath):
+            while os.path.lexists(archivePath):
                 archivePath = f"{archivePathNoExt}_{counter:03}{archiveExt}"
                 counter += 1
 
         archiveFolder = os.path.dirname(archivePath)
         if not os.path.exists(archiveFolder):
             self.log(f"Creating folder for archive: {archiveFolder}")
-            os.makedirs(archiveFolder)
+            os.makedirs(archiveFolder, exist_ok=True)
 
         return archivePath
 
