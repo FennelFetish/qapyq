@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from PySide6 import QtWidgets, QtGui
 from config import Config
-from .captionfile import CaptionFile
+from .captionfile import CaptionFile, FileTypeSelector
 from .colorlib import ColorCharFormats
 
 if TYPE_CHECKING:
@@ -222,15 +222,11 @@ class TemplateVariableParser:
 
 
     def _readTextFile(self) -> str | None:
-        textPath = os.path.splitext(self.imgPath)[0] + ".txt"
-        if os.path.exists(textPath):
-            try:
-                with open(textPath, 'r') as file:
-                    return file.read()
-            except OSError:
-                print(f"WARNING: Couldn't read file for {{text}} variable: {textPath}")
-
-        return None
+        try:
+            return FileTypeSelector.loadCaptionTxt(self.imgPath)
+        except OSError as ex:
+            print(f"WARNING: Couldn't read file for {{{{text}}}} variable: {ex}")
+            return None
 
 
     def _getImgProperties(self, var: str, args: list[str]) -> str | None:

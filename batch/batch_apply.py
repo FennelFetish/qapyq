@@ -403,6 +403,7 @@ class BatchApplyTask(BatchTask):
             self.log(f"WARNING: Couldn't read captions from {captionFile.jsonPath}")
             return None
 
+        self.parser.setup(imgFile, captionFile)
         imgPathNoExt = os.path.splitext(imgFile)[0]
 
         saveJson = False
@@ -411,7 +412,7 @@ class BatchApplyTask(BatchTask):
 
         saveJson |= self.handleCascadeTemplate(captionFile)
 
-        writtenFile, jsonModified = self.dest.write(imgPathNoExt, captionFile, self.parseCaption)
+        writtenFile, jsonModified = self.dest.write(imgPathNoExt, captionFile, self.lazyParseTemplate)
         saveJson |= jsonModified
 
         if self.deleteJson:
@@ -421,10 +422,8 @@ class BatchApplyTask(BatchTask):
             captionFile.saveToJson()
         return writtenFile
 
-    def parseCaption(self, imgPathNoExt: str, captionFile: CaptionFile) -> str:
-        self.parser.setup(imgPathNoExt, captionFile)
+    def lazyParseTemplate(self, captionFile: CaptionFile) -> str:
         caption = self.parser.parse(self.template)
-
         if self.parser.missingVars:
             self.log(f"WARNING: {captionFile.jsonPath} is missing values for variables: {', '.join(self.parser.missingVars)}")
 
@@ -491,7 +490,7 @@ class CaptionDest:
     def read(self, imgPathNoExt: str, captionFile: CaptionFile) -> str | None:
         return None
 
-    def write(self, imgPathNoExt: str, captionFile: CaptionFile, captionFunc: Callable[[str, CaptionFile], str]) -> tuple[str|None, bool]:
+    def write(self, imgPathNoExt: str, captionFile: CaptionFile, captionFunc: Callable[[CaptionFile], str]) -> tuple[str|None, bool]:
         'Returns the written filename and a boolean indicating if json was modified.'
         raise NotImplementedError()
 
@@ -509,18 +508,21 @@ class TxtFileDest(CaptionDest):
     @override
     def read(self, imgPathNoExt: str, captionFile: CaptionFile) -> str | None:
         txtPath = imgPathNoExt + ".txt"
-        if os.path.exists(txtPath):
+        try:
             with open(txtPath, 'r') as file:
                 return file.read()
+        except FileNotFoundError:
+            pass
+
         return None
 
     @override
-    def write(self, imgPathNoExt: str, captionFile: CaptionFile, captionFunc: Callable[[str, CaptionFile], str]) -> tuple[str|None, bool]:
+    def write(self, imgPathNoExt: str, captionFile: CaptionFile, captionFunc: Callable[[CaptionFile], str]) -> tuple[str|None, bool]:
         txtPath = imgPathNoExt + ".txt"
         if (self.writeMode != WriteMode.SeparateReplace) and os.path.exists(txtPath):
             return None, False
 
-        caption = captionFunc(imgPathNoExt, captionFile)
+        caption = captionFunc(captionFile)
         with open(txtPath, 'w') as file:
             file.write(caption)
         return txtPath, False
@@ -541,8 +543,8 @@ class SingleTxtFileDest(CaptionDest):
         self.txtFile = open(txtPath, openMode)
 
     @override
-    def write(self, imgPathNoExt: str, captionFile: CaptionFile, captionFunc: Callable[[str, CaptionFile], str]) -> tuple[str|None, bool]:
-        caption = captionFunc(imgPathNoExt, captionFile)
+    def write(self, imgPathNoExt: str, captionFile: CaptionFile, captionFunc: Callable[[CaptionFile], str]) -> tuple[str|None, bool]:
+        caption = captionFunc(captionFile)
         self.txtFile.write(caption)
         return self.txtPath, False
 
@@ -584,11 +586,11 @@ class JsonDest(CaptionDest):
         return self.captionGetter(captionFile, self.key)
 
     @override
-    def write(self, imgPathNoExt: str, captionFile: CaptionFile, captionFunc: Callable[[str, CaptionFile], str]) -> tuple[str|None, bool]:
+    def write(self, imgPathNoExt: str, captionFile: CaptionFile, captionFunc: Callable[[CaptionFile], str]) -> tuple[str|None, bool]:
         if self.skipExisting and self.captionGetter(captionFile, self.key):
             return None, False
 
-        caption = captionFunc(imgPathNoExt, captionFile)
+        caption = captionFunc(captionFile)
         self.captionSetter(captionFile, self.key, caption)
 
         if self.cascade:

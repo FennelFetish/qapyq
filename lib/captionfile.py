@@ -245,11 +245,12 @@ class FileTypeSelector(QtWidgets.QHBoxLayout):
 
     @staticmethod
     def loadCaptionTxt(imgPath: str) -> str | None:
-        path = os.path.splitext(imgPath)[0] + FileTypeSelector.CAPTION_FILE_EXT
-        if os.path.exists(path):
-            with open(path, 'r') as file:
+        try:
+            txtPath = os.path.splitext(imgPath)[0] + FileTypeSelector.CAPTION_FILE_EXT
+            with open(txtPath, 'r') as file:
                 return file.read()
-        return None
+        except FileNotFoundError:
+            return None
 
     @staticmethod
     def loadCaptionJson(keyType: str, key: str, imgPath: str) -> str | None:
