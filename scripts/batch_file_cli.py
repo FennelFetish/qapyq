@@ -1,16 +1,6 @@
-import sys, os
-QAPYQ_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-sys.path.append(QAPYQ_DIR)
-
-import argparse, random, signal
-from tqdm import tqdm
-from contextlib import contextmanager
-from PySide6.QtCore import Qt, Signal, Slot, QCoreApplication, QThreadPool, QObject, QTimer
-from config import Config
-from lib import imagerw
-from lib.filelist import FileList, resetReadExtensions
+import random
+from scripts_common import *
 from batch.batch_file import BatchFileTask, DestinationPathVariableParser, Mode
-from batch.batch_task import BatchProgressUpdate
 
 
 MODE_MAP = {
@@ -20,111 +10,12 @@ MODE_MAP = {
 }
 
 
-class ScriptLogHandler:
-    def __init__(self):
-        self.pbar: tqdm | None = None
-        self._indent = False
-
-    def releaseEntry(self):
-        pass
-
-    @contextmanager
-    def indent(self):
-        self._indent = True
-        try:
-            yield self
-        finally:
-            self._indent = False
-
-    def __call__(self, line: str):
-        if self._indent:
-            line = "  " + line
-
-        if self.pbar:
-            self.pbar.write(line)
-        else:
-            print(line)
-
-
-class ConfirmLinePrinter:
-    def __init__(self):
-        self._indent = False
-
-    @contextmanager
-    def indent(self):
-        self._indent = True
-        try:
-            yield self
-        finally:
-            self._indent = False
-
-    def __call__(self, title: str, *values, **kwargs):
-        if self._indent:
-            title = "  " + title
-
-        if len(values) > 1:
-            print(title + "s:")
-            for val in values:
-                print(f"  {val}")
-
-        elif values:
-            val = values[0]
-            if isinstance(val, bool):
-                val = "Yes" if val else "No"
-
-            if suffix := kwargs.get("suffix"):
-                val += suffix
-
-            title += ":"
-            print(f"{title:22}{val}")
-
-
-
-class BatchFileRunner(QObject):
-    signalLoad = Signal()
-    signalRun  = Signal()
-
-    def __init__(self, app: QCoreApplication, args: argparse.Namespace):
-        super().__init__()
-        self.app = app
-        self.args = args
-
-        self.filelist = FileList()
-        self.filelist.addSelectionListener(self)
-
-        self._log = ScriptLogHandler()
-        self._task: BatchFileTask | None = None
-        self._pbar: tqdm | None = None
-
-        self.signalLoad.connect(self.loadFiles, Qt.ConnectionType.QueuedConnection)
-        self.signalRun.connect(self.runTask, Qt.ConnectionType.QueuedConnection)
-
-    def abort(self):
-        self._log("Aborting...")
-        self.filelist.abortLoading()
-        if self._task is not None:
-            self._task.abort()
-        else:
-            self.app.quit()
-
-
-    @Slot()
-    def loadFiles(self):
-        resetReadExtensions()
-        self.filelist.loadAll(self.args.src)
-
-    def onFileSelectionChanged(self, selection):
-        if not self.filelist.isLoading():
-            self.signalRun.emit()
-
-
-    def _buildTask(self) -> BatchFileTask:
-        args = self.args
-
+class BatchFileRunner(CliBatchRunner):
+    def _buildTask(self, args: argparse.Namespace) -> BatchFileTask:
         basePath = args.base or self.filelist.commonRoot
         basePath = os.path.abspath(basePath)
 
-        task = BatchFileTask(self._log, self.filelist.files)
+        task = BatchFileTask(self.log, self.filelist.files)
         task.destPathTemplate   = args.path_template
         task.mode               = MODE_MAP[args.mode]
         task.basePath           = basePath
@@ -153,13 +44,7 @@ class BatchFileRunner(QObject):
         return task
 
 
-    def _confirm(self, task: BatchFileTask) -> bool:
-        printLine = ConfirmLinePrinter()
-
-        print()
-        print("== Batch File Summary ====================")
-        printLine("Source path",        *self.args.src)
-        print()
+    def _printSummary(self, task: BatchFileTask, printLine: ConfirmLinePrinter) -> bool:
         printLine("Mode",               task.mode.name)
         printLine("Base path",          f"'{task.basePath}'")
         printLine("Flat folders",       task.flatFolders)
@@ -185,23 +70,14 @@ class BatchFileRunner(QObject):
         printLine("Include json",       task.includeJson, suffix=textOverwriteJson)
         printLine("Include txt",        task.includeTxt, suffix=textOverwriteTxt)
         printLine("Create archive",     f"'{task.archivePath}'" if task.createArchive else False)
-        print("==========================================")
-        print()
 
-        if self.args.yes:
-            return True
-
-        if any((textOverwriteImages, textOverwriteMasks, textOverwriteJson, textOverwriteTxt)):
-            print("Warning: OVERWRITE is enabled for at least one file type!")
-
-        try:
-            answer = input("Proceed with this operation? [y/N]: ").strip().lower()
-            return answer in ("y", "yes")
-        except EOFError:
-            return False
+        overwrite = any((textOverwriteImages, textOverwriteMasks, textOverwriteJson, textOverwriteTxt))
+        return overwrite
 
     @staticmethod
     def _getExamplePaths(task: BatchFileTask):
+        from lib import imagerw
+
         parser = DestinationPathVariableParser(None)
         parser.basePath    = task.basePath
         parser.flatFolders = task.flatFolders
@@ -210,56 +86,6 @@ class BatchFileRunner(QObject):
             parser.setup(file)
             parser.width, parser.height = imagerw.readSize(file)
             yield parser.parsePath(task.destPathTemplate, overwriteFiles=True)
-
-
-    @Slot()
-    def runTask(self):
-        task = self._buildTask()
-
-        if not task.files:
-            print("No files found for the given source path(s). Nothing to do.")
-            self.app.quit()
-            return
-
-        if not self._confirm(task):
-            print("Aborted")
-            self.app.quit()
-            return
-
-        task.signals.progress.connect(self._onProgress, Qt.ConnectionType.QueuedConnection)
-        task.signals.done.connect(self._finish, Qt.ConnectionType.QueuedConnection)
-        task.signals.fail.connect(self._finish, Qt.ConnectionType.QueuedConnection)
-
-        print("Press Ctrl+C to abort the running task.")
-        print("")
-
-        self._task = task
-        QThreadPool.globalInstance().start(task)
-
-    @Slot(str, object)
-    def _onProgress(self, msg: str, update: BatchProgressUpdate | None):
-        if update is None:
-            return
-
-        if self._pbar is None:
-            self._pbar = tqdm(total=update.filesTotal, unit="file", desc="Batch File")
-            self._log.pbar = self._pbar
-
-        if update.filesSkipped:
-            self._pbar.set_postfix(skipped=update.filesSkipped, refresh=False)
-
-        self._pbar.n = update.filesProcessed
-        self._pbar.refresh()
-
-    @Slot()
-    def _finish(self, *_):
-        if self._pbar is not None:
-            self._pbar.close()
-            self._pbar = None
-            self._log.pbar = None
-
-        self._task = None
-        self.app.quit()
 
 
 
@@ -295,20 +121,4 @@ def readArgs() -> argparse.Namespace:
 
 if __name__ == "__main__":
     args = readArgs()
-
-    Config.pathConfig = os.path.normpath(os.path.join(QAPYQ_DIR, Config.pathConfig))
-    if not Config.load(True):
-        sys.exit(1)
-
-    app = QCoreApplication()
-    runner = BatchFileRunner(app, args)
-
-    # Let Python handle Ctrl+C even while Qt's event loop is running
-    signal.signal(signal.SIGINT, lambda *_: runner.abort())
-
-    sigTimer = QTimer()
-    sigTimer.timeout.connect(lambda: None)  # no-op; just wakes the interpreter to catch Ctrl+C
-    sigTimer.start(333)
-
-    runner.signalLoad.emit()
-    sys.exit(app.exec())
+    scriptMain("Batch File", args, BatchFileRunner)
