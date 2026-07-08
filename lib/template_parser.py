@@ -751,23 +751,28 @@ class VariableHighlighter:
             self.ranges: dict[int, list[QtGui.QTextLayout.FormatRange]] = defaultdict(list)
 
         def setFormatRange(self, start: int, end: int, format):
-            startBlock = self.doc.findBlock(start)
-            endBlock   = self.doc.findBlock(end)
-            for i in range(startBlock.blockNumber(), endBlock.blockNumber()+1):
-                block = self.doc.findBlockByNumber(i)
+            block = self.doc.findBlock(start)
+            while block.isValid():
                 formatRange = QtGui.QTextLayout.FormatRange()
                 formatRange.format = format
                 formatRange.start  = max(start - block.position(), 0)
                 formatRange.length = min(end - block.position(), block.length()) - formatRange.start
-                self.ranges[i].append(formatRange)
+                self.ranges[block.blockNumber()].append(formatRange)
+
+                block = block.next()
+                if block.position() > end:
+                    break
 
         def apply(self):
-            for i in range(self.doc.blockCount()):
-                layout = self.doc.findBlockByNumber(i).layout()
-                if ranges := self.ranges.get(i):
+            block = self.doc.firstBlock()
+            while block.isValid():
+                layout = block.layout()
+                if ranges := self.ranges.get(block.blockNumber()):
                     layout.setFormats(ranges)
                 else:
                     layout.clearFormats()
+
+                block = block.next()
 
 
     def __init__(self):
@@ -793,6 +798,32 @@ class VariableHighlighter:
 
         sourceRanges.apply()
         targetRanges.apply()
+
+    @staticmethod
+    def highlightPromptSeparators(textEdit: QtWidgets.QPlainTextEdit):
+        block = textEdit.document().firstBlock()
+        while block.isValid():
+            line = block.text()
+
+            if line.startswith("---") or line.startswith("==="):
+                format = QtGui.QTextCharFormat()
+                ColorCharFormats.setBoldFormat(format)
+
+                isHidden = line.lstrip("-=").lstrip().startswith("?")
+                format.setFontItalic(isHidden)
+                format.setFontUnderline(line.startswith("="))
+
+                formatRange = QtGui.QTextLayout.FormatRange()
+                formatRange.format = format
+                formatRange.start  = 0
+                formatRange.length = len(line)
+
+                layout = block.layout()
+                formats = layout.formats()
+                formats.append(formatRange)
+                layout.setFormats(formats)
+
+            block = block.next()
 
 
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Iterable, Generator, Generic, TypeVar, Optional
 from collections import defaultdict
-from itertools import zip_longest
+from itertools import zip_longest, repeat
 from PySide6 import QtWidgets
 from PySide6.QtCore import Slot
 from PySide6.QtGui import QColor, QTextCharFormat, QTextLayout, QTextBlock
@@ -82,6 +82,7 @@ class HighlightState:
 
 
 class CaptionHighlight:
+    IGNORE_PRESENCE = float("inf")
     SEPS = ",.:;"
 
     def __init__(self, dataSource: HighlightDataSource):
@@ -135,11 +136,16 @@ class CaptionHighlight:
         return next(iter(colors)) if len(colors) == 1 else None
 
 
-    @staticmethod
-    def _duplicateLinebreakPresence(presenceList: list[float] | None, newlines: list[int]):
-        if presenceList:
-            for nl in newlines[:-1]:
-                presenceList.insert(nl, presenceList[nl-1])  # nl is > 0
+    @classmethod
+    def _preparePresence(cls, presenceList: list[float] | None, newlines: list[int], numCaptions: int) -> list[float]:
+        if presenceList is None:
+            return [cls.IGNORE_PRESENCE] * numCaptions
+
+        # Duplicate presence value for captions that contain line breaks
+        for nl in newlines[:-1]:
+            presenceList.insert(nl, presenceList[nl-1])  # nl is > 0
+        return presenceList
+
 
     def highlight(self, text: str, separator: str, txtWidget: QtWidgets.QPlainTextEdit, state: HighlightState | None = None):
         separator = separator.strip()
@@ -155,35 +161,32 @@ class CaptionHighlight:
 
         if state:
             presenceList = self.data.getPresence()
-            self._duplicateLinebreakPresence(presenceList, newlines)
+            presenceList = self._preparePresence(presenceList, newlines, len(splitCaptions))
             captionLengthOffsets = state.getAndUpdate(splitCaptions, presenceList)
         else:
             presenceList = self.data.getTotalPresence(splitCaptions)
-            self._duplicateLinebreakPresence(presenceList, newlines)
-            captionLengthOffsets = None
+            presenceList = self._preparePresence(presenceList, newlines, len(splitCaptions))
+            captionLengthOffsets = repeat(0)
 
-        with HighlightContext(txtWidget, bool(captionLengthOffsets)) as HL:
+        with HighlightContext(txtWidget, bool(state)) as HL:
             keepFormatOffset = 0
             currentLine = 0
             start = 0
 
-            for i, caption in enumerate(splitCaptions):
+            for i, (caption, presence, lenOffset) in enumerate(zip(splitCaptions, presenceList, captionLengthOffsets)):
                 if i >= newlines[currentLine]:
                     currentLine += 1
-                    HL.setBlock(currentLine)
+                    HL.setNextLine()
                     keepFormatOffset = 0
 
-                if captionLengthOffsets:
-                    offset = captionLengthOffsets[i]
-                    if offset is None:
-                        end = start + len(caption) + len(separator)
-                        HL.keepFormat(start, end, keepFormatOffset)
-                        start = end
-                        continue
-                    else:
-                        keepFormatOffset += offset
+                if lenOffset is None:
+                    end = start + len(caption) + len(separator)
+                    HL.keepFormat(start, end, keepFormatOffset)
+                    start = end
+                    continue
+                else:
+                    keepFormatOffset += lenOffset
 
-                presence = presenceList[i] if presenceList else 1.0
                 captionStrip, padLeft, padRight = util.stripCountPadding(caption)
                 start += padLeft
 
@@ -359,32 +362,37 @@ class HighlightContext:
         self._block: QTextBlock = self._doc.firstBlock()
 
         self._blockFormatRanges: dict[int, dict[int, QTextLayout.FormatRange]] = defaultdict(dict)
-
         self._prevBlockFormatRanges: dict[int, list[QTextLayout.FormatRange]] = dict()
+
         if reuseFormats:
-            for i in range(self._doc.blockCount()):
-                block = self._doc.findBlockByNumber(i)
-                self._prevBlockFormatRanges[i] = block.layout().formats().copy()
-                self._prevBlockFormatRanges[i].reverse() # Reverse for faster deletion
+            block = self._doc.firstBlock()
+            while block.isValid():
+                blockFormats = block.layout().formats()
+                blockFormats.reverse() # Reverse for faster deletion
+                self._prevBlockFormatRanges[block.blockNumber()] = blockFormats
+                block = block.next()
 
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        for i in range(self._doc.blockCount()):
-            layout = self._doc.findBlockByNumber(i).layout()
-            if rangeDict := self._blockFormatRanges.get(i):
+        block = self._doc.firstBlock()
+        while block.isValid():
+            layout = block.layout()
+            if rangeDict := self._blockFormatRanges.get(block.blockNumber()):
                 layout.setFormats(list(rangeDict.values()))
             else:
                 layout.clearFormats()
+
+            block = block.next()
 
         self.txtWidget.viewport().repaint()
         return False
 
 
-    def setBlock(self, index: int):
-        self._block = self._doc.findBlockByNumber(index)
+    def setNextLine(self):
+        self._block = self._block.next()
 
     def checkPresence(self, format: QTextCharFormat, presence: float) -> QTextCharFormat:
         if presence >= 1.0:
@@ -418,6 +426,10 @@ class HighlightContext:
 
     def keepFormat(self, start: int, end: int, offset: int):
         blockNr = self._block.blockNumber()
+        if blockNr < 0:
+            print("Highlight error: Invalid block")
+            return
+
         start -= self._block.position() + offset
         end   -= self._block.position() + offset
 

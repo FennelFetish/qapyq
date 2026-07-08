@@ -1,8 +1,7 @@
-from PySide6 import QtWidgets, QtGui
+from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QSignalBlocker
 from config import Config
 from lib import qtlib
-from lib.colorlib import ColorCharFormats
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
 from ui.autocomplete import TemplateTextEdit, AutoCompleteSource
 
@@ -167,8 +166,8 @@ class PromptWidget(QtWidgets.QWidget):
             self._highlighter.highlight(self.txtPrompts, self.txtPreview, varPositions, disabledColors)
 
             if promptSeperators:
-                PromptsHighlighter.highlightPromptSeparators(self.txtPrompts)
-                PromptsHighlighter.highlightPromptSeparators(self.txtPreview)
+                self._highlighter.highlightPromptSeparators(self.txtPrompts)
+                self._highlighter.highlightPromptSeparators(self.txtPreview)
 
         return len(varPositions) > 0
 
@@ -320,62 +319,3 @@ class PromptWidget(QtWidgets.QWidget):
             "system_prompt": self.txtSystemPrompt.toPlainText(),
             "prompts": self.txtPrompts.toPlainText()
         }
-
-
-
-class PromptsHighlighter(QtGui.QSyntaxHighlighter):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.formats = ColorCharFormats()
-        self.formats.addFormat(self.formats.defaultFormat)
-
-    # Not used
-    def highlightBlock(self, text: str) -> None:
-        formatIndex = self.previousBlockState()
-        if formatIndex < 0:
-            formatIndex = 0
-
-        isPromptTitle = False
-        isConvTitle = False
-        isHidden = False
-
-        if isPromptTitle := text.startswith("---"):
-            isHidden = text.lstrip("-").lstrip().startswith("?")
-            formatIndex += 1
-        elif isConvTitle := text.startswith("==="):
-            isHidden = text.lstrip("=").lstrip().startswith("?")
-            formatIndex += 1
-
-        self.setCurrentBlockState(formatIndex)
-
-        format = self.formats.getFormat(formatIndex)
-        ColorCharFormats.setBoldFormat(format, isPromptTitle)
-        format.setFontUnderline(isConvTitle)
-        format.setFontItalic(isHidden)
-        self.setFormat(0, len(text), format)
-
-
-    @staticmethod
-    def highlightPromptSeparators(textEdit: QtWidgets.QPlainTextEdit):
-        doc = textEdit.document()
-        for b in range(doc.blockCount()):
-            block = doc.findBlockByNumber(b)
-            line = block.text()
-
-            if line.startswith("---") or line.startswith("==="):
-                format = QtGui.QTextCharFormat()
-                ColorCharFormats.setBoldFormat(format)
-
-                isHidden = line.lstrip("-=").lstrip().startswith("?")
-                format.setFontItalic(isHidden)
-                format.setFontUnderline(line.startswith("="))
-
-                formatRange = QtGui.QTextLayout.FormatRange()
-                formatRange.format = format
-                formatRange.start  = 0
-                formatRange.length = len(line)
-
-                layout = block.layout()
-                formats = layout.formats()
-                formats.append(formatRange)
-                layout.setFormats(formats)
