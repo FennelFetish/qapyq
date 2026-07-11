@@ -13,6 +13,9 @@ if not exist "%PYTHON%" (
 set NO_ALBUMENTATIONS_UPDATE="1"
 set YOLO_OFFLINE="True"
 
+rem Workaround for loading llama-cpp-python
+set "KMP_DUPLICATE_LIB_OK=TRUE"
+
 cd /d "%~dp0"
 %PYTHON% main_host.py %*
 

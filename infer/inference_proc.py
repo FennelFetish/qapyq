@@ -166,10 +166,8 @@ class InferenceProcess(QObject):
             env.insert("NO_ALBUMENTATIONS_UPDATE", "1")
             env.insert("YOLO_OFFLINE", "True")
 
-            #env.insert("VLLM_USE_V1", "1") # RuntimeError: Cannot re-initialize CUDA in forked subprocess. To use CUDA with multiprocessing, you must use the 'spawn' start method
-            #env.insert("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
-            env.insert("VLLM_NO_USAGE_STATS", "1")
-            env.insert("VLLM_DO_NOT_TRACK", "1")
+            # Workaround for loading llama-cpp-python on Windows
+            env.insert("KMP_DUPLICATE_LIB_OK", "TRUE")
 
             self.proc = QProcess(self)
             self.proc.setProgram(self.procCfg.executable)
@@ -515,7 +513,7 @@ class InferenceProcess(QObject):
 
                 if srv > Service.ID.INFERENCE and length > 0xFFFF:
                     line = self.proc.readLine(16384)
-                    line = str(headerBuffer, "utf-8") + str(line, "utf-8")
+                    line = str(headerBuffer, "utf-8", "replace") + str(line, "utf-8", "replace")
                     print(f"WARNING: Message from inference process looks like log output: '{line.strip()}'")
                     return 0, None
 

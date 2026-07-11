@@ -47,9 +47,10 @@ class FlashAttn:
 
 
 class LlamaCpp:
-    CUDA = Component("llama.cpp for CUDA", False, ["--index-url", "https://abetlen.github.io/llama-cpp-python/whl/cu124", "-r", "requirements/requirements-llamacpp.txt"])
-    CPU  = Component("llama.cpp for CPU",  False, ["--index-url", "https://abetlen.github.io/llama-cpp-python/whl/cpu",   "-r", "requirements/requirements-llamacpp.txt"])
-
+    CUDA126 = Component("llama.cpp for CUDA 12.6", False, ["-r", "requirements/requirements-llamacpp-cuda126.txt"])
+    CUDA128 = Component("llama.cpp for CUDA 12.8", False, ["-r", "requirements/requirements-llamacpp-cuda128.txt"])
+    CUDA130 = Component("llama.cpp for CUDA 13.0", False, ["-r", "requirements/requirements-llamacpp-cuda130.txt"])
+    CPU     = CUDA126
 
 
 class ComputePlatform(NamedTuple):
@@ -62,9 +63,9 @@ class ComputePlatform(NamedTuple):
 
 # PyTorch version affects availability of prebuilt flash_attn wheels
 PLATFORMS = {
-    "1": ComputePlatform("CUDA 12.6",   "torch==2.11.*",    "https://download.pytorch.org/whl/cu126",       Onnx.CUDA12,    FlashAttn.CUDA126,  LlamaCpp.CUDA),
-    "2": ComputePlatform("CUDA 12.8",   "torch==2.11.*",    "https://download.pytorch.org/whl/cu128",       Onnx.CUDA12,    FlashAttn.CUDA128,  LlamaCpp.CUDA),
-    "3": ComputePlatform("CUDA 13.0",   "torch==2.11.*",    "https://download.pytorch.org/whl/cu130",       Onnx.CUDA13,    FlashAttn.CUDA130,  LlamaCpp.CUDA),
+    "1": ComputePlatform("CUDA 12.6",   "torch==2.11.*",    "https://download.pytorch.org/whl/cu126",       Onnx.CUDA12,    FlashAttn.CUDA126,  LlamaCpp.CUDA126),
+    "2": ComputePlatform("CUDA 12.8",   "torch==2.11.*",    "https://download.pytorch.org/whl/cu128",       Onnx.CUDA12,    FlashAttn.CUDA128,  LlamaCpp.CUDA128),
+    "3": ComputePlatform("CUDA 13.0",   "torch==2.11.*",    "https://download.pytorch.org/whl/cu130",       Onnx.CUDA13,    FlashAttn.CUDA130,  LlamaCpp.CUDA130),
     "4": ComputePlatform("ROCm 6.4",    "torch==2.9.*",     "https://download.pytorch.org/whl/rocm6.4",     Onnx.ROCM),
     "5": ComputePlatform("ROCm 7.2",    "torch==2.11.*",    "https://download.pytorch.org/whl/rocm7.2",     Onnx.MIGX),
     "6": ComputePlatform("CPU",         "torch==2.11.*",    "https://download.pytorch.org/whl/cpu",         Onnx.CPU,       None,               LlamaCpp.CPU),

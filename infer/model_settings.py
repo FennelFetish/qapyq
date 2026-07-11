@@ -1,4 +1,5 @@
 import os.path
+from typing_extensions import override
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QSignalBlocker
 from config import Config
@@ -117,15 +118,15 @@ class BaseSettingsWidget(QtWidgets.QWidget):
         layout.addWidget(QtWidgets.QLabel("Backend:"), row, 0)
         layout.addWidget(self.cboBackend, row, 1, 1, 5)
 
-        row = self._buildBase(layout, row+1)
-        self.build(layout, row+1)
+        row = self._buildPaths(layout, row+1)
+        self.build(layout, row)
         self.setLayout(layout)
 
         self.fromDict({})
         self.reloadPresetList()
         self._onBackendChanged(self.cboBackend.currentIndex())
 
-    def _buildBase(self, layout: QtWidgets.QGridLayout, row: int) -> int:
+    def _buildPaths(self, layout: QtWidgets.QGridLayout, row: int) -> int:
         self.lblPath = QtWidgets.QLabel("Model Path:")
         layout.addWidget(self.lblPath, row, 0)
 
@@ -135,7 +136,8 @@ class BaseSettingsWidget(QtWidgets.QWidget):
         btnChooseModel = QtWidgets.QPushButton("Choose...")
         btnChooseModel.clicked.connect(lambda: self._choosePath(self.txtPath))
         layout.addWidget(btnChooseModel, row, 6)
-        return row
+
+        return row + 1
 
     def build(self, layout: QtWidgets.QGridLayout, row: int) -> None:
         raise NotImplementedError()
@@ -257,6 +259,17 @@ class LLMModelSettings(BaseSettingsWidget):
         super().__init__(configAttr, backends)
 
     def build(self, layout: QtWidgets.QGridLayout, row: int):
+        self.lblChatFormat = QtWidgets.QLabel("Custom Chat Format:")
+        self.txtChatFormat = QtWidgets.QLineEdit()
+        self.txtChatFormat.setPlaceholderText("Optional override: Chat handler class or jinja file")
+        layout.addWidget(self.lblChatFormat, row, 0)
+        layout.addWidget(self.txtChatFormat, row, 1, 1, 5)
+
+        self.btnChooseChatFormat = QtWidgets.QPushButton("Choose...")
+        self.btnChooseChatFormat.clicked.connect(lambda: self._choosePath(self.txtChatFormat, self.txtPath))
+        layout.addWidget(self.btnChooseChatFormat, row, 6)
+
+        row += 1
         self.lblQuant = QtWidgets.QLabel("Quantization:")
         layout.addWidget(self.lblQuant, row, 0)
         self.cboQuant = QtWidgets.QComboBox()
@@ -299,6 +312,7 @@ class LLMModelSettings(BaseSettingsWidget):
     @Slot(int)
     def _onBackendChanged(self, index: int):
         widgets = (
+            self.lblChatFormat, self.txtChatFormat, self.btnChooseChatFormat,
             self.lblCtxLen, self.spinCtxLen,
             self.lblBatchSize, self.spinBatchSize,
             self.lblThreadCount, self.spinThreadCount
@@ -316,9 +330,12 @@ class LLMModelSettings(BaseSettingsWidget):
     def fromDict(self, settings: dict) -> None:
         super().fromDict(settings)
 
+        self.txtChatFormat.setText(settings.get("chat_format", ""))
+
         quantIndex = self.cboQuant.findData(settings.get("quantization", ""))
         self.cboQuant.setCurrentIndex(max(quantIndex, 0))
-        self.spinCtxLen.setValue(settings.get("ctx_length", 32768))
+
+        self.spinCtxLen.setValue(settings.get("ctx_length", 8192))
 
         gpuLayers = settings.get("gpu_layers", 100)
         if gpuLayers < 0:
@@ -337,6 +354,7 @@ class LLMModelSettings(BaseSettingsWidget):
         settings["gpu_layers"] = self.spinGpuLayers.value()
 
         if self.backendType == BackendTypes.LLAMA_CPP:
+            settings["chat_format"] = self.txtChatFormat.text()
             settings["ctx_length"]  = self.spinCtxLen.value()
             settings["num_threads"] = self.spinThreadCount.value()
             settings["batch_size"]  = self.spinBatchSize.value()
@@ -352,7 +370,10 @@ class CaptionModelSettings(LLMModelSettings):
     def __init__(self, configAttr: str, backends: dict[str, BackendDef]):
         super().__init__(configAttr, backends)
 
-    def build(self, layout: QtWidgets.QGridLayout, row: int):
+    @override
+    def _buildPaths(self, layout: QtWidgets.QGridLayout, row: int) -> int:
+        row = super()._buildPaths(layout, row)
+
         self.lblProjectorPath = QtWidgets.QLabel("Projector Path:")
         self.txtProjectorPath = QtWidgets.QLineEdit()
         layout.addWidget(self.lblProjectorPath, row, 0)
@@ -362,10 +383,13 @@ class CaptionModelSettings(LLMModelSettings):
         self.btnChooseProjector.clicked.connect(lambda: self._choosePath(self.txtProjectorPath, self.txtPath))
         layout.addWidget(self.btnChooseProjector, row, 6)
 
-        row += 1
+        return row + 1
+
+    @override
+    def build(self, layout: QtWidgets.QGridLayout, row: int):
         super().build(layout, row)
 
-        row += 1
+        row += 2
         self.lblVisGpuLayers = QtWidgets.QLabel("Vis GPU Layers:")
         layout.addWidget(self.lblVisGpuLayers, row, 3)
         self.spinVisGpuLayers = qtlib.PercentageSpinBox()

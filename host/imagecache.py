@@ -1,5 +1,6 @@
 from __future__ import annotations
-from typing import Callable
+import base64
+from typing import Callable, Iterable
 from io import BytesIO
 from lib import imagerw, videorw
 
@@ -84,7 +85,6 @@ class ImageFile:
 
     def getURI(self) -> str:
         # URI could be f"file://{self.file}", but always load image with PIL to convert format
-        import base64
         imgBytes, mimetype = self._normalizeEncoding()
         base64Data = base64.b64encode(imgBytes).decode('utf-8')
         return "".join(("data:", mimetype, ";base64,", base64Data))
@@ -100,6 +100,21 @@ class ImageFile:
     def getVideoFramesCvMat(self, sampleFps: float, maxFrames: int, converterFactory: videorw.ConverterFactory):
         source = BytesIO(self.data) if self.data else self.file
         return videorw.extractFramesMat(source, sampleFps, maxFrames, converterFactory)
+
+
+    def getVideoFramesEncodedBytes(self, sampleFps: float, maxFrames: int = 32) -> Iterable[bytes]:
+        frames, metadata = self.getVideoFrames(sampleFps, maxFrames)
+        for frame in frames:
+            buffer = BytesIO()
+            frame.save(buffer, format='JPEG', optimize=False, quality=95)
+            yield buffer.getvalue()
+
+    def getVideoFramesURI(self, sampleFps: float, maxFrames: int = 32) -> list[str]:
+        uris = []
+        for frameBytes in self.getVideoFramesEncodedBytes(sampleFps, maxFrames):
+            base64Data = base64.b64encode(frameBytes).decode('utf-8')
+            uris.append("data:image/jpeg;base64," + base64Data)
+        return uris
 
 
 

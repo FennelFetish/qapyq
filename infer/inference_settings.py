@@ -80,6 +80,11 @@ class InferenceSettingsWidget(superqt.QCollapsible):
         layout.addWidget(QtWidgets.QLabel("Top K:"), row, 3)
         layout.addWidget(self.topK, row, 4)
 
+        self.lblEnableThinking = QtWidgets.QLabel("Enable Thinking:")
+        layout.addWidget(self.lblEnableThinking, row, 6)
+        self.enableThinking = QtWidgets.QCheckBox()
+        layout.addWidget(self.enableThinking, row, 7)
+
         row += 1
         self.minP = QtWidgets.QDoubleSpinBox()
         self.minP.setRange(0.0, 1.0)
@@ -143,15 +148,20 @@ class InferenceSettingsWidget(superqt.QCollapsible):
         if backendDef is not None:
             supportsPenalty = (backendDef.type == BackendTypes.LLAMA_CPP)
             supportsVideo   = ("video" in backendDef.features)
+            supportsThink   = ("think" in backendDef.features)
         else:
             supportsPenalty = False
             supportsVideo   = False
+            supportsThink   = False
 
         for widget in (self.lblFreqPenalty, self.freqPenalty, self.lblPresencePenalty, self.presencePenalty):
             widget.setEnabled(supportsPenalty)
 
         for widget in (self.lblFps, self.fps):
             widget.setEnabled(supportsVideo)
+
+        for widget in (self.lblEnableThinking, self.enableThinking):
+            widget.setEnabled(supportsThink)
 
 
     @Slot()
@@ -160,7 +170,6 @@ class InferenceSettingsWidget(superqt.QCollapsible):
 
     def fromDict(self, settings: dict):
         self.tokensMax.setValue(settings.get("max_tokens", 1000))
-        self.fps.setValue(settings.get("fps", 2.0))
         self.temperature.setValue(settings.get("temperature", 0.1))
         self.topP.setValue(settings.get("top_p", 0.95))
         self.topK.setValue(settings.get("top_k", 40))
@@ -170,6 +179,9 @@ class InferenceSettingsWidget(superqt.QCollapsible):
         self.repeatPenalty.setValue(settings.get("repeat_penalty", 1.05))
         self.freqPenalty.setValue(settings.get("frequency_penalty", 0.0))
         self.presencePenalty.setValue(settings.get("presence_penalty", 0.0))
+
+        self.fps.setValue(settings.get("fps", 2.0))
+        self.enableThinking.setChecked(settings.get("think", False))
 
     def toDict(self):
         settings = {
@@ -189,6 +201,9 @@ class InferenceSettingsWidget(superqt.QCollapsible):
 
         if self.fps.isEnabled():
             settings["fps"] = self.fps.value()
+
+        if self.enableThinking.isEnabled():
+            settings["think"] = self.enableThinking.isChecked()
 
         return settings
 

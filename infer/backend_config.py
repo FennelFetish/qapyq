@@ -5,7 +5,6 @@ from typing import Any
 class BackendTypes(Enum):
     LLAMA_CPP    = "llama.cpp"
     TRANSFORMERS = "transformers"
-    #VLLM         = "vllm"
     ONNX         = "onnx"
     TORCH        = "torch"
     ULTRALYTICS  = "ultralytics"
@@ -19,7 +18,6 @@ class BackendPathModes(Enum):
 DefaultPathModes = {
     BackendTypes.LLAMA_CPP:     BackendPathModes.FILE,
     BackendTypes.TRANSFORMERS:  BackendPathModes.FOLDER,
-    #BackendTypes.VLLM:          BackendPathModes.FOLDER,
     BackendTypes.ONNX:          BackendPathModes.FILE,
     BackendTypes.TORCH:         BackendPathModes.FOLDER,
     BackendTypes.ULTRALYTICS:   BackendPathModes.FILE,
@@ -42,27 +40,23 @@ class MaskBackendDef(BackendDef):
 
 
 BackendsCaption = {
+    "Generic GGUF":     BackendDef("gguf-mtmd",     BackendTypes.LLAMA_CPP, features={"think","video"}),
     "Florence-2":       BackendDef("florence2",     BackendTypes.TRANSFORMERS),
-    "Gemma-3/4":        BackendDef("gemma3",        BackendTypes.LLAMA_CPP),
+    "Gemma-3":          BackendDef("gemma3",        BackendTypes.LLAMA_CPP, features={"video"}),
     "InternVL":         BackendDef("internvl2",     BackendTypes.TRANSFORMERS, features={"video"}),
-    #"InternVL2/2.5 VLLM":BackendDef("internvl2-vllm",BackendTypes.VLLM),
     "JoyCaption":       BackendDef("joycaption",    BackendTypes.TRANSFORMERS),
-    "MiniCPM-V":        BackendDef("minicpm",       BackendTypes.LLAMA_CPP),
+    "MiniCPM-V":        BackendDef("minicpm",       BackendTypes.LLAMA_CPP, features={"think","video"}),
     "Molmo":            BackendDef("molmo",         BackendTypes.TRANSFORMERS),
-    #"Molmo VLLM":       BackendDef("molmo-vllm",    BackendTypes.VLLM),
     "Moondream":        BackendDef("moondream",     BackendTypes.LLAMA_CPP),
     "Ovis-1.6":         BackendDef("ovis16",        BackendTypes.TRANSFORMERS),
     "Ovis-2.0":         BackendDef("ovis2",         BackendTypes.TRANSFORMERS),
     "Ovis-2.5":         BackendDef("ovis25",        BackendTypes.TRANSFORMERS),
     "Qwen-VL 2":        BackendDef("qwen2vl",       BackendTypes.TRANSFORMERS),
     "Qwen-VL 2.5/3":    BackendDef("qwen25vl",      BackendTypes.TRANSFORMERS, features={"video"}),
-    #"Qwen2.5-VL VLLM":  BackendDef("qwen25vl-vllm", BackendTypes.VLLM)
 }
 
-# TODO: Allow loading of caption models as LLM.
-#       Set visual layers to 0? -> No, load as defined in config to prevent reloading.
 BackendsLLM = {
-    "GGUF":             BackendDef("gguf", BackendTypes.LLAMA_CPP)
+    "GGUF":             BackendDef("gguf",          BackendTypes.LLAMA_CPP, features={"think"})
 }
 
 BackendsTag = {
@@ -123,12 +117,15 @@ class BackendLoader:
     def _loadBackend(self, config: dict):
         match backendName := config.get("backend"):
             # Caption / LLM
+            case "gguf-mtmd":
+                from .backend_llamacpp import LlamaCppVisionBackend
+                return LlamaCppVisionBackend(config).setThinkEnd("</think>")
             case "florence2" | "florence2-detect" | "florence2-segment":
                 from .backend_florence2 import Florence2Backend
                 return Florence2Backend(config)
             case "gemma3":
                 from .backend_llamacpp import LlamaCppVisionBackend
-                return LlamaCppVisionBackend(config)
+                return LlamaCppVisionBackend(config, "Gemma3ChatHandler")
             case "internvl2":
                 from .backend_internvl2 import InternVL2Backend
                 return InternVL2Backend(config)
@@ -140,8 +137,7 @@ class BackendLoader:
                 return JoyCaptionBackend(config)
             case "minicpm":
                 from .backend_llamacpp import LlamaCppVisionBackend
-                from llama_cpp.llama_chat_format import MiniCPMv26ChatHandler
-                return LlamaCppVisionBackend(config, MiniCPMv26ChatHandler)
+                return LlamaCppVisionBackend(config, "MiniCPMV46ChatHandler").setThinkEnd("</think>")
             case "molmo":
                 from .backend_molmo import MolmoBackend
                 return MolmoBackend(config)
@@ -150,8 +146,7 @@ class BackendLoader:
                 return VllmMolmoBackend(config)
             case "moondream":
                 from .backend_llamacpp import LlamaCppVisionBackend
-                from llama_cpp.llama_chat_format import MoondreamChatHandler
-                return LlamaCppVisionBackend(config, MoondreamChatHandler)
+                return LlamaCppVisionBackend(config, "MoondreamChatHandler")
             case "ovis16":
                 from .backend_ovis16 import Ovis16Backend
                 return Ovis16Backend(config)
@@ -174,7 +169,7 @@ class BackendLoader:
             # LLM
             case "gguf":
                 from .backend_llamacpp import LlamaCppBackend
-                return LlamaCppBackend(config)
+                return LlamaCppBackend.createWithFormatOverride(config).setThinkEnd("</think>")
 
             # Tag
             case "joytag":
