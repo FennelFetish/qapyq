@@ -43,6 +43,7 @@ BackendsCaption = {
     "Generic GGUF":     BackendDef("gguf-mtmd",     BackendTypes.LLAMA_CPP, features={"think","video"}),
     "Florence-2":       BackendDef("florence2",     BackendTypes.TRANSFORMERS),
     "Gemma-3":          BackendDef("gemma3",        BackendTypes.LLAMA_CPP, features={"video"}),
+    "Gemma-4":          BackendDef("gemma4",        BackendTypes.LLAMA_CPP, features={"think","video"}),
     "InternVL":         BackendDef("internvl2",     BackendTypes.TRANSFORMERS, features={"video"}),
     "JoyCaption":       BackendDef("joycaption",    BackendTypes.TRANSFORMERS),
     "MiniCPM-V":        BackendDef("minicpm",       BackendTypes.LLAMA_CPP, features={"think","video"}),
@@ -53,6 +54,7 @@ BackendsCaption = {
     "Ovis-2.5":         BackendDef("ovis25",        BackendTypes.TRANSFORMERS),
     "Qwen-VL 2":        BackendDef("qwen2vl",       BackendTypes.TRANSFORMERS),
     "Qwen-VL 2.5/3":    BackendDef("qwen25vl",      BackendTypes.TRANSFORMERS, features={"video"}),
+    "Qwen-VL 3.5/3.6":  BackendDef("qwen35",        BackendTypes.LLAMA_CPP, features={"think","video"}),
 }
 
 BackendsLLM = {
@@ -126,6 +128,9 @@ class BackendLoader:
             case "gemma3":
                 from .backend_llamacpp import LlamaCppVisionBackend
                 return LlamaCppVisionBackend(config, "Gemma3ChatHandler")
+            case "gemma4":
+                from .backend_llamacpp import LlamaCppVisionBackend
+                return LlamaCppVisionBackend(config, "Gemma4ChatHandler").setThinkEnd("<channel|>", "<|channel>")
             case "internvl2":
                 from .backend_internvl2 import InternVL2Backend
                 return InternVL2Backend(config)
@@ -165,6 +170,9 @@ class BackendLoader:
             case "qwen25vl-vllm":
                 from .backend_vllm_qwen25vl import VllmQwen25Backend
                 return VllmQwen25Backend(config)
+            case "qwen35":
+                from .backend_llamacpp import LlamaCppVisionBackend
+                return LlamaCppVisionBackend(config, "Qwen35ChatHandler", image_min_tokens=1024, preserve_thinking=True).setThinkEnd("</think>")
 
             # LLM
             case "gguf":
