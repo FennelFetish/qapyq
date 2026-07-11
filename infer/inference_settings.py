@@ -57,8 +57,9 @@ class InferenceSettingsWidget(superqt.QCollapsible):
 
         self.lblFps = QtWidgets.QLabel("Video FPS:")
         self.fps = QtWidgets.QDoubleSpinBox()
-        self.fps.setRange(1.0, 999.0)
+        self.fps.setRange(0.0, 999.0)
         self.fps.setSingleStep(1.0)
+        self.fps.setSpecialValueText("First frame only")
 
         if self.backends is not BackendsCaption:
             self.lblFps.setVisible(False)

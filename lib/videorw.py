@@ -11,9 +11,13 @@ READ_EXTENSIONS = frozenset((
     '.ogv', '.qt', '.rm', '.rmvb', '.ts', '.vob', '.webm', '.wtv', '.wmv',
 ))
 
-def isVideoFile(path: str):
+def isVideoFile(path: str) -> bool:
     ext = os.path.splitext(path)[1].lower()
     return ext in READ_EXTENSIONS
+
+
+def sampleSingleFrame(fps: float) -> bool:
+    return fps < 0.01
 
 
 # Read metadata with OpenCV because AV doesn't account for rotation (would need to decode frames)
@@ -285,17 +289,24 @@ try:
             convert = createFrameConverter(w, h)
 
             duration = float(container.duration / av.time_base)
-            fps = float(stream.average_rate or 0)
-            frameCount = stream.frames or int(duration * fps)
 
-            numSampleFrames = min(int(duration * sampleFps), frameCount)
-            numSampleFrames &= ~1  # Force even frame count by rounding down
-            numSampleFrames = min(max(numSampleFrames, 2), maxFrames)
-            sampleFps = numSampleFrames / duration
+            if sampleSingleFrame(sampleFps):
+                numSampleFrames = 1
+                sampleFps = 0.0
+                seek = False
+                posFunc = lambda i: -100.0
+            else:
+                fps = float(stream.average_rate or 0)
+                frameCount = stream.frames or int(duration * fps)
 
-            posFeed = duration / (numSampleFrames-1) if numSampleFrames < frameCount-1 else 0
-            seek = (posFeed * fps > 24)
-            posFunc = lambda i: i * posFeed
+                numSampleFrames = min(int(duration * sampleFps), frameCount)
+                numSampleFrames &= ~1  # Force even frame count by rounding down
+                numSampleFrames = min(max(numSampleFrames, 2), maxFrames)
+                sampleFps = numSampleFrames / duration
+
+                posFeed = duration / (numSampleFrames-1) if numSampleFrames < frameCount-1 else 0
+                seek = (posFeed * fps > 24)
+                posFunc = lambda i: i * posFeed
 
             frames = list[Image.Image]()
             try:
@@ -311,7 +322,7 @@ try:
 
         metadata = {
             "fps": sampleFps,
-            "frames_indices": [i for i in range(len(frames))],
+            "frames_indices": list(range(len(frames))),
             "total_num_frames": len(frames),
             "duration": duration
         }

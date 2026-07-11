@@ -119,12 +119,17 @@ class QwenVLBackend(CaptionBackend):
     def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
         if imgFile.isVideo():
             frames, metadata = imgFile.getVideoFrames(self.sampleFps, 64)
-            runTask = lambda messages: self._runTaskVideo(frames, metadata, messages)
-            userContent = lambda prompt, i: self._getUserContentVideo(prompt, i, frames, metadata)
+            if len(frames) == 1:
+                image = self.downscaleImage(frames[0])
+                runTask     = lambda messages:  self._runTask(image, messages)
+                userContent = lambda prompt, i: self._getUserContentImage(prompt, i, image)
+            else:
+                runTask     = lambda messages:  self._runTaskVideo(frames, metadata, messages)
+                userContent = lambda prompt, i: self._getUserContentVideo(prompt, i, frames, metadata)
         else:
             image = imgFile.openPIL()
             image = self.downscaleImage(image)
-            runTask = lambda messages: self._runTask(image, messages)
+            runTask     = lambda messages:  self._runTask(image, messages)
             userContent = lambda prompt, i: self._getUserContentImage(prompt, i, image)
 
         answers = dict()
