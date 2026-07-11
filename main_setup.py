@@ -130,7 +130,7 @@ def printSep(text: str):
 
 ASK_COMPONENTS_TEXT = """
 qapyq supports automatic captioning, upscaling, masking and semantic sorting using AI models.
-The required packages are installed into a virtual environment that needs 10-15 GB of space.
+The required packages are installed into a virtual environment that needs 8-9 GB of space.
 
 You can also choose to install only the GUI and media processing packages,
 which need around 1 GB.
