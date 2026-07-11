@@ -594,8 +594,8 @@ class ToggleButton(QtWidgets.QPushButton):
 
 class MenuComboBox(QtWidgets.QComboBox):
     class MenuHighlightStyle(QtWidgets.QProxyStyle):
-        def __init__(self, palette: QtGui.QPalette):
-            super().__init__()
+        def __init__(self, style: QtWidgets.QStyle, palette: QtGui.QPalette):
+            super().__init__(style)
             self._bgColor = palette.color(QtGui.QPalette.ColorRole.Highlight)
             self._bgColor.setAlphaF(0.2)
 
@@ -625,7 +625,7 @@ class MenuComboBox(QtWidgets.QComboBox):
         self._nextIndex = 0
 
         if MenuComboBox.MENU_STYLE is None:
-            MenuComboBox.MENU_STYLE = MenuComboBox.MenuHighlightStyle(self.palette())
+            MenuComboBox.MENU_STYLE = MenuComboBox.MenuHighlightStyle(self.style(), self.palette())
         self.menu.setStyle(MenuComboBox.MENU_STYLE)
 
 
