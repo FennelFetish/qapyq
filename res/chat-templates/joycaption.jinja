@@ -1,0 +1,55 @@
+{%- if not date_string is defined -%}
+    {%- set date_string = '26 July 2024' -%}
+{%- endif -%}
+
+{%- if messages[0]['role'] == 'system' -%}
+    {%- if messages[0]['content'] is string -%}
+        {%- set system_message = messages[0]['content'] -%}
+    {%- else -%}
+        {%- set system_message = messages[0]['content'][0]['text'] -%}
+    {%- endif -%}
+    {%- set loop_messages = messages[1:] -%}
+{%- else -%}
+    {%- set system_message = '' -%}
+    {%- set loop_messages = messages -%}
+{%- endif -%}
+
+{{- '<|start_header_id|>system<|end_header_id|>\n\n' -}}
+{{- 'Cutting Knowledge Date: December 2023\n' -}}
+{{- 'Today Date: ' + date_string + '\n\n' -}}
+{{- system_message -}}
+{{- '<|eot_id|>' -}}
+
+{%- for message in loop_messages -%}
+    {{- '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' -}}
+
+    {%- if message['content'] is string -%}
+        {{- message['content'] | trim -}}
+
+    {%- elif message['content'] is iterable -%}
+        {%- if loop.index0 == 0 and message['role'] == 'user' -%}
+            {%- set image_item = message['content'] | selectattr('type', 'equalto', 'image_url') | first -%}
+            {%- if image_item is defined and image_item -%}
+                {{- '<|reserved_special_token_70|>' -}}
+                {%- if image_item['image_url'] is string -%}
+                    {{- image_item['image_url'] -}}
+                {%- else -%}
+                    {{- image_item['image_url']['url'] -}}
+                {%- endif -%}
+                {{- '<|reserved_special_token_71|>' -}}
+            {%- endif -%}
+        {%- endif -%}
+
+        {%- for item in message['content'] -%}
+            {%- if 'text' in item -%}
+                {{- item['text'] | trim -}}
+            {%- endif -%}
+        {%- endfor -%}
+    {%- endif -%}
+
+    {{- '<|eot_id|>' -}}
+{%- endfor -%}
+
+{%- if add_generation_prompt -%}
+    {{- '<|start_header_id|>assistant<|end_header_id|>\n\n' -}}
+{%- endif -%}

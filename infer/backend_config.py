@@ -40,31 +40,32 @@ class MaskBackendDef(BackendDef):
 
 
 BackendsCaption = {
-    "Generic GGUF":     BackendDef("gguf-mtmd",     BackendTypes.LLAMA_CPP, features={"think","video"}),
-    "Florence-2":       BackendDef("florence2",     BackendTypes.TRANSFORMERS),
-    "Gemma-3":          BackendDef("gemma3",        BackendTypes.LLAMA_CPP, features={"video"}),
-    "Gemma-4":          BackendDef("gemma4",        BackendTypes.LLAMA_CPP, features={"think","video"}),
-    "InternVL":         BackendDef("internvl2",     BackendTypes.TRANSFORMERS, features={"video"}),
-    "JoyCaption":       BackendDef("joycaption",    BackendTypes.TRANSFORMERS),
-    "MiniCPM-V":        BackendDef("minicpm",       BackendTypes.LLAMA_CPP, features={"think","video"}),
-    "Molmo":            BackendDef("molmo",         BackendTypes.TRANSFORMERS),
-    "Moondream":        BackendDef("moondream",     BackendTypes.LLAMA_CPP),
-    "Ovis-1.6":         BackendDef("ovis16",        BackendTypes.TRANSFORMERS),
-    "Ovis-2.0":         BackendDef("ovis2",         BackendTypes.TRANSFORMERS),
-    "Ovis-2.5":         BackendDef("ovis25",        BackendTypes.TRANSFORMERS),
-    "Qwen-VL 2":        BackendDef("qwen2vl",       BackendTypes.TRANSFORMERS),
-    "Qwen-VL 2.5/3":    BackendDef("qwen25vl",      BackendTypes.TRANSFORMERS, features={"video"}),
-    "Qwen-VL 3.5/3.6":  BackendDef("qwen35",        BackendTypes.LLAMA_CPP, features={"think","video"}),
+    "Generic GGUF":     BackendDef("gguf-mtmd",         BackendTypes.LLAMA_CPP,         features={"think","video"}),
+    "Florence-2":       BackendDef("florence2",         BackendTypes.TRANSFORMERS),
+    "Gemma-3":          BackendDef("gemma3",            BackendTypes.LLAMA_CPP,         features={"video"}),
+    "Gemma-4":          BackendDef("gemma4",            BackendTypes.LLAMA_CPP,         features={"think","video"}),
+    "InternVL":         BackendDef("internvl2",         BackendTypes.TRANSFORMERS,      features={"video"}),
+    "JoyCaption":       BackendDef("joycaption",        BackendTypes.TRANSFORMERS),
+    "JoyCaption GGUF":  BackendDef("joycaption-gguf",   BackendTypes.LLAMA_CPP),
+    "MiniCPM-V":        BackendDef("minicpm",           BackendTypes.LLAMA_CPP,         features={"think","video"}),
+    "Molmo":            BackendDef("molmo",             BackendTypes.TRANSFORMERS),
+    "Moondream":        BackendDef("moondream",         BackendTypes.LLAMA_CPP),
+    "Ovis-1.6":         BackendDef("ovis16",            BackendTypes.TRANSFORMERS),
+    "Ovis-2.0":         BackendDef("ovis2",             BackendTypes.TRANSFORMERS),
+    "Ovis-2.5":         BackendDef("ovis25",            BackendTypes.TRANSFORMERS),
+    "Qwen-VL 2":        BackendDef("qwen2vl",           BackendTypes.TRANSFORMERS),
+    "Qwen-VL 2.5/3":    BackendDef("qwen25vl",          BackendTypes.TRANSFORMERS,      features={"video"}),
+    "Qwen-VL 3.5/3.6":  BackendDef("qwen35",            BackendTypes.LLAMA_CPP,         features={"think","video"}),
 }
 
 BackendsLLM = {
-    "GGUF":             BackendDef("gguf",          BackendTypes.LLAMA_CPP, features={"think"})
+    "Generic GGUF":     BackendDef("gguf",              BackendTypes.LLAMA_CPP,         features={"think"})
 }
 
 BackendsTag = {
-    "JoyTag":           BackendDef("joytag",        BackendTypes.TORCH),
-    "PixAI":            BackendDef("pixai-tag",     BackendTypes.ONNX),
-    "WD":               BackendDef("wd",            BackendTypes.ONNX)
+    "JoyTag":           BackendDef("joytag",            BackendTypes.TORCH),
+    "PixAI":            BackendDef("pixai-tag",         BackendTypes.ONNX),
+    "WD":               BackendDef("wd",                BackendTypes.ONNX)
 }
 
 BackendsMask = {
@@ -77,13 +78,13 @@ BackendsMask = {
 }
 
 BackendsUpscale = {
-    "Upscale":          BackendDef("upscale", BackendTypes.SPANDREL)
+    "Upscale":          BackendDef("upscale",           BackendTypes.SPANDREL)
 }
 
 BackendsEmbedding = {
-    "CLIP":             BackendDef("clip", BackendTypes.TRANSFORMERS),
-    "SigLIP":           BackendDef("siglip", BackendTypes.TRANSFORMERS),
-    "SigLIP ONNX":      BackendDef("siglip-onnx", BackendTypes.ONNX, BackendPathModes.FOLDER),
+    "CLIP":             BackendDef("clip",              BackendTypes.TRANSFORMERS),
+    "SigLIP":           BackendDef("siglip",            BackendTypes.TRANSFORMERS),
+    "SigLIP ONNX":      BackendDef("siglip-onnx",       BackendTypes.ONNX, BackendPathModes.FOLDER),
 }
 
 
@@ -134,21 +135,18 @@ class BackendLoader:
             case "internvl2":
                 from .backend_internvl2 import InternVL2Backend
                 return InternVL2Backend(config)
-            case "internvl2-vllm":
-                from .backend_vllm_internvl import VllmInternVlBackend
-                return VllmInternVlBackend(config)
             case "joycaption":
                 from .backend_joycaption import JoyCaptionBackend
                 return JoyCaptionBackend(config)
+            case "joycaption-gguf":
+                from .backend_llamacpp import LlamaCppVisionBackend
+                return LlamaCppVisionBackend(config, jinjaFile="./res/chat-templates/joycaption.jinja")
             case "minicpm":
                 from .backend_llamacpp import LlamaCppVisionBackend
                 return LlamaCppVisionBackend(config, "MiniCPMV46ChatHandler").setThinkEnd("</think>")
             case "molmo":
                 from .backend_molmo import MolmoBackend
                 return MolmoBackend(config)
-            case "molmo-vllm":
-                from .backend_vllm_molmo import VllmMolmoBackend
-                return VllmMolmoBackend(config)
             case "moondream":
                 from .backend_llamacpp import LlamaCppVisionBackend
                 return LlamaCppVisionBackend(config, "MoondreamChatHandler")
@@ -167,9 +165,6 @@ class BackendLoader:
             case "qwen25vl" | "qwen25vl-detect":
                 from .backend_qwen25vl import getQwenVLBackend
                 return getQwenVLBackend(config)
-            case "qwen25vl-vllm":
-                from .backend_vllm_qwen25vl import VllmQwen25Backend
-                return VllmQwen25Backend(config)
             case "qwen35":
                 from .backend_llamacpp import LlamaCppVisionBackend
                 return LlamaCppVisionBackend(config, "Qwen35ChatHandler", image_min_tokens=1024, preserve_thinking=True).setThinkEnd("</think>")

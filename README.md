@@ -94,12 +94,13 @@ Find more specialized finetuned models on [huggingface.co](https://huggingface.c
 
 - **Captioning**<br>
   Models for generating complete-sentence captions for images.<br>
-  Those with 🎦 support video captioning. GGUF models generally load and run faster.
+  Those with 🎦 support video captioning. GGUF models generally load and run faster.<br>
+  Tip: Use [grounding](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Tips-and-Workflows#grounding) tags to steer the model.
 
   - [Florence-2](https://huggingface.co/collections/microsoft/florence-6669f44df0d87d9c3bfb76de)
   - [Gemma 3 (GGUF)](https://huggingface.co/collections/unsloth/gemma-3), [Gemma 4 (GGUF)](https://huggingface.co/collections/unsloth/gemma-4) 🎦
   - [InternVL2](https://huggingface.co/collections/OpenGVLab/internvl-20-667d3961ab5eb12c7ed1463e), [InternVL2.5](https://huggingface.co/collections/OpenGVLab/internvl25-673e1019b66e2218f68d7c1c), [InternVL2.5-MPO](https://huggingface.co/collections/OpenGVLab/internvl25-mpo-6753fed98cd828219b12f849), [InternVL3](https://huggingface.co/collections/OpenGVLab/internvl3-67f7f690be79c2fe9d74fe9d), [InternVL3.5](https://huggingface.co/collections/OpenGVLab/internvl35-core-68b08a936ded8dc59597179c) 🎦 (Github Format)
-  - [JoyCaption](https://huggingface.co/fancyfeast/llama-joycaption-beta-one-hf-llava)
+  - [JoyCaption](https://huggingface.co/fancyfeast/llama-joycaption-beta-one-hf-llava), [JoyCaption (GGUF)](https://huggingface.co/mradermacher/llama-joycaption-beta-one-hf-llava-GGUF) + [mmproj](https://huggingface.co/concedo/llama-joycaption-beta-one-hf-llava-mmproj-gguf)
   - [MiniCPM-V-2.6 (GGUF)](https://huggingface.co/openbmb/MiniCPM-V-2_6-gguf), [MiniCPM-o-2.6 (GGUF)](https://huggingface.co/openbmb/MiniCPM-o-2_6-gguf), [MiniCPM-V-4 (GGUF)](https://huggingface.co/openbmb/MiniCPM-V-4-gguf), [MiniCPM-V-4.6 (GGUF)](https://huggingface.co/collections/openbmb/minicpm-v-46) 🎦
   - [Molmo](https://huggingface.co/collections/allenai/molmo-66f379e6fe3b8ef090a8ca19)
   - [Moondream2 (GGUF)](https://huggingface.co/vikhyatk/moondream2)

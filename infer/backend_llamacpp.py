@@ -120,7 +120,8 @@ class LlamaCppBackend(InferenceBackend):
             chatHandler.enable_thinking = enabled
             thinkSet = True
 
-        if extraTemplateArgs := getattr(chatHandler, "extra_template_arguments", None):
+        extraTemplateArgs = getattr(chatHandler, "extra_template_arguments", None)
+        if isinstance(extraTemplateArgs, dict):
             extraTemplateArgs["enable_thinking"] = enabled
             thinkSet = True
 
@@ -223,7 +224,7 @@ class LlamaCppBackend(InferenceBackend):
 
 
 class LlamaCppVisionBackend(LlamaCppBackend):
-    def __init__(self, config: dict, chatHandlerType: type[MTMDChatHandler] | str | None = None, **chatHandlerKwargs):
+    def __init__(self, config: dict, chatHandlerType: type[MTMDChatHandler] | str | None = None, jinjaFile: str = "", **chatHandlerKwargs):
         chatHandlerArgs: dict[str, Any] = {
             "verbose": False,
         }
@@ -231,12 +232,15 @@ class LlamaCppVisionBackend(LlamaCppBackend):
 
         if chatFormatOverride := config.get("chat_format"):
             if os.sep in chatFormatOverride:
-                chatTemplate = readChatTemplateFromFile(chatFormatOverride)
-                chatHandlerArgs["chat_template_override"] = chatTemplate
-                chatHandler = self._createChatHandler(config, chatHandlerType, chatHandlerArgs)
-                chatHandler._chat_format_parser_tags = [tag for tag in GenericMTMDChatHandler.KNOWN_MEDIA_TAGS if tag in chatTemplate]
+                jinjaFile = chatFormatOverride
             else:
-                chatHandler = self._createChatHandler(config, chatFormatOverride, chatHandlerArgs)
+                chatHandlerType = chatFormatOverride
+
+        if jinjaFile:
+            chatTemplate = readChatTemplateFromFile(jinjaFile)
+            chatHandlerArgs["chat_template_override"] = chatTemplate
+            chatHandler = self._createChatHandler(config, chatHandlerType, chatHandlerArgs)
+            chatHandler._chat_format_parser_tags = [tag for tag in GenericMTMDChatHandler.KNOWN_MEDIA_TAGS if tag in chatTemplate]
         else:
             chatHandler = self._createChatHandler(config, chatHandlerType, chatHandlerArgs)
 
