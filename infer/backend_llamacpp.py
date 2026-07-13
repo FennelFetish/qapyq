@@ -253,6 +253,12 @@ class LlamaCppVisionBackend(LlamaCppBackend):
         super().__init__(config, chat_handler=chatHandler)
         self.stop += ["USER:", "ASSISTANT:"]
 
+        # Workaround: GenericMTMDChatHandler doesn't update the chat template after loading from model
+        if not jinjaFile and isinstance(chatHandler, GenericMTMDChatHandler):
+            chatHandler.chat_format = None
+            chatHandler._resolve_chat_format(self.llm)
+            chatHandler._change_chat_template(chatHandler.chat_format)
+
 
     def _createChatHandler(self, config: dict, chatHandlerType: type[MTMDChatHandler] | str | None, args: dict) -> MTMDChatHandler:
         if not chatHandlerType:
