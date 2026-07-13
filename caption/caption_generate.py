@@ -1,4 +1,4 @@
-import os, re, traceback, weakref
+import os, time, re, traceback, weakref
 from typing import Iterable
 from enum import Enum
 from PySide6 import QtWidgets
@@ -8,11 +8,16 @@ from infer.inference_proc import InferenceProcess
 from infer.inference_settings import InferencePresetWidget, RemoteInferenceConfig
 from infer.tag_settings import TagPresetWidget
 from infer.prompt import PromptWidget
+from infer.prompt_struct import Conversation, PromptUtil
 from lib.template_parser import TemplateVariableParser
 from lib.filelist import DataKeys
-import lib.qtlib as qtlib
+from lib import qtlib, util
 from .caption_tab import CaptionTab, MultiEditSupport
 from .caption_context import CaptionContext
+
+
+CONTENT_CAPTION = "caption"
+CONTENT_TAG     = "tags"
 
 
 class ApplyMode(Enum):
@@ -74,10 +79,10 @@ class CaptionGenerate(CaptionTab):
         layout.addWidget(self.cboMode, row, 1)
 
         self.cboCapTag = QtWidgets.QComboBox()
-        self.cboCapTag.addItem("Caption")
-        self.cboCapTag.addItem("Tags")
-        self.cboCapTag.addItem("Caption, Tags")
-        self.cboCapTag.addItem("Tags, Caption")
+        self.cboCapTag.addItem(CONTENT_CAPTION.title())
+        self.cboCapTag.addItem(CONTENT_TAG.title())
+        self.cboCapTag.addItem(f"{CONTENT_CAPTION}, {CONTENT_TAG}".title())
+        self.cboCapTag.addItem(f"{CONTENT_TAG}, {CONTENT_CAPTION}".title())
         layout.addWidget(self.cboCapTag, row, 2)
 
         self.btnGenerate = QtWidgets.QPushButton("Generate")
@@ -146,7 +151,7 @@ class CaptionGenerate(CaptionTab):
         filelist = self.ctx.tab.filelist
         currentFile = filelist.getCurrentFile()
 
-        files = list(filelist.selectedFiles)
+        files = filelist.selection.sorted.copy()
         if not files:
             if currentFile:
                 files.append(currentFile)
@@ -160,11 +165,12 @@ class CaptionGenerate(CaptionTab):
         content = self.cboCapTag.currentText().lower().split(", ")
 
         task = InferenceTask(files, content)
-        task.signals.progress.connect(self.onProgress, Qt.ConnectionType.QueuedConnection)
-        task.signals.done.connect(self.onGenerated, Qt.ConnectionType.QueuedConnection)
-        task.signals.fail.connect(self.onFail, Qt.ConnectionType.QueuedConnection)
+        task.progress.connect(self.onProgress, Qt.ConnectionType.QueuedConnection)
+        task.generated.connect(self.onGenerated, Qt.ConnectionType.QueuedConnection)
+        task.done.connect(self.onDone, Qt.ConnectionType.QueuedConnection)
+        task.fail.connect(self.onFail, Qt.ConnectionType.QueuedConnection)
 
-        if "caption" in content:
+        if CONTENT_CAPTION in content:
             self.onFileChanged(currentFile) # Update parser
             task.varParser = FrozenCurrentVariableParser(self.ctx, self.promptWidget.prompts, files)
 
@@ -172,11 +178,11 @@ class CaptionGenerate(CaptionTab):
             task.systemPrompt = self.promptWidget.systemPrompt.strip()
             task.configs = self.inferSettings.getRemoteInferenceConfig()
 
-        if "tags" in content:
+        if CONTENT_TAG in content:
             task.tagConfig = self.tagSettings.getInferenceConfig()
 
         self._task = task
-        QThreadPool.globalInstance().start(task)
+        QThreadPool.globalInstance().start(QRunnable.create(task))
 
 
     def _finishTask(self):
@@ -187,40 +193,51 @@ class CaptionGenerate(CaptionTab):
     def onProgress(self, message: str):
         self.statusBar.showMessage(message)
 
-    @Slot(str)
-    def onFail(self, errorMsg: str):
+    @Slot(int, int, float)
+    def onDone(self, numDone: int, numTotal: int, timeMs: float):
         self._finishTask()
+
+        timeStr = util.formatTime(timeMs) if timeMs > 2000.0 else f"{int(timeMs)} ms"
+
+        if numTotal > 1:
+            timePerFile = timeMs / numTotal
+            statusMsg = f"Generated {numDone}/{numTotal} captions in {timeStr}"
+            logMsg    = f"Generated {numDone}/{numTotal} captions in {timeMs:.02f} ms ({timePerFile:.02f} ms per file)"
+        else:
+            statusMsg = f"Generated caption in {timeStr}"
+            logMsg    = f"Generated caption in {timeMs:.02f} ms"
+
+        self.statusBar.showColoredMessage(statusMsg, True)
+        print(logMsg)
+
+    @Slot(int, int, str)
+    def onFail(self, numDone: int, numTotal: int, errorMsg: str):
+        self._finishTask()
+        errorMsg = f"[{numDone}/{numTotal}] {errorMsg}"
         self.statusBar.showColoredMessage(errorMsg, False, 0)
 
-    @Slot(dict)
-    def onGenerated(self, fileResults: dict[str, str]):
-        self._finishTask()
-
-        if not fileResults:
-            self.statusBar.showColoredMessage("Finished with empty result", False, 0)
-            return
-
-        self.statusBar.showColoredMessage("Done", True)
+    @Slot(str, str)
+    def onGenerated(self, imgPath: str, generatedText: str):
+        assert generatedText
 
         filelist = self.ctx.tab.filelist
         multiEditActive = self.ctx.container.multiEdit.active
-        multiEditActive &= not filelist.selectedFiles.isdisjoint(fileResults.keys())
+        multiEditActive &= imgPath in filelist.selectedFiles
         if multiEditActive:
             self.ctx.container.multiEdit.clear()  # Save state
 
-        for imgPath, generatedText in fileResults.items():
-            if not multiEditActive and imgPath == filelist.getCurrentFile():
-                text = self._addToCaption(generatedText, self.ctx.text.getCaption())
-                self.ctx.text.setCaption(text)
-                self.ctx.needsRulesApplied.emit()
-            else:
-                existingText = filelist.getData(imgPath, DataKeys.Caption)
-                if existingText is None:
-                    existingText = self.ctx.container.srcSelector.loadCaption(imgPath)
+        if not multiEditActive and imgPath == filelist.getCurrentFile():
+            text = self._addToCaption(generatedText, self.ctx.text.getCaption())
+            self.ctx.text.setCaption(text)
+            self.ctx.needsRulesApplied.emit()
+        else:
+            existingText = filelist.getData(imgPath, DataKeys.Caption)
+            if existingText is None:
+                existingText = self.ctx.container.srcSelector.loadCaption(imgPath)
 
-                text = self._addToCaption(generatedText, existingText)
-                filelist.setData(imgPath, DataKeys.Caption, text)
-                filelist.setData(imgPath, DataKeys.CaptionState, DataKeys.IconStates.Changed)
+            text = self._addToCaption(generatedText, existingText)
+            filelist.setData(imgPath, DataKeys.Caption, text)
+            filelist.setData(imgPath, DataKeys.CaptionState, DataKeys.IconStates.Changed)
 
         if multiEditActive:
             self.ctx.container.onFileSelectionChanged(filelist.selectedFiles)  # Reload
@@ -310,28 +327,23 @@ class FrozenCurrentVariableParser(TemplateVariableParser):
 
 
 
-class InferenceTask(QRunnable):
-    CONTENT_CAPTION = "caption"
-    CONTENT_TAG = "tags"
-
+class InferenceTask(QObject):
     MULTIPROC_MIN_FILES_TAG = 16
     MULTIPROC_MIN_FILES_CAPTION = 2
 
-    class Signals(QObject):
-        progress = Signal(str)
-        done = Signal(dict)
-        fail = Signal(str)
+    progress = Signal(str)          # message
+    generated = Signal(str, str)    # file, text
+    done = Signal(int, int, float)  # num done, num total, time [ms]
+    fail = Signal(int, int, str)    # num done, num total, message
 
     def __init__(self, files: list[str], content: list[str]):
         super().__init__()
-        self.setAutoDelete(False)
-        self.signals = InferenceTask.Signals()
 
         self.files = files
         self.content = content
 
         self.varParser: FrozenCurrentVariableParser = None
-        self.prompts: list[dict[str, str]] = None
+        self.prompts: list[Conversation] = []
         self.systemPrompt: str = None
         self.configs: RemoteInferenceConfig = None
         self.tagConfig: dict = None
@@ -354,87 +366,88 @@ class InferenceTask(QRunnable):
 
 
     def getMaxProcs(self) -> int:
-        if self.CONTENT_CAPTION in self.content:
+        if CONTENT_CAPTION in self.content:
             if len(self.files) >= self.MULTIPROC_MIN_FILES_CAPTION:
                 return -1
-        elif self.CONTENT_TAG in self.content:
+        elif CONTENT_TAG in self.content:
             if len(self.files) >= self.MULTIPROC_MIN_FILES_TAG:
                 return -1
         return 1
 
 
-    @Slot()
-    def run(self):
+    def __call__(self):
+        res: dict
+        tags: list[str]
+        captions: dict[str, str]
+
+        numResults = 0
+
         try:
             contentText = " and ".join(self.content)
             progressText = f"Generating {contentText} ({{}}/{len(self.files)}) ..."
 
-            fileResults = dict()
+            hiddenPromptNames = set(info.name for info in PromptUtil.filter(self.prompts, lambda info: info.hidden))
 
             maxProcs = self.getMaxProcs()
             with Inference().createSession(maxProcs) as session:
                 with QMutexLocker(self._mutex):
                     self.weakSession = weakref.ref(session)
 
-                self.signals.progress.emit(f"Loading {contentText} model ...")
-                session.prepare(self.prepare, lambda: self.signals.progress.emit(progressText.format(0)))
+                self.progress.emit(f"Loading {contentText} model ...")
+                session.prepare(self.prepare, lambda: self.progress.emit(progressText.format(0)))
+
+                tStart = time.monotonic_ns()
 
                 for fileNr, (file, results, exception) in enumerate(session.queueFiles(self.files, self.check), 1):
                     if exception:
                         raise exception
 
                     if self.isAborted():
-                        self.signals.fail.emit("Aborted")
+                        self.fail.emit(numResults, len(self.files), f"Aborted")
                         return
 
-                    self.signals.progress.emit(progressText.format(fileNr))
+                    self.progress.emit(progressText.format(fileNr))
 
                     allResults = []
                     for res in results:
                         if tags := res.get("tags"):
                             allResults.append(tags)
                         elif captions := res.get("captions"):
-                            allResults.extend(cap for name, cap in captions.items() if not name.startswith('?'))
+                            allResults.extend(cap for name, cap in captions.items() if name not in hiddenPromptNames)
 
                     if allResults:
-                        fileResults[file] = os.linesep.join(allResults)
+                        if text := os.linesep.join(allResults):
+                            self.generated.emit(file, text)
+                            numResults += 1
+                        else:
+                            print(f"WARNING: Empty caption generated for '{file}'")
                     else:
                         print(f"WARNING: No caption generated for '{file}'")
 
-            self.signals.done.emit(fileResults)
+            if numResults > 0:
+                tMs = (time.monotonic_ns() - tStart) / 1_000_000
+                self.done.emit(numResults, len(self.files), tMs)
+            else:
+                self.fail.emit(numResults, len(self.files), "No captions generated")
 
         except Exception as ex:
             traceback.print_exc()
-            self.signals.fail.emit(str(ex))
+            self.fail.emit(numResults, len(self.files), str(ex))
 
 
     def prepare(self, proc: InferenceProcess):
         for c in self.content:
-            if c == self.CONTENT_CAPTION:
+            if c == CONTENT_CAPTION:
                 proc.setupCaption(self.configs.getHostConfig(proc.procCfg.hostName))
-            elif c == self.CONTENT_TAG:
+            elif c == CONTENT_TAG:
                 proc.setupTag(self.tagConfig)
 
     def check(self, file: str, proc: InferenceProcess):
         def queue():
             for c in self.content:
-                if c == self.CONTENT_CAPTION:
-                    prompts = self.parsePrompts(file)
+                if c == CONTENT_CAPTION:
+                    prompts = PromptUtil.parsePrompts(self.varParser, file, None, self.prompts)
                     proc.caption(file, prompts, self.systemPrompt)
-                elif c == self.CONTENT_TAG:
+                elif c == CONTENT_TAG:
                     proc.tag(file)
         return queue
-
-    def parsePrompts(self, imgFile: str) -> list:
-        self.varParser.setup(imgFile)
-
-        prompts = list()
-        missingVars = set()
-        for conv in self.prompts:
-            prompts.append( {name: self.varParser.parse(prompt) for name, prompt in conv.items()} )
-            missingVars.update(self.varParser.missingVars)
-
-        if missingVars:
-            print(f"WARNING: '{imgFile}' is missing values for variables: {', '.join(missingVars)}")
-
-        return prompts

@@ -2,6 +2,7 @@ from transformers import AutoModelForCausalLM, set_seed
 import torch
 from host.imagecache import ImageFile
 from .backend import CaptionBackend
+from .prompt_struct import Conversation
 from .devmap import DevMap
 from .quant import Quantization
 
@@ -52,7 +53,7 @@ class Ovis2Backend(CaptionBackend):
         }
 
 
-    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
+    def caption(self, imgFile: ImageFile, prompts: list[Conversation], systemPrompt: str = None) -> dict[str, str]:
         image = imgFile.openPIL()
         answers = dict()
 
@@ -63,16 +64,16 @@ class Ovis2Backend(CaptionBackend):
             if systemPrompt:
                 messages.append( {"from": "system", "value": systemPrompt} )
 
-            for i, (name, prompt) in enumerate(conversation.items()):
+            for i, prompt in enumerate(conversation):
                 if i == 0:
-                    messages.append( {"from": "human", "value": "<image>\n"+prompt.strip()} )
+                    messages.append( {"from": "human", "value": "<image>\n" + prompt.prompt.strip()} )
                 else:
-                    messages.append( {"from": "human", "value": prompt.strip()} )
+                    messages.append( {"from": "human", "value": prompt.prompt.strip()} )
 
                 answer = self._caption(messages, image)
                 answer = answer.strip()
                 messages.append( {"from": "gpt", "value": answer} )
-                answers[name] = answer
+                answers[prompt.name] = answer
 
         return answers
 

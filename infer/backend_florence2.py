@@ -2,8 +2,10 @@ from transformers import AutoModelForCausalLM, AutoProcessor, set_seed
 import torch, re
 import numpy as np
 import cv2 as cv
+from PIL import Image
 from host.imagecache import ImageFile
 from .backend import CaptionBackend
+from .prompt_struct import Conversation
 from .devmap import DevMap
 from .quant import Quantization
 
@@ -77,27 +79,27 @@ class Florence2Backend(CaptionBackend):
         }
 
 
-    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
+    def caption(self, imgFile: ImageFile, prompts: list[Conversation], systemPrompt: str = None) -> dict[str, str]:
         image = imgFile.openPIL(forceRGB=True)
         answers = dict()
 
         set_seed(self.randomSeed())
 
         for conversation in prompts:
-            for name, prompt in conversation.items():
-                tags = self.tagPattern.findall(prompt)
+            for promptInfo in conversation:
+                tags = self.tagPattern.findall(promptInfo.prompt)
                 task = tags[0].upper() if tags else self.TASK_DEFAULT_CAPTION
 
-                prompt = self.tagPattern.sub("", prompt)
+                prompt = self.tagPattern.sub("", promptInfo.prompt)
                 prompt = prompt.strip()
 
                 result = self.runTask(image, task, prompt)
-                answers[name] = str(result.get(task))
+                answers[promptInfo.name] = str(result.get(task))
 
         return answers
 
     @torch.inference_mode()
-    def runTask(self, image, task, prompt=None):
+    def runTask(self, image: Image.Image, task: str, prompt: str = None):
         if prompt:
             prompt = task + prompt
         else:

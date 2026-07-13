@@ -6,6 +6,7 @@ from transformers import AutoModel, AutoTokenizer, set_seed
 #from accelerate import infer_auto_device_map, init_empty_weights
 from host.imagecache import ImageFile
 from .backend import CaptionBackend
+from .prompt_struct import Conversation
 from .devmap import DevMap
 from .quant import Quantization
 
@@ -156,7 +157,7 @@ class InternVL2Backend(CaptionBackend):
         }
 
 
-    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
+    def caption(self, imgFile: ImageFile, prompts: list[Conversation], systemPrompt: str = None) -> dict[str, str]:
         if imgFile.isVideo():
             pixel_values, num_patches_list = load_video(imgFile, self.sampleFps, max_num=1, max_frames=32)
             pixel_values = pixel_values.to(self.device, dtype=self.dtype)
@@ -174,7 +175,8 @@ class InternVL2Backend(CaptionBackend):
         with torch.inference_mode():
             for conversation in prompts:
                 history = None
-                for i, (name, prompt) in enumerate(conversation.items()):
+                for i, promptInfo in enumerate(conversation):
+                    prompt = promptInfo.prompt
                     if i == 0:
                         prompt = video_prefix + prompt
 
@@ -187,7 +189,7 @@ class InternVL2Backend(CaptionBackend):
                         history=history,
                         return_history=True
                     )
-                    answers[name] = answer
+                    answers[promptInfo.name] = answer
 
         return answers
 

@@ -305,11 +305,11 @@ class InferenceProcess(QObject):
         }, None)
 
 
-    def caption(self, imgPath, prompts: list[dict[str, str]], sysPrompt=None) -> dict[str, str]:
+    def caption(self, imgPath, prompts: list[Conversation], sysPrompt: str = None) -> dict[str, str]:
         return self._queryKey("captions", {
             "cmd": "caption",
             "img": imgPath,
-            "prompts": prompts,
+            "prompts": PromptUtil.toTuples(prompts),
             "sysPrompt": sysPrompt
         })
 
@@ -319,10 +319,10 @@ class InferenceProcess(QObject):
             "img": imgPath
         })
 
-    def answer(self, prompts: list[dict[str, str]], sysPrompt=None) -> dict[str, str]:
+    def answer(self, prompts: list[Conversation], sysPrompt: str = None) -> dict[str, str]:
         return self._queryKey("answers", {
             "cmd": "answer",
-            "prompts": prompts,
+            "prompts": PromptUtil.toTuples(prompts),
             "sysPrompt": sysPrompt
         })
 

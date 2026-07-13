@@ -8,6 +8,7 @@ from llama_cpp.llama_multimodal import MTMDChatHandler, GenericMTMDChatHandler
 from host.imagecache import ImageFile
 from config import Config
 from .backend import InferenceBackend
+from .prompt_struct import Conversation
 from .devmap import DevMap
 
 
@@ -145,18 +146,18 @@ class LlamaCppBackend(InferenceBackend):
         return numGpuLayers
 
 
-    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt=None) -> dict[str, str]:
+    def caption(self, imgFile: ImageFile, prompts: list[Conversation], systemPrompt=None) -> dict[str, str]:
         raise NotImplementedError()
 
 
-    def answer(self, prompts: list[dict[str, str]], systemPrompt=None) -> dict[str, str]:
+    def answer(self, prompts: list[Conversation], systemPrompt=None) -> dict[str, str]:
         def getUserContent(prompt: str, index: int):
             return prompt.strip()
 
         return self._tryAnswer(getUserContent, prompts, systemPrompt)
 
 
-    def _tryAnswer(self, userContentFunc: Callable, prompts: list[dict[str, str]], systemPrompt) -> dict[str, str]:
+    def _tryAnswer(self, userContentFunc: Callable, prompts: list[Conversation], systemPrompt) -> dict[str, str]:
         if self._supportsSystemPrompt:
             try:
                 return self._answer(userContentFunc, prompts, systemPrompt)
@@ -172,7 +173,7 @@ class LlamaCppBackend(InferenceBackend):
         return self._answer(userContentFunc, prompts, None)
 
 
-    def _answer(self, userContentFunc: Callable, prompts: list[dict[str, str]], systemPrompt: str | None) -> dict[str, str]:
+    def _answer(self, userContentFunc: Callable, prompts: list[Conversation], systemPrompt: str | None) -> dict[str, str]:
         answers = {}
 
         for conversation in prompts:
@@ -180,8 +181,8 @@ class LlamaCppBackend(InferenceBackend):
             if systemPrompt:
                 messages.append( {"role": "system", "content": systemPrompt.strip()} )
 
-            for i, (name, prompt) in enumerate(conversation.items()):
-                messages.append( {"role": "user", "content": userContentFunc(prompt, i)} )
+            for i, prompt in enumerate(conversation):
+                messages.append( {"role": "user", "content": userContentFunc(prompt.prompt, i)} )
 
                 t = time.monotonic_ns()
 
@@ -199,7 +200,7 @@ class LlamaCppBackend(InferenceBackend):
                 answer = msg["content"].strip()
                 answer = self.stripReasoning(answer)
                 messages.append( {"role": msg["role"], "content": answer} )
-                answers[name] = answer
+                answers[prompt.name] = answer
 
         return answers
 
@@ -212,10 +213,9 @@ class LlamaCppBackend(InferenceBackend):
             self._tpsEMA = (tps * self.TPS_EMA_ALPHA) + (self._tpsEMA * (1.0 - self.TPS_EMA_ALPHA))
             avg = self._tpsEMA
         else:
-            if len(self._tpsValues) < self.TPS_PERIOD:
-                self._tpsValues.append(tps)
-
+            self._tpsValues.append(tps)
             avg = sum(self._tpsValues) / len(self._tpsValues)
+
             if len(self._tpsValues) >= self.TPS_PERIOD:
                 self._tpsEMA = max(avg, 0.0001)
 
@@ -295,7 +295,7 @@ class LlamaCppVisionBackend(LlamaCppBackend):
 
 
     @override
-    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt=None) -> dict[str, str]:
+    def caption(self, imgFile: ImageFile, prompts: list[Conversation], systemPrompt=None) -> dict[str, str]:
         try:
             self._imgBytes = self._loadMedia(imgFile)
             return self._tryAnswer(self._getUserContent, prompts, systemPrompt)

@@ -5,6 +5,7 @@ import torch, json, math
 from PIL import Image
 from host.imagecache import ImageFile
 from .backend import CaptionBackend
+from .prompt_struct import Conversation
 from .devmap import DevMap
 from .quant import Quantization
 
@@ -116,7 +117,7 @@ class QwenVLBackend(CaptionBackend):
         return outputText[0].strip()
 
 
-    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
+    def caption(self, imgFile: ImageFile, prompts: list[Conversation], systemPrompt: str = None) -> dict[str, str]:
         if imgFile.isVideo():
             frames, metadata = imgFile.getVideoFrames(self.sampleFps, 64)
             if len(frames) == 1:
@@ -140,11 +141,11 @@ class QwenVLBackend(CaptionBackend):
             if systemPrompt:
                 messages.append( {"role": "system", "content": systemPrompt.strip()} )
 
-            for i, (name, prompt) in enumerate(conversation.items()):
-                messages.append( {"role": "user", "content": userContent(prompt, i)} )
+            for i, prompt in enumerate(conversation):
+                messages.append( {"role": "user", "content": userContent(prompt.prompt, i)} )
                 answer = runTask(messages)
                 messages.append( {"role": "assistant", "content": answer} )
-                answers[name] = answer
+                answers[prompt.name] = answer
 
         return answers
 
@@ -276,25 +277,15 @@ class Qwen25VLBackend(QwenVLBackend):
 
 
 class Qwen3VLBackend(QwenVLBackend):
-    THINK_END = "</think>"
-
     def __init__(self, config: dict[str, Any]):
         from transformers import Qwen3VLForConditionalGeneration
         super().__init__(config, Qwen3VLForConditionalGeneration)
+        self.setThinkEnd("</think>")
 
     @override
     def _runTask(self, image: Image.Image, messages: list) -> str:
         output = super()._runTask(image, messages)
-
-        thinkIndex = output.find(self.THINK_END)
-        if thinkIndex >= 0:
-            reasoning = output[:thinkIndex]
-            print(f"Reasoning: {reasoning}")
-
-            thinkIndex += len(self.THINK_END)
-            output = output[thinkIndex:].strip()
-
-        return output
+        return self.stripReasoning(output)
 
     @staticmethod
     @override

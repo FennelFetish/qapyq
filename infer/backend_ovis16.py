@@ -2,6 +2,7 @@ from transformers import AutoModelForCausalLM, set_seed
 import torch
 from host.imagecache import ImageFile
 from .backend import CaptionBackend
+from .prompt_struct import Conversation
 from .devmap import DevMap
 from .quant import Quantization
 
@@ -58,7 +59,7 @@ class Ovis16Backend(CaptionBackend):
         }
 
 
-    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
+    def caption(self, imgFile: ImageFile, prompts: list[Conversation], systemPrompt: str = None) -> dict[str, str]:
         prompts = self.preparePrompts(prompts, systemPrompt)
         image = imgFile.openPIL()
         answers = dict()
@@ -68,13 +69,13 @@ class Ovis16Backend(CaptionBackend):
         for conversation in prompts:
             messages = []
 
-            for name, prompt in conversation.items():
-                messages.append( {"from": "human", "value": prompt.strip()} )
+            for prompt in conversation:
+                messages.append( {"from": "human", "value": prompt.prompt.strip()} )
 
                 answer = self._caption(messages, image)
                 answer = answer.strip()
                 messages.append( {"from": "gpt", "value": answer} )
-                answers[name] = answer
+                answers[prompt.name] = answer
 
         return answers
 
@@ -92,13 +93,13 @@ class Ovis16Backend(CaptionBackend):
             return self.text_tokenizer.decode(output_ids, skip_special_tokens=True)
 
 
-    def preparePrompts(self, prompts: list[dict[str, str]], systemPrompt: str) -> list[dict[str, str]]:
+    def preparePrompts(self, prompts: list[Conversation], systemPrompt: str) -> list[Conversation]:
         if systemPrompt:
             prompts = self.mergeSystemPrompt(prompts, systemPrompt)
 
         for conv in prompts:
-            name, prompt  = next(iter(conv.items())) # First entry
-            conv[name] = f'<image>\n{prompt}'
+            first = conv[0]
+            first.prompt = f'<image>\n{first.prompt}'
         return prompts
 
 

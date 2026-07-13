@@ -16,6 +16,18 @@ def stripCountPadding(text: str) -> tuple[str, int, int]:
     return textStrip, padLeft, padRight
 
 
+def formatTime(timeMs: float, addMilliseconds: bool = False) -> str:
+    timeMs   = int(timeMs)
+    s, ms    = divmod(timeMs, 1000)
+    hours, s = divmod(s, 3600)
+    minutes, seconds = divmod(s, 60)
+
+    text = f"{minutes:02}:{seconds:02}.{ms:03}" if addMilliseconds else f"{minutes:02}:{seconds:02}"
+    if hours > 0:
+        text = f"{hours:02}:{text}"
+
+    return text
+
 
 def returnOnException(default=None):
     def decorator(func):

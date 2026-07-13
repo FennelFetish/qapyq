@@ -6,6 +6,7 @@ from infer.inference_proc import InferenceProcess
 from infer.inference_settings import InferencePresetWidget, RemoteInferenceConfig
 from infer.tag_settings import TagPresetWidget
 from infer.prompt import PromptWidget
+from infer.prompt_struct import Conversation, PromptUtil
 from lib import colorlib, qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser
@@ -222,25 +223,25 @@ class BatchCaption(QtWidgets.QWidget):
 class BatchCaptionTask(BatchInferenceTask):
     def __init__(self, log, files):
         super().__init__("caption", log, files)
-        self.prompts      = None
-        self.systemPrompt = None
-        self.configs: RemoteInferenceConfig = None
-        self.overwriteMode = CAPTION_OVERWRITE_MODE_ALL
-        self.storePrompts: bool = False
-        self.stripAround  = True
-        self.stripMulti   = False
+        self.prompts: list[Conversation]        = None
+        self.systemPrompt: str                  = None
+        self.configs: RemoteInferenceConfig     = None
+        self.overwriteMode: str                 = CAPTION_OVERWRITE_MODE_ALL
+        self.storePrompts: bool                 = False
+        self.stripAround: bool                  = True
+        self.stripMulti: bool                   = False
 
-        self.tagConfig    = None
-        self.tagName      = None
-        self.tagSkipExisting = False
+        self.tagConfig: dict                    = None
+        self.tagName: str                       = None
+        self.tagSkipExisting: bool              = False
 
-        self.doCaption = False
-        self.doTag     = False
-        self.varParser = None
-        self.writeKeys = None
+        self.doCaption: bool                    = False
+        self.doTag: bool                        = False
+        self.varParser: TemplateVariableParser  = None
+        self.writeKeys: set[str]                = None
 
-        self.cascadeCaption = False
-        self.cascadeTag     = False
+        self.cascadeCaption: bool               = False
+        self.cascadeTag: bool                   = False
 
         self.cascade = CascadeUpdate()
         self.cascade.enableCache()
@@ -256,7 +257,7 @@ class BatchCaptionTask(BatchInferenceTask):
             models.append("caption")
             proc.setupCaption(self.configs.getHostConfig(proc.procCfg.hostName))
 
-            self.writeKeys = {k for conv in self.prompts for k in conv.keys() if not k.startswith('?')}
+            self.writeKeys = set(info.name for info in PromptUtil.filter(self.prompts, lambda info: not info.hidden))
 
             self.varParser = TemplateVariableParser()
             self.varParser.stripAround = self.stripAround
@@ -281,7 +282,7 @@ class BatchCaptionTask(BatchInferenceTask):
 
         if self.checkCaption(captionFile):
             doCaption = True
-            prompts = self.parsePrompts(imgFile, captionFile)
+            prompts = PromptUtil.parsePrompts(self.varParser, imgFile, captionFile, self.prompts)
         else:
             doCaption = False
             prompts = None
@@ -335,12 +336,12 @@ class BatchCaptionTask(BatchInferenceTask):
         return None
 
 
-    def storeCaptions(self, imgFile: str, captionFile: CaptionFile, writeKeys: set, answers) -> bool:
+    def storeCaptions(self, imgFile: str, captionFile: CaptionFile, writeKeys: set, answers: dict[str, str]) -> bool:
         if not answers:
             self.log(f"WARNING: No captions returned for {imgFile}, skipping")
             return False
 
-        prompts = self.parsePrompts(imgFile, captionFile)
+        prompts = PromptUtil.parsePrompts(self.varParser, imgFile, captionFile, self.prompts)
 
         changed = False
         for name, caption in answers.items():
@@ -357,8 +358,8 @@ class BatchCaptionTask(BatchInferenceTask):
                 self.cascade.saveCascade(imgFile, captionFile, FileTypeSelector.TYPE_CAPTIONS, name)
 
             if self.storePrompts:
-                prompt = next((conv[name] for conv in prompts if name in conv), None)
-                captionFile.addPrompt(name, prompt)
+                if info := PromptUtil.firstMatch(prompts, lambda info: info.name == name):
+                    captionFile.addPrompt(name, info.promptWithPrefill)
 
         return changed
 
@@ -373,18 +374,3 @@ class BatchCaptionTask(BatchInferenceTask):
             self.cascade.saveCascade(imgFile, captionFile, FileTypeSelector.TYPE_TAGS, self.tagName)
 
         return True
-
-
-    def parsePrompts(self, imgFile: str, captionFile: CaptionFile) -> list[dict]:
-        self.varParser.setup(imgFile, captionFile)
-
-        prompts = list()
-        missingVars = set()
-        for conv in self.prompts:
-            prompts.append( {name: self.varParser.parse(prompt) for name, prompt in conv.items()} )
-            missingVars.update(self.varParser.missingVars)
-
-        if missingVars:
-            self.log(f"WARNING: {captionFile.jsonPath} is missing values for variables: {', '.join(missingVars)}")
-
-        return prompts

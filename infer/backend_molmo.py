@@ -2,6 +2,7 @@ from transformers import AutoModelForCausalLM, AutoProcessor, GenerationConfig, 
 import torch
 from host.imagecache import ImageFile
 from .backend import CaptionBackend
+from .prompt_struct import Conversation
 from .devmap import DevMap
 from .quant import Quantization
 
@@ -66,7 +67,7 @@ class MolmoBackend(CaptionBackend):
         # )
 
 
-    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
+    def caption(self, imgFile: ImageFile, prompts: list[Conversation], systemPrompt: str = None) -> dict[str, str]:
         image = imgFile.openPIL()
         answers = dict()
 
@@ -75,15 +76,15 @@ class MolmoBackend(CaptionBackend):
         for conversation in prompts:
             messages = self.formatMessage("system", systemPrompt) if systemPrompt else ""
 
-            for name, prompt in conversation.items():
-                messages += self.formatMessage("user", prompt)
+            for prompt in conversation:
+                messages += self.formatMessage("user", prompt.prompt)
 
                 with torch.inference_mode():
                     generatedText = self._caption(messages, image)
                     generatedText = generatedText.strip()
 
                 messages += self.formatMessage("assistant", generatedText)
-                answers[name] = generatedText
+                answers[prompt.name] = generatedText
 
         return answers
 

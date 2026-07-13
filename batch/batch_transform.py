@@ -6,6 +6,7 @@ from infer.backend_config import BackendsLLM
 from infer.inference_proc import InferenceProcess
 from infer.inference_settings import InferencePresetWidget, RemoteInferenceConfig
 from infer.prompt import PromptWidget
+from infer.prompt_struct import Conversation, PromptUtil
 from lib import colorlib, qtlib
 from lib.captionfile import CaptionFile, FileTypeSelector
 from lib.template_parser import TemplateVariableParser
@@ -159,19 +160,19 @@ class BatchTransform(QtWidgets.QWidget):
 class BatchTransformTask(BatchInferenceTask):
     def __init__(self, log, files, configs: RemoteInferenceConfig):
         super().__init__("transform", log, files)
-        self.prompts      = None
-        self.systemPrompt = None
-        self.configs      = configs
+        self.prompts: list[Conversation]        = None
+        self.systemPrompt: str                  = None
+        self.configs                            = configs
 
-        self.overwriteMode = TRANSFORM_OVERWRITE_MODE_ALL
-        self.storePrompts  = False
-        self.stripAround   = True
-        self.stripMulti    = False
+        self.overwriteMode: str                 = TRANSFORM_OVERWRITE_MODE_ALL
+        self.storePrompts: bool                 = False
+        self.stripAround: bool                  = True
+        self.stripMulti: bool                   = False
 
-        self.varParser = None
-        self.writeKeys = None
+        self.varParser: TemplateVariableParser  = None
+        self.writeKeys: set[str]                = None
 
-        self.cascadeEnabled = False
+        self.cascadeEnabled: bool               = False
         self.cascade = CascadeUpdate()
         self.cascade.enableCache()
 
@@ -180,7 +181,7 @@ class BatchTransformTask(BatchInferenceTask):
         self.signals.progressMessage.emit("Loading LLM ...")
         proc.setupLLM(self.configs.getHostConfig(proc.procCfg.hostName))
 
-        self.writeKeys = {k for conv in self.prompts for k in conv.keys() if not k.startswith('?')}
+        self.writeKeys = set(info.name for info in PromptUtil.filter(self.prompts, lambda info: not info.hidden))
 
         self.varParser = TemplateVariableParser()
         self.varParser.stripAround = self.stripAround
@@ -196,7 +197,7 @@ class BatchTransformTask(BatchInferenceTask):
         if not self.check(captionFile):
             return None
 
-        prompts = self.parsePrompts(imgFile, captionFile)
+        prompts = PromptUtil.parsePrompts(self.varParser, imgFile, captionFile, self.prompts)
         def queue():
             proc.answer(prompts, self.systemPrompt)
         return queue
@@ -208,7 +209,7 @@ class BatchTransformTask(BatchInferenceTask):
         return writeKeys
 
 
-    def runProcessFile(self, imgFile, results: list) -> str | None:
+    def runProcessFile(self, imgFile: str, results: list) -> str | None:
         if not results:
             return None
 
@@ -228,12 +229,12 @@ class BatchTransformTask(BatchInferenceTask):
         return None
 
 
-    def storeAnswers(self, imgFile, captionFile: CaptionFile, writeKeys: set, answers) -> bool:
+    def storeAnswers(self, imgFile: str, captionFile: CaptionFile, writeKeys: set, answers: dict[str, str]) -> bool:
         if not answers:
             self.log(f"WARNING: No captions returned for {imgFile}, skipping")
             return False
 
-        prompts = self.parsePrompts(imgFile, captionFile)
+        prompts = PromptUtil.parsePrompts(self.varParser, imgFile, captionFile, self.prompts)
 
         changed = False
         for name, caption in answers.items():
@@ -250,22 +251,7 @@ class BatchTransformTask(BatchInferenceTask):
                 self.cascade.saveCascade(imgFile, captionFile, FileTypeSelector.TYPE_CAPTIONS, name)
 
             if self.storePrompts:
-                prompt = next((conv[name] for conv in prompts if name in conv), None)
-                captionFile.addPrompt(name, prompt)
+                if info := PromptUtil.firstMatch(prompts, lambda info: info.name == name):
+                    captionFile.addPrompt(name, info.promptWithPrefill)
 
         return changed
-
-
-    def parsePrompts(self, imgFile: str, captionFile: CaptionFile) -> list:
-        self.varParser.setup(imgFile, captionFile)
-
-        prompts = list()
-        missingVars = set()
-        for conv in self.prompts:
-            prompts.append( {name: self.varParser.parse(prompt) for name, prompt in conv.items()} )
-            missingVars.update(self.varParser.missingVars)
-
-        if missingVars:
-            self.log(f"WARNING: {captionFile.jsonPath} is missing values for variables: {', '.join(missingVars)}")
-
-        return prompts

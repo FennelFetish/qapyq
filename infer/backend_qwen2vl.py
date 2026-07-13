@@ -3,6 +3,7 @@ import torch, math
 from PIL import Image
 from host.imagecache import ImageFile
 from .backend import CaptionBackend
+from .prompt_struct import Conversation
 from .devmap import DevMap
 from .quant import Quantization
 
@@ -46,7 +47,7 @@ class Qwen2VLBackend(CaptionBackend):
         )
 
 
-    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
+    def caption(self, imgFile: ImageFile, prompts: list[Conversation], systemPrompt: str = None) -> dict[str, str]:
         image = imgFile.openPIL()
         image = self.downscaleImage(image)
         answers = dict()
@@ -58,8 +59,8 @@ class Qwen2VLBackend(CaptionBackend):
             if systemPrompt:
                 messages.append( {"role": "system", "content": systemPrompt.strip()} )
 
-            for i, (name, prompt) in enumerate(conversation.items()):
-                messages.append( {"role": "user", "content": self._getUserContent(prompt, i)} )
+            for i, prompt in enumerate(conversation):
+                messages.append( {"role": "user", "content": self._getUserContent(prompt.prompt, i)} )
                 inputText = self.processor.apply_chat_template(messages, add_generation_prompt=True)
 
                 # TODO: Only encode image once during first iteration. Look at implementation of Qwen2VLProcessor
@@ -76,7 +77,7 @@ class Qwen2VLBackend(CaptionBackend):
 
                 answer = outputText[0].strip()
                 messages.append( {"role": "assistant", "content": answer} )
-                answers[name] = answer
+                answers[prompt.name] = answer
 
         return answers
 

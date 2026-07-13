@@ -4,6 +4,7 @@ from config import Config
 from lib import qtlib
 from lib.template_parser import TemplateVariableParser, VariableHighlighter
 from ui.autocomplete import TemplateTextEdit, AutoCompleteSource
+from .prompt_struct import Conversation, ConversationParser
 
 
 class PromptSettingsSignals(QObject):
@@ -181,62 +182,9 @@ class PromptWidget(QtWidgets.QWidget):
         return self.txtPrompts.toPlainText()
 
 
-    def getParsedPrompts(self, defaultName: str = None, rounds: int = 1) -> list[dict[str, str]]:
-        if not defaultName:
-            defaultName = "caption"
-
-        currentName: str = defaultName
-        allNames = set()
-
-        currentPrompt: list[str] = list()               # List of text lines
-        currentConversation: dict[str, str] = dict()    # Ordered list of prompts, name -> prompt
-        conversations: list[dict[str, str]] = list()    # Ordered list of conversations
-
+    def getParsedPrompts(self, defaultName: str = None, rounds: int = 1) -> list[Conversation]:
         text = self.txtPrompts.toPlainText()
-        for line in text.splitlines():
-            if line.startswith("---") or line.startswith("==="):
-                # New prompt
-                if currentPrompt:
-                    currentConversation[currentName] = "\n".join(currentPrompt)
-                    currentPrompt.clear()
-                    allNames.add(currentName)
-                currentName = self._getPromptName(line, defaultName, allNames)
-
-                # New conversation
-                if line[0] == '=' and currentConversation:
-                    conversations.append(currentConversation)
-                    currentConversation = dict()
-            else:
-                currentPrompt.append(line)
-
-        if currentPrompt:
-            currentConversation[currentName] = "\n".join(currentPrompt)
-        if currentConversation:
-            conversations.append(currentConversation)
-
-        # Empty prompt
-        if not conversations:
-            conversations.append({defaultName: ""})
-
-        # Apply rounds
-        conversations.extend([
-            {f"{name}_round{r}": prompt for name, prompt in conv.items()}
-            for r in range(2, rounds+1)
-            for conv in conversations
-        ])
-        return conversations
-
-    @staticmethod
-    def _getPromptName(line: str, defaultName: str, usedNames: set) -> str:
-        newName = line.strip("-=").strip()
-        newName = newName if newName else defaultName
-
-        name = newName
-        appendNr = 2
-        while name in usedNames:
-            name = f"{newName}_{appendNr}"
-            appendNr += 1
-        return name
+        return ConversationParser.parseTemplate(text, defaultName, rounds)
 
 
     def reloadPresetList(self, selectName: str | None):

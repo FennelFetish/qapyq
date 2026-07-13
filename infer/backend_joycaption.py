@@ -2,6 +2,7 @@ from transformers import LlavaForConditionalGeneration, AutoProcessor, Generatio
 import torch
 from host.imagecache import ImageFile
 from .backend import CaptionBackend
+from .prompt_struct import Conversation
 from .devmap import DevMap
 from .quant import Quantization
 
@@ -48,7 +49,7 @@ class JoyCaptionBackend(CaptionBackend):
             self.generationConfig.pad_token_id = 128001
 
 
-    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
+    def caption(self, imgFile: ImageFile, prompts: list[Conversation], systemPrompt: str = None) -> dict[str, str]:
         image = imgFile.openPIL(forceRGB=True)
         answers = dict()
 
@@ -59,8 +60,8 @@ class JoyCaptionBackend(CaptionBackend):
             if systemPrompt:
                 messages.append( {"role": "system", "content": systemPrompt.strip()} )
 
-            for name, prompt in conversation.items():
-                messages.append( {"role": "user", "content": prompt.strip()} )
+            for prompt in conversation:
+                messages.append( {"role": "user", "content": prompt.prompt.strip()} )
                 inputText = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
                 inputs = self.processor(text=[inputText], images=[image], return_tensors="pt")
@@ -74,7 +75,7 @@ class JoyCaptionBackend(CaptionBackend):
 
                 answer = outputText.strip()
                 messages.append( {"role": "assistant", "content": answer} )
-                answers[name] = answer
+                answers[prompt.name] = answer
 
         return answers
 

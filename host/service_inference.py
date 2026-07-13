@@ -1,6 +1,7 @@
 from host.protocol import Protocol, Service, MessageLoop, msghandler
 from host.imagecache import ImageFile
 from infer.backend_config import BackendLoader, LastBackendLoader
+from infer.prompt_struct import PromptUtil
 
 
 class InferenceService(Service):
@@ -53,7 +54,8 @@ class InferenceService(Service):
     @msghandler("caption")
     def caption(self, msg: dict):
         imgFile = ImageFile.fromMsg(msg)
-        captions = self.llmBackend.getBackend().caption(imgFile, msg["prompts"], msg["sysPrompt"])
+        prompts = PromptUtil.fromTuples(msg["prompts"])
+        captions = self.llmBackend.getBackend().caption(imgFile, prompts, msg["sysPrompt"])
         return {
             "cmd": msg["cmd"],
             "img": msg["img"],
@@ -72,7 +74,8 @@ class InferenceService(Service):
 
     @msghandler("answer")
     def llm(self, msg: dict):
-        answers = self.llmBackend.getBackend().answer(msg["prompts"], msg["sysPrompt"])
+        prompts = PromptUtil.fromTuples(msg["prompts"])
+        answers = self.llmBackend.getBackend().answer(prompts, msg["sysPrompt"])
         return {
             "cmd": msg["cmd"],
             "answers": answers

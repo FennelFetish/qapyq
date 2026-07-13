@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 from config import Config
 from host.imagecache import ImageFile
+from infer.prompt_struct import Conversation
 
 
 class InferenceBackend(ABC):
@@ -45,12 +46,11 @@ class InferenceBackend(ABC):
 
 
     @staticmethod
-    def mergeSystemPrompt(prompts: list[dict[str, str]], systemPrompt: str) -> list[dict[str, str]]:
+    def mergeSystemPrompt(prompts: list[Conversation], systemPrompt: str) -> list[Conversation]:
         for conv in prompts:
-            name, prompt  = next(iter(conv.items())) # First entry
+            first = conv[0]
             text = Config.sysPromptFallbackTemplate.replace("{{systemPrompt}}", systemPrompt)
-            text = text.replace("{{prompt}}", prompt)
-            conv[name] = text
+            first.prompt = text.replace("{{prompt}}", first.prompt)
         return prompts
 
 
@@ -80,7 +80,7 @@ class CaptionBackend(InferenceBackend):
         super().__init__(config)
 
     @abstractmethod
-    def caption(self, imgFile: ImageFile, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
+    def caption(self, imgFile: ImageFile, prompts: list[Conversation], systemPrompt: str = None) -> dict[str, str]:
         raise NotImplementedError()
 
 
@@ -89,5 +89,5 @@ class AnswerBackend(InferenceBackend):
         super().__init__(config)
 
     @abstractmethod
-    def answer(self, prompts: list[dict[str, str]], systemPrompt: str = None) -> dict[str, str]:
+    def answer(self, prompts: list[Conversation], systemPrompt: str = None) -> dict[str, str]:
         raise NotImplementedError()
