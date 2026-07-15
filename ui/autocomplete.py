@@ -1,13 +1,13 @@
 from __future__ import annotations
-import csv, time, os, enum, heapq
+import csv, time, enum, heapq
 from abc import ABC, abstractmethod
 from typing import Any, NamedTuple, Iterable, Callable
 from typing_extensions import override
 from collections import defaultdict, Counter
 from itertools import islice, takewhile
 from PySide6.QtWidgets import QCompleter, QPlainTextEdit, QTableView
-from PySide6.QtGui import QTextCursor, QGuiApplication, QKeyEvent, QFont, QColor, QPalette
-from PySide6.QtCore import Qt, Signal, Slot, QAbstractTableModel, QModelIndex, QPersistentModelIndex, QTimer, QRunnable, QObject, QThreadPool, QThread, QRect
+from PySide6.QtGui import QTextCursor, QGuiApplication, QKeyEvent, QFont, QColor
+from PySide6.QtCore import Qt, Signal, Slot, QAbstractTableModel, QModelIndex, QPersistentModelIndex, QTimer, QObject, QThreadPool, QThread, QRect
 from difflib import SequenceMatcher
 #from rapidfuzz import fuzz, distance
 from lib import colorlib, qtlib
@@ -684,7 +684,7 @@ class TemplateTextEditCompleter(TextEditCompleter):
             return ""  # Not inside block
 
         blockText = text[start:pos].translate(self.BLOCK_TRANS)
-        start = max(start, blockText.rfind(":", 2))
+        start = max(start, start + blockText.rfind(":", 2))
 
         cursor.setPosition(start, QTextCursor.MoveMode.KeepAnchor)
         return cursor.selectedText()
