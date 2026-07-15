@@ -7,6 +7,7 @@ from host.protocol import Protocol, Service
 from host.host_window import LOCAL_NAME
 from lib import threadlib
 from config import Config
+from .prompt_struct import Conversation, PromptUtil
 
 
 class ProcFuture(threadlib.Future[dict | None]): pass
