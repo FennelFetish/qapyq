@@ -1,1 +1,2 @@
-onnxruntime-gpu
+# Support for CUDA 12.x was dropped in version 1.27
+onnxruntime-gpu<1.27
