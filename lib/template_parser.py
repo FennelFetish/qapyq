@@ -31,7 +31,7 @@ class TemplateVariableParser:
 
         self._tempOverrides: dict[str, str] = dict()
 
-        self.missingVars = set()
+        self.missingVars: set[str] = set()
         self.storedVars: dict[str, str] = dict()
 
 
@@ -802,10 +802,15 @@ class VariableHighlighter:
     @staticmethod
     def highlightPromptSeparators(textEdit: QtWidgets.QPlainTextEdit):
         block = textEdit.document().firstBlock()
+        prefill = False
+
         while block.isValid():
             line = block.text()
+            format = None
 
             if line.startswith("---") or line.startswith("==="):
+                prefill = False
+
                 format = QtGui.QTextCharFormat()
                 ColorCharFormats.setBoldFormat(format)
 
@@ -813,6 +818,15 @@ class VariableHighlighter:
                 format.setFontItalic(isHidden)
                 format.setFontUnderline(line.startswith("="))
 
+            else:
+                if line.startswith(">>>"):
+                    prefill = True
+
+                if prefill:
+                    format = QtGui.QTextCharFormat()
+                    format.setFontItalic(True)
+
+            if format:
                 formatRange = QtGui.QTextLayout.FormatRange()
                 formatRange.format = format
                 formatRange.start  = 0

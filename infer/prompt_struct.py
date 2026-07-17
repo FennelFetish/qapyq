@@ -66,7 +66,11 @@ class PromptUtil:
                 parsedPrompt = varParser.parse(info.prompt)
                 missingVars.update(varParser.missingVars)
 
-                conv.append(PromptInfo(info.name, parsedPrompt, info.prefill, info.hidden, info.think))
+                if parsedPrefill := info.prefill:
+                    parsedPrefill = varParser.parse(info.prefill)
+                    missingVars.update(varParser.missingVars)
+
+                conv.append(PromptInfo(info.name, parsedPrompt, parsedPrefill, info.hidden, info.think))
 
             conversations.append(conv)
 

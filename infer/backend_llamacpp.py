@@ -184,6 +184,9 @@ class LlamaCppBackend(InferenceBackend):
             for i, prompt in enumerate(conversation):
                 messages.append( {"role": "user", "content": userContentFunc(prompt.prompt, i)} )
 
+                if prompt.prefill:
+                    messages.append( {"role": "assistant", "content": prompt.prefill} )
+
                 t = time.monotonic_ns()
 
                 # with suppress_stdout_stderr(disable=True):
@@ -197,7 +200,13 @@ class LlamaCppBackend(InferenceBackend):
                 self._printSpeed(t, completion["usage"]["completion_tokens"])
 
                 msg = completion["choices"][0]["message"]
-                answer = msg["content"].strip()
+                answer: str = msg["content"]
+
+                if prompt.prefill:
+                    answer = prompt.prefill + answer.rstrip()
+                else:
+                    answer = answer.strip()
+
                 answer = self.stripReasoning(answer)
                 messages.append( {"role": msg["role"], "content": answer} )
                 answers[prompt.name] = answer
@@ -247,6 +256,9 @@ class LlamaCppVisionBackend(LlamaCppBackend):
         # Bypass re-encoding of images
         self._imgBytes: dict[str, bytes] = {}
         chatHandler._load_image = self._getImage
+
+        # Handle assistant prefill
+        chatHandler._render_and_replace_media = self._createPrefillWrapper(chatHandler._render_and_replace_media)
 
         self.sampleFps = 2.0
 
@@ -328,8 +340,31 @@ class LlamaCppVisionBackend(LlamaCppBackend):
             content.append({"type": "image_url", "image_url": url})
         return content
 
+
+    # MTMDChatHandler method overrides
+
     def _getImage(self, image_url: str) -> bytes:
         return self._imgBytes[image_url]  # This bypasses llama-cpp-python's internal loading which would encode the image again
+
+    def _createPrefillWrapper(self, origFunc: Callable):
+        def renderAndReplaceMedia(messages: list[dict], **kwargs) -> str:
+            partialAssistantText = ""
+
+            try:
+                if messages[-1].get("role") == "assistant":
+                    # pop the last message without mutating the original list
+                    messages = messages.copy()
+                    lastMessage = messages.pop()
+                    partialAssistantText = lastMessage.get("content") or ""
+            except IndexError:
+                pass
+
+            text: str = origFunc(messages=messages, **kwargs)
+            if partialAssistantText:
+                text += partialAssistantText
+            return text
+
+        return renderAndReplaceMedia
 
 
 
