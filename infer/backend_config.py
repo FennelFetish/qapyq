@@ -32,12 +32,6 @@ class BackendDef:
         self.pathMode = pathMode if pathMode is not None else DefaultPathModes[type]
         self.features = features
 
-class MaskBackendDef(BackendDef):
-    def __init__(self, name: str, type: BackendTypes, supportsClasses: bool, pathMode: BackendPathModes | None = None):
-        super().__init__(name, type, pathMode)
-        self.supportsClasses = supportsClasses
-
-
 
 BackendsCaption = {
     "Generic GGUF":     BackendDef("gguf-mtmd",         BackendTypes.LLAMA_CPP,         features={"think","video"}),
@@ -55,7 +49,7 @@ BackendsCaption = {
     "Ovis-2.5":         BackendDef("ovis25",            BackendTypes.TRANSFORMERS),
     "Qwen-VL 2":        BackendDef("qwen2vl",           BackendTypes.TRANSFORMERS),
     "Qwen-VL 2.5/3":    BackendDef("qwen25vl",          BackendTypes.TRANSFORMERS,      features={"video"}),
-    "Qwen-VL 3.5/3.6":  BackendDef("qwen35",            BackendTypes.LLAMA_CPP,         features={"think","video"}),
+    "Qwen 3.5/3.6":     BackendDef("qwen35",            BackendTypes.LLAMA_CPP,         features={"think","video"}),
 }
 
 BackendsLLM = {
@@ -69,12 +63,13 @@ BackendsTag = {
 }
 
 BackendsMask = {
-    "BriaAI RMBG-2.0":          MaskBackendDef("bria-rmbg",         BackendTypes.TRANSFORMERS, False),
-    "Florence-2 Detect":        MaskBackendDef("florence2-detect",  BackendTypes.TRANSFORMERS, True),
-    "Florence-2 Segment":       MaskBackendDef("florence2-segment", BackendTypes.TRANSFORMERS, True),
-    "Inspyrenet RemBg":         MaskBackendDef("inspyrenet",        BackendTypes.TORCH,        False, BackendPathModes.FILE),
-    "Qwen-VL 2.5/3 Detect":     MaskBackendDef("qwen25vl-detect",   BackendTypes.TRANSFORMERS, True),
-    "Yolo Detect":              MaskBackendDef("yolo-detect",       BackendTypes.ULTRALYTICS,  True)
+    "BriaAI RMBG-2.0":          BackendDef("bria-rmbg",         BackendTypes.TRANSFORMERS),
+    "Florence-2 Detect":        BackendDef("florence2-detect",  BackendTypes.TRANSFORMERS,      features={"classes"}),
+    "Florence-2 Segment":       BackendDef("florence2-segment", BackendTypes.TRANSFORMERS,      features={"classes"}),
+    "Inspyrenet RemBg":         BackendDef("inspyrenet",        BackendTypes.TORCH, BackendPathModes.FILE),
+    "Qwen-VL 2.5/3 Detect":     BackendDef("qwen25vl-detect",   BackendTypes.TRANSFORMERS,      features={"classes"}),
+    "Qwen 3.5/3.6 Detect":      BackendDef("qwen35-detect",     BackendTypes.LLAMA_CPP,         features={"classes"}),
+    "Yolo Detect":              BackendDef("yolo-detect",       BackendTypes.ULTRALYTICS,       features={"classes"})
 }
 
 BackendsUpscale = {

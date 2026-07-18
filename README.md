@@ -95,7 +95,7 @@ Find more specialized finetuned models on [huggingface.co](https://huggingface.c
 - **Captioning**<br>
   Models for generating complete-sentence captions for images.<br>
   Those with 🎦 support video captioning. GGUF models generally load and run faster.<br>
-  Tip: Use [grounding](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Tips-and-Workflows#grounding) tags to steer the model.
+  Tip: Use [grounding tags](https://github.com/FennelFetish/qapyq/wiki/User-Guide-%E2%80%90-Tips-and-Workflows#grounding) to guide the model and improve accuracy.
 
   - [Florence-2](https://huggingface.co/collections/microsoft/florence-6669f44df0d87d9c3bfb76de)
   - [Gemma 3 (GGUF)](https://huggingface.co/collections/unsloth/gemma-3), [Gemma 4 (GGUF)](https://huggingface.co/collections/unsloth/gemma-4) 🎦
@@ -111,7 +111,7 @@ Find more specialized finetuned models on [huggingface.co](https://huggingface.c
 
 - **LLM**<br>
   Models for transforming existing captions/tags.
-  - Any model in GGUF format with embedded chat template, or separate jinja template file (llama-cpp backend).
+  - Any model in GGUF format with embedded chat template, or separate jinja template file.
 
 - **Upscaling**<br>
   Models for resizing images to higher resolutions.
@@ -125,6 +125,7 @@ Find more specialized finetuned models on [huggingface.co](https://huggingface.c
       - Search for YOLO models on [huggingface.co](https://huggingface.co/models?pipeline_tag=object-detection).
     - [Florence-2](https://huggingface.co/collections/microsoft/florence-6669f44df0d87d9c3bfb76de)
     - [Qwen3-VL](https://huggingface.co/collections/Qwen/qwen3-vl)
+    - [Qwen3.5 (GGUF)](https://huggingface.co/collections/unsloth/qwen35), [Qwen3.6 (GGUF)](https://huggingface.co/collections/unsloth/qwen36)
   - Segmentation / Background Removal
     - [InSPyReNet](https://github.com/plemeri/InSPyReNet/blob/main/docs/model_zoo.md) (Plus_Ultra)
     - [RMBG-2.0](https://huggingface.co/briaai/RMBG-2.0)
@@ -173,7 +174,7 @@ In combination with the Python version, the platform affects the version and ava
 |---------------|---------|---------------|--------------|--------------------|
 | **CUDA 12.6** | 2.11    | `onnxruntime-gpu`<br>Python 3.10 - 3.14 | Python 3.10 - 3.14 | Python 3.10 - 3.14 |
 | **CUDA 12.8** | 2.11    | `onnxruntime-gpu`<br>Python 3.10 - 3.14 | Python 3.10 - 3.14 | Python 3.10 - 3.14 |
-| **CUDA 13.0** | 2.11    | `onnxruntime-gpu` <sup>(nightly)</sup><br>Python 3.11 - 3.14 | Python 3.10 - 3.14 | Python 3.10 - 3-14 |
+| **CUDA 13.0** | 2.11    | `onnxruntime-gpu`<br>Python 3.11 - 3.14 | Python 3.10 - 3.14 | Python 3.10 - 3-14 |
 | **ROCm 6.4**  | 2.9     | `onnxruntime-rocm`<br>Python 3.10 and 3.12 | 🚫<br>[Compilation guide](https://github.com/JamePeng/llama-cpp-python/blob/main/docs/wiki/install.md) | 🚫 |
 | **ROCm 7.2**  | 2.11    | `onnxruntime-migraphx`<br>Python 3.10 and 3.12 | 🚫<br>[Compilation guide](https://github.com/JamePeng/llama-cpp-python/blob/main/docs/wiki/install.md) | 🚫 |
 | **CPU**       | 2.11    | `onnxruntime`<br>Python 3.10 - 3.14 | Python 3.10 - 3.14 | 🚫 |

@@ -19,6 +19,7 @@ class ModelSettingsSignals(QObject):
 class ModelSettingsWindow(qtlib.SingletonWindow):
     signals = ModelSettingsSignals()
 
+    @override
     def _init_singleton(self):
         self.setWindowTitle(f"Model Settings - {Config.windowTitle}")
         self.resize(800, self.height())
@@ -498,9 +499,25 @@ class MaskModelSettings(BaseSettingsWidget):
         layout.addWidget(self.lblClasses, row, 0, Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self.txtClasses, row, 1, 1, 5)
 
+    @override
+    def _buildPaths(self, layout: QtWidgets.QGridLayout, row: int) -> int:
+        row = super()._buildPaths(layout, row)
+
+        self.lblProjectorPath = QtWidgets.QLabel("Projector Path:")
+        self.txtProjectorPath = QtWidgets.QLineEdit()
+        layout.addWidget(self.lblProjectorPath, row, 0)
+        layout.addWidget(self.txtProjectorPath, row, 1, 1, 5)
+
+        self.btnChooseProjector = QtWidgets.QPushButton("Choose...")
+        self.btnChooseProjector.clicked.connect(lambda: self._choosePath(self.txtProjectorPath, self.txtPath))
+        layout.addWidget(self.btnChooseProjector, row, 6)
+
+        return row + 1
+
     @property
     def backendNeedsClasses(self) -> bool:
-        return self.cboBackend.currentData().supportsClasses
+        backend: BackendDef = self.cboBackend.currentData()
+        return "classes" in backend.features
 
 
     @Slot(int)
@@ -510,15 +527,24 @@ class MaskModelSettings(BaseSettingsWidget):
         for widget in (self.lblClasses, self.txtClasses):
             widget.setEnabled(enabled)
 
+        llama = self.backendType == BackendTypes.LLAMA_CPP
+        for widget in (self.lblProjectorPath, self.txtProjectorPath, self.btnChooseProjector):
+            widget.setEnabled(llama)
+
 
     def fromDict(self, settings: dict) -> None:
         super().fromDict(settings)
+        self.txtProjectorPath.setText(settings.get("proj_path", ""))
+
         if self.backendNeedsClasses:
             classes = ", ".join(settings.get("classes", []))
             self.txtClasses.setPlainText(classes)
 
     def toDict(self) -> dict:
         settings = super().toDict()
+
+        if self.backendType == BackendTypes.LLAMA_CPP:
+            settings["proj_path"] = self.txtProjectorPath.text()
 
         if self.backendNeedsClasses:
             classes = (name.strip() for name in self.txtClasses.toPlainText().split(","))

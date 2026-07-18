@@ -62,7 +62,7 @@ class MaskTool(ViewTool):
 
         index = 0
         if layers := filelist.getData(currentFile, DataKeys.MaskLayers):
-            index = filelist.getData(currentFile, DataKeys.MaskIndex)
+            index = filelist.getData(currentFile, DataKeys.MaskIndex) or 0
             self.maskItem = layers[index]
         elif layers := self.loadLayersFromFile(filelist):
             self.maskItem = layers[0]
