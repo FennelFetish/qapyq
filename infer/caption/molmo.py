@@ -1,10 +1,10 @@
 from transformers import AutoModelForCausalLM, AutoProcessor, GenerationConfig, set_seed
 import torch
 from host.imagecache import ImageFile
-from .backend import CaptionBackend
-from .prompt_struct import Conversation
-from .devmap import DevMap
-from .quant import Quantization
+from infer.backend import CaptionBackend
+from infer.prompt_struct import Conversation
+from infer.devmap import DevMap
+from infer.quant import Quantization
 
 
 class MolmoBackend(CaptionBackend):

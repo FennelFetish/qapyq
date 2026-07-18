@@ -4,7 +4,7 @@ import numpy as np
 from typing import Union, TYPE_CHECKING
 from host.imagecache import ImageFile
 from config import Config
-from .devmap import DevMap
+from infer.devmap import DevMap
 
 
 if TYPE_CHECKING:

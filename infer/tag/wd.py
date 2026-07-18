@@ -4,8 +4,8 @@ import torch # Not used directly, but required for GPU inference
 from host.imagecache import ImageFile
 from config import Config
 from lib.csv import ColumnNameCsvLoader
+from infer.devmap import DevMap
 from .tag import TagBackend, ThresholdMode
-from .devmap import DevMap
 
 
 class CategoryIndexes:

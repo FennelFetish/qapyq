@@ -6,10 +6,10 @@ from llama_cpp.llama_cpp import llama_flash_attn_type
 from llama_cpp.llama_multimodal import MTMDChatHandler, GenericMTMDChatHandler
 #from llama_cpp._utils import suppress_stdout_stderr
 from host.imagecache import ImageFile
+from infer.backend import InferenceBackend
+from infer.prompt_struct import Conversation
+from infer.devmap import DevMap
 from config import Config
-from .backend import InferenceBackend
-from .prompt_struct import Conversation
-from .devmap import DevMap
 
 
 def readChatTemplateFromFile(path: str) -> str:

@@ -4,9 +4,9 @@ import torchvision.transforms.functional as functional
 import numpy as np
 from host.imagecache import ImageFile
 from config import Config
+from infer.devmap import DevMap
 from .JoytagModels import VisionModel
 from .tag import TagBackend, ThresholdMode
-from .devmap import DevMap
 
 
 class JoyTag(TagBackend):

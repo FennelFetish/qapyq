@@ -4,7 +4,7 @@
 import numpy as np
 from transparent_background import Remover
 from host.imagecache import ImageFile
-from .devmap import DevMap
+from infer.devmap import DevMap
 
 
 class InspyrenetMask:

@@ -9,7 +9,7 @@ if ultralytics.utils.ONLINE:
 from ultralytics import YOLO
 from PIL import Image
 from host.imagecache import ImageFile
-from .devmap import DevMap
+from infer.devmap import DevMap
 
 
 class YoloMask:

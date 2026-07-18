@@ -5,10 +5,10 @@ from transformers import AutoModel, AutoTokenizer, set_seed
 #from decord import VideoReader, cpu
 #from accelerate import infer_auto_device_map, init_empty_weights
 from host.imagecache import ImageFile
-from .backend import CaptionBackend
-from .prompt_struct import Conversation
-from .devmap import DevMap
-from .quant import Quantization
+from infer.backend import CaptionBackend
+from infer.prompt_struct import Conversation
+from infer.devmap import DevMap
+from infer.quant import Quantization
 
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)

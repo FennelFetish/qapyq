@@ -3,7 +3,7 @@ import cv2 as cv
 from typing_extensions import override
 from host.imagecache import ImageFile
 from lib import videorw
-from .tag_wd import WDTag
+from .wd import WDTag
 
 
 # TODO: Implement as embedding model for similarity search (output name = 'embedding')

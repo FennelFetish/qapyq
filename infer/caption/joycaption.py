@@ -1,10 +1,10 @@
 from transformers import LlavaForConditionalGeneration, AutoProcessor, GenerationConfig, set_seed
 import torch
 from host.imagecache import ImageFile
-from .backend import CaptionBackend
-from .prompt_struct import Conversation
-from .devmap import DevMap
-from .quant import Quantization
+from infer.backend import CaptionBackend
+from infer.prompt_struct import Conversation
+from infer.devmap import DevMap
+from infer.quant import Quantization
 
 
 class JoyCaptionBackend(CaptionBackend):
@@ -79,6 +79,12 @@ class JoyCaptionBackend(CaptionBackend):
 
         return answers
 
+
+# /mnt/firlefanz/dev-Tools/qapyq/.venv/lib/python3.10/site-packages/accelerate/utils/modeling.py:1614:
+# UserWarning: The following device_map keys do not match any submodules in the model:
+# ['language_model', 'language_model.lm_head', 'language_model.model.embed_tokens', 'language_model.model.norm.weight', 'language_model.model.layers',
+# 'vision_tower', 'vision_tower.vision_model.embeddings', 'vision_tower.vision_model.post_layernorm', 'vision_tower.vision_model.head',
+# 'vision_tower.vision_model.encoder.layers', 'multi_modal_projector']
 
     @staticmethod
     def makeDeviceMap(modelPath, device, llmGpuLayers: int, visGpuLayers: int) -> DevMap:

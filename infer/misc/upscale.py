@@ -5,7 +5,7 @@ import torch
 import torchvision.transforms as transforms
 import numpy as np
 from host.imagecache import ImageFile
-from .devmap import DevMap
+from infer.devmap import DevMap
 
 # add extra architectures before `ModelLoader` is used
 spandrel_extra_arches.install()

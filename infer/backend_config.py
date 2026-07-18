@@ -121,84 +121,87 @@ class BackendLoader:
         match backendName := config.get("backend"):
             # Caption / LLM
             case "gguf-mtmd":
-                from .backend_llamacpp import LlamaCppVisionBackend
+                from .caption.llamacpp import LlamaCppVisionBackend
                 return LlamaCppVisionBackend(config).setThinkEnd("</think>")
             case "florence2" | "florence2-detect" | "florence2-segment":
-                from .backend_florence2 import Florence2Backend
+                from .caption.florence2 import Florence2Backend
                 return Florence2Backend(config)
             case "gemma3":
-                from .backend_llamacpp import LlamaCppVisionBackend
+                from .caption.llamacpp import LlamaCppVisionBackend
                 return LlamaCppVisionBackend(config, "Gemma3ChatHandler")
             case "gemma4":
-                from .backend_llamacpp import LlamaCppVisionBackend
+                from .caption.llamacpp import LlamaCppVisionBackend
                 return LlamaCppVisionBackend(config, "Gemma4ChatHandler").setThinkEnd("<channel|>", "<|channel>")
             case "internvl2":
-                from .backend_internvl2 import InternVL2Backend
+                from .caption.internvl import InternVL2Backend
                 return InternVL2Backend(config)
             case "joycaption":
-                from .backend_joycaption import JoyCaptionBackend
+                from .caption.joycaption import JoyCaptionBackend
                 return JoyCaptionBackend(config)
             case "joycaption-gguf":
-                from .backend_llamacpp import LlamaCppVisionBackend
+                from .caption.llamacpp import LlamaCppVisionBackend
                 return LlamaCppVisionBackend(config, jinjaFile="./res/chat-templates/joycaption.jinja")
             case "minicpm":
-                from .backend_llamacpp import LlamaCppVisionBackend
+                from .caption.llamacpp import LlamaCppVisionBackend
                 return LlamaCppVisionBackend(config, "MiniCPMV46ChatHandler").setThinkEnd("</think>")
             case "molmo":
-                from .backend_molmo import MolmoBackend
+                from .caption.molmo import MolmoBackend
                 return MolmoBackend(config)
             case "moondream":
-                from .backend_llamacpp import LlamaCppVisionBackend
+                from .caption.llamacpp import LlamaCppVisionBackend
                 return LlamaCppVisionBackend(config, "MoondreamChatHandler")
             case "ovis16":
-                from .backend_ovis16 import Ovis16Backend
+                from .caption.ovis16 import Ovis16Backend
                 return Ovis16Backend(config)
             case "ovis2":
-                from .backend_ovis2 import Ovis2Backend
+                from .caption.ovis2 import Ovis2Backend
                 return Ovis2Backend(config)
             case "ovis25":
-                from .backend_ovis25 import Ovis25Backend
+                from .caption.ovis25 import Ovis25Backend
                 return Ovis25Backend(config)
             case "qwen2vl":
-                from .backend_qwen2vl import Qwen2VLBackend
+                from .caption.qwen2vl import Qwen2VLBackend
                 return Qwen2VLBackend(config)
             case "qwen25vl" | "qwen25vl-detect":
-                from .backend_qwen25vl import getQwenVLBackend
+                from .caption.qwen25vl import getQwenVLBackend
                 return getQwenVLBackend(config)
             case "qwen35":
-                from .backend_llamacpp import LlamaCppVisionBackend
+                from .caption.llamacpp import LlamaCppVisionBackend
                 return LlamaCppVisionBackend(config, "Qwen35ChatHandler", image_min_tokens=1024, preserve_thinking=True).setThinkEnd("</think>")
 
             # LLM
             case "gguf":
-                from .backend_llamacpp import LlamaCppBackend
+                from .caption.llamacpp import LlamaCppBackend
                 return LlamaCppBackend.createWithFormatOverride(config).setThinkEnd("</think>")
 
             # Tag
             case "joytag":
-                from .tag_joytag import JoyTag
+                from .tag.joytag import JoyTag
                 return JoyTag(config)
             case "pixai-tag":
-                from .tag_pixai import PixAiTag
+                from .tag.pixai import PixAiTag
                 return PixAiTag(config)
             case "wd":
-                from .tag_wd import WDTag
+                from .tag.wd import WDTag
                 return WDTag(config)
 
             # Masking
             case "bria-rmbg":
-                from .mask_briarmbg import BriaRmbgMask
+                from .mask.briarmbg import BriaRmbgMask
                 return BriaRmbgMask(config)
             case "inspyrenet":
-                from .mask_inspyrenet import InspyrenetMask
+                from .mask.inspyrenet import InspyrenetMask
                 return InspyrenetMask(config)
+            case "qwen35-detect":
+                from .mask.llamacpp_detect import Qwen35DetectBackend
+                return Qwen35DetectBackend(config, "Qwen35ChatHandler", image_min_tokens=1024)
             case "yolo-detect":
-                from .mask_yolo import YoloMask
+                from .mask.yolo import YoloMask
                 return YoloMask(config)
 
             # Upscale
             case "upscale":
-                from .upscale import UpscaleBackend
+                from .misc.upscale import UpscaleBackend
                 return UpscaleBackend(config)
 
             # Embedding
@@ -214,12 +217,12 @@ class BackendLoader:
 
             # VAE
             case "vae":
-                from .vae import VaeBackend
+                from .misc.vae import VaeBackend
                 return VaeBackend(config)
 
             # Tokenizer
             case "tokens":
-                from .tokens import Tokens
+                from .misc.tokens import Tokens
                 return Tokens(config)
 
         raise ValueError(f"Unknown backend: '{backendName}'")

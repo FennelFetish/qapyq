@@ -1,29 +1,34 @@
 from transformers import AutoModelForCausalLM, set_seed
 import torch
 from host.imagecache import ImageFile
-from .backend import CaptionBackend
-from .prompt_struct import Conversation
-from .devmap import DevMap
-from .quant import Quantization
+from infer.backend import CaptionBackend
+from infer.prompt_struct import Conversation
+from infer.devmap import DevMap
+from infer.quant import Quantization
 
 
-class Ovis25Backend(CaptionBackend):
+class Ovis2Backend(CaptionBackend):
     def __init__(self, config: dict):
         modelPath = config.get("model_path")
 
-        self.device, self.dtype = DevMap.getTorchDeviceDtype(half=True)
+        self.device, self.dtype = DevMap.getTorchDeviceDtype()
         devmap = self.makeDeviceMap(modelPath, self.device, config.get("gpu_layers"), config.get("vis_gpu_layers"))
         quant = Quantization.getQuantConfig(config.get("quantization"), devmap.hasCpuLayers)
 
         self.model = AutoModelForCausalLM.from_pretrained(
             modelPath,
             torch_dtype=self.dtype,
-            attn_implementation=devmap.attention,
+            multimodal_max_length=32768,
+            #attn_implementation=devmap.attention,
             device_map=devmap.deviceMap,
             quantization_config=quant,
             trust_remote_code=True
         ).eval()
 
+        self.text_tokenizer = self.model.get_text_tokenizer()
+        self.visual_tokenizer = self.model.get_visual_tokenizer().eval()
+
+        self.maxPartition = 9
         super().__init__(config)
 
 
@@ -42,11 +47,9 @@ class Ovis25Backend(CaptionBackend):
             "typical_p": self.config.get("typical_p"),
             "repetition_penalty": self.config.get("repeat_penalty"),
 
-            "enable_thinking": False,
-            "enable_thinking_budget": True,
-            "thinking_budget": 2048,
-
-            "pad_token_id": 151643
+            "eos_token_id": self.model.generation_config.eos_token_id,
+            "pad_token_id": self.text_tokenizer.pad_token_id,
+            "use_cache": True
         }
 
 
@@ -59,45 +62,37 @@ class Ovis25Backend(CaptionBackend):
         for conversation in prompts:
             messages = []
             if systemPrompt:
-                messages.append( {"role": "system", "content": systemPrompt} )
+                messages.append( {"from": "system", "value": systemPrompt} )
 
             for i, prompt in enumerate(conversation):
                 if i == 0:
-                    messages.append({
-                        "role": "user",
-                        "content": [
-                            {"type": "image", "image": image},
-                            {"type": "text", "text": prompt.prompt.strip()}
-                        ]
-                    })
+                    messages.append( {"from": "human", "value": "<image>\n" + prompt.prompt.strip()} )
                 else:
-                    messages.append( {"role": "user", "content": prompt.prompt.strip()} )
+                    messages.append( {"from": "human", "value": prompt.prompt.strip()} )
 
-                answer = self._caption(messages)
+                answer = self._caption(messages, image)
                 answer = answer.strip()
-                messages.append( {"role": "assistant", "content": answer} )
+                messages.append( {"from": "gpt", "value": answer} )
                 answers[prompt.name] = answer
 
         return answers
 
 
-    def _caption(self, messages) -> str:
-        input_ids, pixel_values, grid_thws = self.model.preprocess_inputs(
-            messages=messages,
-            add_generation_prompt=True,
-            enable_thinking=self.genArgs["enable_thinking"]
-        )
+    def _caption(self, messages, image) -> str:
+        prompt, input_ids, pixel_values = self.model.preprocess_inputs(messages, [image], max_partition=self.maxPartition)
+        attention_mask = torch.ne(input_ids, self.text_tokenizer.pad_token_id)
+        input_ids = input_ids.unsqueeze(0).to(self.device)
+        attention_mask = attention_mask.unsqueeze(0).to(self.device)
 
-        input_ids = input_ids.to(self.device)
         if pixel_values is not None:
-            pixel_values = pixel_values.to(self.device)
-        if grid_thws is not None:
-            grid_thws = grid_thws.to(self.device)
+            pixel_values = pixel_values.to(dtype=self.visual_tokenizer.dtype, device=self.visual_tokenizer.device)
+        pixel_values = [pixel_values]
 
         # generate output
         with torch.inference_mode():
-            outputs = self.model.generate(inputs=input_ids, pixel_values=pixel_values, grid_thws=grid_thws, **self.genArgs)
-            return self.model.text_tokenizer.decode(outputs[0], skip_special_tokens=True)
+            output_ids = self.model.generate(input_ids, pixel_values=pixel_values, attention_mask=attention_mask, **self.genArgs)[0]
+            output = self.text_tokenizer.decode(output_ids, skip_special_tokens=True)
+            return output
 
 
     @staticmethod
@@ -105,7 +100,7 @@ class Ovis25Backend(CaptionBackend):
         devmap = DevMap.fromConfig(
             modelPath,
             "llm_config.num_hidden_layers",
-            "vit_config.num_hidden_layers"
+            "visual_tokenizer_config.backbone_config.num_hidden_layers"
         )
 
         devmap.setDevice(device)
@@ -117,11 +112,12 @@ class Ovis25Backend(CaptionBackend):
         devmap.setCudaLayer("llm.model.norm")
         devmap.setLLMLayers("llm.model.layers", llmGpuLayers)
 
+        visGpuLayers = max(visGpuLayers, 1)
         devmap.setCudaLayer("visual_tokenizer")
+        devmap.setCudaLayer("visual_tokenizer.backbone.preprocessor")
         devmap.setCudaLayer("visual_tokenizer.head")
-        devmap.setCudaLayer("visual_tokenizer.vit.vision_model.embeddings")
-        devmap.setCudaLayer("visual_tokenizer.vit.vision_model.post_layernorm")
-        devmap.setVisLayers("visual_tokenizer.vit.vision_model.encoder.layers", visGpuLayers)
+        devmap.setCudaLayer("visual_tokenizer.backbone.trunk.post_trunk_norm")
+        devmap.setVisLayers("visual_tokenizer.backbone.trunk.blocks", visGpuLayers)
 
         devmap.setCudaLayer("vte")
         return devmap
