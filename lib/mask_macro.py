@@ -6,6 +6,7 @@ import numpy as np
 from config import Config
 import tools.mask_ops as mask_ops
 from lib import qtlib
+from lib.filelist import sortKey
 from infer.inference import InferenceChain
 from infer.inference_proc import InferenceProcess
 
@@ -172,13 +173,19 @@ class MaskingMacro:
                 raise MacroLoadException(f"Invalid operation name: {ex}")
 
     @staticmethod
-    def loadMacros():
+    def loadMacros() -> list[tuple[str, str]]:
+        "Returns tuples of (name, path)."
+        entries = list[tuple[str, str]]()
+
         basePath = os.path.abspath(Config.pathMaskMacros)
         for root, dirs, files in os.walk(basePath):
             root = os.path.normpath(root)
             for path in (os.path.join(root, f) for f in files if f.endswith(".json")):
                 name, ext = os.path.splitext( os.path.relpath(path, basePath) )
-                yield (name, path)
+                entries.append((name, path))
+
+        entries.sort(key=lambda entry: sortKey(entry[0]))
+        return entries
 
 
     # TODO: Macros that use scratch layers may expect a fixed number of input layers (like 1)
