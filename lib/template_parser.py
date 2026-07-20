@@ -335,7 +335,8 @@ class TemplateVariableParser:
             case "strip":
                 return value.strip()
             case "oneline":
-                return value.replace("\n", "").replace("\r", "")
+                sep = args[0] if args else " "
+                return sep.join(line for l in value.splitlines() if (line := l.strip()))
 
             case "default":
                 return value if (value or not args) else args[0]

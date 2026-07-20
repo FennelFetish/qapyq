@@ -684,7 +684,7 @@ class TemplateTextEditCompleter(TextEditCompleter):
             return ""  # Not inside block
 
         blockText = text[start:pos].translate(self.BLOCK_TRANS)
-        start = max(start, start + blockText.rfind(":", 2))
+        start += max(0, blockText.rfind(":", 2))
 
         cursor.setPosition(start, QTextCursor.MoveMode.KeepAnchor)
         return cursor.selectedText()
@@ -1002,7 +1002,7 @@ class TemplateAutoCompleteSource(NGramAutoCompleteSource):
         "#lower":           "",
         "#upper":           "",
         "#strip":           "",
-        "#oneline":         "",
+        "#oneline":         ":Separator",
         "#default":         ":Text",
         "#defaultvar":      ":Var",
         "#first":           ":Count:Separator",
