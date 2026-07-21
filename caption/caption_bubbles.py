@@ -359,6 +359,11 @@ class BubbleMenu(QtWidgets.QMenu):
         actSelectOthers.setEnabled(enabled)
         actSelectOthers.triggered.connect(self._selectFilesWithout)
 
+        self.addSeparator()
+
+        actFocus = self.addAction("Add to Focus")
+        actFocus.triggered.connect(self._addFocus)
+
     @Slot()
     def _selectFilesWith(self):
         self.ctx.tab.filelist.setSelection(self.tagFiles, updateCurrent=True)
@@ -368,3 +373,8 @@ class BubbleMenu(QtWidgets.QMenu):
         filelist = self.ctx.tab.filelist
         files = filelist.selectedFiles.difference(self.tagFiles)
         filelist.setSelection(files, updateCurrent=True)
+
+    @Slot()
+    def _addFocus(self):
+        text = self.bubble.text
+        self.ctx.focus.appendFocusTags((text,))
