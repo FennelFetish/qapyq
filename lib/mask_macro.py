@@ -43,7 +43,7 @@ class MacroOp(Enum):
     CondRegions     = auto()    # minRegions, maxRegions (int)
 
     Macro           = auto()    # name
-    Detect          = auto()    # preset, color, threshold
+    Detect          = auto()    # preset, color, threshold, classes
     Segment         = auto()    # preset, color
 
     #ClearVram       = auto()    # ??
@@ -387,10 +387,15 @@ class ChainedMacroRunner:
 
 
     def queueDetect(self, file: str, proc: InferenceProcess, args: dict):
-        preset = args.pop("preset")
-        threshold = args.pop("threshold")
+        preset: str = args.pop("preset")
+        threshold: float = args.pop("threshold")
         config: dict = Config.inferMaskPresets.get(preset)
-        classes = config.get("classes", [])
+
+        # 2026-07-21: 'classes' added to args
+        try:
+            classes: list[str] = args.pop("classes")
+        except KeyError:
+            classes = config.get("classes", [])
 
         def cbDetect(results: list):
             try:

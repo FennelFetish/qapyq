@@ -1728,7 +1728,7 @@ class DetectMaskOperation(MaskOperation):
 
         colorFill = round(color * 255)
         threshold = self.spinThreshold.value()
-        classes = set(self.classes)
+        classes = self.classes
 
         mat = maskItem.toNumpy()
 
@@ -1746,7 +1746,7 @@ class DetectMaskOperation(MaskOperation):
         maskItem.fromNumpy(mat)
 
         # History
-        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.Detect, preset=self.preset, color=colorFill, threshold=threshold)
+        macroItem = self.maskTool.macro.addOperation(mask_macro.MacroOp.Detect, preset=self.preset, color=colorFill, threshold=threshold, classes=classes)
         historyTitle = f"Detect ({color:.2f})"
         maskItem.addHistory(historyTitle, mat, macroItem)
         if maskItem == self.maskItem:
