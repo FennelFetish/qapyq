@@ -45,15 +45,9 @@ class MaskTool(ViewTool):
         if not name:
             name = "Layer 0"
 
-        imgview = self._imgview
-
-        mask = QImage(imgview.image.mediaSize(), QImage.Format.Format_Grayscale8)
+        mask = QImage(self._imgview.image.mediaSize(), QImage.Format.Format_Grayscale8)
         mask.fill(Qt.GlobalColor.black)
-
-        maskItem = MaskItem.new(name, mask)
-        maskItem.setOpacity(self._toolbar.opacity)
-        maskItem.updateTransform(imgview.image)
-        return maskItem
+        return MaskItem.new(name, mask)
 
     def loadLayers(self):
         filelist = self.tab.filelist
@@ -70,6 +64,9 @@ class MaskTool(ViewTool):
             self.maskItem = self.createMask()
             layers = [ self.maskItem ]
 
+        self.maskItem.updateTransform(self._imgview.image)
+        self.maskItem.setOpacity(self._toolbar.opacity)
+
         self._imgview.scene().addItem(self.maskItem)
         self._imgview.updateView()
 
@@ -80,7 +77,7 @@ class MaskTool(ViewTool):
         maskState = filelist.getData(currentFile, DataKeys.MaskState)
         self._toolbar.setEdited(maskState == DataKeys.IconStates.Changed)
 
-    def loadLayersFromFile(self, filelist: FileList):
+    def loadLayersFromFile(self, filelist: FileList) -> 'list[MaskItem] | None':
         currentFile = filelist.getCurrentFile()
         maskPath = self._toolbar.exportWidget.getAutoExportPath(currentFile, forReading=True) # TODO: When overwrite disabled, load latest counter
         if not os.path.exists(maskPath):
@@ -89,22 +86,16 @@ class MaskTool(ViewTool):
 
         filelist.setData(currentFile, DataKeys.MaskState, DataKeys.IconStates.Exists)
 
-        maskMat = imagerw.loadMatBGR(maskPath)
+        maskMat = imagerw.loadMatBGR(maskPath, rgb=True)
         if maskMat.ndim == 2:
-            h, w = maskMat.shape
-            maskMat.shape = (h, w, 1)
+            maskMat.shape = (*maskMat.shape, 1)
         channels = maskMat.shape[2]
 
-        layers: list[MaskItem] = []
-        indices = list(range(channels))
-        indices[:3] = indices[2::-1] # Convert BGR(A) -> RGB(A)
-        for i, c in enumerate(indices):
-            array = np.ascontiguousarray(maskMat[:, :, c])
-            maskItem = MaskItem.load(f"Layer {i}", array)
-            maskItem.setOpacity(self._toolbar.opacity)
-            maskItem.updateTransform(self._imgview.image)
-            layers.append(maskItem)
-        return layers
+        return [
+            MaskItem.load(f"Layer {i}", maskMat[:, :, i])
+            for i in range(channels)
+        ]
+
 
     def resetLayers(self):
         filelist = self.tab.filelist
@@ -157,6 +148,8 @@ class MaskTool(ViewTool):
 
         self.maskItem = self.layers[index]
         self.maskItem.updateTransform(self._imgview.image)
+        self.maskItem.setOpacity(self._toolbar.opacity)
+
         self._imgview.scene().addItem(self.maskItem)
         self._imgview.scene().update()
 
@@ -454,7 +447,7 @@ class MaskItem(QtWidgets.QGraphicsRectItem):
     def load(name: str, imgData: np.ndarray) -> 'MaskItem':
         maskItem = MaskItem(name)
         maskItem.fromNumpy(imgData)
-        maskItem.addHistory("Load", np.copy(imgData)) # TODO: copy necessary?
+        maskItem.addHistory("Load", np.copy(imgData))
         return maskItem
 
 
