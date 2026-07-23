@@ -63,12 +63,15 @@ class PromptUtil:
         for inputConv in prompts:
             conv = Conversation()
             for info in inputConv:
-                parsedPrompt = varParser.parse(info.prompt)
+                # Don't clear stored vars to extend their scope to the prefill template
+                parsedPrompt = varParser.parse(info.prompt, clearStoredVars=False)
                 missingVars.update(varParser.missingVars)
 
                 if parsedPrefill := info.prefill:
                     parsedPrefill = varParser.parse(info.prefill)
                     missingVars.update(varParser.missingVars)
+                else:
+                    varParser.storedVars.clear()
 
                 conv.append(PromptInfo(info.name, parsedPrompt, parsedPrefill, info.hidden, info.think))
 

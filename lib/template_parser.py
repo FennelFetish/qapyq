@@ -55,7 +55,7 @@ class TemplateVariableParser:
             self._tempOverrides = {}
 
 
-    def parse(self, text: str) -> str:
+    def parse(self, text: str, clearStoredVars: bool = True) -> str:
         self.missingVars.clear()
 
         try:
@@ -70,7 +70,8 @@ class TemplateVariableParser:
             return text
 
         finally:
-            self.storedVars.clear()
+            if clearStoredVars:
+                self.storedVars.clear()
 
     def _replace(self, match: re.Match) -> str:
         return self._getValue(match.group(1))
