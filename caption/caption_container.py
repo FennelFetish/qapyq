@@ -105,6 +105,8 @@ class CaptionContainer(QtWidgets.QWidget):
         qtlib.setTabWidth(self.txtRulesPreview)
         qtlib.setTextEditHeight(self.txtRulesPreview, 2, "min")
         self.txtRulesPreview.hoverTextChanged.connect(lambda: self.ctx.controlUpdated.emit())
+        self.txtRulesPreview.leftClicked.connect(self._previewSelectHovered)
+        self.txtRulesPreview.middleClicked.connect(self._previewRemoveHovered)
         self.txtRulesPreview.hide()
         splitterBottom.addWidget(self.txtRulesPreview)
 
@@ -455,6 +457,33 @@ class CaptionContainer(QtWidgets.QWidget):
             splitterSizes[idx] = self.txtRulesPreview.minimumHeight() * 2
             self._splitter.setSizes(splitterSizes)
 
+    @Slot()
+    def _previewSelectHovered(self):
+        if not self.txtRulesPreview.hoverText:
+            return
+
+        try:
+            index = next(
+                i for i, bubble in enumerate(self.bubbles.getBubbles())
+                if self.txtRulesPreview.isHovered(bubble.text)
+            )
+            self.txtCaption.selectCaption(index)
+        except StopIteration:
+            pass
+
+    @Slot()
+    def _previewRemoveHovered(self):
+        if not self.txtRulesPreview.hoverText:
+            return
+
+        text = self.txtCaption.getCaption()
+        sepStrip = self.captionSeparator.strip()
+        captions = (
+            cap for c in text.split(sepStrip)
+            if not self.txtRulesPreview.isHovered(cap := c.strip())
+        )
+        self.txtCaption.setCaption( self.captionSeparator.join(captions) )
+
     def _updatePreview(self, text: str):
         if self.txtRulesPreview.isHidden():
             return
@@ -752,6 +781,8 @@ class CaptionCache:
 
 class HoverTextEdit(QtWidgets.QPlainTextEdit):
     hoverTextChanged = Signal(str)
+    leftClicked = Signal()
+    middleClicked = Signal()
 
     def __init__(self, container: CaptionContainer):
         super().__init__()
@@ -766,7 +797,7 @@ class HoverTextEdit(QtWidgets.QPlainTextEdit):
 
 
     def isHovered(self, text: str) -> bool:
-        return bool(text) and self._hoverWords.issuperset(text.split(" "))
+        return bool(text) and self._hoverWords.issuperset(text.split())
 
     def setHoverText(self, text: str):
         if self.hoverText == text:
@@ -774,11 +805,10 @@ class HoverTextEdit(QtWidgets.QPlainTextEdit):
 
         self._hoverWords.clear()
         if text:
-            self._hoverWords.update(text.split(" "))
+            self._hoverWords.update(text.split())
 
         self.hoverText = text
         self.hoverTextChanged.emit(text)
-
 
     def setPlainText(self, text: str):
         # Only set text when it changes to prevent scrolling to top when hovering
@@ -786,7 +816,16 @@ class HoverTextEdit(QtWidgets.QPlainTextEdit):
             super().setPlainText(text)
 
 
-    def mouseMoveEvent(self, event):
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
+        match event.button():
+            case Qt.MouseButton.LeftButton:
+                self.leftClicked.emit()
+            case Qt.MouseButton.MiddleButton:
+                self.middleClicked.emit()
+
+        super().mouseReleaseEvent(event) # Always, to clear selection etc.
+
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent):
         super().mouseMoveEvent(event)
 
         text = self.toPlainText()
