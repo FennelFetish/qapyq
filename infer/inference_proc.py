@@ -175,9 +175,10 @@ class InferenceProcess(QObject):
             self.proc.setArguments(self.procCfg.arguments)
 
             self.proc.setProcessEnvironment(env)
-            self.proc.setProcessChannelMode(QProcess.ProcessChannelMode.ForwardedErrorChannel)
+            self.proc.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
             self.proc.setReadChannel(QProcess.ProcessChannel.StandardOutput)
             self.proc.readyReadStandardOutput.connect(self._onReadyRead)
+            self.proc.readyReadStandardError.connect(self._onReadyReadError)
             self.proc.finished.connect(self._onProcessEnded)
             self.proc.start()
 
@@ -456,7 +457,7 @@ class InferenceProcess(QObject):
             try:
                 # Buffers still intact
                 self.proc.readAllStandardOutput()
-                self.proc.readAllStandardError()
+                self._onReadyReadError()
             except:
                 pass
             finally:
@@ -501,7 +502,7 @@ class InferenceProcess(QObject):
                     future.setResult(msg)
             else:
                 content = (msg.get("cmd") or msg.get("error_type")) if msg else "Unknown"
-                print(f"WARNING: Message from inference process has no Future (Received: {content})")
+                print(f"[{self.procCfg.hostName}] WARNING: Message from inference process has no Future (Received: {content})")
 
 
     def _readMessage(self) -> tuple[int, dict | None]:
@@ -515,7 +516,7 @@ class InferenceProcess(QObject):
                 if srv > Service.ID.INFERENCE and length > 0xFFFF:
                     line = self.proc.readLine(16384)
                     line = str(headerBuffer, "utf-8", "replace") + str(line, "utf-8", "replace")
-                    print(f"WARNING: Message from inference process looks like log output: '{line.strip()}'")
+                    print(f"[{self.procCfg.hostName}] WARNING: Message looks like log output: '{line.strip()}'")
                     return 0, None
 
                 buffer = self.proc.read(length)
@@ -545,3 +546,12 @@ class InferenceProcess(QObject):
         except:
             traceback.print_exc()
             return 0, None
+
+
+    @Slot()
+    def _onReadyReadError(self):
+        data = self.proc.readAllStandardError()
+        if text := str(data, "utf-8", "replace").rstrip():
+            prefix = f"[{self.procCfg.hostName}] "
+            text = text.replace("\n", "\n" + prefix)
+            print(prefix + text)  # Print all lines in a single call to reduce interleaving
