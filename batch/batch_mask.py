@@ -234,7 +234,7 @@ class BatchMask(QtWidgets.QWidget):
         if self.destPathSettings.overwriteFiles:
             ops.append( colorlib.htmlRed("Overwrite existing images!") )
         elif self.destPathSettings.skipExistingFiles:
-            ops.append("Save images using new filenames")
+            ops.append("Skip file if destination already exists")
         else:
             ops.append("Save images using new filenames with an increasing counter")
 

@@ -1,4 +1,6 @@
-from typing import Callable
+import os
+from typing import Callable, NamedTuple
+from typing_extensions import override
 from PySide6 import QtWidgets
 from PySide6.QtCore import Slot
 import cv2 as cv
@@ -32,7 +34,7 @@ class BatchScale(QtWidgets.QWidget):
         self.parser.setup(self.tab.filelist.getCurrentFile(), None)
 
         config = Config.exportPresets.get(self.EXPORT_PRESET_KEY, {})
-        self.pathSettings = export.PathSettings(self.parser)
+        self.pathSettings = export.PathSettings(self.parser, showSkip=True)
         self.pathSettings.pathTemplate   = config.get("path_template", "{{path}}_{{w}}x{{h}}.png")
         self.pathSettings.overwriteFiles = config.get("overwrite", False)
 
@@ -178,6 +180,8 @@ class BatchScale(QtWidgets.QWidget):
 
         if self.pathSettings.overwriteFiles:
             ops.append( colorlib.htmlRed("Overwrite existing images!") )
+        elif self.pathSettings.skipExistingFiles:
+            ops.append("Skip file if destination already exists")
         else:
             ops.append("Save images using new filenames with an increasing counter")
 
@@ -205,18 +209,35 @@ class BatchScale(QtWidgets.QWidget):
 class BatchScaleTask(BatchTask):
     def __init__(self, log, files, scaleFunc: Callable, scaleConfigFactory: export.ScaleConfigFactory, pathSettings: export.PathSettings):
         super().__init__("scale", log, files)
-        self.scaleFunc      = scaleFunc
-        self.scaleConfig    = scaleConfigFactory.getScaleConfig(1.0) # Only use interpolation mode
-        self.pathTemplate   = pathSettings.pathTemplate
-        self.overwriteFiles = pathSettings.overwriteFiles
+        self.scaleFunc   = scaleFunc
+        self.scaleConfig = scaleConfigFactory.getScaleConfig(1.0) # Only use interpolation mode
 
+        self.pathTemplate      = pathSettings.pathTemplate
+        self.overwriteFiles    = pathSettings.overwriteFiles
+        self.skipExistingFiles = pathSettings.skipExistingFiles
+
+        # Initialize kernels in main thread
+        export.ImageExportTask.initKernels()
+
+    @override
     def runPrepare(self):
         self.parser = export.ExportVariableParser()
 
-    def runProcessFile(self, imgFile: str) -> str:
-        mat = imagerw.loadMatBGR(imgFile, rgb=True)
-        origH, origW = mat.shape[:2]
+    @override
+    def runProcessFile(self, imgFile: str) -> str | None:
+        origW, origH = imagerw.readSize(imgFile)
         targetW, targetH = self.scaleFunc(origW, origH)
+
+        self.parser.setup(imgFile)
+        self.parser.width  = targetW
+        self.parser.height = targetH
+
+        noCounter = self.overwriteFiles or self.skipExistingFiles
+        destPath = self.parser.parsePath(self.pathTemplate, noCounter)
+        if self.skipExistingFiles and os.path.lexists(destPath):
+            return None
+
+        mat = imagerw.loadMatBGR(imgFile, rgb=True)
 
         if (targetW != origW) or (targetH != origH):
             scaleFactor = np.sqrt( (targetW * targetH) / (origW * origH) )
@@ -225,13 +246,8 @@ class BatchScaleTask(BatchTask):
         else:
             self.log(f"Kept size {origW}x{origH}")
 
-        self.parser.setup(imgFile)
-        self.parser.width = targetW
-        self.parser.height = targetH
-
-        path = self.parser.parsePath(self.pathTemplate, self.overwriteFiles)
-        export.saveImage(path, mat, self.log, convertFromBGR=False)
-        return path
+        export.saveImage(destPath, mat, self.log, convertFromBGR=False)
+        return destPath
 
     @staticmethod
     def resize(mat: np.ndarray, scaleConfig: export.ScaleConfig, w: int, h: int) -> np.ndarray:
@@ -243,38 +259,69 @@ class BatchScaleTask(BatchTask):
         if not upscale and scaleConfig.useLpFilter and interp != cv.INTER_AREA:
             mat = export.ImageExportTask.filterLowPass(mat, srcWidth, srcHeight, w, h, scaleConfig.lpFilter)
 
-        return cv.resize(mat, (w, h), interpolation=interp)
+        mat = cv.resize(mat, (w, h), interpolation=interp)
+
+        if mat.dtype != np.uint8:
+            np.round(mat, out=mat)
+            np.clip(mat, 0, 255, out=mat)
+            mat = mat.astype(np.uint8)
+
+        return mat
 
 
+
+class UpscaleResult(NamedTuple):
+    origW: int
+    origH: int
+    modelPath: str | None
+    mat: np.ndarray  # RGB
+    destPath: str
 
 class BatchInferenceScaleTask(BatchInferenceTask):
     def __init__(self, log, files, scaleFunc: Callable, scaleConfigFactory: export.ScaleConfigFactory, pathSettings: export.PathSettings):
         super().__init__("scale", log, files)
-        self.scaleFunc      = scaleFunc
-        self.scaleConfigs   = scaleConfigFactory
-        self.pathTemplate   = pathSettings.pathTemplate
-        self.overwriteFiles = pathSettings.overwriteFiles
+        self.scaleFunc    = scaleFunc
+        self.scaleConfigs = scaleConfigFactory
 
+        self.pathTemplate      = pathSettings.pathTemplate
+        self.overwriteFiles    = pathSettings.overwriteFiles
+        self.skipExistingFiles = pathSettings.skipExistingFiles
+
+        # Initialize kernels in main thread
+        export.ImageExportTask.initKernels()
+
+    @override
     def runPrepare(self, proc):
         self.parser = export.ExportVariableParser()
 
+    @override
     def runCheckFile(self, imgFile: str, proc: InferenceProcess) -> Callable | InferenceChain | None:
-        mat = imagerw.loadMatBGR(imgFile, rgb=True)
-        origH, origW = mat.shape[:2]
+        origW, origH = imagerw.readSize(imgFile)
         targetW, targetH = self.scaleFunc(origW, origH)
+
+        self.parser.setup(imgFile)
+        self.parser.width  = targetW
+        self.parser.height = targetH
+
+        noCounter = self.overwriteFiles or self.skipExistingFiles
+        destPath = self.parser.parsePath(self.pathTemplate, noCounter)
+        if self.skipExistingFiles and os.path.lexists(destPath):
+            return None
+
+        mat = imagerw.loadMatBGR(imgFile, rgb=True)
 
         if (targetW != origW) or (targetH != origH):
             scaleFactor = np.sqrt( (targetW * targetH) / (origW * origH) )
             scaleConfig = self.scaleConfigs.getScaleConfig(scaleFactor)
             if scaleConfig.useUpscaleModel:
                 # Upscale backend loads files with PIL, so it will return mat as RGB
-                return lambda: self.queue(imgFile, origW, origH, targetW, targetH, scaleConfig, proc)
+                return lambda: self.queue(imgFile, destPath, origW, origH, targetW, targetH, scaleConfig, proc)
             else:
                 mat = BatchScaleTask.resize(mat, scaleConfig, targetW, targetH)
 
-        return InferenceChain.result((origW, origH, "", mat))
+        return InferenceChain.result(UpscaleResult(origW, origH, None, mat, destPath))
 
-    def queue(self, imgFile: str, origW: int, origH: int, targetW: int, targetH: int, scaleConfig: export.ScaleConfig, proc: InferenceProcess):
+    def queue(self, imgFile: str, destPath: str, origW: int, origH: int, targetW: int, targetH: int, scaleConfig: export.ScaleConfig, proc: InferenceProcess):
         def scale(results: list):
             w, h, imgData = results[0]["w"], results[0]["h"], results[0]["img"]
             channels = len(imgData) // (w*h)
@@ -284,19 +331,23 @@ class BatchInferenceScaleTask(BatchInferenceTask):
             if (w != targetW) or (h != targetH):
                 mat = BatchScaleTask.resize(mat, scaleConfig, targetW, targetH)
 
-            return InferenceChain.result((origW, origH, scaleConfig.modelPath, mat))
+            return InferenceChain.result(UpscaleResult(origW, origH, scaleConfig.modelPath, mat, destPath))
 
         proc.upscaleImageFile(scaleConfig.toDict(), imgFile)
         return InferenceChain.resultCallback(scale)
 
-    def runProcessFile(self, imgFile: str, results: list) -> str | None:
+    @override
+    def runProcessFile(self, imgFile: str, results: list[UpscaleResult]) -> str | None:
         if not results:
             return None
 
-        mat: np.ndarray # RGB
-        origW, origH, modelPath, mat = results[0]
-        h, w = mat.shape[:2]
+        origW, origH, modelPath, mat, destPath = results[0]
 
+        # Check for existing file again because this was a potentially long-running task
+        if self.skipExistingFiles and os.path.lexists(destPath):
+            return None
+
+        h, w = mat.shape[:2]
         if (w != origW) or (h != origH):
             scaleFactor = np.sqrt( (w * h) / (origW * origH) )
             modelText = f" using '{modelPath}'" if modelPath else ""
@@ -304,10 +355,5 @@ class BatchInferenceScaleTask(BatchInferenceTask):
         else:
             self.log(f"Kept size {origW}x{origH}")
 
-        self.parser.setup(imgFile)
-        self.parser.width = w
-        self.parser.height = h
-
-        path = self.parser.parsePath(self.pathTemplate, self.overwriteFiles)
-        export.saveImage(path, mat, self.log, convertFromBGR=False)
-        return path
+        export.saveImage(destPath, mat, self.log, convertFromBGR=False)
+        return destPath

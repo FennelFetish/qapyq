@@ -875,8 +875,12 @@ class ImageExportTask(QRunnable):
         self.borderMode     = cv.BORDER_REPLICATE
 
         # Initialize kernels in main thread
-        if ImageExportTask.KERNELS is None:
-            ImageExportTask.KERNELS = ImageExportTask.Kernels()
+        self.initKernels()
+
+    @classmethod
+    def initKernels(cls):
+        if cls.KERNELS is None:
+            cls.KERNELS = cls.Kernels()
 
 
     def toImage(self, pixmap: QtGui.QPixmap):
