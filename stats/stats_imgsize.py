@@ -33,6 +33,7 @@ class ImageSizeStats(QtWidgets.QWidget):
         self.lblNumBuckets = loadBox.addLabel("Size Buckets:")
         self.lblWidth = loadBox.addLabel("Width:")
         self.lblHeight = loadBox.addLabel("Height:")
+        self.lblFrames = loadBox.addLabel("Frames:")
         self.lblPixels = loadBox.addLabel("Mpx:")
 
         self._loadBox = loadBox
@@ -44,7 +45,7 @@ class ImageSizeStats(QtWidgets.QWidget):
     @Slot()
     def _onDataLoaded(self, buckets: list[SizeBucketData], summary: SizeBucketSummary):
         self.model.reload(buckets, summary)
-        self.table.sortByColumn(3, Qt.SortOrder.AscendingOrder)
+        self.table.sortByColumn(4, Qt.SortOrder.AscendingOrder)
         self.table.resizeColumnsToContents()
 
         self.lblNumFiles.setText(str(summary.numFiles))
@@ -53,6 +54,13 @@ class ImageSizeStats(QtWidgets.QWidget):
         self.lblWidth.setText(f"{summary.minWidth} - {summary.maxWidth}")
         self.lblHeight.setText(f"{summary.minHeight} - {summary.maxHeight}")
         self.lblPixels.setText(f"{summary.minPixels:.1f} - {summary.maxPixels:.1f}")
+
+        if summary.maxFrames != 0:
+            self.lblFrames.setText(f"{summary.minFrames} - {summary.maxFrames}")
+            self.table.showColumn(2)
+        else:
+            self.lblFrames.setText(f"0")
+            self.table.hideColumn(2)
 
         unreadableStyle = ""
         if summary.numUnreadable > 0:
@@ -73,7 +81,7 @@ class SizeBucketStatsLoadTask(StatsLoadTask):
 
     def runLoad(self) -> tuple[list[SizeBucketData], SizeBucketSummary]:
         summary = SizeBucketSummary()
-        buckets: dict[tuple[int, int], SizeBucketData] = dict()
+        buckets: dict[tuple[int, int, int], SizeBucketData] = dict()
 
         for file, size in self.map_auto(self.files, self.readSize, chunkSize=32):
             summary.addFile(size)
@@ -86,20 +94,20 @@ class SizeBucketStatsLoadTask(StatsLoadTask):
         return list(buckets.values()), summary
 
     @staticmethod
-    def readSize(file: str) -> tuple[str, tuple[int, int]]:
+    def readSize(file: str) -> tuple[str, tuple[int, int, int]]:
         if videorw.isVideoFile(file):
-            size = videorw.readSize(file)
+            w, h, _, frames, _ = videorw.readMetadata(file)
         else:
-            size = imagerw.readSize(file)
+            w, h = imagerw.readSize(file)
+            frames = 0
 
-        return file, size
+        return file, (w, h, frames)
 
 
 
 class SizeBucketData:
-    def __init__(self, size: tuple[int, int]):
-        self.width  = size[0]
-        self.height = size[1]
+    def __init__(self, size: tuple[int, int, int]):
+        self.width, self.height, self.frames = size
         self.aspectRatio = self.width / self.height
 
         self.pixels = self.width * self.height / 1000000
@@ -116,13 +124,18 @@ class SizeBucketSummary:
         self.reset()
 
     def reset(self):
-        self.minWidth  = 2**31
+        defaultMin = 2**31
+
+        self.minWidth  = defaultMin
         self.maxWidth  = 0
 
-        self.minHeight = 2**31
+        self.minHeight = defaultMin
         self.maxHeight = 0
 
-        self.minPixels = 2**31
+        self.minFrames = defaultMin
+        self.maxFrames = 0
+
+        self.minPixels = defaultMin
         self.maxPixels = 0
 
         self.numFiles   = 0
@@ -131,22 +144,26 @@ class SizeBucketSummary:
 
         self._empty = True
 
-    def addFile(self, size: tuple[int, int]):
+    def addFile(self, size: tuple[int, int, int]):
         self.numFiles += 1
+        w, h, frames = size
 
-        if size[0] < 0 or size[1] < 0:
+        if w < 0 or h < 0:
             self.numUnreadable += 1
             return
 
         self._empty = False
 
-        self.minWidth = min(self.minWidth, size[0])
-        self.maxWidth = max(self.maxWidth, size[0])
+        self.minWidth = min(self.minWidth, w)
+        self.maxWidth = max(self.maxWidth, w)
 
-        self.minHeight = min(self.minHeight, size[1])
-        self.maxHeight = max(self.maxHeight, size[1])
+        self.minHeight = min(self.minHeight, h)
+        self.maxHeight = max(self.maxHeight, h)
 
-        pixels = size[0] * size[1] / 1000000
+        self.minFrames = min(self.minFrames, frames)
+        self.maxFrames = max(self.maxFrames, frames)
+
+        pixels = w * h / 1000000
         self.minPixels = min(self.minPixels, pixels)
         self.maxPixels = max(self.maxPixels, pixels)
 
@@ -155,6 +172,7 @@ class SizeBucketSummary:
         if self._empty:
             self.minWidth  = 0
             self.minHeight = 0
+            self.minFrames = 0
             self.minPixels = 0
 
         return self
@@ -186,7 +204,7 @@ class SizeBucketModel(QAbstractItemModel):
         return len(self.buckets)
 
     def columnCount(self, parent=QModelIndex()):
-        return 6
+        return 7
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         bucketData = self.buckets[index.row()]
@@ -196,10 +214,11 @@ class SizeBucketModel(QAbstractItemModel):
                 match index.column():
                     case 0: return bucketData.width
                     case 1: return bucketData.height
-                    case 2: return f"{bucketData.aspectRatio:.3f}"
-                    case 3: return f"{bucketData.pixels:.2f}"
-                    case 4: return bucketData.count
-                    case 5:
+                    case 2: return bucketData.frames or ""
+                    case 3: return f"{bucketData.aspectRatio:.3f}"
+                    case 4: return f"{bucketData.pixels:.2f}"
+                    case 5: return bucketData.count
+                    case 6:
                         presence = 0
                         if self.summary.numFiles > 0:
                             presence = len(bucketData.files) / self.summary.numFiles
@@ -216,10 +235,11 @@ class SizeBucketModel(QAbstractItemModel):
                 match index.column():
                     case 0: return bucketData.width
                     case 1: return bucketData.height
-                    case 2: return bucketData.aspectRatio
-                    case 3: return bucketData.pixels
-                    case 4: return bucketData.count
-                    case 5: return len(bucketData.files) / self.summary.numFiles if self.summary.numFiles else 0.0
+                    case 2: return bucketData.frames
+                    case 3: return bucketData.aspectRatio
+                    case 4: return bucketData.pixels
+                    case 5: return bucketData.count
+                    case 6: return len(bucketData.files) / self.summary.numFiles if self.summary.numFiles else 0.0
 
         return None
 
@@ -230,10 +250,11 @@ class SizeBucketModel(QAbstractItemModel):
         match section:
             case 0: return "Width"
             case 1: return "Height"
-            case 2: return "Aspect"
-            case 3: return "Mpx"
-            case 4: return "Count"
-            case 5: return "Percentage"
+            case 2: return "Frames"
+            case 3: return "Aspect"
+            case 4: return "Mpx"
+            case 5: return "Count"
+            case 6: return "Percentage"
         return None
 
     def index(self, row, column, parent=QModelIndex()):
@@ -258,16 +279,16 @@ class SizeBucketProxyModel(StatsBaseProxyModel):
             dataLeft: SizeBucketData  = self.sourceModel().data(left, SizeBucketModel.ROLE_DATA)
             dataRight: SizeBucketData = self.sourceModel().data(right, SizeBucketModel.ROLE_DATA)
             match column:
-                case 0 | 1 | 4: return super().lessThan(right, left) # Reversed
-                case 2: return dataRight.aspectRatio < dataLeft.aspectRatio
-                case 3: return dataRight.pixels < dataLeft.pixels
-                case 5: return dataRight.count < dataLeft.count
+                case 0 | 1 | 2: return super().lessThan(right, left) # Reversed
+                case 3: return dataRight.aspectRatio < dataLeft.aspectRatio
+                case 4: return dataRight.pixels < dataLeft.pixels
+                case 5 | 6: return dataRight.count < dataLeft.count
 
         return super().lessThan(left, right)
 
     def filterAcceptsRow(self, sourceRow: int, sourceParent: QModelIndex) -> bool:
         index = self.sourceModel().index(sourceRow, 0, sourceParent)
         bucketData: SizeBucketData = self.sourceModel().data(index, SizeBucketModel.ROLE_DATA)
-        sizeString = f"{bucketData.width}x{bucketData.height}"
+        sizeString = f"{bucketData.width}x{bucketData.height}x{bucketData.frames}"
         filter = self.filterRegularExpression()
         return filter.match(sizeString).hasMatch()
