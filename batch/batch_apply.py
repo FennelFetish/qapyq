@@ -519,7 +519,7 @@ class TxtFileDest(CaptionDest):
     @override
     def write(self, imgPathNoExt: str, captionFile: CaptionFile, captionFunc: Callable[[CaptionFile], str]) -> tuple[str|None, bool]:
         txtPath = imgPathNoExt + ".txt"
-        if (self.writeMode != WriteMode.SeparateReplace) and os.path.exists(txtPath):
+        if (self.writeMode != WriteMode.SeparateReplace) and os.path.lexists(txtPath):
             return None, False
 
         caption = captionFunc(captionFile)

@@ -360,7 +360,7 @@ class BaseBatchMaskTask:
 
         noCounter = self.overwriteFiles or self.skipExistingFiles
         path = self.parser.parsePath(self.pathTemplate, noCounter)
-        if self.skipExistingFiles and os.path.exists(path):
+        if self.skipExistingFiles and os.path.lexists(path):
             raise MaskSkipException()
         return path
 

@@ -158,11 +158,8 @@ class MaskingMacro:
             file.writelines(jsonStr)
 
     def loadFrom(self, path: str):
-        if os.path.exists(path):
-            with open(path, 'r') as file:
-                data = json.load(file)
-        else:
-            data = dict()
+        with open(path, 'r') as file:
+            data = json.load(file)
 
         self.clear()
         operations = data.get("operations", [])

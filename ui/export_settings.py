@@ -212,7 +212,7 @@ class ExportWidget(QtWidgets.QWidget):
             examplePath = self.getAutoExportPath(currentFile)
 
         stylesheet = ""
-        if os.path.exists(examplePath):
+        if os.path.lexists(examplePath):
             stylesheet = f"color: {colorlib.RED}"
         self.txtPathSample.setStyleSheet(stylesheet)
 
@@ -566,7 +566,7 @@ class ExportVariableParser(template_parser.TemplateVariableParser):
         head = path
         path = f"{head}{extension}"
         counter = 1
-        while os.path.exists(path):
+        while os.path.lexists(path):
             path = f"{head}_{counter:03}{extension}"
             counter += 1
 

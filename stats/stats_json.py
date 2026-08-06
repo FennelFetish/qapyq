@@ -85,12 +85,12 @@ class JsonStatsLoadTask(StatsLoadTask):
 
     @classmethod
     def loadJsonKeys(cls, imgFile: str) -> tuple[str, list[str] | None]:
-        jsonFile = os.path.splitext(imgFile)[0] + ".json"
-        if not os.path.exists(jsonFile):
+        try:
+            jsonFile = os.path.splitext(imgFile)[0] + ".json"
+            with open(jsonFile, 'r') as file:
+                data = json.load(file)
+        except FileNotFoundError:
             return imgFile, None
-
-        with open(jsonFile, 'r') as file:
-            data = json.load(file)
 
         keys: list[str] = list()
         if isinstance(data, dict):
