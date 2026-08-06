@@ -63,7 +63,7 @@ class TagStats(QtWidgets.QWidget):
         self.lblNumFiles = loadBox.addLabel("Tagged Files:")
         self.lblTotalTags = loadBox.addLabel("Total Tags:")
         self.lblUniqueTags = loadBox.addLabel("Unique Tags:")
-        self.lblTagsPerImage = loadBox.addLabel("Per Image:")
+        self.lblTagsPerImage = loadBox.addLabel("Per File:")
         self.lblAvgTagsPerImage = loadBox.addLabel("Average:")
 
         self._loadBox = loadBox

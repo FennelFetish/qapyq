@@ -12,7 +12,7 @@ class GalleryHeader(QtWidgets.QWidget):
         palette: QtGui.QPalette
 
     STYLE: StyleCache | None = None
-    ALL_FILES_DIR = "All Images"
+    ALL_FILES_DIR = "All Files"
 
 
     def __init__(self, parent: QtWidgets.QWidget, tab: ImgTab, path: str):
@@ -52,7 +52,7 @@ class GalleryHeader(QtWidgets.QWidget):
 
 
     def updateImageLabel(self, numImages: int):
-        text = f"{numImages} Image"
+        text = f"{numImages} File"
         if numImages != 1:
             text += "s"
         self.lblImgCount.setText(text)

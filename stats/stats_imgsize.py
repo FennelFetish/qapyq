@@ -28,7 +28,7 @@ class ImageSizeStats(QtWidgets.QWidget):
         loadBox = StatsLoadGroupBox(self._createTask)
         loadBox.dataLoaded.connect(self._onDataLoaded)
 
-        self.lblNumFiles = loadBox.addLabel("Images:")
+        self.lblNumFiles = loadBox.addLabel("Files:")
         self.lblNumUnreadable = loadBox.addLabel("Unreadable:")
         self.lblNumBuckets = loadBox.addLabel("Size Buckets:")
         self.lblWidth = loadBox.addLabel("Width:")

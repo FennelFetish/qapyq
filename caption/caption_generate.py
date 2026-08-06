@@ -156,7 +156,7 @@ class CaptionGenerate(CaptionTab):
             if currentFile:
                 files.append(currentFile)
             else:
-                QtWidgets.QMessageBox.information(self, "No Image Loaded", "Please load an image into the Main Window first.")
+                QtWidgets.QMessageBox.information(self, "No Files Loaded", "Please load files into the Main Window first.")
                 return
 
         self.btnGenerate.setText("Abort")

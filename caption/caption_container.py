@@ -194,10 +194,10 @@ class CaptionContainer(QtWidgets.QWidget):
         col += 1
         self.btnMultiEdit = RightClickToggleButton("")
         self.btnMultiEdit.setToolTip(
-            "Shows number of selected images.<br>Left-click or <b>Ctrl+M</b> to toggle between:<br>"  \
-            "- Multi-Edit mode with combined captions of all selected images.<br>"  \
-            "- Single-Edit mode with caption of the currently displayed image only.<br>"  \
-            "Right-click to clear image selection."
+            "Shows number of selected files.<br>Left-click or <b>Ctrl+M</b> to toggle between:<br>"  \
+            "- Multi-Edit mode with combined captions of all selected files.<br>"  \
+            "- Single-Edit mode with caption of the currently displayed file only.<br>"  \
+            "Right-click to clear file selection."
         )
         self.btnMultiEdit.setFixedWidth(30)
         self.btnMultiEdit.hide()
@@ -263,7 +263,7 @@ class CaptionContainer(QtWidgets.QWidget):
         col += 1
         self.chkSkipOnSave = qtlib.ToggleButton("")
         self.chkSkipOnSave.setIcon(self.ICON_FORWARD)
-        self.chkSkipOnSave.setToolTip("Toggle: Skip to next (selected) image after saving, without looping.\nOnly active in Single Edit Mode.")
+        self.chkSkipOnSave.setToolTip("Toggle: Skip to next (selected) file after saving, without looping.\nOnly active in Single Edit Mode.")
         self.chkSkipOnSave.setChecked(False)
         self.chkSkipOnSave.setFixedWidth(26)
         layout.addWidget(self.chkSkipOnSave, 0, col)

@@ -264,7 +264,7 @@ class ExportWidget(QtWidgets.QWidget):
         # Manually pick destination path: Use filename from path template
         path = os.path.basename(path)
         path = os.path.join(self._defaultPath, path)
-        path, selectedFilter = QtWidgets.QFileDialog.getSaveFileName(self, "Save Image", path, self.FILE_FILTER)
+        path, selectedFilter = QtWidgets.QFileDialog.getSaveFileName(self, "Save Media", path, self.FILE_FILTER)
         if not path:
             return ""
 

@@ -40,7 +40,7 @@ class StatsContainer(QtWidgets.QTabWidget):
 
         self.addTab(self.statWidgets["tags"], "Tag Count")
         self.addTab(self.statWidgets["json"], "JSON Keys")
-        self.addTab(self.statWidgets["imgsize"], "Image Size")
+        self.addTab(self.statWidgets["imgsize"], "Media Size")
         self.addTab(self.statWidgets["mask"], "Mask")
         #self.addTab(self.statWidgets["metrics"], "Metrics")
         self.addTab(self.statWidgets["filesuffix"], "File Suffix")

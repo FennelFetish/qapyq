@@ -31,7 +31,7 @@ class FileSuffixStats(QtWidgets.QWidget):
         loadBox = StatsLoadGroupBox(self._createTask)
         loadBox.dataLoaded.connect(self._onDataLoaded)
 
-        self.lblNumFiles = loadBox.addLabel("Images:")
+        self.lblNumFiles = loadBox.addLabel("Media Files:")
         self.lblNumSuffixes = loadBox.addLabel("Suffixes:")
 
         self._loadBox = loadBox

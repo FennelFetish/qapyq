@@ -18,8 +18,8 @@ HELP = [
 ]
 
 HELP2 = [
-    "[Enter]: Save and skip to next (selected) image",
-    "[Arrow Left/Right]: Navigate to previous/next (selected) image",
+    "[Enter]: Save and skip to next (selected) file",
+    "[Arrow Left/Right]: Navigate to previous/next (selected) file",
     "[Esc]: Disable shortcuts"
 ]
 

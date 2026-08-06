@@ -244,7 +244,7 @@ class HostSettings(QtWidgets.QGroupBox):
         layout.setRowMinimumHeight(row, 20)
 
         row += 1
-        info = "The queue size defines how many images are uploaded and cached on this host."
+        info = "The queue size defines how many files are uploaded and cached on this host."
         layout.addWidget(QtWidgets.QLabel(info), row, 0, 1, 3)
 
         row += 1

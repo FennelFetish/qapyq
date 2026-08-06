@@ -310,10 +310,10 @@ class MainMenu(QtWidgets.QMenu):
         actFullscreen = self._addShortcutAction("Toggle &Fullscreen", Qt.CTRL | Qt.Key_F)
         actFullscreen.triggered.connect(mainWindow.toggleFullscreen)
 
-        actPrevImage = self._addShortcutAction("Previous Image", Qt.CTRL | Qt.Key_PageUp)
+        actPrevImage = self._addShortcutAction("Previous File", Qt.CTRL | Qt.Key_PageUp)
         actPrevImage.triggered.connect(lambda: self.changeImage(False))
 
-        actNextImage = self._addShortcutAction("Next Image", Qt.CTRL | Qt.Key_PageDown)
+        actNextImage = self._addShortcutAction("Next File", Qt.CTRL | Qt.Key_PageDown)
         actNextImage.triggered.connect(lambda: self.changeImage(True))
 
         self.addSeparator()
