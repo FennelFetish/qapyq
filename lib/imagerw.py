@@ -12,7 +12,7 @@ PIL_READ_EXTENSIONS = set(ext for ext, format in Image.registered_extensions().i
 
 PIL_CONVERT_MODES = {
     "1":     "L",
-    "P":     "RGBA",  # There are P images with alpha
+    #"P":     "RGBA",  # Handle separately
     "PA":    "RGBA",
     "CMYK":  "RGB",
     "YCbCr": "RGB",
@@ -40,11 +40,16 @@ PIL_CONVERT_MODES_NOALPHA = {
     "La":   "L"
 }
 
-def _getConversionMode(mode: str, forceRGB=False, allowGreyscale=True, allowAlpha=True) -> str | None:
+def _getConversionMode(img: Image.Image, forceRGB=False, allowGreyscale=True, allowAlpha=True) -> str | None:
+    mode = img.mode
     if forceRGB:
         return "RGB" if mode != "RGB" else None
 
     origMode = mode
+
+    if mode == "P": # There are P images with alpha
+        mode = "RGBA" if "transparency" in img.info else "RGB"
+
     mode = PIL_CONVERT_MODES.get(mode, mode)
     if not allowGreyscale:
         mode = PIL_CONVERT_MODES_NOGREY.get(mode, mode)
@@ -212,7 +217,7 @@ READ_EXTENSIONS = frozenset(PIL_READ_EXTENSIONS | QT_READ_EXTENSIONS)
 
 def loadImagePIL(source, forceRGB=False, allowGreyscale=True, allowAlpha=True):
     img = _readImagePIL(source)
-    if convertMode := _getConversionMode(img.mode, forceRGB, allowGreyscale, allowAlpha):
+    if convertMode := _getConversionMode(img, forceRGB, allowGreyscale, allowAlpha):
         img = img.convert(convertMode)
     return img
 
