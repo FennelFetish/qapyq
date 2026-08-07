@@ -174,9 +174,9 @@ class ScaleTool(ViewTool):
 
 
 class ScaleToolBar(QtWidgets.QToolBar):
-    def __init__(self, scaleTool):
+    def __init__(self, scaleTool: ScaleTool):
         super().__init__("Scale")
-        self.scaleTool: ScaleTool = scaleTool
+        self.scaleTool = scaleTool
         self.exportWidget = export.ExportWidget("scale", scaleTool.tab.filelist)
         self.selectedScaleMode: ScaleMode = None
 
@@ -187,7 +187,7 @@ class ScaleToolBar(QtWidgets.QToolBar):
         layout.addWidget(self.exportWidget)
 
         btnExport = QtWidgets.QPushButton("Export")
-        btnExport.clicked.connect(self.scaleTool.exportImage)
+        btnExport.clicked.connect(self.scaleTool.export)
         layout.addWidget(btnExport)
 
         btnOpenLast = QtWidgets.QPushButton("Open Last File")
