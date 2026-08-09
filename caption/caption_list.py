@@ -1,8 +1,9 @@
 from __future__ import annotations
-import os
+import os, traceback
 from enum import Enum
 from typing import Generator, TYPE_CHECKING
 from typing_extensions import override
+from collections import Counter
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QTimer, QSignalBlocker
 from lib.captionfile import CaptionFile, FileTypeSelector, Keys
@@ -23,6 +24,7 @@ class KeyType(Enum):
     Tags     = Keys.TAGS
     Caption  = Keys.CAPTIONS
     TextFile = "text"
+    Metadata = "metadata"
 
 
 TYPE_MAP = {
@@ -34,12 +36,20 @@ TYPE_MAP = {
 SEPARATORS = {
     KeyType.Tags:     ", ",
     KeyType.Caption:  ". ",
-    KeyType.TextFile: ", "
+    KeyType.TextFile: ", ",
+    KeyType.Metadata: ", ",
+}
+
+COLORS = {
+    KeyType.Tags:     "#70C0C0",
+    KeyType.Caption:  "#C0C070",
+    KeyType.TextFile: "#C070C0",
+    KeyType.Metadata: "#C07070",
 }
 
 
 DELAY_RESIZE  = 10
-DELAY_RESIZE2 = 15
+DELAY_RESIZE2 = 30
 DELAY_SCROLL  = 20
 
 
@@ -78,7 +88,7 @@ class CaptionList(CaptionTab):
         widget.setLayout(self._layoutEntries)
 
         self._scrollArea = qtlib.RowScrollArea(widget)
-        layout.addWidget(self._scrollArea, row, 0, 1, 5)
+        layout.addWidget(self._scrollArea, row, 0, 1, 6)
 
         row += 1
         self.addEntrySelector = FileTypeSelector()
@@ -96,15 +106,19 @@ class CaptionList(CaptionTab):
         self.statusBar.setSizeGripEnabled(False)
         layout.addWidget(self.statusBar, row, 2)
 
+        self.chkLoadMetadata = QtWidgets.QCheckBox("Load Metadata Prompts")
+        self.chkLoadMetadata.toggled.connect(self._onLoadMetadataToggled)
+        layout.addWidget(self.chkLoadMetadata, row, 3)
+
         self.btnReloadAll = qtlib.SaveButton("Reload All")
         self.btnReloadAll.setMinimumWidth(120)
         self.btnReloadAll.clicked.connect(self.reloadCaptions)
-        layout.addWidget(self.btnReloadAll, row, 3)
+        layout.addWidget(self.btnReloadAll, row, 4)
 
         self.btnSaveAll = qtlib.SaveButton("Save All")
         self.btnSaveAll.setMinimumWidth(120)
         self.btnSaveAll.clicked.connect(self.saveAll)
-        layout.addWidget(self.btnSaveAll, row, 4)
+        layout.addWidget(self.btnSaveAll, row, 5)
 
         self.setLayout(layout)
 
@@ -161,11 +175,16 @@ class CaptionList(CaptionTab):
     def getFileModTime(currentFile: str) -> tuple[float, float]:
         pathNoExt = os.path.splitext(currentFile)[0]
 
-        jsonPath  = pathNoExt + ".json"
-        txtPath   = pathNoExt + ".txt"
+        try:
+            jsonModifiedTime = os.path.getmtime(pathNoExt + ".json")
+        except FileNotFoundError:
+            jsonModifiedTime = -1.0
 
-        jsonModifiedTime = os.path.getmtime(jsonPath) if os.path.exists(jsonPath) else -1.0
-        txtModifiedTime  = os.path.getmtime(txtPath)  if os.path.exists(txtPath)  else -1.0
+        try:
+            txtModifiedTime = os.path.getmtime(pathNoExt + ".txt")
+        except FileNotFoundError:
+            txtModifiedTime = -1.0
+
         return jsonModifiedTime, txtModifiedTime
 
 
@@ -192,14 +211,58 @@ class CaptionList(CaptionTab):
         if text := FileTypeSelector.loadCaptionTxt(currentFile):
             self.addEntry(KeyType.TextFile, "", text, deletable=False)
 
+        if self.chkLoadMetadata.isChecked():
+            self._loadFromMetadata()
+
         self._needsReload = False
         self.btnSaveAll.setChanged(False)
         self._updateTabOrder()
 
         QTimer.singleShot(DELAY_SCROLL, lambda: scrollBar.setValue(scrollPos))
 
-    def addEntry(self, keyType: KeyType, keyName: str, text: str, deletable=True):
-        entry = CaptionEntry(self.ctx, keyType, keyName, deletable)
+
+    @Slot(bool)
+    def _onLoadMetadataToggled(self, state: bool):
+        if state and all(entry.keyType != KeyType.Metadata for entry in self.entries):
+            self._loadFromMetadata()
+            self._updateTabOrder()
+
+    def _loadFromMetadata(self):
+        currentFile = self.ctx.tab.filelist.currentFile
+        if not currentFile:
+            return
+
+        try:
+            import time
+            from lib.metadata_reader import extract_prompts, PromptKind
+            t = time.perf_counter_ns()
+            prompts = extract_prompts(currentFile)
+            t = (time.perf_counter_ns() - t) / 1_000_000
+        except Exception as ex:
+            print(f"Failed to load prompts from metadata:")
+            traceback.print_exc()
+            return
+
+        if prompts:
+            print(f"Extracted {len(prompts)} prompts from metadata in {t:.2f} ms")
+        else:
+            print(f"Found no metadata prompts after {t:.2f} ms")
+            return
+
+        prompts.sort()
+        counter = Counter[PromptKind]()
+
+        for prompt in prompts:
+            key = prompt.kind.key()
+            counter[prompt.kind] += 1
+            if (i := counter[prompt.kind]) > 1:
+                key += f"_{i}"
+
+            self.addEntry(KeyType.Metadata, key, prompt.text, deletable=False, editable=False)
+
+
+    def addEntry(self, keyType: KeyType, keyName: str, text: str, deletable=True, editable=True):
+        entry = CaptionEntry(self.ctx, keyType, keyName, deletable, editable)
         self._layoutEntries.addWidget(entry, alignment=Qt.AlignmentFlag.AlignTop)
         entry.text = text
 
@@ -250,7 +313,7 @@ class CaptionList(CaptionTab):
 
         keyName = self.addEntrySelector.name.strip()
         keyType = TYPE_MAP[self.addEntrySelector.type]
-        jsonType = (keyType != KeyType.TextFile)
+        jsonType = keyType in (KeyType.Tags, KeyType.Caption)
 
         if jsonType and not keyName:
             self.statusBar.showColoredMessage("Empty key", False)
@@ -309,6 +372,7 @@ class CaptionList(CaptionTab):
             return
 
         saveStates = []
+        failures = []
 
         tags: dict[str, str] = dict()
         captions: dict[str, str] = dict()
@@ -325,16 +389,30 @@ class CaptionList(CaptionTab):
                 case KeyType.Caption:
                     captions[entry.keyName] = entryText
                 case KeyType.TextFile:
-                    FileTypeSelector.saveCaptionTxt(currentFile, entryText)
-                    saveStates.append(f"TXT File")
+                    try:
+                        FileTypeSelector.saveCaptionTxt(currentFile, entryText)
+                        saveStates.append(f"TXT File")
+                    except Exception as ex:
+                        failures.append(f"TXT File ({type(ex).__name__})")
+                        traceback.print_exc()
 
         if jsonExists or tags or captions:
             captionFile.tags = tags
             captionFile.captions = captions
-            captionFile.saveToJson()
 
-            print(f"Saved caption to file: {captionFile.jsonPath}")
-            saveStates.append(f"JSON File ({len(tags)} Tags, {len(captions)} Captions)")
+            try:
+                captionFile.saveToJson()
+                print(f"Saved caption to file: {captionFile.jsonPath}")
+                saveStates.append(f"JSON File ({len(tags)} Tags, {len(captions)} Captions)")
+            except Exception as ex:
+                failures.append(f"JSON File ({type(ex).__name__})")
+                traceback.print_exc()
+
+        if failures:
+            msg = "Failed to save captions to " + ", ".join(reversed(failures))
+            self.statusBar.showColoredMessage(msg, False, 0)
+            print(msg)
+            return
 
         if not saveStates:
             self.statusBar.showColoredMessage("Nothing to write", True)
@@ -373,7 +451,7 @@ class CaptionList(CaptionTab):
 class CaptionEntry(QtWidgets.QWidget):
     deleteClicked = Signal(object)
 
-    def __init__(self, ctx: CaptionContext, keyType: KeyType, keyName: str, deletable=True):
+    def __init__(self, ctx: CaptionContext, keyType: KeyType, keyName: str, deletable=True, editable=True):
         super().__init__()
 
         self.keyType: KeyType = keyType
@@ -411,7 +489,9 @@ class CaptionEntry(QtWidgets.QWidget):
         layout.setColumnMinimumWidth(2, 12)
 
         col += 1
-        self.txtCaption = AutoSizeTextEdit(ctx.highlight, SEPARATORS[keyType], ctx.getAutoCompleteSources())
+        autoCompleteSources = ctx.getAutoCompleteSources() if editable else []
+        self.txtCaption = AutoSizeTextEdit(ctx.highlight, SEPARATORS[keyType], autoCompleteSources)
+        self.txtCaption.setReadOnly(not editable)
         qtlib.setMonospace(self.txtCaption)
         self.txtCaption.textChanged.connect(self._setEdited)
         layout.addWidget(self.txtCaption, 0, col, 2, 1, Qt.AlignmentFlag.AlignVCenter)
@@ -428,12 +508,9 @@ class CaptionEntry(QtWidgets.QWidget):
 
     @staticmethod
     def _setKeyColor(txtKey: QtWidgets.QLabel, keyType: KeyType):
-        match keyType:
-            case KeyType.Tags:     keyColor = "#70C0C0"
-            case KeyType.Caption:  keyColor = "#C0C070"
-            case KeyType.TextFile: keyColor = "#C070C0"
-
+        keyColor = COLORS.get(keyType, colorlib.BUBBLE_TEXT)
         keyColor = colorlib.getHighlightColor(keyColor)
+
         keyPalette = txtKey.palette()
         keyPalette.setColor(QtGui.QPalette.ColorRole.WindowText, keyColor)
         keyPalette.setColor(QtGui.QPalette.ColorRole.Text, keyColor)
