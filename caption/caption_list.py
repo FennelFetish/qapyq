@@ -1,5 +1,5 @@
 from __future__ import annotations
-import os, traceback
+import os, traceback, time
 from enum import Enum
 from typing import Generator, TYPE_CHECKING
 from typing_extensions import override
@@ -8,7 +8,7 @@ from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QTimer, QSignalBlocker
 from lib.captionfile import CaptionFile, FileTypeSelector, Keys
 from lib.filelist import DataKeys
-from lib import colorlib, qtlib
+from lib import colorlib, qtlib, util
 from ui.autocomplete import AutoCompleteSource
 from .caption_tab import CaptionTab
 from .caption_highlight import CaptionHighlight
@@ -106,9 +106,14 @@ class CaptionList(CaptionTab):
         self.statusBar.setSizeGripEnabled(False)
         layout.addWidget(self.statusBar, row, 2)
 
-        self.chkLoadMetadata = QtWidgets.QCheckBox("Load Metadata Prompts")
-        self.chkLoadMetadata.toggled.connect(self._onLoadMetadataToggled)
-        layout.addWidget(self.chkLoadMetadata, row, 3)
+        self._metadataMenu = MetadataMenu(self)
+        self._metadataMenu.loadMetadataToggled.connect(self._onLoadMetadataToggled)
+
+        self.btnMetadataMenu = QtWidgets.QPushButton("☰")
+        self.btnMetadataMenu.setMenu(self._metadataMenu)
+        self.btnMetadataMenu.setFixedWidth(40)
+        self.btnMetadataMenu.setToolTip("Metadata loading options")
+        layout.addWidget(self.btnMetadataMenu, row, 3)
 
         self.btnReloadAll = qtlib.SaveButton("Reload All")
         self.btnReloadAll.setMinimumWidth(120)
@@ -211,7 +216,7 @@ class CaptionList(CaptionTab):
         if text := FileTypeSelector.loadCaptionTxt(currentFile):
             self.addEntry(KeyType.TextFile, "", text, deletable=False)
 
-        if self.chkLoadMetadata.isChecked():
+        if self._metadataMenu.loadMetadata:
             self._loadFromMetadata()
 
         self._needsReload = False
@@ -233,10 +238,9 @@ class CaptionList(CaptionTab):
             return
 
         try:
-            import time
             from lib.metadata_reader import extract_prompts, PromptKind
             t = time.perf_counter_ns()
-            prompts = extract_prompts(currentFile)
+            prompts = extract_prompts(currentFile, self._metadataMenu.exhaustiveSearch)
             t = (time.perf_counter_ns() - t) / 1_000_000
         except Exception as ex:
             print(f"Failed to load prompts from metadata:")
@@ -246,7 +250,7 @@ class CaptionList(CaptionTab):
         if prompts:
             print(f"Extracted {len(prompts)} prompts from metadata in {t:.2f} ms")
         else:
-            print(f"Found no metadata prompts after {t:.2f} ms")
+            #print(f"Found no metadata prompts after {t:.2f} ms")
             return
 
         prompts.sort()
@@ -258,7 +262,11 @@ class CaptionList(CaptionTab):
             if (i := counter[prompt.kind]) > 1:
                 key += f"_{i}"
 
-            self.addEntry(KeyType.Metadata, key, prompt.text, deletable=False, editable=False)
+            text = prompt.text
+            if self._metadataMenu.stripWeights:
+                text = util.PromptWeights.stripWeights(text)
+
+            self.addEntry(KeyType.Metadata, key, text, deletable=False, editable=False)
 
 
     def addEntry(self, keyType: KeyType, keyName: str, text: str, deletable=True, editable=True):
@@ -615,3 +623,29 @@ class AutoSizeTextEdit(BorderlessNavigationTextEdit):
         super().focusOutEvent(e)
         self.moveCursor(QtGui.QTextCursor.MoveOperation.End) # Clear selection
         self.setActivePalette(False)
+
+
+
+class MetadataMenu(qtlib.CheckboxMenu):
+    loadMetadataToggled = Signal(bool)
+
+    def __init__(self, parent):
+        super().__init__("Metadata Load Settings", parent)
+
+        self.chkLoadMetadata = self.addCheckbox("load", "Load Prompts from Metadata", True)
+        self.chkLoadMetadata.toggled.connect(self.loadMetadataToggled.emit)
+
+        self.chkExhaustive   = self.addCheckbox("exhaustive", "Exhaustive Search (slow)")
+        self.chkStripWeights = self.addCheckbox("strip-weights", "Strip Weights")
+
+    @property
+    def loadMetadata(self) -> bool:
+        return self.chkLoadMetadata.isChecked()
+
+    @property
+    def exhaustiveSearch(self) -> bool:
+        return self.chkExhaustive.isChecked()
+
+    @property
+    def stripWeights(self) -> bool:
+        return self.chkStripWeights.isChecked()

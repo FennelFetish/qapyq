@@ -64,7 +64,7 @@ class PromptEntry(NamedTuple):
         return self.kind.value < other.kind.value
 
 
-Fields = list[MetadataField]
+Fields = dict[str, MetadataField]
 Result = list[PromptEntry] | None
 
 
@@ -73,11 +73,11 @@ Result = list[PromptEntry] | None
 # ---------------------------------------------------------------------
 
 def _find(fields: Fields, name: str) -> MetadataField | None:
-    return next((f for f in fields if f.name == name), None)
+    return fields.get(name)
 
 def _find_json_dict(fields: Fields, *, has_all: tuple = (), has_any: tuple = ()) -> tuple[MetadataField, dict] | None:
     """First field whose JSON value is a dict satisfying the key requirements."""
-    for f in fields:
+    for f in fields.values():
         data = f.json_data()
         if not isinstance(data, dict):
             continue
@@ -122,7 +122,7 @@ class ComfyUI:
         other_texts: list[tuple[str, str]] = []
 
         for node_id, node in graph.items():
-            for input_name, value in cls._walk_node_inputs(node):
+            for input_name, value in cls._node_inputs(node):
                 if isinstance(value, list):
                     # Add text as positive/negative prompts
                     if kind := cls._try_get_kind(input_name):
@@ -157,8 +157,13 @@ class ComfyUI:
         return isinstance(value, str) and bool(value) and input_name.startswith(cls.INPUT_PREFIXES)
 
     @staticmethod
-    def _walk_node_inputs(node) -> Iterator[tuple[str, Any]]:
+    def _node_inputs(node) -> Iterator[tuple[str, Any]]:
         if isinstance(node, dict):
+            # Don't resolve links through ConditioningZeroOut: They can mark prompts as the wrong kind (neg instead of pos),
+            # depending on the graph layout and traversal order. Treat these nodes as having no inputs.
+            if node.get("class_type") == "ConditioningZeroOut":
+                return
+
             inputs = node.get("inputs")
             if isinstance(inputs, dict):
                 yield from inputs.items()
@@ -177,7 +182,7 @@ class ComfyUI:
             seen_nodes.add(node_id)
 
             node = graph.get(node_id)
-            for input_name, value in cls._walk_node_inputs(node):
+            for input_name, value in cls._node_inputs(node):
                 if isinstance(value, list):
                     target_id = value[0]
                     if target_id not in seen_nodes:

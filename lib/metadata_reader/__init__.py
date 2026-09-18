@@ -21,51 +21,101 @@ Public API:
     extract_fields(path)  -> (format, list[MetadataField])   [for debugging]
 """
 
+import os
+from itertools import chain
+from typing import Iterator
+
 from .fields import MetadataField
-from .file_loader import load_fields
+from .field_extraction import FIELD_EXTRACTORS
 from .prompt_extraction import EARLY_EXIT_EXTRACTORS, FALLBACK_EXTRACTORS, PromptEntry, PromptKind
+from .markers import field_name_is_marked, field_needs_decomposing
 
-__all__ = ["extract_prompts", "extract_fields", "PromptEntry", "PromptKind", "MetadataField"]
-
-
-def extract_fields(path: str) -> tuple[str, list[MetadataField]]:
-    """Low-level: the detected format and every field that survived the marker filter."""
-    fmt, fields = load_fields(path)
-    return fmt, list(fields)
+__all__ = ["extract_prompts", "PromptEntry", "PromptKind", "MetadataField"]
 
 
-def extract_prompts(path: str) -> list[PromptEntry]:
-    """
-    Extract every prompt found in `path`. Stops reading the file the
-    moment an early-exit-eligible tool (ComfyUI/SwarmUI/InvokeAI) commits;
-    otherwise falls back to a fixed-priority pass over every field once
-    extraction is exhausted.
-    """
-    fmt, field_iter = load_fields(path)
-    fields: list[MetadataField] = []
+VIDEO_EXTENSIONS = {".mp4", ".m4v", ".mov", ".qt", ".mp4v"}
+_JXL_SIGNATURE = b"\x00\x00\x00\x0cJXL \r\n\x87\n"
 
-    try:
-        for f in field_iter:
-            fields.append(f)
+def _detect_format(path: str) -> str:
+    ext = os.path.splitext(path)[1].lower()
+    with open(path, "rb") as f:
+        head = f.read(16)
 
-            for extractor in EARLY_EXIT_EXTRACTORS:
-                result = extractor.try_extract(fields)
-                if result is not None:
-                    #print(f"{path}: recognized as {extractor.__name__} (early-exit, {len(accumulated)} field(s))")
-                    return result
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "PNG"
+    if len(head) >= 12 and head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "WEBP"
+    if head.startswith(_JXL_SIGNATURE) or ext == ".jxl":
+        return "JXL"
+    if head[:2] == b"\xff\xd8":
+        return "JPEG"
+    if (len(head) >= 8 and head[4:8] in (b"ftyp", b"styp")) or ext in VIDEO_EXTENSIONS:
+        return "MP4"
 
-    finally:
-        # Stop any in-progress file reads if we returned early above -
-        # field extractors are generators wrapping an open file; a plain
-        # iterator (e.g. the empty one for an unrecognized format) has no
-        # close() to call.
-        if close := getattr(field_iter, "close", None):
-            close()
+    return "UNKNOWN"
 
-    for extractor in FALLBACK_EXTRACTORS:
+
+def extract_prompts(path: str, exhaustive: bool = False) -> list[PromptEntry]:
+    fmt = _detect_format(os.fspath(path))
+    field_extractor_type = FIELD_EXTRACTORS.get(fmt)
+    if field_extractor_type is None:
+        return []
+
+    fields: dict[str, MetadataField] = {}
+
+    with field_extractor_type(path) as field_extractor:
+        # 1. Fast field extraction from accessible metadata only
+        results = _try_extract_prompt(fields, field_extractor.extract_fields())
+        if results is not None:
+            return results
+
+        # 2. Exhaustive search loads the full file, then retries field extraction
+        if exhaustive:
+            results = _try_extract_prompt(fields, field_extractor.extract_fields_slow())
+            if results is not None:
+                return results
+
+        return []
+
+
+def _try_extract_prompt(fields: dict[str, MetadataField], field_iter: Iterator[MetadataField]) -> list[PromptEntry] | None:
+    seen_names = set[str]()
+    for field in _with_json_decompose(field_iter):
+        if not field.value:
+            #print(f">>> EMPTY FIELD (ignore): {field.name}")
+            continue
+
+        if field.name not in seen_names:
+            seen_names.add(field.name)
+            fields[field.name] = field
+        # else:
+        #     print(f">>> DUPLICATE FIELD (ignore): {field.name}")
+
+    #_print_fields(fields)
+
+    for extractor in chain(EARLY_EXIT_EXTRACTORS, FALLBACK_EXTRACTORS):
         result = extractor.try_extract(fields)
         if result is not None:
-            #print(f"{path}: recognized as {extractor.__name__} (fallback, {len(accumulated)} field(s))")
             return result
 
-    return []
+    return None
+
+
+def _with_json_decompose(fields: Iterator[MetadataField]) -> Iterator[MetadataField]:
+    for field in fields:
+        yield field
+
+        if field_needs_decomposing(field.name):
+            json_data = field.json_data()
+            if isinstance(json_data, dict):
+                yield from (
+                    MetadataField(field.source, name, val) for name, val in json_data.items()
+                    if field_name_is_marked(name)
+                )
+
+
+def _print_fields(fields: dict[str, MetadataField]):
+    print(f"=== FIELDS ({len(fields)}) ===")
+    for name, field in fields.items():
+        text = field.text() or ""
+        print(f"  {name}: {text[:150]}")
