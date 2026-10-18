@@ -1,5 +1,6 @@
 import weakref
 from typing import Any, Callable, Iterable, cast
+from typing_extensions import override
 from contextlib import contextmanager
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Slot, Signal, QSignalBlocker, QRect, QEvent, QTimer
@@ -592,13 +593,27 @@ class ToggleButton(QtWidgets.QPushButton):
 
 
 
+class BaseProxyStyle(QtWidgets.QProxyStyle):
+    def __init__(self):
+        # Don't pass the QApp's style by ref: QProxyStyle takes ownership which causes crash on shutdown.
+        # GDB's stack trace shows infinite recursion via the base style. Another hypothesis is double-free.
+        # On Windows, passing no key to __init__ renders a QMenu background in plain white (default style does not use palette).
+        key = QtWidgets.QApplication.style().name().lower()
+        key = next((k for k in QtWidgets.QStyleFactory.keys() if k.lower() == key), "Fusion")  # Default to Fusion for palette-aware coloring
+        super().__init__(key)  # Qt creates its own instance of that kind, ignores case on passed key
+
+        self.setParent(QtWidgets.QApplication.instance())
+
+
+
 class MenuComboBox(QtWidgets.QComboBox):
-    class MenuHighlightStyle(QtWidgets.QProxyStyle):
-        def __init__(self, style: QtWidgets.QStyle, palette: QtGui.QPalette):
-            super().__init__(style)
+    class MenuHighlightStyle(BaseProxyStyle):
+        def __init__(self, palette: QtGui.QPalette):
+            super().__init__()
             self._bgColor = palette.color(QtGui.QPalette.ColorRole.Highlight)
             self._bgColor.setAlphaF(0.2)
 
+        @override
         def drawControl(self, element, option: QtWidgets.QStyleOption, painter: QtGui.QPainter, widget=None):
             # For CE_MenuItem, 'option' is of type QtWidgets.QStyleOptionMenuItem with 'font' attribute
             if element == QtWidgets.QStyle.ControlElement.CE_MenuItem and option.font.bold():
@@ -625,7 +640,7 @@ class MenuComboBox(QtWidgets.QComboBox):
         self._nextIndex = 0
 
         if MenuComboBox.MENU_STYLE is None:
-            MenuComboBox.MENU_STYLE = MenuComboBox.MenuHighlightStyle(self.style(), self.palette())
+            MenuComboBox.MENU_STYLE = MenuComboBox.MenuHighlightStyle(self.palette())
         self.menu.setStyle(MenuComboBox.MENU_STYLE)
 
 

@@ -36,7 +36,7 @@ class CaptionBubbles(ReorderWidget):
         self._selectedIndex = -1
 
         if CaptionBubbles.PROXY_STYLE is None:
-            CaptionBubbles.PROXY_STYLE = BubbleProxyStyle(QtWidgets.QApplication.style())
+            CaptionBubbles.PROXY_STYLE = BubbleProxyStyle()
 
         layout = FlowLayout(spacing=5)
         self.setLayout(layout)
@@ -167,7 +167,7 @@ class CaptionBubbles(ReorderWidget):
 
 
 
-class BubbleProxyStyle(QtWidgets.QProxyStyle):
+class BubbleProxyStyle(qtlib.BaseProxyStyle):
     @override
     def styleHint(self, hint, option=None, widget=None, returnData=None):
         if hint == QtWidgets.QStyle.StyleHint.SH_ToolTip_WakeUpDelay:
