@@ -35,6 +35,7 @@
   - Compare two images <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#compare-tool)</sup>
   - Measure size, area and pixel distances <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#measure-tool)</sup>
   - Slideshow <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#slideshow-tool)</sup>
+  - Read prompts from metadata
 
 - **🎨 Image/Mask Editor**: Prepare media for training
   - Crop and save parts of images <sup>[?](https://github.com/FennelFetish/qapyq/wiki/User-Guide#crop-tool)</sup>
