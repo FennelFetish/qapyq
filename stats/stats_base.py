@@ -712,12 +712,13 @@ class StatsLoadTask(QRunnable):
         self._nextNotify += int(checkInterval)
 
 
-    def map(self, items: Iterable[TIn], count: int, func: Callable[[TIn], TOut]) -> Generator[TOut]:
-        self.signals.progress.emit(0, count)
+    def map(self, items: Iterable[TIn], count: int, func: Callable[[TIn], TOut], countOffset: int = 0) -> Generator[TOut]:
+        count += countOffset
+        self.signals.progress.emit(countOffset, count)
         tStart = time.monotonic_ns()
 
-        nr = 0
-        for nr, item in enumerate(items, 1):
+        nr = countOffset
+        for nr, item in enumerate(items, nr+1):
             yield func(item)
             self.notifyProgress(nr, count)
 
@@ -725,10 +726,13 @@ class StatsLoadTask(QRunnable):
                 break
 
         tDiff = (time.monotonic_ns() - tStart) / 1_000_000
-        print(f"Stats {self.name}: Read {nr}/{count} items in {tDiff:.2f} ms")
+        cacheMsg = f" ({countOffset} from cache)" if countOffset else ""
+        print(f"Stats {self.name}: Read {nr}/{count} items in {tDiff:.2f} ms{cacheMsg}")
         self.signals.progress.emit(nr, count)
 
-    def map_multiproc(self, items: Iterable[TIn], count: int, func: Callable[[TIn], TOut], chunkSize: int, numProcesses: int) -> Generator[TOut]:
+    def map_multiproc(
+        self, items: Iterable[TIn], count: int, func: Callable[[TIn], TOut], chunkSize: int, numProcesses: int, countOffset: int = 0
+    ) -> Generator[TOut]:
         from multiprocessing.pool import Pool
         from multiprocessing.context import TimeoutError
         from itertools import chain
@@ -749,17 +753,17 @@ class StatsLoadTask(QRunnable):
         with Pool(numProcesses) as pool:
             chunkGen = self.iterChunks(items, chunkSize)
             imapGen = imap(pool, ChunkFunctor(func), chunkGen)
-            yield from self.map(chain.from_iterable(imapGen), count, lambda x: x)
+            yield from self.map(chain.from_iterable(imapGen), count, lambda x: x, countOffset=countOffset)
 
-    def map_auto(self, items: list[TIn], func: Callable[[TIn], TOut], chunkSize: int = 128) -> Generator[TOut]:
+    def map_auto(self, items: list[TIn], func: Callable[[TIn], TOut], chunkSize: int = 128, countOffset: int = 0) -> Generator[TOut]:
         count   = len(items)
         numProc = 1 + (count // (chunkSize*4))
         numProc = min(numProc, Config.galleryThumbnailThreads)
 
         if numProc > 1:
-            return self.map_multiproc(items, count, func, chunkSize, numProc)
+            return self.map_multiproc(items, count, func, chunkSize, numProc, countOffset)
         else:
-            return self.map(items, count, func)
+            return self.map(items, count, func, countOffset)
 
     def iterate(self, items: list[TIn]) -> Generator[TIn]:
         return self.map(items, len(items), lambda x: x)

@@ -104,6 +104,7 @@ class CachedPathSort:
 
 class DataKeys:
     ImageSize               = "img_size"                # tuple[w, h]
+    VideoFrames             = "vid_frames"              # int
 
     Caption                 = "caption"                 # str
     CaptionState            = "caption_state"           # IconStates
