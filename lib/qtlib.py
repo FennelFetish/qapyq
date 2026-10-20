@@ -933,15 +933,15 @@ class CheckableListWidget(QtWidgets.QListWidget):
 class CheckboxMenu(QtWidgets.QMenu):
     selectionChanged = Signal(dict)
 
-    def __init__(self, title: str):
-        super().__init__(title)
+    def __init__(self, title: str, parent: QtWidgets.QWidget | None = None):
+        super().__init__(title, parent=parent)
         self._checkboxes: dict[str, weakref.ref[QtWidgets.QCheckBox]] = dict()
 
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(6, 2, 6, 2)
         layout.setSpacing(0)
 
-        self.widget = QtWidgets.QWidget()
+        self.widget = QtWidgets.QWidget(self)
         self.widget.setLayout(layout)
 
         widgetAct = QtWidgets.QWidgetAction(self)

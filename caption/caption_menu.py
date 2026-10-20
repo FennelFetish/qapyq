@@ -94,7 +94,7 @@ class CaptionMenu(QtWidgets.QMenu):
 
 
     def _buildApplyRulesSubmenu(self):
-        self.menuApplyRules = qtlib.CheckboxMenu("Apply Rules")
+        self.menuApplyRules = qtlib.CheckboxMenu("Apply Rules", self)
         self.menuApplyRules.addCheckbox("replace",          "Search and replace")
         self.menuApplyRules.addCheckbox("banned",           "Remove banned tags")
         self.menuApplyRules.addCheckbox("remove_dup",       "Remove duplicates and subsets")

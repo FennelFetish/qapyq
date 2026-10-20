@@ -392,7 +392,7 @@ class MainMenu(QtWidgets.QMenu):
         return menu
 
     def _buildFileTypesSubmenu(self) -> qtlib.CheckboxMenu:
-        menu = qtlib.CheckboxMenu("File Types")
+        menu = qtlib.CheckboxMenu("File Types", self)
         menu.addCheckbox("image", "Load Images", "image" not in Config.mediaExcludeTypes)
         menu.addCheckbox("video", "Load Videos", "video" not in Config.mediaExcludeTypes)
         menu.selectionChanged.connect(self._onMediaTypesUpdated)
